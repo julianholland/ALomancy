@@ -1,0 +1,9 @@
+*traj
+*xyz
+*log
+
+mace_general
+
+MACE_model
+
+__pycache__
