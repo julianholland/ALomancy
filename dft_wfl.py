@@ -4,7 +4,7 @@ from wfl.autoparallelize import AutoparaInfo
 from wfl.configset import ConfigSet, OutputSpec
 import numpy as np
 from ase.io import read
-from al_wfl import get_remote_info
+# from al_wfl import get_remote_info
 
 
 def get_qe_input_data(calculation_type: str) -> dict:
@@ -133,5 +133,6 @@ if __name__ == '__main__':
     name='qe_test'
     hpc='raven'
     atoms_list=read('high_sd_structures.xyz', ':')
-    remote_info=get_remote_info(name, hpc)
+    # remote_info=get_remote_info(name, hpc)
+    remote_info=None
     perform_dft_calculations('qe_test', atoms_list, remote_info, hpc)

@@ -8,29 +8,6 @@ import pandas as pd
 from pathlib import Path
 
 
-def select_md_structures(
-    number_of_mds=5,
-    md_name="md_run",
-    chem_formula="C10Na",
-    train_set_xyz="mace_general/ac_all_33_2025_07_11_ftrim_100_train_set.xyz",
-):
-    """randomly selects structures from a train set based on a chemical formula and number of mds to run."""
-
-    chem_formula_structures = [
-        s for s in read(train_set_xyz, ":") if s.get_chemical_formula() == chem_formula
-    ]
-    initial_atoms = [
-        chem_formula_structures[x]
-        for x in np.random.choice(
-            np.array(range(len(chem_formula_structures))), number_of_mds, replace=False
-        )
-    ]
-    for i, atoms in enumerate(initial_atoms):
-        atoms.info["job_id"] = i
-        atoms.info["config_type"] = f"{md_name}_{i}"
-
-    return initial_atoms
-
 def primary_run(
     input_atoms_list,
     out_dir,
@@ -40,6 +17,7 @@ def primary_run(
     temperature=300,
     md_name="md_run",
 ):
+
     calc = MACECalculator(
         model_paths=[str(Path(f"MACE_model/fit_{base_mace}/test_stagetwo.model"))],
         device=device,
@@ -60,19 +38,11 @@ def primary_run(
             logfile=str(Path(out_dir, f"{md_name}.log")),
         )
 
-        dyn.attach(
-            lambda: write(
-                str(Path(out_dir, f"{md_name}_{initial_structure.info['job_id']}.xyz")),
-                dyn.atoms.copy(),
-                append=True,
-            ),
-            interval=50,
-        )
+        dyn.attach(lambda: write(f'{md_name}.xyz', dyn.atoms.copy(), append=True), interval=50)
         dyn.attach(lambda: atom_traj_list.append(dyn.atoms.copy()), interval=50)
         dyn.run(steps=steps)
-    print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
-    # return atom_traj_list
-
+    print(f'MD run completed, {len(atom_traj_list)} structures generated.')
+    return atom_traj_list
 
 def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
     return np.reshape(forces, (1, forces.shape[0] * 3))
