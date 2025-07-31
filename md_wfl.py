@@ -1,23 +1,28 @@
 from ase.md.langevin import Langevin
 from mace.calculators import MACECalculator
-from ase.io.trajectory import Trajectory
 from ase.io import read, write
 from ase.units import fs
+from ase import Atoms
 import numpy as np
 import pandas as pd
 from pathlib import Path
 
 
 def select_md_structures(
+    base_name,
+    job_name="md_run",
     number_of_mds=5,
-    md_name="md_run",
     chem_formula="C10Na",
     train_set_xyz="mace_general/ac_all_33_2025_07_11_ftrim_100_train_set.xyz",
 ):
     """randomly selects structures from a train set based on a chemical formula and number of mds to run."""
 
+    train_set_atoms = [
+        atoms for atoms in read(train_set_xyz, ":") if isinstance(atoms, Atoms)
+    ]
+
     chem_formula_structures = [
-        s for s in read(train_set_xyz, ":") if s.get_chemical_formula() == chem_formula
+        s for s in train_set_atoms if s.get_chemical_formula() == chem_formula
     ]
     initial_atoms = [
         chem_formula_structures[x]
@@ -27,9 +32,10 @@ def select_md_structures(
     ]
     for i, atoms in enumerate(initial_atoms):
         atoms.info["job_id"] = i
-        atoms.info["config_type"] = f"{md_name}_{i}"
+        atoms.info["config_type"] = f"{base_name}_{job_name}"
 
     return initial_atoms
+
 
 def primary_run(
     input_atoms_list,
@@ -41,11 +47,11 @@ def primary_run(
     md_name="md_run",
 ):
     calc = MACECalculator(
-        model_paths=[str(Path(f"MACE_model/fit_{base_mace}/test_stagetwo.model"))],
+        model_paths=[base_mace],
         device=device,
     )
 
-    Path.mkdir(out_dir, exist_ok=True)
+    Path(out_dir).mkdir(exist_ok=True, parents=True)
 
     atom_traj_list = []
     for atoms in input_atoms_list:
@@ -79,8 +85,10 @@ def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
 
 
 def std_deviation_of_forces(
-    structure_forces_dict: dict[dict[dict[np.ndarray[float], float]]], verbose: int = 0
-) -> list[float]:
+    structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+    md_dir,
+    verbose: int = 0,
+) -> pd.DataFrame:
     """
     Calculate the standard deviation of forces for each structure in the dictionary.
 
@@ -138,17 +146,26 @@ def std_deviation_of_forces(
             ]
         )
 
-    return pd.DataFrame(
+    df = pd.DataFrame(
         std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
     ).sort_values(by="max_std_dev", ascending=False)
 
+    df.to_csv(str(Path(md_dir, "std_dev_forces.csv")), index=True)
+
+    return df
+
 
 def get_forces_for_all_maces(
-    structure_list, base_mace=0, fits_to_use=[0]
-) -> np.ndarray:
-    calc = MACECalculator(
-        model_paths=f"MACE_model/fit_{base_mace}/test_stagetwo.model", device="cpu"
-    )
+    structure_list: list[Atoms],
+    base_name: str,
+    job_dict: dict[str, dict[str, str]],
+    base_mace: str,
+    fits_to_use: list[int] = [0],
+) -> dict[str, dict[str, dict[str, np.ndarray]]]:
+    """
+    Get forces for all MACE models specified in fits_to_use.
+    """
+    calc = MACECalculator(model_paths=base_mace, device="cpu")
 
     for atoms in structure_list:
         atoms.calc = calc
@@ -156,7 +173,7 @@ def get_forces_for_all_maces(
         "base_mace": {
             f"structure_{i}": {
                 "forces": flatten_array_of_forces(structure_list[i].get_forces()),
-                "energy": structure_list[i].get_potential_energy(),
+                "energy": np.array(structure_list[i].get_potential_energy()),
             }
             for i in range(len(structure_list))
         }
@@ -164,7 +181,13 @@ def get_forces_for_all_maces(
 
     for i in fits_to_use:
         calc = MACECalculator(
-            model_paths=f"MACE_model/fit_{i}/test_stagetwo.model",
+            model_paths=str(
+                Path(
+                    "results",
+                    base_name,
+                    f"MACE/fit_{i}/{job_dict['mace_committee']['name']}_stagetwo.model",
+                )
+            ),
             device="cpu",
             default_dtype="float64",
         )

@@ -1,28 +1,32 @@
 from ase.io import read, write
-from wfl.autoparallelize import AutoparaInfo
+from wfl.autoparallelize import AutoparaInfo, RemoteInfo
 from wfl.autoparallelize.base import autoparallelize
 from pathlib import Path
 
-from wfl.configset import OutputSpec
+from wfl.configset import OutputSpec, ConfigSet
 from md_wfl import (
     primary_run,
     get_forces_for_all_maces,
     std_deviation_of_forces,
     select_md_structures,
 )
-
+import pandas as pd
+from ase import Atoms
 # calc=MACECalculator(model_paths=[f'MACE_model/fit_{i}/test_stagetwo_compiled.model' for i in range(2)],device='cpu')
 
 
 def get_structures_for_dft(
-    md_name,
-    initial_atoms,
-    remote_info=None,
-    read_md=False,
-    number_of_structures=50,
-    verbose=0,
-    save_xyz=True,
-) -> list:
+    base_name: str,
+    job_dict: dict,
+    initial_atoms: list[Atoms],
+    base_mace: str,
+    remote_info: RemoteInfo,
+    read_md: bool = False,
+    number_of_structures: int = 50,
+    verbose: int = 0,
+    save_xyz: bool = True,
+    read_sd_csv: bool = True,
+) -> list[Atoms]:
     """
     Select structures for DFT calculations based on the standard deviation of forces.
 
@@ -40,9 +44,9 @@ def get_structures_for_dft(
     list
         List of structures selected for DFT calculations.
     """
-    md_dir = Path("md_trajs")
-
-    traj_files = sorted(md_dir.glob(f"{md_name}*.xyz"))
+    md_dir = Path("results", base_name, "MD/md_trajs")
+    md_dir.mkdir(exist_ok=True, parents=True)
+    traj_files = sorted(md_dir.glob(f"{job_dict['md_run']['name']}*.xyz"))
 
     def autopara_md(*args, **kwargs):
         return autoparallelize(primary_run, *args, **kwargs)
@@ -50,19 +54,18 @@ def get_structures_for_dft(
     if not (read_md and len(traj_files) > 0):
         primary_run_args = {
             "out_dir": str(md_dir),
-            "steps": 200,
+            "steps": 10000,
             "temperature": 1200,
             "device": "cuda",
-            "base_mace": 0,
-            "md_name": md_name,
+            "base_mace": base_mace,
+            "md_name": job_dict["md_run"]["name"],
         }
 
-        remote_info.input_files = [
-            "md_wfl.py",
-            "al_wfl.py",
-            "MACE_model/fit_0/test_stagetwo.model",
+        remote_info.input_files = ["md_wfl.py", "al_wfl.py", base_mace]
+        remote_info.output_files = [
+            str(Path(md_dir, f"{job_dict['md_run']['name']}_*.xyz"))
         ]
-        remote_info.output_files = [str(Path(md_dir, f"{md_name}_*.xyz"))]
+        remote_info.check_interval = 10
         structure_list = list(
             autopara_md(
                 inputs=initial_atoms,
@@ -71,22 +74,40 @@ def get_structures_for_dft(
                     remote_info=remote_info,
                 ),
                 **primary_run_args,
-            )
+            )  # type: ignore
         )
 
     # traj_list = [Trajectory(traj_file, "r") for traj_file in traj_files]
     structure_list = []
     for i in range(len(initial_atoms)):
-        structures = read(Path(md_dir, f"{md_name}_{i}.xyz"), ":")
+        structures = read(Path(md_dir, f"{job_dict['md_run']['name']}_{i}.xyz"), ":")
         structure_list.extend(structures)
 
     if verbose > 0:
         print(len(structure_list), "trajectories found in", traj_files)
 
-    structure_forces_dict = get_forces_for_all_maces(
-        structure_list, base_mace=0, fits_to_use=[1, 2, 3, 4]
-    )
-    std_dev_df = std_deviation_of_forces(structure_forces_dict)
+    if read_sd_csv and Path.exists(Path(md_dir, "std_dev_forces.csv")):
+        std_dev_df = pd.read_csv(Path(md_dir, "std_dev_forces.csv"))
+    else:
+
+        def find_fits_to_use():
+            path_list = list(
+                Path.glob(
+                    Path("results", base_name, "MACE"),
+                    f"fit_*/{job_dict['mace_committee']['name']}_stagetwo.model",
+                )
+            )
+            return [int(Path(p).parent.name.split("_")[-1]) for p in path_list]
+
+        structure_forces_dict = get_forces_for_all_maces(
+            structure_list,
+            base_name,
+            job_dict,
+            base_mace=base_mace,
+            fits_to_use=find_fits_to_use(),
+        )
+        std_dev_df = std_deviation_of_forces(structure_forces_dict, md_dir)
+
     index_list = list(std_dev_df[:number_of_structures].index)
 
     if verbose > 0:
@@ -95,7 +116,7 @@ def get_structures_for_dft(
 
     if save_xyz:
         write(
-            "high_sd_structures.xyz",
+            str(Path(md_dir.parent, "high_sd_structures.xyz")),
             [structure_list[i] for i in index_list],
             format="extxyz",
         )
@@ -103,14 +124,14 @@ def get_structures_for_dft(
     return [structure_list[i] for i in index_list]
 
 
-if __name__ == "__main__":
-    al_loop = 0
-    name = "test"
-    get_structures_for_dft(
-        name,
-        initial_atoms=select_md_structures(name=name),
-        remote_info=None,
-        read_md=True,
-        number_of_structures=10,
-    )
-    # dft_structure_list=get_structures_for_dft('md', read_md=True, number_of_structures=10, verbose=1)
+# if __name__ == "__main__":
+#     al_loop = 0
+#     name = "test"
+#     get_structures_for_dft(
+#         name,
+#         initial_atoms=select_md_structures(name=name),
+#         remote_info=None,
+#         read_md=True,
+#         number_of_structures=10,
+#     )
+# dft_structure_list=get_structures_for_dft('md', read_md=True, number_of_structures=10, verbose=1)

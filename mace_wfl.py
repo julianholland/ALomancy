@@ -3,22 +3,25 @@ from wfl.fit.mace import fit
 from pathlib import Path
 import os
 import time
+import numpy as np
 
 
-def train_mace(remote_info, base_file_name, job_name, seed=803, fit_idx=0):
-    workdir = Path("results", base_file_name)
+def train_mace(remote_info, base_name, job_name, seed=803, fit_idx=0, epochs=60):
+    workdir = Path("results", base_name)
+    # workdir= os.getcwd()
 
     # Make directory named "MACE" and save model there
-    mace_dir = Path(workdir, "MACE_model")
+    mace_dir = Path(workdir, "MACE")
+
     print(f"Creating MACE directory: {mace_dir}")
     mace_dir.mkdir(exist_ok=True, parents=True)
 
     # Read MACE fit parameters
-    training_file = Path(workdir, f"{base_file_name}_train_set.xyz")
-    test_file = Path(workdir, f"{base_file_name}_test_set.xyz")
+    training_file = Path(workdir, "train_set.xyz")
+    test_file = Path(workdir, "test_set.xyz")
 
     # any name
-    mace_name = f"{job_name}_fit_{fit_idx}"
+    mace_name = f"{job_name}"
 
     # MACE fit parameters can be initiated as following by reading YAML file.
     # Or one can also directly make dictionary
@@ -36,7 +39,7 @@ def train_mace(remote_info, base_file_name, job_name, seed=803, fit_idx=0):
         "error_table": "PerAtomMAE",
         "eval_interval": 1,
         "max_L": 2,
-        "max_num_epochs": 10,
+        "max_num_epochs": epochs,
         "name": mace_name,
         "num_channels": 128,
         "num_interactions": 2,
@@ -45,7 +48,7 @@ def train_mace(remote_info, base_file_name, job_name, seed=803, fit_idx=0):
         "restart_latest": None,
         "save_cpu": None,
         "scheduler_patience": 15,
-        "start_swa": 6,
+        "start_swa": int(np.floor(epochs * 0.8)),
         "swa": None,
         "batch_size": 16,
         "valid_batch_size": 16,
@@ -59,17 +62,17 @@ def train_mace(remote_info, base_file_name, job_name, seed=803, fit_idx=0):
         mace_fit_params=mace_fit_params,
         mace_fit_cmd="mace_run_train",  # f'python {str(Path(mace_file_dir, "run_train.py"))}',
         remote_info=remote_info,
-        run_dir=mace_dir,
+        run_dir=str(Path(mace_dir,f"fit_{fit_idx}")),
         prev_checkpoint_file=None,
         test_configs=ConfigSet(str(test_file)),
         dry_run=False,
-        wait_for_results=False,
+        wait_for_results=True,
     )
 
 
-def make_job_list(base_file_name, job_name, size_of_committee=5):
+def make_job_list(base_name, job_name, size_of_committee=5):
     dir_list = [
-        f"results/{base_file_name}/MACE_model/{job_name}_fit_{i}" for i in range(size_of_committee)
+        f"results/{base_name}/MACE/fit_{i}" for i in range(size_of_committee)
     ]
     completed_mask = [
         os.path.exists(Path(dir, f"{job_name}_stagetwo_compiled.model")) for dir in dir_list
@@ -77,18 +80,19 @@ def make_job_list(base_file_name, job_name, size_of_committee=5):
     return [i for i in range(size_of_committee) if not completed_mask[i]]
 
 
-def create_mace_committee(remote_info, base_file_name, job_name, seed=803, size_of_committee=5):
+def create_mace_committee(remote_info, base_name, job_name, seed=803, size_of_committee=5, epochs=60):
     """
     Create a MACE committee by training multiple MACE models with different seeds.
     """
-    job_list = make_job_list(base_file_name, job_name, size_of_committee)
+    job_list = make_job_list(base_name, job_name, size_of_committee)
 
+    remote_info.check_interval = 10
     for fit_idx in job_list:
         train_mace(
-            remote_info, base_file_name, job_name=job_name, seed=seed + fit_idx, fit_idx=fit_idx
+            remote_info, base_name, job_name=job_name, seed=seed + fit_idx, fit_idx=fit_idx, epochs=epochs
         )
 
     while len(job_list) > 0:
         print(job_list)
         time.sleep(5)
-        job_list = make_job_list(base_file_name, job_name, size_of_committee)
+        job_list = make_job_list(base_name, job_name, size_of_committee)
