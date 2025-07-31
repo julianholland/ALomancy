@@ -18,10 +18,11 @@ def get_qe_input_data(calculation_type: str) -> dict:
             "nstep": 999,
             "tstress": False,
             "tprnfor": True,
-            "disk_io": "low",
+            "disk_io": "none",
             "outdir": "./ac_data/",
             "etot_conv_thr": 1.0e-5,
             "forc_conv_thr": 1.0e-5,
+            "disk_io": 
         },
         "system": {
             "ibrav": 0,
