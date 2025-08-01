@@ -154,20 +154,27 @@ def perform_dft_calculations(
             str(Path("results", base_name, f"DFT/{job_name}_out_structures.xyz"))
         )
 
-        calc = create_calc_object(
-            atoms_list[0], pseudo_dict, hpc_info_dict=hpc_info_dict[hpc]
-        )  # currently applies same calc to all, may need different k-grid for different systems
-
-        generic.calculate(
-            inputs=ConfigSet(atoms_list),
-            outputs=outputs,
-            calculator=calc,
-            properties=["energy", "forces"],
-            output_prefix="Espresso_",
-            autopara_info=AutoparaInfo(
-                remote_info=remote_info,
-            ),
+        # need to create a calc object for each unique cell
+        unique_cells = set(
+            tuple(np.array(atoms.cell).flatten()) for atoms in atoms_list
         )
+        for cell in unique_cells:
+            sub_atoms_list= [atoms for atoms in atoms_list if np.array_equal(np.array(atoms.cell).flatten(), cell)]
+        
+            calc = create_calc_object(
+                sub_atoms_list[0], pseudo_dict, hpc_info_dict=hpc_info_dict[hpc]
+            )  
+
+            generic.calculate(
+                inputs=ConfigSet(sub_atoms_list),
+                outputs=outputs,
+                calculator=calc,
+                properties=["energy", "forces"],
+                output_prefix="Espresso_",
+                autopara_info=AutoparaInfo(
+                    remote_info=remote_info,
+                ),
+            )
 
 
 if __name__ == "__main__":

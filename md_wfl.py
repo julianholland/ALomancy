@@ -124,7 +124,13 @@ def primary_run(
     steps=100,
     temperature=300,
     md_name="md_run",
+    number_of_structures: int = 50,
+    timestep_fs: float = 0.5,
 ):
+    assert number_of_structures > 0, "Number of structures must be greater than 0"
+    assert steps > number_of_structures / len(input_atoms_list), (
+        "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
+    )
     calc = MACECalculator(
         model_paths=[base_mace],
         device=device,
@@ -139,7 +145,7 @@ def primary_run(
 
         dyn = Langevin(
             atoms=initial_structure,
-            timestep=0.5 * fs,
+            timestep=timestep_fs * fs,
             temperature_K=temperature,
             friction=0.002,
             logfile=str(Path(out_dir, f"{md_name}.log")),
@@ -153,7 +159,11 @@ def primary_run(
             ),
             interval=50,
         )
-        dyn.attach(lambda: atom_traj_list.append(dyn.atoms.copy()), interval=50)
+        snapshot_interval = steps * len(input_atoms_list) // (number_of_structures * 5)
+
+        dyn.attach(
+            lambda: atom_traj_list.append(dyn.atoms.copy()), interval=snapshot_interval
+        )
         dyn.run(steps=steps)
     print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
     # return atom_traj_list

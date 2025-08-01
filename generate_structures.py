@@ -26,6 +26,9 @@ def get_structures_for_dft(
     verbose: int = 0,
     save_xyz: bool = True,
     read_sd_csv: bool = True,
+    temperature: float = 300.0,
+    steps: int = 100,
+    timestep_fs: float = 0.5,
 ) -> list[Atoms]:
     """
     Select structures for DFT calculations based on the standard deviation of forces.
@@ -44,6 +47,11 @@ def get_structures_for_dft(
     list
         List of structures selected for DFT calculations.
     """
+
+    assert number_of_structures < steps * len(initial_atoms), (
+        "Number of structures must be less than the number of steps times the number of initial atoms"
+    )
+
     md_dir = Path("results", base_name, "MD/md_trajs")
     md_dir.mkdir(exist_ok=True, parents=True)
     traj_files = sorted(md_dir.glob(f"{job_dict['md_run']['name']}*.xyz"))
@@ -54,11 +62,13 @@ def get_structures_for_dft(
     if not (read_md and len(traj_files) > 0):
         primary_run_args = {
             "out_dir": str(md_dir),
-            "steps": 10000,
-            "temperature": 1200,
             "device": "cuda",
             "base_mace": base_mace,
             "md_name": job_dict["md_run"]["name"],
+            "steps": steps,
+            "temperature": temperature,
+            "number_of_structures": number_of_structures,
+            "timestep_fs": timestep_fs,
         }
 
         remote_info.input_files = ["md_wfl.py", "al_wfl.py", base_mace]

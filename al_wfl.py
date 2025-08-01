@@ -143,8 +143,10 @@ def active_learn_mace(
             ),
             read_md=True,
             number_of_structures=50,
-            verbose=0,
-            save_xyz=True,
+            verbose=1,
+            temperature=1200.0,
+            steps=200,
+            timestep_fs=0.5,
             base_mace=str(
                 Path(
                     loop_dir,
