@@ -119,9 +119,13 @@ def active_learn_mace(
             base_name=base_name,
             job_name=JOB_DICT["md_run"]["name"],
             number_of_mds=5,
-            chem_formula="C10Na",
-            train_set_xyz=train_file,
-        )
+            chem_formula_list=[],
+            atom_number_range=(5,21),
+            enforce_chemical_diversity=True,
+            train_xyzs=train_xyzs, # type: ignore
+            verbose=1,
+        ) 
+
         Path.mkdir(Path(loop_dir, "MD"), exist_ok=True, parents=True)
         write(
             Path(loop_dir, "MD", "md_input_structures.xyz"),
@@ -175,7 +179,7 @@ def active_learn_mace(
         )  
 
         al_loop += 1
-        print(f"Active learning loop {al_loop} completed.")
+        print(f"Active learning loop {al_loop} completed. New training set size: {len(train_xyzs)}")
 
 
 if __name__ == "__main__":
@@ -189,5 +193,5 @@ if __name__ == "__main__":
             train_data_dir,
             "ac_all_33_2025_07_31_ftrim_10_grpspread_01_train_set.xyz"
         ),
-        number_of_al_loops=2,
+        number_of_al_loops=1,
     )

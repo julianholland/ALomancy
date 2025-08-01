@@ -1,38 +1,117 @@
 from ase.md.langevin import Langevin
 from mace.calculators import MACECalculator
-from ase.io import read, write
+from ase.io import write
 from ase.units import fs
-from ase import Atoms
+from ase import Atom, Atoms
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from typing_extensions import Optional
 
 
 def select_md_structures(
     base_name,
-    job_name="md_run",
-    number_of_mds=5,
-    chem_formula="C10Na",
-    train_set_xyz="mace_general/ac_all_33_2025_07_11_ftrim_100_train_set.xyz",
+    job_name: str,
+    train_xyzs: list[Atoms],
+    number_of_mds: int = 5,
+    chem_formula_list: list[str] = [],
+    atom_number_range: tuple[int, int] = (0, 0),
+    enforce_chemical_diversity: bool = False,
+    verbose: int = 0,
 ):
-    """randomly selects structures from a train set based on a chemical formula and number of mds to run."""
+    """randomly selects structures from a train set based on a chemical formula or
+    max number of atoms and number of mds to run.
 
-    train_set_atoms = [
-        atoms for atoms in read(train_set_xyz, ":") if isinstance(atoms, Atoms)
-    ]
+    Probably should be moved to its own file.
+    Args:
+        base_name (str): Base name for the job.
+        job_name (str): Name of the job.
+        train_xyzs (list[Atoms]): List of Atoms objects from the training set.
+        number_of_mds (int): Number of MD structures to select.
+        chem_formula (list[str]): List of chemical formulas to filter structures. If empty, no filtering is applied.
+        max_atoms (Optional[int]): Maximum number of atoms in the selected structures. If None, no filtering is applied.
+        enforce_chemical_diversity (bool): Whether to enforce chemical diversity in selection.
 
-    chem_formula_structures = [
-        s for s in train_set_atoms if s.get_chemical_formula() == chem_formula
-    ]
-    initial_atoms = [
-        chem_formula_structures[x]
-        for x in np.random.choice(
-            np.array(range(len(chem_formula_structures))), number_of_mds, replace=False
+    Returns:
+        list[Atoms]: Selected Atoms objects for MD runs.
+    """
+
+    if atom_number_range != (0, 0) and len(chem_formula_list) > 0:
+        filtered_structures = [
+            s
+            for s in train_xyzs
+            if s.get_chemical_formula() in chem_formula_list
+            and len(s) <= atom_number_range[1]
+            and len(s) >= atom_number_range[0]
+        ]
+    elif atom_number_range != (0, 0):
+        filtered_structures = [
+            s
+            for s in train_xyzs
+            if len(s) <= atom_number_range[1] and len(s) >= atom_number_range[0]
+        ]
+    elif len(chem_formula_list) > 0:
+        filtered_structures = [
+            s for s in train_xyzs if s.get_chemical_formula() in chem_formula_list
+        ]
+    else:
+        filtered_structures = train_xyzs
+
+    assert len(filtered_structures) >= number_of_mds, (
+        f"Not enough structures to select {number_of_mds} from. Available: {len(filtered_structures)}"
+    )
+
+    if enforce_chemical_diversity:
+        # Ensure chemical diversity by selecting unique chemical formulas
+        # If there are fewer unique formulas than `number_of_mds`, select all
+        # Otherwise, randomly select `number_of_mds` unique formulas
+        unique_chemical_formulas = set(
+            s.get_chemical_formula() for s in filtered_structures
         )
-    ]
+
+        if len(unique_chemical_formulas) <= number_of_mds:
+            list_of_formulas = list(unique_chemical_formulas)
+            extra_formulas = [
+                np.random.choice(list(unique_chemical_formulas), replace=False)
+                for _ in range(number_of_mds - len(list_of_formulas))
+            ]
+            list_of_formulas.extend(extra_formulas)
+
+        else:
+            list_of_formulas = np.random.choice(
+                list(unique_chemical_formulas), number_of_mds, replace=False
+            )
+
+        initial_atoms = []
+        for chemical_formula in list_of_formulas:
+            formula_structures = [
+                s
+                for s in filtered_structures
+                if s.get_chemical_formula() == chemical_formula
+            ]
+            selected_structure = np.random.choice(
+                np.array(range(len(formula_structures)))
+            )
+            initial_atoms.append(formula_structures[selected_structure])
+
+    else:
+        initial_atoms = [
+            filtered_structures[x]
+            for x in np.random.choice(
+                np.array(range(len(filtered_structures))),
+                number_of_mds,
+                replace=False,
+            )
+        ]
+
     for i, atoms in enumerate(initial_atoms):
         atoms.info["job_id"] = i
         atoms.info["config_type"] = f"{base_name}_{job_name}"
+
+    if verbose > 0:
+        print(
+            f"The following structures were selected for MD: {[a.get_chemical_formula() for a in initial_atoms]}"
+        )
 
     return initial_atoms
 
