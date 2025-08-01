@@ -85,7 +85,7 @@ def find_optimal_npool(
     return int(npool)
 
 
-def create_calc_object(atoms, pseudo_dict, hpc_info_dict):
+def create_qe_calc_object(atoms, pseudo_dict, hpc_info_dict):
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
@@ -106,20 +106,45 @@ def create_calc_object(atoms, pseudo_dict, hpc_info_dict):
     )
 
 
-def perform_dft_calculations(
-    base_name: str,
-    job_name: str,
-    atoms_list: list[Atoms],
+def perform_qe_calculations(
+    sub_atoms_list: list[Atoms],
+    outputs: OutputSpec,
     remote_info: RemoteInfo,
-    hpc: str,
-    read_dft_structures: bool = True,
+    calc: Espresso,
 ):
-    if read_dft_structures and Path.exists(
-        Path("results", base_name, "DFT", f"{job_name}_out_structures.xyz")
+            
+    generic.calculate(
+        inputs=ConfigSet(sub_atoms_list),
+        outputs=outputs,
+        calculator=calc,
+        properties=["energy", "forces"],
+        output_prefix="Espresso_",
+        autopara_info=AutoparaInfo(
+            remote_info=remote_info,
+        ),
+    )
+
+def perform_qe_calculations_per_cell(
+        base_name: str,
+        job_name: str,
+        atoms_list: list[Atoms],
+        remote_info: RemoteInfo,
+        hpc: str,
+        read_dft_structures: bool = True,
+        verbose: int = 0,
     ):
-        print(
-            f"Reading DFT structures from {Path('results', base_name, 'DFT', f'{job_name}_out_structures.xyz')}"
+
+    unique_cells = set(
+            tuple(np.array(atoms.cell).flatten()) for atoms in atoms_list
         )
+
+    if read_dft_structures and Path.exists(
+        Path("results", base_name, "DFT", f"{job_name}_cell_{len(unique_cells)}_out_structures.xyz")
+    ):
+        if verbose > 0:
+            print(
+                f"Skipping DFT calculations, found existing structures for {len(unique_cells)} unique cells."
+            )
         pass
     else:
         pseudo_dict = {
@@ -150,31 +175,31 @@ def perform_dft_calculations(
             },
         }
 
-        outputs = OutputSpec(
-            str(Path("results", base_name, f"DFT/{job_name}_out_structures.xyz"))
-        )
-
-        # need to create a calc object for each unique cell
-        unique_cells = set(
-            tuple(np.array(atoms.cell).flatten()) for atoms in atoms_list
-        )
-        for cell in unique_cells:
-            sub_atoms_list= [atoms for atoms in atoms_list if np.array_equal(np.array(atoms.cell).flatten(), cell)]
+       
+        # need to create a calc object for each unique cell to get the correct k-points
         
-            calc = create_calc_object(
-                sub_atoms_list[0], pseudo_dict, hpc_info_dict=hpc_info_dict[hpc]
-            )  
-
-            generic.calculate(
-                inputs=ConfigSet(sub_atoms_list),
-                outputs=outputs,
-                calculator=calc,
-                properties=["energy", "forces"],
-                output_prefix="Espresso_",
-                autopara_info=AutoparaInfo(
-                    remote_info=remote_info,
-                ),
+        if verbose > 0:
+            print(f"Found {len(unique_cells)} unique cells for DFT calculations.")
+        
+        cell_type=0
+        for cell in unique_cells:
+            outputs = OutputSpec(
+                str(Path("results", base_name, f"DFT/{job_name}_cell_{cell_type}_out_structures.xyz"))
             )
+
+            sub_atoms_list= [atoms for atoms in atoms_list if np.array_equal(np.array(atoms.cell).flatten(), cell)]
+            if verbose > 0:
+                print(f"Creating calculator for cell: {cell}")
+            calc = create_qe_calc_object(
+                sub_atoms_list[0], pseudo_dict, hpc_info_dict=hpc_info_dict[hpc]
+            )
+            perform_qe_calculations(
+                sub_atoms_list,
+                outputs,
+                remote_info,
+                calc
+            )
+            cell_type += 1
 
 
 if __name__ == "__main__":

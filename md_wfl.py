@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing_extensions import Optional
+from tqdm import tqdm
 
 
 def select_md_structures(
@@ -126,6 +127,7 @@ def primary_run(
     md_name="md_run",
     number_of_structures: int = 50,
     timestep_fs: float = 0.5,
+    verbose: int = 0,
 ):
     assert number_of_structures > 0, "Number of structures must be greater than 0"
     assert steps > number_of_structures / len(input_atoms_list), (
@@ -151,22 +153,24 @@ def primary_run(
             logfile=str(Path(out_dir, f"{md_name}.log")),
         )
 
+        snapshot_interval = steps * len(input_atoms_list) // (number_of_structures * 5)
+
         dyn.attach(
             lambda: write(
                 str(Path(out_dir, f"{md_name}_{initial_structure.info['job_id']}.xyz")),
                 dyn.atoms.copy(),
                 append=True,
             ),
-            interval=50,
+            interval=snapshot_interval,
         )
-        snapshot_interval = steps * len(input_atoms_list) // (number_of_structures * 5)
-
         dyn.attach(
             lambda: atom_traj_list.append(dyn.atoms.copy()), interval=snapshot_interval
         )
         dyn.run(steps=steps)
-    print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
-    # return atom_traj_list
+    if verbose > 0:
+        print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
+    
+    
 
 
 def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
@@ -280,7 +284,7 @@ def get_forces_for_all_maces(
             device="cpu",
             default_dtype="float64",
         )
-        for atoms in structure_list:
+        for atoms in tqdm(structure_list):
             atoms.calc = calc
         structure_forces_dict[f"fit_{i}"] = {
             f"structure_{i}": {

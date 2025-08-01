@@ -1,3 +1,4 @@
+from re import S
 from ase.io import read, write
 from wfl.autoparallelize import AutoparaInfo, RemoteInfo
 from wfl.autoparallelize.base import autoparallelize
@@ -8,7 +9,6 @@ from md_wfl import (
     primary_run,
     get_forces_for_all_maces,
     std_deviation_of_forces,
-    select_md_structures,
 )
 import pandas as pd
 from ase import Atoms
@@ -21,7 +21,6 @@ def get_structures_for_dft(
     initial_atoms: list[Atoms],
     base_mace: str,
     remote_info: RemoteInfo,
-    read_md: bool = False,
     number_of_structures: int = 50,
     verbose: int = 0,
     save_xyz: bool = True,
@@ -59,7 +58,7 @@ def get_structures_for_dft(
     def autopara_md(*args, **kwargs):
         return autoparallelize(primary_run, *args, **kwargs)
 
-    if not (read_md and len(traj_files) > 0):
+    if not (len(traj_files) > 0):
         primary_run_args = {
             "out_dir": str(md_dir),
             "device": "cuda",
@@ -69,6 +68,7 @@ def get_structures_for_dft(
             "temperature": temperature,
             "number_of_structures": number_of_structures,
             "timestep_fs": timestep_fs,
+            "verbose": verbose,
         }
 
         remote_info.input_files = ["md_wfl.py", "al_wfl.py", base_mace]
@@ -76,30 +76,28 @@ def get_structures_for_dft(
             str(Path(md_dir, f"{job_dict['md_run']['name']}_*.xyz"))
         ]
         remote_info.check_interval = 10
-        structure_list = list(
-            autopara_md(
-                inputs=initial_atoms,
-                outputs=OutputSpec(),
-                autopara_info=AutoparaInfo(
-                    remote_info=remote_info,
-                ),
-                **primary_run_args,
-            )  # type: ignore
-        )
+        
+        autopara_md(
+            inputs=initial_atoms,
+            outputs=OutputSpec(),
+            autopara_info=AutoparaInfo(
+                remote_info=remote_info,
+            ),
+            **primary_run_args,
+        )  # type: ignore
 
-    # traj_list = [Trajectory(traj_file, "r") for traj_file in traj_files]
     structure_list = []
     for i in range(len(initial_atoms)):
-        structures = read(Path(md_dir, f"{job_dict['md_run']['name']}_{i}.xyz"), ":")
+        structures = read(Path(md_dir, f"{job_dict['md_run']['name']}_{i}.xyz"), ":", format="extxyz")
         structure_list.extend(structures)
 
     if verbose > 0:
-        print(len(structure_list), "trajectories found in", traj_files)
+        print(len(structure_list), "structures found from trajectory files.")
 
     if read_sd_csv and Path.exists(Path(md_dir, "std_dev_forces.csv")):
-        std_dev_df = pd.read_csv(Path(md_dir, "std_dev_forces.csv"))
-    else:
+        std_dev_df = pd.read_csv(Path(md_dir, "std_dev_forces.csv"), index_col=0)
 
+    else:
         def find_fits_to_use():
             path_list = list(
                 Path.glob(
@@ -110,26 +108,34 @@ def get_structures_for_dft(
             return [int(Path(p).parent.name.split("_")[-1]) for p in path_list]
 
         structure_forces_dict = get_forces_for_all_maces(
-            structure_list,
-            base_name,
-            job_dict,
+            structure_list=[s.copy() for s in structure_list],
+            base_name=base_name,
+            job_dict=job_dict,
             base_mace=base_mace,
             fits_to_use=find_fits_to_use(),
         )
+
         std_dev_df = std_deviation_of_forces(structure_forces_dict, md_dir)
 
-    index_list = list(std_dev_df[:number_of_structures].index)
 
+    index_list = list(std_dev_df[:number_of_structures].index)
+    
+    high_sd_structures = [
+        structure_list[i] for i in index_list
+    ]
+    
     if verbose > 0:
+        print(f"Selected {len(high_sd_structures)} structures for DFT calculations based on standard deviation of forces.")
         print(std_dev_df[:number_of_structures])
         print(f"total mean: {std_dev_df['mean_std_dev'].mean()}")
 
     if save_xyz:
-        write(
-            str(Path(md_dir.parent, "high_sd_structures.xyz")),
-            [structure_list[i] for i in index_list],
-            format="extxyz",
-        )
+        for structure in high_sd_structures:
+            write(
+                str(Path(md_dir.parent, "high_sd_structures.xyz")),
+                structure,
+                append=True,
+            )
 
     return [structure_list[i] for i in index_list]
 
