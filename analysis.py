@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 
 class Plot:
-    def __init__(self, data, title, xlabel, ylabel, directory='.'):
+    def __init__(self, data: pd.DataFrame , title: str, xlabel: str, ylabel: str, directory: str = '.'):
         """
         data: pd.DataFrame or dict-like, where each column/field is a series to plot
         """
@@ -19,10 +19,6 @@ class Plot:
     def find_data(self, data_name):
         if isinstance(self.data, pd.DataFrame):
             return self.data[data_name]
-        elif isinstance(self.data, dict):
-            return self.data.get(data_name, None)
-        else:
-            return None
 
     def create(self):
         print(
@@ -80,7 +76,7 @@ class Plot:
         print("Updated data:", self.data)
 
 
-def mace_al_loop_average_error(base_name, plot=False):
+def mace_al_loop_average_error(plot=False):
     al_loop_dirs = list(Path.glob(Path("results"), "al_loop_*"))
     all_avg_results = []
     for al_loop_dir in al_loop_dirs:
@@ -109,7 +105,7 @@ def mace_al_loop_average_error(base_name, plot=False):
             title="MACE AL Loop MAE",
             xlabel="AL Loop Iteration",
             ylabel="Mean Absolute Error",
-            directory=Path("results", base_name, "MACE"),
+            directory=str(Path("results"))
         )
         plot_object.create()
         plot_object.save()
