@@ -7,6 +7,7 @@ from md_wfl import select_md_structures
 from generate_structures import get_structures_for_dft
 from dft_wfl import perform_qe_calculations_per_cell  #
 from test_train_manager import add_new_training_data
+from analysis import mace_al_loop_average_error
 
 from pathlib import Path
 
@@ -62,8 +63,35 @@ def get_remote_info(hpc: str, job: str, input_files: list[str] = []):
 
 
 def active_learn_mace(
-    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5, verbose: int = 0, start_loop: int = 0
+    initial_train_file_path,
+    initial_test_file_path,
+    number_of_al_loops: int = 5,
+    verbose: int = 0,
+    start_loop: int = 0,
+    target_force_error: float = 0.05,  # eV
 ):
+    """
+    Perform active learning with MACE, starting from given training and test sets.
+
+    Parameters
+    ----------
+    initial_train_file_path : str
+        Path to the initial training set file.
+    initial_test_file_path : str
+        Path to the initial test set file.
+    number_of_al_loops : int, optional
+        Number of active learning loops to perform, by default 5.
+    verbose : int, optional
+        Verbosity level, by default 0.
+    start_loop : int, optional
+        Loop number to start from, by default 0.
+    target_force_error : float, optional
+        Target force error for stopping the active learning loop, by default 0.05 eV.
+
+    Returns
+    -------
+    None
+    """
     al_loop = start_loop
 
     train_xyzs = [
@@ -114,17 +142,27 @@ def active_learn_mace(
             epochs=60,
         )
 
-        # 2. select structures from train set to perform MD on
+        # 2. evaluate model
+        evaluation_df = mace_al_loop_average_error(base_name, plot=False)
+        if verbose > 0:
+            print(
+                f"AL Loop {al_loop}, MAE (energy): {evaluation_df['mae_e'].iloc[al_loop]}, MAE (forces): {evaluation_df['mae_f'].iloc[al_loop]}"
+            )
+        if evaluation_df['mae_f'].iloc[al_loop] < target_force_error:
+            print(f"AL Loop {al_loop} reached target force error.")
+            break
+
+        # 3. select structures from train set to perform MD on
         md_input_structures = select_md_structures(
             base_name=base_name,
             job_name=JOB_DICT["md_run"]["name"],
             number_of_mds=5,
             chem_formula_list=[],
-            atom_number_range=(9,21),
+            atom_number_range=(9, 21),
             enforce_chemical_diversity=True,
-            train_xyzs=train_xyzs, # type: ignore
+            train_xyzs=train_xyzs,  # type: ignore
             verbose=verbose,
-        ) 
+        )
 
         Path.mkdir(Path(loop_dir, "MD"), exist_ok=True, parents=True)
         write(
@@ -133,7 +171,7 @@ def active_learn_mace(
             format="extxyz",
         )
 
-        # 3. select high standard deviation structures from MD
+        # 4. select high standard deviation structures from MD
         dft_input_structures = get_structures_for_dft(
             base_name=base_name,
             job_dict=JOB_DICT,
@@ -162,40 +200,43 @@ def active_learn_mace(
             format="extxyz",
         )
 
-        # 4. perform DFT calculations on selected structures
+        # 5. perform DFT calculations on selected structures
         dft_structures = perform_qe_calculations_per_cell(
             base_name=base_name,
             job_name=JOB_DICT["dft_run"]["name"],
             atoms_list=dft_input_structures,
             remote_info=get_remote_info(hpc="raven", job="dft_run", input_files=[]),
             hpc="raven",
-            verbose=verbose
+            verbose=verbose,
         )
         print(dft_structures)
 
-        # 5. add DFT results to training data
+        # 6. add DFT results to training data
         train_xyzs = list(
             add_new_training_data(
-                base_name=base_name, job_dict=JOB_DICT, train_xyzs=train_xyzs # type: ignore
+                base_name=base_name,
+                job_dict=JOB_DICT,
+                train_xyzs=train_xyzs,  # type: ignore
             )
-        )  
+        )
 
         al_loop += 1
-        print(f"Active learning loop {al_loop} completed. New training set size: {len(train_xyzs)}")
+        print(
+            f"Active learning loop {al_loop} completed. New training set size: {len(train_xyzs)}"
+        )
 
 
 if __name__ == "__main__":
-    train_data_dir= Path("mace_general")
+    train_data_dir = Path("mace_general")
     active_learn_mace(
         initial_test_file_path=Path(
-            train_data_dir,
-            "ac_all_33_2025_07_31_ftrim_10_grpspread_01_test_set.xyz"
+            train_data_dir, "ac_all_33_2025_07_31_ftrim_10_grpspread_01_test_set.xyz"
         ),
         initial_train_file_path=Path(
-            train_data_dir,
-            "ac_all_33_2025_07_31_ftrim_10_grpspread_01_train_set.xyz"
+            train_data_dir, "ac_all_33_2025_07_31_ftrim_10_grpspread_01_train_set.xyz"
         ),
         number_of_al_loops=50,
         verbose=1,
-        start_loop=0
+        target_force_error=0.05,
+        start_loop=0,
     )
