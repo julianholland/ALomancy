@@ -150,23 +150,30 @@ def primary_run(
             timestep=timestep_fs * fs,
             temperature_K=temperature,
             friction=0.002,
-            logfile=str(Path(out_dir, f"{md_name}.log")),
+            logfile=str(Path(out_dir, f"{md_name}_{initial_structure.info['job_id']}.log")),
         )
 
         snapshot_interval = steps * len(input_atoms_list) // (number_of_structures * 5)
 
-        dyn.attach(
-            lambda: write(
-                str(Path(out_dir, f"{md_name}_{initial_structure.info['job_id']}.xyz")),
-                dyn.atoms.copy(),
-                append=True,
-            ),
-            interval=snapshot_interval,
-        )
-        dyn.attach(
-            lambda: atom_traj_list.append(dyn.atoms.copy()), interval=snapshot_interval
-        )
-        dyn.run(steps=steps)
+        for i in range(steps // snapshot_interval):
+            # recording
+            write(
+                    str(Path(out_dir, f"{md_name}_{initial_structure.info['job_id']}.xyz")),
+                    dyn.atoms.copy(),
+                    append=True,
+                )
+            atom_traj_list.append(dyn.atoms.copy())
+            
+            # force check
+            max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
+            if np.any(max_forces > 1000):
+                print(
+                    f"Stopping MD run {md_name} due to excessive forces: {max_forces}"
+                )
+                break
+            # run
+            dyn.run(steps=snapshot_interval)
+
     if verbose > 0:
         print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
     
