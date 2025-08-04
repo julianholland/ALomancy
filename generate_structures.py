@@ -73,7 +73,7 @@ def get_structures_for_dft(
 
         remote_info.input_files = ["md_wfl.py", "al_wfl.py", base_mace]
         remote_info.output_files = [
-            str(Path(md_dir, f"{job_dict['md_run']['name']}_*.xyz"))
+            str(Path(md_dir, f"{job_dict['md_run']['name']}_*"))
         ]
         remote_info.check_interval = 10
         

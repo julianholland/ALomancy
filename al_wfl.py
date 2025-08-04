@@ -22,7 +22,7 @@ RI_DICT = {
     },
     "fhi-raccoon": {
         "pre_cmds": ["source /home/jholl/venvs/mace/bin/activate"],
-        "partitions": ["gpubig"],
+        "partitions": ["gpusmall"],
     },
     "nersc": {
         "pre_cmds": ["source /global/homes/j/joh1e19/.venvs/wfl/bin/activate"],
@@ -62,8 +62,7 @@ def get_remote_info(hpc: str, job: str, input_files: list[str] = []):
 
 
 def active_learn_mace(
-    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5, verbose: int = 0, start_loop: int = 0
-):
+    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5, verbose: int = 0, start_loop: int = 0, committee_size: int = 5, md_runs: int = 5):
     al_loop = start_loop
 
     train_xyzs = [
@@ -110,7 +109,7 @@ def active_learn_mace(
             remote_info=get_remote_info(
                 hpc="fhi-raccoon", job="mace_committee", input_files=[]
             ),
-            size_of_committee=5,
+            size_of_committee=committee_size,
             epochs=60,
         )
 
@@ -118,7 +117,7 @@ def active_learn_mace(
         md_input_structures = select_md_structures(
             base_name=base_name,
             job_name=JOB_DICT["md_run"]["name"],
-            number_of_mds=5,
+            number_of_mds=md_runs,
             chem_formula_list=[],
             atom_number_range=(9,21),
             enforce_chemical_diversity=True,
@@ -139,12 +138,13 @@ def active_learn_mace(
             job_dict=JOB_DICT,
             initial_atoms=md_input_structures,
             remote_info=get_remote_info(
-                hpc="fhi-raccoon", job="md_run", input_files=[]
+                # hpc="fhi-raccoon", job="md_run", input_files=[]
+                hpc="raven_gpu", job="md_run", input_files=[]
             ),
             number_of_structures=50,
             verbose=verbose,
             temperature=1200.0,
-            steps=100000,
+            steps=1000,
             timestep_fs=0.5,
             base_mace=str(
                 Path(
@@ -197,5 +197,7 @@ if __name__ == "__main__":
         ),
         number_of_al_loops=50,
         verbose=1,
-        start_loop=0
+        start_loop=0,
+        committee_size=3,
+        md_runs=2,
     )
