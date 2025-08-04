@@ -62,9 +62,9 @@ def get_remote_info(hpc: str, job: str, input_files: list[str] = []):
 
 
 def active_learn_mace(
-    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5, verbose: int = 0
+    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5, verbose: int = 0, start_loop: int = 0
 ):
-    al_loop = 0
+    al_loop = start_loop
 
     train_xyzs = [
         atoms
@@ -110,7 +110,7 @@ def active_learn_mace(
             remote_info=get_remote_info(
                 hpc="fhi-raccoon", job="mace_committee", input_files=[]
             ),
-            size_of_committee=2,
+            size_of_committee=5,
             epochs=60,
         )
 
@@ -118,7 +118,7 @@ def active_learn_mace(
         md_input_structures = select_md_structures(
             base_name=base_name,
             job_name=JOB_DICT["md_run"]["name"],
-            number_of_mds=2,
+            number_of_mds=5,
             chem_formula_list=[],
             atom_number_range=(9,21),
             enforce_chemical_diversity=True,
@@ -195,6 +195,7 @@ if __name__ == "__main__":
             train_data_dir,
             "ac_all_33_2025_07_31_ftrim_10_grpspread_01_train_set.xyz"
         ),
-        number_of_al_loops=1,
-        verbose=1
+        number_of_al_loops=50,
+        verbose=1,
+        start_loop=0
     )
