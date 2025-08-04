@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing_extensions import Optional
+from tqdm import tqdm
 
 
 def select_md_structures(
@@ -124,7 +125,14 @@ def primary_run(
     steps=100,
     temperature=300,
     md_name="md_run",
+    number_of_structures: int = 50,
+    timestep_fs: float = 0.5,
+    verbose: int = 0,
 ):
+    assert number_of_structures > 0, "Number of structures must be greater than 0"
+    assert steps > number_of_structures / len(input_atoms_list), (
+        "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
+    )
     calc = MACECalculator(
         model_paths=[base_mace],
         device=device,
@@ -139,11 +147,13 @@ def primary_run(
 
         dyn = Langevin(
             atoms=initial_structure,
-            timestep=0.5 * fs,
+            timestep=timestep_fs * fs,
             temperature_K=temperature,
             friction=0.002,
             logfile=str(Path(out_dir, f"{md_name}.log")),
         )
+
+        snapshot_interval = steps * len(input_atoms_list) // (number_of_structures * 5)
 
         dyn.attach(
             lambda: write(
@@ -151,12 +161,16 @@ def primary_run(
                 dyn.atoms.copy(),
                 append=True,
             ),
-            interval=50,
+            interval=snapshot_interval,
         )
-        dyn.attach(lambda: atom_traj_list.append(dyn.atoms.copy()), interval=50)
+        dyn.attach(
+            lambda: atom_traj_list.append(dyn.atoms.copy()), interval=snapshot_interval
+        )
         dyn.run(steps=steps)
-    print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
-    # return atom_traj_list
+    if verbose > 0:
+        print(f"MD run {md_name} completed, {len(atom_traj_list)} structures generated.")
+    
+    
 
 
 def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
@@ -270,7 +284,7 @@ def get_forces_for_all_maces(
             device="cpu",
             default_dtype="float64",
         )
-        for atoms in structure_list:
+        for atoms in tqdm(structure_list):
             atoms.calc = calc
         structure_forces_dict[f"fit_{i}"] = {
             f"structure_{i}": {

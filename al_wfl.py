@@ -5,7 +5,7 @@ from expyre.resources import Resources
 from mace_wfl import create_mace_committee
 from md_wfl import select_md_structures
 from generate_structures import get_structures_for_dft
-from dft_wfl import perform_dft_calculations  #
+from dft_wfl import perform_qe_calculations_per_cell  #
 from test_train_manager import add_new_training_data
 
 from pathlib import Path
@@ -62,9 +62,9 @@ def get_remote_info(hpc: str, job: str, input_files: list[str] = []):
 
 
 def active_learn_mace(
-    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5
+    initial_train_file_path, initial_test_file_path, number_of_al_loops: int = 5, verbose: int = 0, start_loop: int = 0
 ):
-    al_loop = 0
+    al_loop = start_loop
 
     train_xyzs = [
         atoms
@@ -110,7 +110,7 @@ def active_learn_mace(
             remote_info=get_remote_info(
                 hpc="fhi-raccoon", job="mace_committee", input_files=[]
             ),
-            size_of_committee=3,
+            size_of_committee=5,
             epochs=60,
         )
 
@@ -120,10 +120,10 @@ def active_learn_mace(
             job_name=JOB_DICT["md_run"]["name"],
             number_of_mds=5,
             chem_formula_list=[],
-            atom_number_range=(5,21),
+            atom_number_range=(9,21),
             enforce_chemical_diversity=True,
             train_xyzs=train_xyzs, # type: ignore
-            verbose=1,
+            verbose=verbose,
         ) 
 
         Path.mkdir(Path(loop_dir, "MD"), exist_ok=True, parents=True)
@@ -141,10 +141,11 @@ def active_learn_mace(
             remote_info=get_remote_info(
                 hpc="fhi-raccoon", job="md_run", input_files=[]
             ),
-            read_md=True,
             number_of_structures=50,
-            verbose=0,
-            save_xyz=True,
+            verbose=verbose,
+            temperature=1200.0,
+            steps=100000,
+            timestep_fs=0.5,
             base_mace=str(
                 Path(
                     loop_dir,
@@ -162,12 +163,13 @@ def active_learn_mace(
         )
 
         # 4. perform DFT calculations on selected structures
-        dft_structures = perform_dft_calculations(
+        dft_structures = perform_qe_calculations_per_cell(
             base_name=base_name,
             job_name=JOB_DICT["dft_run"]["name"],
             atoms_list=dft_input_structures,
             remote_info=get_remote_info(hpc="raven", job="dft_run", input_files=[]),
             hpc="raven",
+            verbose=verbose
         )
         print(dft_structures)
 
@@ -193,5 +195,7 @@ if __name__ == "__main__":
             train_data_dir,
             "ac_all_33_2025_07_31_ftrim_10_grpspread_01_train_set.xyz"
         ),
-        number_of_al_loops=1,
+        number_of_al_loops=50,
+        verbose=1,
+        start_loop=0
     )
