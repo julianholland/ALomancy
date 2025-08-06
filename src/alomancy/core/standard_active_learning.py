@@ -70,7 +70,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             input_structures = select_initial_structures(
                 base_name=base_name,
                 structure_generation_job_dict=job_dict['structure_generation'],
-                desired_initial_structures=5,
+                desired_initial_structures=2,
                 chem_formula_list=[],
                 atom_number_range=(9, 21),
                 enforce_chemical_diversity=True,
@@ -89,18 +89,17 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             function_kwargs={
                 "structure_generation_job_dict": job_dict["structure_generation"],
                 "total_md_runs": len(input_structures),
-                "out_dir": Path(base_name, job_dict["structure_generation"]["name"]),
                 "calc": MACECalculator(
                     model_paths=[mace_model_path],
                     device="cuda",
                 ),
                 "steps": 100,
                 "temperature": 300,
-                "desired_number_of_structures": 50,
+                "desired_number_of_structures": 20,
                 "timestep_fs": 0.5,
                 "verbose": self.verbose,}
 
-            md_output_trajectory_paths = md_remote_submitter(
+            md_remote_submitter(
                 remote_info=get_remote_info(job_dict['structure_generation'],
                                             input_files=[mace_model_path]),
                 base_name=base_name,
@@ -109,8 +108,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 function=run_md,
                 function_kwargs=function_kwargs,
             )
-
-            print(md_output_trajectory_paths)
         
             structure_list = []
             for i in range(len(input_structures)):

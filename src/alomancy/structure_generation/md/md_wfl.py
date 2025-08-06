@@ -26,6 +26,10 @@ def run_md(
     assert steps > desired_number_of_structures / total_md_runs, (
         "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
     )
+    # further asserting needed here to avoid:
+    # for i in range(steps // snapshot_interval):
+    #                ~~~~~~^^~~~~~~~~~~~~~~~~~~
+    # ZeroDivisionError: integer division or modulo by zero
 
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 
@@ -42,9 +46,9 @@ def run_md(
         logfile=str(Path(out_dir, f"{structure_generation_job_dict['name']}_{md_structure.info['job_id']}.log")),
     )
 
-    snapshot_interval = steps * total_md_runs // (desired_number_of_structures * 5)
+    snapshot_interval = steps * total_md_runs // desired_number_of_structures
 
-    for i in range(steps // snapshot_interval):
+    for _ in range(steps // snapshot_interval):
         # recording
         write(
             str(Path(out_dir, f"{structure_generation_job_dict['name']}.xyz")),
@@ -53,12 +57,12 @@ def run_md(
         )
         atom_traj_list.append(dyn.atoms.copy())
 
-        # force check
-        max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
-        if np.any(max_forces > 1000):
-            print(f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}")
-            break
-        # run
+        # # force check
+        # max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
+        # if np.any(max_forces > 1000):
+        #     print(f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}")
+        #     break
+        # # run
         dyn.run(steps=snapshot_interval)
 
     if verbose > 0:
