@@ -91,9 +91,9 @@ class BaseActiveLearningWorkflow(ABC):
             generated_structures = self.generate_structures(base_name, self.jobs_dict, train_xyzs, **kwargs)
             print(generated_structures)
 
-            # new_training_data = self.high_accuracy_evaluation(
-            #     base_name, self.jobs_dict['high_accuracy_evaluation'], generated_structures, **kwargs
-            # )
+            new_training_data = self.high_accuracy_evaluation(
+                base_name, self.jobs_dict['high_accuracy_evaluation'], generated_structures, **kwargs
+            )
 
             # train_xyzs = add_new_training_data(
             #     base_name, self.jobs_dict['high_accuracy_evaluation'], train_xyzs, new_training_data
@@ -105,34 +105,34 @@ class BaseActiveLearningWorkflow(ABC):
 
 
 
-    # @abstractmethod
-    # def high_accuracy_evaluation(
-    #     self, 
-    #     base_name: str, 
-    #     high_accuracy_eval_job_dict: dict,
-    #     structures: List[Atoms], 
-    #     **kwargs
-    # ) -> List[Atoms]:
-    #     """
-    #     Run high-accuracy calculations on selected structures.
+    @abstractmethod
+    def high_accuracy_evaluation(
+        self, 
+        base_name: str, 
+        high_accuracy_eval_job_dict: dict,
+        structures: List[Atoms], 
+        **kwargs
+    ) -> List[Atoms]:
+        """
+        Run high-accuracy calculations on selected structures.
         
-    #     Parameters
-    #     ----------
-    #     base_name : str
-    #         Base name for this AL loop
-    #     high_accuracy_eval_job_dict : dict
-    #         Dictionary containing job name and HPC parameters for high-accuracy evaluation
-    #     structures : List[Atoms]
-    #         Structures to evaluate with high-accuracy method
-    #     **kwargs
-    #         Additional keyword arguments
+        Parameters
+        ----------
+        base_name : str
+            Base name for this AL loop
+        high_accuracy_eval_job_dict : dict
+            Dictionary containing job name and HPC parameters for high-accuracy evaluation
+        structures : List[Atoms]
+            Structures to evaluate with high-accuracy method
+        **kwargs
+            Additional keyword arguments
             
-    #     Returns
-    #     -------
-    #     List[Atoms]
-    #         Structures with high-accuracy results (energy, forces, etc.)
-    #     """
-    #     pass
+        Returns
+        -------
+        List[Atoms]
+            Structures with high-accuracy results (energy, forces, etc.)
+        """
+        pass
 
     @abstractmethod
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> Optional[str]:

@@ -6,10 +6,18 @@ from alomancy.configs.remote_info import get_remote_info
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.analysis.mace_analysis import mace_al_loop_average_error
-from alomancy.structure_generation.select_initial_structures import select_initial_structures
+from alomancy.structure_generation.select_initial_structures import (
+    select_initial_structures,
+)
 from alomancy.structure_generation.md.md_remote_submitter import md_remote_submitter
 from alomancy.structure_generation.md.md_wfl import run_md
-from alomancy.structure_generation.find_high_sd_structures import find_high_sd_structures
+from alomancy.structure_generation.find_high_sd_structures import (
+    find_high_sd_structures,
+)
+from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
+from alomancy.high_accuracry_evaluation.dft.qe_remote_submitter import (
+    qe_remote_submitter,
+)
 
 
 from mace.calculators import MACECalculator
@@ -25,114 +33,184 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     AL Technique: Committee
     MLIP: MACE
     Structure Generation: MD
-    High-Accuracy Evaluation: QE (DFT)
+    High-Accuracy Evaluation: Quantum Espresso (DFT)
     """
 
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> Optional[str]:
+    def train_mlip(
+        self, base_name: str, mlip_committee_job_dict: dict, **kwargs
+    ) -> Optional[str]:
         workdir = Path("results", base_name)
-        
-        model_path_list= committee_remote_submitter(
-            remote_info=get_remote_info(mlip_committee_job_dict,
-                                        input_files=[str(Path(workdir, "train_set.xyz")),
-                                        str(Path(workdir, "test_set.xyz")),
-                                        ],),
+
+        model_path_list = committee_remote_submitter(
+            remote_info=get_remote_info(
+                mlip_committee_job_dict,
+                input_files=[
+                    str(Path(workdir, "train_set.xyz")),
+                    str(Path(workdir, "test_set.xyz")),
+                ],
+            ),
             base_name=base_name,
-            target_file=f'{mlip_committee_job_dict["name"]}_stagetwo_compiled.model',
+            target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
             seed=803,
             size_of_committee=2,
             function=mace_fit,
-            function_kwargs={"epochs": 10, "mlip_committee_job_dict": mlip_committee_job_dict, "workdir_str": str(workdir)},
+            function_kwargs={
+                "epochs": 10,
+                "mlip_committee_job_dict": mlip_committee_job_dict,
+                "workdir_str": str(workdir),
+            },
         )
 
-#         # 2. evaluate model
-    def evaluate_mlip(self, base_name: str, mlip_committee_job_dict: Dict, **kwargs) -> pd.DataFrame:
-        return mace_al_loop_average_error(mlip_committee_job_dict=mlip_committee_job_dict, plot=True)
+    #         # 2. evaluate model
+    def evaluate_mlip(
+        self, base_name: str, mlip_committee_job_dict: Dict, **kwargs
+    ) -> pd.DataFrame:
+        return mace_al_loop_average_error(
+            mlip_committee_job_dict=mlip_committee_job_dict, plot=True
+        )
 
-#         if self.verbose > 0:
-#             print(
-#                 f"AL Loop {al_loop}, MAE (energy): {evaluation_df['mae_e'].iloc[al_loop]}, MAE (forces): {evaluation_df['mae_f'].iloc[al_loop]}"
-#             )
-#         if evaluation_df["mae_f"].iloc[al_loop] < target_force_error:
-#             print(f"AL Loop {al_loop} reached target force error.")
-#             break
+    #         if self.verbose > 0:
+    #             print(
+    #                 f"AL Loop {al_loop}, MAE (energy): {evaluation_df['mae_e'].iloc[al_loop]}, MAE (forces): {evaluation_df['mae_f'].iloc[al_loop]}"
+    #             )
+    #         if evaluation_df["mae_f"].iloc[al_loop] < target_force_error:
+    #             print(f"AL Loop {al_loop} reached target force error.")
+    #             break
 
-#         # 3. select structures from train set to perform MD on
-    def generate_structures(self, base_name: str, job_dict: dict, train_atoms_list: List[Atoms], **kwargs) -> List[Atoms]:
-            
-            input_structures = select_initial_structures(
-                base_name=base_name,
-                structure_generation_job_dict=job_dict['structure_generation'],
-                desired_initial_structures=2,
-                chem_formula_list=[],
-                atom_number_range=(9, 21),
-                enforce_chemical_diversity=True,
-                train_atoms_list=train_atoms_list,  # type: ignore
-                verbose=self.verbose,
+    #         # 3. select structures from train set to perform MD on
+    def generate_structures(
+        self, base_name: str, job_dict: dict, train_atoms_list: List[Atoms], **kwargs
+    ) -> List[Atoms]:
+        input_structures = select_initial_structures(
+            base_name=base_name,
+            structure_generation_job_dict=job_dict["structure_generation"],
+            desired_initial_structures=2,
+            chem_formula_list=[],
+            atom_number_range=(9, 21),
+            enforce_chemical_diversity=True,
+            train_atoms_list=train_atoms_list,  # type: ignore
+            verbose=self.verbose,
+        )
+
+        Path.mkdir(
+            Path("results", base_name, job_dict["structure_generation"]["name"]),
+            exist_ok=True,
+            parents=True,
+        )
+        write(
+            Path(
+                "results",
+                base_name,
+                job_dict["structure_generation"]["name"],
+                f"{job_dict['structure_generation']['name']}_input_structures.xyz",
+            ),
+            input_structures,
+            format="extxyz",
+        )
+        base_mace_model_path = str(
+            Path(
+                "results",
+                base_name,
+                job_dict["mlip_committee"]["name"],
+                "fit_0",
+                f"{job_dict['mlip_committee']['name']}_stagetwo.model",
             )
+        )
 
-            Path.mkdir(Path('results', base_name, job_dict["structure_generation"]["name"]), exist_ok=True, parents=True)
-            write(
-                Path('results', base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_input_structures.xyz"),
-                input_structures,
-                format="extxyz",
-            )
-            base_mace_model_path = str(Path('results', base_name, job_dict["mlip_committee"]["name"], "fit_0", f"{job_dict['mlip_committee']['name']}_stagetwo.model"))
+        function_kwargs = {
+            "structure_generation_job_dict": job_dict["structure_generation"],
+            "total_md_runs": len(input_structures),
+            "model_path": [
+                base_mace_model_path
+            ],  # need to pass model path to preserve consistant dtype
+            "steps": 100,
+            "temperature": 300,
+            "desired_number_of_structures": 20,
+            "timestep_fs": 0.5,
+            "verbose": self.verbose,
+        }
 
-            function_kwargs={
-                "structure_generation_job_dict": job_dict["structure_generation"],
-                "total_md_runs": len(input_structures),
-                "model_path": [base_mace_model_path], # need to pass model path to preserve consistant dtype
-                "steps": 100,
-                "temperature": 300,
-                "desired_number_of_structures": 20,
-                "timestep_fs": 0.5,
-                "verbose": self.verbose,}
+        md_trajectory_paths = md_remote_submitter(
+            remote_info=get_remote_info(
+                job_dict["structure_generation"], input_files=[base_mace_model_path]
+            ),
+            base_name=base_name,
+            target_file=f"{job_dict['structure_generation']['name']}.xyz",
+            input_atoms_list=input_structures,
+            function=run_md,
+            function_kwargs=function_kwargs,
+        )
 
-            md_trajectory_paths=md_remote_submitter(
-                remote_info=get_remote_info(job_dict['structure_generation'],
-                                            input_files=[base_mace_model_path]),
-                base_name=base_name,
-                target_file=f"{job_dict['structure_generation']['name']}.xyz",
-                input_atoms_list=input_structures,
-                function=run_md,
-                function_kwargs=function_kwargs,
-            )
-        
-            structure_list = []
-            for md_trajectory_path in md_trajectory_paths:
-                structures = read(md_trajectory_path, ":", format="extxyz")
-                structure_list.extend(structures)
-        
-            if self.verbose > 0:
-                print(len(structure_list), "structures found from trajectory files.")
-            
+        structure_list = []
+        for md_trajectory_path in md_trajectory_paths:
+            structures = read(md_trajectory_path, ":", format="extxyz")
+            structure_list.extend(structures)
 
-            model_paths_list = list(Path.glob(
-                Path('results', base_name, job_dict['mlip_committee']['name']),
+        if self.verbose > 0:
+            print(len(structure_list), "structures found from trajectory files.")
+
+        model_paths_list = list(
+            Path.glob(
+                Path("results", base_name, job_dict["mlip_committee"]["name"]),
                 f"fit_*/{job_dict['mlip_committee']['name']}_stagetwo.model",
-            ))
-
-            list_of_other_calculators = [
-                MACECalculator(
-                    model_paths=[mace_model_path],
-                    device="cpu",
-                    default_dtype="float64",
-                )
-                for mace_model_path in model_paths_list if str(mace_model_path) != base_mace_model_path
-            ]
-            high_sd_structures = find_high_sd_structures(
-                structure_list=structure_list,
-                base_name=base_name,
-                job_dict=job_dict,
-                list_of_other_calculators=list_of_other_calculators,
-                forces_name='REF_forces',
-                energy_name='REF_energy',
-                verbose=self.verbose,
             )
+        )
+
+        list_of_other_calculators = [
+            MACECalculator(
+                model_paths=[mace_model_path],
+                device="cpu",
+                default_dtype="float64",
+            )
+            for mace_model_path in model_paths_list
+            if str(mace_model_path) != base_mace_model_path
+        ]
+        high_sd_structures = find_high_sd_structures(
+            structure_list=structure_list,
+            base_name=base_name,
+            job_dict=job_dict,
+            list_of_other_calculators=list_of_other_calculators,
+            forces_name="REF_forces",
+            energy_name="REF_energy",
+            verbose=self.verbose,
+        )
+
+        # Assign job IDs to high SD structures
+        for i in range(len(high_sd_structures)):
+            high_sd_structures[i].info["job_id"] = i
+
+        return high_sd_structures
+
+    def high_accuracy_evaluation(
+        self,
+        base_name: str,
+        high_accuracy_eval_job_dict: dict,
+        structures: List[Atoms],
+        **kwargs,
+    ) -> List[Atoms]:
+       
+        function_kwargs = {
+            "base_name": base_name,
+            "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
+            "verbose": self.verbose,
+        }
+
+        high_accuracy_structures = qe_remote_submitter(
+            remote_info=get_remote_info(
+                high_accuracy_eval_job_dict, input_files=[]
+            ),
+            base_name=base_name,
+            target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
+            input_atoms_list=structures,
+            function=run_qe,
+            function_kwargs=function_kwargs,
+        )
+
+        return high_accuracy_structures
+
+    # 4. select high standard deviation structures from MD
 
 
-            return high_sd_structures
-        # 4. select high standard deviation structures from MD
 #         dft_input_structures = get_structures_for_dft(
 #             base_name=base_name,
 #             job_dict=JOB_DICT,

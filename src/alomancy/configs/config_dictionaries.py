@@ -19,6 +19,10 @@ def load_dictionaries():
     dict
         A dictionary containing the HPC and job information.
     """
+    PP_DICT = {
+            "C": "C.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "Na": "na_pbe_v1.5.uspp.F.UPF",
+        }  # make this general
 
     JOB_DICT = {
         "mlip_committee": {
@@ -52,7 +56,16 @@ def load_dictionaries():
             "hpc": {
                 "hpc_name": "raven",
                 "pre_cmds": ["source /u/jholl/venvs/wfl/bin/activate"],
-                "partitions": ["gpu"],
+                "partitions": ["general"],
+                "node_info": {
+                    "ranks_per_system": 72,
+                    "ranks_per_node": 72,
+                    "threads_per_rank": 1,
+                    "max_mem_per_node": "60GB",
+                },
+                "pwx_path": "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x",
+                "pp_path": "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency",
+                "pseudo_dict": PP_DICT,
             },
         },
     }
