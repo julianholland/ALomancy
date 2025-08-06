@@ -15,7 +15,7 @@ def run_md(
     initial_structure: Atoms,
     total_md_runs: int,
     out_dir,
-    calc,
+    model_path,
     steps=100,
     temperature=300,
     desired_number_of_structures: int = 50,
@@ -36,7 +36,11 @@ def run_md(
     atom_traj_list = []
 
     md_structure = initial_structure.copy()
-    md_structure.calc = calc
+    md_structure.calc = MACECalculator(
+        model_paths=model_path,
+        device="cuda",
+        default_dtype="float64",
+    )
 
     dyn = Langevin(
         atoms=md_structure,
@@ -57,12 +61,12 @@ def run_md(
         )
         atom_traj_list.append(dyn.atoms.copy())
 
-        # # force check
-        # max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
-        # if np.any(max_forces > 1000):
-        #     print(f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}")
-        #     break
-        # # run
+        # force check
+        max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
+        if np.any(max_forces > 1000):
+            print(f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}")
+            break
+        # run
         dyn.run(steps=snapshot_interval)
 
     if verbose > 0:

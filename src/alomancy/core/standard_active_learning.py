@@ -89,10 +89,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             function_kwargs={
                 "structure_generation_job_dict": job_dict["structure_generation"],
                 "total_md_runs": len(input_structures),
-                "calc": MACECalculator(
-                    model_paths=[mace_model_path],
-                    device="cuda",
-                ),
+                "model_paths": [mace_model_path], # need to pass model path to preserve consistant dtype
                 "steps": 100,
                 "temperature": 300,
                 "desired_number_of_structures": 20,
