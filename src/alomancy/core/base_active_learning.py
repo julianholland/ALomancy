@@ -6,6 +6,7 @@ from ase import Atoms
 from ase.io import read, write
 from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.utils.test_train_manager import add_new_training_data
+import pandas as pd
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -81,13 +82,14 @@ class BaseActiveLearningWorkflow(ABC):
                 print(f"  Test set size: {len(test_xyzs)}")
 
             # Core AL loop steps - these methods must be implemented by subclasses
-            self.train_mlip(base_name, self.jobs_dict['mlip_committee'], train_xyzs, **kwargs)
-            
-            # evaluation_results = self.evaluate_mlip(base_name, self.jobs_dict['mace_committee'], test_xyzs, **kwargs)
-            # if self.verbose > 0:
-            #     print(f"AL Loop {loop} evaluation results: {evaluation_results}")
+            self.train_mlip(base_name, self.jobs_dict['mlip_committee'], **kwargs)
 
-            # generated_structures = self.generate_structures(base_name, self.jobs_dict['generate_structures'], train_xyzs, **kwargs)
+            evaluation_results = self.evaluate_mlip(base_name, self.jobs_dict['mlip_committee'], **kwargs)
+            if self.verbose > 0:
+                print(f"AL Loop {loop} evaluation results: \n{evaluation_results}")
+
+            generated_structures = self.generate_structures(base_name, self.jobs_dict, train_xyzs, **kwargs)
+            print(generated_structures)
 
             # new_training_data = self.high_accuracy_evaluation(
             #     base_name, self.jobs_dict['high_accuracy_evaluation'], generated_structures, **kwargs
@@ -101,28 +103,7 @@ class BaseActiveLearningWorkflow(ABC):
             #     print(f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures.")
 
 
-    # @abstractmethod
-    # def generate_structures(self, base_name: str, structure_generation_job_dict: dict, train_data: List[Atoms], **kwargs) -> List[Atoms]:
-    #     """
-    #     Generate structures for active learning selection.
-        
-    #     Parameters
-    #     ----------
-    #     base_name : str
-    #         Base name for this AL loop
-    #     structure_generation_job_dict : dict
-    #         Dictionary containing job name and HPC parameters for structure generation
-    #     train_data : List[Atoms]
-    #         Current training data
-    #     **kwargs
-    #         Additional keyword arguments
-            
-    #     Returns
-    #     -------
-    #     List[Atoms]
-    #         Generated structures for high-accuracy evaluation
-    #     """
-    #     pass
+
 
     # @abstractmethod
     # def high_accuracy_evaluation(
@@ -154,7 +135,7 @@ class BaseActiveLearningWorkflow(ABC):
     #     pass
 
     @abstractmethod
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, train_data: List[Atoms], **kwargs) -> Optional[str]:
+    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> Optional[str]:
         """
         Train machine learning interatomic potential.
         
@@ -176,27 +157,48 @@ class BaseActiveLearningWorkflow(ABC):
         """
         pass
 
-    # @abstractmethod
-    # def evaluate_mlip(self, base_name: str, mlip_committee_job_dict: dict, test_data: List[Atoms], **kwargs) -> Dict[str, Any]:
-    #     """
-    #     Evaluate MLIP model on test data.
+    @abstractmethod
+    def evaluate_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> pd.DataFrame:
+        """
+        Evaluate MLIP model on test data.
         
-    #     Parameters
-    #     ----------
-    #     base_name : str
-    #         Base name for this AL loop
-    #     mlip_committee_job_dict : dict
-    #         Dictionary containing job name and HPC parameters for MLIP evaluation
-    #     test_data : List[Atoms]
-    #         Test data for evaluation
-    #     **kwargs
-    #         Additional keyword arguments
+        Parameters
+        ----------
+        base_name : str
+            Base name for this AL loop
+        mlip_committee_job_dict : dict
+            Dictionary containing job name and HPC parameters for MLIP evaluation
+        test_data : List[Atoms]
+            Test data for evaluation
+        **kwargs
+            Additional keyword arguments
             
-    #     Returns
-    #     -------
-    #     Dict[str, Any]
-    #         Evaluation metrics (RMSE, MAE, etc.)
-    #     """
-    #     pass
+        Returns
+        -------
+        Dict[str, Any]
+            Evaluation metrics (RMSE, MAE, etc.)
+        """
+        pass
 
-    
+    @abstractmethod
+    def generate_structures(self, base_name: str, structure_generation_job_dict: dict, train_data: List[Atoms], **kwargs) -> List[Atoms]:
+        """
+        Generate structures for active learning selection.
+        
+        Parameters
+        ----------
+        base_name : str
+            Base name for this AL loop
+        structure_generation_job_dict : dict
+            Dictionary containing job name and HPC parameters for structure generation
+        train_data : List[Atoms]
+            Current training data
+        **kwargs
+            Additional keyword arguments
+            
+        Returns
+        -------
+        List[Atoms]
+            Generated structures for high-accuracy evaluation
+        """
+        pass

@@ -5,7 +5,16 @@ from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.analysis.mace_analysis import mace_al_loop_average_error
+from alomancy.structure_generation.select_initial_structures import select_initial_structures
+from alomancy.structure_generation.md.md_remote_submitter import md_remote_submitter
+from alomancy.structure_generation.md.md_wfl import run_md
 
+
+from mace.calculators import MACECalculator
+from ase.io import read, write
+
+import pandas as pd
 
 from typing import List, Optional, Dict, Any
 
@@ -27,15 +36,16 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     High-Accuracy Evaluation: QE (DFT)
     """
 
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, train_data: List[Atoms], **kwargs) -> Optional[str]:
+    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> Optional[str]:
         workdir = Path("results", base_name)
         
-        committee_remote_submitter(
+        model_path_list= committee_remote_submitter(
             remote_info=get_remote_info(mlip_committee_job_dict,
                                         input_files=[str(Path(workdir, "train_set.xyz")),
                                         str(Path(workdir, "test_set.xyz")),
                                         ],),
             base_name=base_name,
+            target_file=f'{mlip_committee_job_dict["name"]}_stagetwo_compiled.model',
             seed=803,
             size_of_committee=2,
             function=mace_fit,
@@ -43,7 +53,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
 
 #         # 2. evaluate model
-#         evaluation_df = mace_al_loop_average_error(base_name, plot=False)
+    def evaluate_mlip(self, base_name: str, mlip_committee_job_dict: Dict, **kwargs) -> pd.DataFrame:
+        return mace_al_loop_average_error(mlip_committee_job_dict=mlip_committee_job_dict, plot=True)
+
 #         if self.verbose > 0:
 #             print(
 #                 f"AL Loop {al_loop}, MAE (energy): {evaluation_df['mae_e'].iloc[al_loop]}, MAE (forces): {evaluation_df['mae_f'].iloc[al_loop]}"
@@ -53,25 +65,63 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 #             break
 
 #         # 3. select structures from train set to perform MD on
-#         md_input_structures = select_md_structures(
-#             base_name=base_name,
-#             job_name=JOB_DICT["md_run"]["name"],
-#             number_of_mds=md_runs,
-#             chem_formula_list=[],
-#             atom_number_range=(9, 21),
-#             enforce_chemical_diversity=True,
-#             train_xyzs=train_xyzs,  # type: ignore
-#             verbose=verbose,
-#         )
+    def generate_structures(self, base_name: str, job_dict: dict, train_atoms_list: List[Atoms], **kwargs) -> List[Atoms]:
+            
+            input_structures = select_initial_structures(
+                base_name=base_name,
+                structure_generation_job_dict=job_dict['structure_generation'],
+                desired_initial_structures=5,
+                chem_formula_list=[],
+                atom_number_range=(9, 21),
+                enforce_chemical_diversity=True,
+                train_atoms_list=train_atoms_list,  # type: ignore
+                verbose=self.verbose,
+            )
 
-#         Path.mkdir(Path(loop_dir, "MD"), exist_ok=True, parents=True)
-#         write(
-#             Path(loop_dir, "MD", "md_input_structures.xyz"),
-#             md_input_structures,
-#             format="extxyz",
-#         )
+            Path.mkdir(Path('results', base_name, job_dict["structure_generation"]["name"]), exist_ok=True, parents=True)
+            write(
+                Path('results', base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_input_structures.xyz"),
+                input_structures,
+                format="extxyz",
+            )
+            mace_model_path = str(Path('results', base_name, job_dict["mlip_committee"]["name"], "fit_0", f"{job_dict['mlip_committee']['name']}_stagetwo.model"))
 
-#         # 4. select high standard deviation structures from MD
+            function_kwargs={
+                "structure_generation_job_dict": job_dict["structure_generation"],
+                "total_md_runs": len(input_structures),
+                "out_dir": Path(base_name, job_dict["structure_generation"]["name"]),
+                "calc": MACECalculator(
+                    model_paths=[mace_model_path],
+                    device="cuda",
+                ),
+                "steps": 100,
+                "temperature": 300,
+                "desired_number_of_structures": 50,
+                "timestep_fs": 0.5,
+                "verbose": self.verbose,}
+
+            md_output_trajectory_paths = md_remote_submitter(
+                remote_info=get_remote_info(job_dict['structure_generation'],
+                                            input_files=[mace_model_path]),
+                base_name=base_name,
+                target_file=f"{job_dict['structure_generation']['name']}.xyz",
+                input_atoms_list=input_structures,
+                function=run_md,
+                function_kwargs=function_kwargs,
+            )
+
+            print(md_output_trajectory_paths)
+        
+            structure_list = []
+            for i in range(len(input_structures)):
+                structures = read(Path('results', base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_{i}.xyz"), ":", format="extxyz")
+                structure_list.extend(structures)
+        
+            if self.verbose > 0:
+                print(len(structure_list), "structures found from trajectory files.")
+            
+            return structure_list
+        # 4. select high standard deviation structures from MD
 #         dft_input_structures = get_structures_for_dft(
 #             base_name=base_name,
 #             job_dict=JOB_DICT,
