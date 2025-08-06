@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
+from multiprocessing import dummy
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from ase import Atoms
 from ase.io import read, write
 from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.utils.test_train_manager import add_new_training_data
+
 
 class BaseActiveLearningWorkflow(ABC):
     """
@@ -38,7 +40,7 @@ class BaseActiveLearningWorkflow(ABC):
         that must be implemented by subclasses.
         """
         
-        def load_initial_train_test_sets():
+        def load_initial_train_test_sets(dummy_run: bool = False) -> Tuple[List[Atoms], List[Atoms]]:
             train_xyzs = [
                 atoms
                 for atoms in read(self.initial_train_file, ":")
@@ -53,9 +55,13 @@ class BaseActiveLearningWorkflow(ABC):
             assert len(train_xyzs) > 1, "More than one training structure required."
             assert len(test_xyzs) > 1, "More than one test structure required."
 
+            if dummy_run:
+                train_xyzs = train_xyzs[:500]
+                test_xyzs = test_xyzs[:200]
+
             return train_xyzs, test_xyzs
 
-        train_xyzs, test_xyzs = load_initial_train_test_sets()
+        train_xyzs, test_xyzs = load_initial_train_test_sets(dummy_run=True)
 
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"

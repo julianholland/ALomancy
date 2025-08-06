@@ -34,13 +34,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             remote_info=get_remote_info(mlip_committee_job_dict,
                                         input_files=[str(Path(workdir, "train_set.xyz")),
                                         str(Path(workdir, "test_set.xyz")),
-                                        # 'mace_wfl.py'
                                         ],),
             base_name=base_name,
             seed=803,
-            size_of_committee=5,
+            size_of_committee=2,
             function=mace_fit,
-            function_kwargs={"epochs": 80, "mlip_committee_job_dict": mlip_committee_job_dict, "workdir_str": str(workdir)},
+            function_kwargs={"epochs": 10, "mlip_committee_job_dict": mlip_committee_job_dict, "workdir_str": str(workdir)},
         )
 
 #         # 2. evaluate model
