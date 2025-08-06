@@ -9,6 +9,7 @@ from alomancy.analysis.mace_analysis import mace_al_loop_average_error
 from alomancy.structure_generation.select_initial_structures import select_initial_structures
 from alomancy.structure_generation.md.md_remote_submitter import md_remote_submitter
 from alomancy.structure_generation.md.md_wfl import run_md
+from alomancy.structure_generation.find_high_sd_structures import find_high_sd_structures
 
 
 from mace.calculators import MACECalculator
@@ -18,16 +19,7 @@ import pandas as pd
 
 from typing import List, Optional, Dict, Any
 
-# def active_learn_mace(
-#     initial_train_file_path,
-#     initial_test_file_path,
-#     number_of_al_loops: int = 5,
-#     verbose: int = 0,
-#     start_loop: int = 0,
-#     target_force_error: float = 0.05,  # eV
-#     committee_size: int = 5,
-#     md_runs: int = 5,
-# ):
+
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
     AL Technique: Committee
@@ -84,21 +76,21 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 input_structures,
                 format="extxyz",
             )
-            mace_model_path = str(Path('results', base_name, job_dict["mlip_committee"]["name"], "fit_0", f"{job_dict['mlip_committee']['name']}_stagetwo.model"))
+            base_mace_model_path = str(Path('results', base_name, job_dict["mlip_committee"]["name"], "fit_0", f"{job_dict['mlip_committee']['name']}_stagetwo.model"))
 
             function_kwargs={
                 "structure_generation_job_dict": job_dict["structure_generation"],
                 "total_md_runs": len(input_structures),
-                "model_paths": [mace_model_path], # need to pass model path to preserve consistant dtype
+                "model_path": [base_mace_model_path], # need to pass model path to preserve consistant dtype
                 "steps": 100,
                 "temperature": 300,
                 "desired_number_of_structures": 20,
                 "timestep_fs": 0.5,
                 "verbose": self.verbose,}
 
-            md_remote_submitter(
+            md_trajectory_paths=md_remote_submitter(
                 remote_info=get_remote_info(job_dict['structure_generation'],
-                                            input_files=[mace_model_path]),
+                                            input_files=[base_mace_model_path]),
                 base_name=base_name,
                 target_file=f"{job_dict['structure_generation']['name']}.xyz",
                 input_atoms_list=input_structures,
@@ -107,14 +99,39 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
         
             structure_list = []
-            for i in range(len(input_structures)):
-                structures = read(Path('results', base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_{i}.xyz"), ":", format="extxyz")
+            for md_trajectory_path in md_trajectory_paths:
+                structures = read(md_trajectory_path, ":", format="extxyz")
                 structure_list.extend(structures)
         
             if self.verbose > 0:
                 print(len(structure_list), "structures found from trajectory files.")
             
-            return structure_list
+
+            model_paths_list = list(Path.glob(
+                Path('results', base_name, job_dict['mlip_committee']['name']),
+                f"fit_*/{job_dict['mlip_committee']['name']}_stagetwo.model",
+            ))
+
+            list_of_other_calculators = [
+                MACECalculator(
+                    model_paths=[mace_model_path],
+                    device="cpu",
+                    default_dtype="float64",
+                )
+                for mace_model_path in model_paths_list if str(mace_model_path) != base_mace_model_path
+            ]
+            high_sd_structures = find_high_sd_structures(
+                structure_list=structure_list,
+                base_name=base_name,
+                job_dict=job_dict,
+                list_of_other_calculators=list_of_other_calculators,
+                forces_name='REF_forces',
+                energy_name='REF_energy',
+                verbose=self.verbose,
+            )
+
+
+            return high_sd_structures
         # 4. select high standard deviation structures from MD
 #         dft_input_structures = get_structures_for_dft(
 #             base_name=base_name,
