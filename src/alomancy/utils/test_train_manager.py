@@ -5,7 +5,7 @@ from ase import Atoms
 
 def add_new_training_data(
     base_name: str,
-    job_dict: dict,
+    high_accuracy_eval_job_dict: dict,
     train_xyzs: list[Atoms],
 ):
     """
@@ -13,9 +13,14 @@ def add_new_training_data(
 
     Args:
         base_name (str): Base name for the job.
-        job_name_dict (dict): Dictionary containing job names for different runs.
+        high_accuracy_eval_job_dict (dict): Dictionary containing job names for different runs.
     """
-    path_list= list(Path.glob(Path("results", base_name, "DFT"), f"{job_dict['dft_run']['name']}_*_out_structures.xyz"))
+    path_list = list(
+        Path.glob(
+            Path("results", base_name, high_accuracy_eval_job_dict["name"]),
+            f"{high_accuracy_eval_job_dict['name']}_*_out_structures.xyz",
+        )
+    )
     new_dft_structures = []
 
     for path in path_list:

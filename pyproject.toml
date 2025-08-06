@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alomancy"
+dynamic = ["version"]
+description = "Active Learning framework for atomistic simulations with MACE using wfl"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Julian Holland", email = "your.email@example.com"}  # Update with your info
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "ase>=3.22.0",
+    "numpy>=1.21.0",
+    "pandas>=1.3.0",
+    "matplotlib>=3.5.0",
+    "scipy>=1.7.0",
+    # Pin these to compatible versions
+    "wfl",
+    "expyre",  # Let wfl pull in the correct expyre version
+    "mace-torch",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "sphinxcontrib-napoleon",
+]
+
+[project.scripts]
+alomancy = "alomancy.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/julianholland/ALomancy"
+Repository = "https://github.com/julianholland/ALomancy"
+Documentation = "https://alomancy.readthedocs.io"
+
+[tool.setuptools_scm]
+write_to = "src/alomancy/version.py"
+
+# Add setuptools configuration for src layout
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

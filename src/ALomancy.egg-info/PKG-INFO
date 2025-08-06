@@ -1,0 +1,113 @@
+Metadata-Version: 2.4
+Name: ALomancy
+Version: 0.1.dev16+gaa94b57.d20250806
+Summary: Active Learning framework for atomistic simulations with MACE using wfl
+Author-email: Julian Holland <your.email@example.com>
+License: MIT
+Project-URL: Homepage, https://github.com/julianholland/ALomancy
+Project-URL: Repository, https://github.com/julianholland/ALomancy
+Project-URL: Documentation, https://alomancy.readthedocs.io
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: ase>=3.22.0
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: pandas>=1.3.0
+Requires-Dist: matplotlib>=3.5.0
+Requires-Dist: scipy>=1.7.0
+Requires-Dist: wfl
+Requires-Dist: expyre
+Requires-Dist: mace-torch
+Provides-Extra: dev
+Requires-Dist: pytest>=6.0; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx; extra == "docs"
+Requires-Dist: sphinx-rtd-theme; extra == "docs"
+Requires-Dist: sphinxcontrib-napoleon; extra == "docs"
+
+<div align="center">
+  <h1><code>ALomancy</code>🔮</h1>
+  <p><i>An active learning package using wfl for MACE</i></p>
+</div>
+
+***
+## Key Features 🎰
+
+- Modular AL routines
+- Easy means to switch between multiple HPCs during the workflow
+- Consistant evaluation
+
+
+## Package Layout
+
+```
+ALomancy/
+├── pyproject.toml                 # Modern Python packaging
+├── README.md                      # Package documentation
+├── LICENSE                        # License file
+├── .gitignore                     # Git ignore file
+├── alomancy/                      # Main package directory
+│   ├── __init__.py               # Package initialization
+│   ├── version.py                # Version information
+│   ├── config/                   # Configuration management
+│   │   ├── __init__.py
+│   │   ├── defaults.py           # Default configurations
+│   │   └── systems.py            # HPC system configurations
+│   ├── core/                     # Core functionality
+│   │   ├── __init__.py
+│   │   ├── active_learning.py    # Main AL workflow (from al_wfl.py)
+│   │   └── remote_info.py        # Remote execution utilities
+│   ├── md/                       # Molecular dynamics
+│   │   ├── __init__.py
+│   │   ├── workflows.py          # MD workflows (from md_wfl.py)
+│   │   └── structure_selection.py # Structure selection logic
+│   ├── dft/                      # DFT calculations
+│   │   ├── __init__.py
+│   │   └── workflows.py          # DFT workflows (from dft_wfl.py)
+│   ├── mace/                     # MACE-specific functionality
+│   │   ├── __init__.py
+│   │   └── training.py           # MACE training workflows
+│   ├── analysis/                 # Analysis and plotting
+│   │   ├── __init__.py
+│   │   ├── plotting.py           # Plotting utilities
+│   │   └── metrics.py            # Analysis metrics
+│   ├── utils/                    # Utility functions
+│   │   ├── __init__.py
+│   │   ├── io.py                 # File I/O utilities
+│   │   └── structures.py         # Structure manipulation
+│   └── cli/                      # Command-line interface
+│       ├── __init__.py
+│       └── main.py               # CLI entry points
+├── tests/                        # Test suite
+│   ├── __init__.py
+│   ├── test_core/
+│   ├── test_md/
+│   ├── test_dft/
+│   └── test_analysis/
+├── docs/                         # Documentation
+│   ├── conf.py
+│   ├── index.rst
+│   └── tutorials/
+├── examples/                     # Example scripts
+│   ├── basic_workflow.py
+│   └── advanced_workflow.py
+└── configs/                      # Configuration files
+    ├── systems/
+    │   ├── raven.json
+    │   ├── nersc.json
+    │   └── fhi-raccoon.json
+    └── job_defaults.json
+```
