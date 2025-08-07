@@ -55,7 +55,7 @@ def load_dictionaries():
             "max_time": "30m",
             "hpc": {
                 "hpc_name": "raven",
-                "pre_cmds": ["source /u/jholl/venvs/wfl/bin/activate"],
+                "pre_cmds": ["source /u/jholl/venvs/alomancy/bin/activate"],
                 "partitions": ["general"],
                 "node_info": {
                     "ranks_per_system": 72,

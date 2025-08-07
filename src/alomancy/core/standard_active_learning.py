@@ -195,7 +195,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             "verbose": self.verbose,
         }
 
-        high_accuracy_structures = qe_remote_submitter(
+        high_accuracy_structure_paths = qe_remote_submitter(
             remote_info=get_remote_info(
                 high_accuracy_eval_job_dict, input_files=[]
             ),
@@ -205,6 +205,11 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             function=run_qe,
             function_kwargs=function_kwargs,
         )
+        
+        high_accuracy_structures = []
+        for path in high_accuracy_structure_paths:
+            structure = read(path, format="extxyz")
+            high_accuracy_structures.append(structure)
 
         return high_accuracy_structures
 

@@ -1,4 +1,3 @@
--e git+https://github.com/julianholland/al_wfl.git@aa94b571741a72963419f9ae82a11da7109126e0#egg=ALomancy
 ase==3.25.0
 click==8.2.1
 ConfigArgParse==1.7.1

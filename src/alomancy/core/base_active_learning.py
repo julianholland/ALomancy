@@ -95,12 +95,10 @@ class BaseActiveLearningWorkflow(ABC):
                 base_name, self.jobs_dict['high_accuracy_evaluation'], generated_structures, **kwargs
             )
 
-            # train_xyzs = add_new_training_data(
-            #     base_name, self.jobs_dict['high_accuracy_evaluation'], train_xyzs, new_training_data
-            # )
+            train_xyzs += new_training_data
 
-            # if self.verbose > 0:
-            #     print(f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures.")
+            if self.verbose > 0:
+                print(f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures.")
 
 
 

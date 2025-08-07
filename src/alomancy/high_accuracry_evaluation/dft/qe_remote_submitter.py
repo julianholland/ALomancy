@@ -38,7 +38,7 @@ def qe_remote_submitter(
     job_configs = [
         {
             "function_kwargs": {
-                "initial_structure": input_atoms_list[i],
+                "input_structure": input_atoms_list[i],
                 "out_dir": str(Path(f"{qe_dir}/qe_output_{i}")),
                 **function_kwargs,
             }

@@ -1,6 +1,8 @@
 from ase.calculators.espresso import Espresso, EspressoProfile
 import numpy as np
 from ase import Atoms
+from ase.io import write
+from pathlib import Path
 
 
 
@@ -80,7 +82,7 @@ def find_optimal_npool(
     return int(npool)
 
 
-def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict):
+def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict, out_dir):
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
@@ -98,21 +100,26 @@ def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict):
         input_data=get_qe_input_data("scf"),
         kpts=list(kpt_arr),
         pseudopotentials=high_accuracy_eval_hpc_job_dict["pseudo_dict"],
+        directory=out_dir
     )
 
 def run_qe(
         input_structure: Atoms,
-        base_name: str,
+        out_dir: str,
         high_accuracy_eval_job_dict: dict,
         verbose: int = 0,
     ):
     
-    calc = create_qe_calc_object(
-            input_structure, high_accuracy_eval_job_dict['hpc']
-        )
-    input_structure.calc = calc
+    Path(out_dir).mkdir(exist_ok=True, parents=True)
 
+    calc = create_qe_calc_object(
+            input_structure, high_accuracy_eval_job_dict['hpc'], out_dir
+        )
+
+    input_structure.calc = calc
     input_structure.get_potential_energy()
+
+    write(Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"), input_structure, format="extxyz")
 
     return input_structure
 
