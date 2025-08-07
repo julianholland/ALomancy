@@ -1,31 +1,28 @@
-from ase import Atoms
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
-from alomancy.configs.remote_info import get_remote_info
-from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
-from alomancy.mlip.mace_wfl import mace_fit
+import pandas as pd
+from ase import Atoms
+from ase.io import read, write
+from mace.calculators import MACECalculator
+
 from alomancy.analysis.mace_analysis import mace_al_loop_average_error
-from alomancy.structure_generation.select_initial_structures import (
-    select_initial_structures,
-)
-from alomancy.structure_generation.md.md_remote_submitter import md_remote_submitter
-from alomancy.structure_generation.md.md_wfl import run_md
-from alomancy.structure_generation.find_high_sd_structures import (
-    find_high_sd_structures,
-)
-from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
+from alomancy.configs.remote_info import get_remote_info
+from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracry_evaluation.dft.qe_remote_submitter import (
     qe_remote_submitter,
 )
-
-
-from mace.calculators import MACECalculator
-from ase.io import read, write
-
-import pandas as pd
-
-from typing import List, Optional, Dict, Any
+from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
+from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
+from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.structure_generation.find_high_sd_structures import (
+    find_high_sd_structures,
+)
+from alomancy.structure_generation.md.md_remote_submitter import md_remote_submitter
+from alomancy.structure_generation.md.md_wfl import run_md
+from alomancy.structure_generation.select_initial_structures import (
+    select_initial_structures,
+)
 
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
@@ -61,7 +58,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             },
         )
 
-    #         # 2. evaluate model
     def evaluate_mlip(
         self, base_name: str, mlip_committee_job_dict: Dict, **kwargs
     ) -> pd.DataFrame:
@@ -69,15 +65,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             mlip_committee_job_dict=mlip_committee_job_dict, plot=True
         )
 
-    #         if self.verbose > 0:
-    #             print(
-    #                 f"AL Loop {al_loop}, MAE (energy): {evaluation_df['mae_e'].iloc[al_loop]}, MAE (forces): {evaluation_df['mae_f'].iloc[al_loop]}"
-    #             )
-    #         if evaluation_df["mae_f"].iloc[al_loop] < target_force_error:
-    #             print(f"AL Loop {al_loop} reached target force error.")
-    #             break
-
-    #         # 3. select structures from train set to perform MD on
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: List[Atoms], **kwargs
     ) -> List[Atoms]:
@@ -188,103 +175,23 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         structures: List[Atoms],
         **kwargs,
     ) -> List[Atoms]:
-       
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
             "verbose": self.verbose,
         }
 
         high_accuracy_structure_paths = qe_remote_submitter(
-            remote_info=get_remote_info(
-                high_accuracy_eval_job_dict, input_files=[]
-            ),
+            remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
             base_name=base_name,
             target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
             input_atoms_list=structures,
             function=run_qe,
             function_kwargs=function_kwargs,
         )
-        
+
         high_accuracy_structures = []
         for path in high_accuracy_structure_paths:
             structure = read(path, format="extxyz")
             high_accuracy_structures.append(structure)
 
         return high_accuracy_structures
-
-    # 4. select high standard deviation structures from MD
-
-
-#         dft_input_structures = get_structures_for_dft(
-#             base_name=base_name,
-#             job_dict=JOB_DICT,
-#             initial_atoms=md_input_structures,
-#             remote_info=get_remote_info(
-#                 # hpc="fhi-raccoon", job="md_run", input_files=[]
-#                 hpc="raven_gpu",
-#                 job="md_run",
-#                 input_files=[],
-#             ),
-#             number_of_structures=50,
-#             verbose=verbose,
-#             temperature=1200.0,
-#             steps=1000,
-#             timestep_fs=0.5,
-#             base_mace=str(
-#                 Path(
-#                     loop_dir,
-#                     "MACE",
-#                     "fit_0",
-#                     f"{JOB_DICT['mace_committee']['name']}_stagetwo.model",
-#                 )
-#             ),
-#         )
-#         Path.mkdir(Path(loop_dir, "DFT"), exist_ok=True, parents=True)
-#         write(
-#             Path(loop_dir, "DFT", "dft_input_structures.xyz"),
-#             dft_input_structures,
-#             format="extxyz",
-#         )
-
-#         # 5. perform DFT calculations on selected structures
-#         dft_structures = perform_qe_calculations_per_cell(
-#             base_name=base_name,
-#             job_name=JOB_DICT["dft_run"]["name"],
-#             atoms_list=dft_input_structures,
-#             remote_info=get_remote_info(hpc="raven", job="dft_run", input_files=[]),
-#             hpc="raven",
-#             verbose=verbose,
-#         )
-#         print(dft_structures)
-
-#         # 6. add DFT results to training data
-#         train_xyzs = list(
-#             add_new_training_data(
-#                 base_name=base_name,
-#                 job_dict=JOB_DICT,
-#                 train_xyzs=train_xyzs,  # type: ignore
-#             )
-#         )
-
-#         al_loop += 1
-#         print(
-#             f"Active learning loop {al_loop} completed. New training set size: {len(train_xyzs)}"
-#         )
-
-
-# if __name__ == "__main__":
-#     train_data_dir = Path("mace_general")
-#     active_learn_mace(
-#         initial_test_file_path=Path(
-#             train_data_dir, "ac_all_33_2025_07_31_ftrim_10_grpspread_01_test_set.xyz"
-#         ),
-#         initial_train_file_path=Path(
-#             train_data_dir, "ac_all_33_2025_07_31_ftrim_10_grpspread_01_train_set.xyz"
-#         ),
-#         number_of_al_loops=50,
-#         verbose=1,
-#         target_force_error=0.05,
-#         start_loop=0,
-#         committee_size=3,
-#         md_runs=2,
-#     )

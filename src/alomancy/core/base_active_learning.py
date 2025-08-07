@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
-from multiprocessing import dummy
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Tuple
+
+import pandas as pd
 from ase import Atoms
 from ase.io import read, write
+
 from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.utils.test_train_manager import add_new_training_data
-import pandas as pd
+
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -62,7 +63,7 @@ class BaseActiveLearningWorkflow(ABC):
 
             return train_xyzs, test_xyzs
 
-        train_xyzs, test_xyzs = load_initial_train_test_sets(dummy_run=True)
+        train_xyzs, test_xyzs = load_initial_train_test_sets(dummy_run=False)
 
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
