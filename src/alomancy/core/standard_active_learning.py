@@ -190,7 +190,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     ) -> List[Atoms]:
        
         function_kwargs = {
-            "base_name": base_name,
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
             "verbose": self.verbose,
         }

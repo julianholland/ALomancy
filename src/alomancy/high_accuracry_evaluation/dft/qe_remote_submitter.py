@@ -46,7 +46,7 @@ def qe_remote_submitter(
         for i in range(len(input_atoms_list))
     ]
 
-
+    print(job_configs)
     executor.run_and_wait(
         function=function,
         job_configs=job_configs,
