@@ -76,12 +76,12 @@ class Plot:
         print("Updated data:", self.data)
 
 
-def mace_al_loop_average_error(plot=False):
+def mace_al_loop_average_error(mlip_committee_job_dict, plot=False):
     al_loop_dirs = list(Path.glob(Path("results"), "al_loop_*"))
     all_avg_results = []
     for al_loop_dir in al_loop_dirs:
         results_files = list(
-            Path.glob(Path(al_loop_dir, "MACE"), "fit_*/results/*train.txt")
+            Path.glob(Path(al_loop_dir, mlip_committee_job_dict['name']), "fit_*/results/*train.txt")
         )
         results = []
         for results_file in results_files:
@@ -90,11 +90,10 @@ def mace_al_loop_average_error(plot=False):
                 result = dict(eval(data_line))
                 results.append(result)
 
-        # print([np.mean([np.float32(result[key]) for result in results]) for key in results[0].keys() if key not in  ['mode', 'epoch']])
         avg_result = {
             key: np.mean([np.float32(result[key]) for result in results])
             for key in results[0].keys()
-            if key not in ["mode", "epoch"]
+            if key not in ["mode", "epoch", "head"]
         }
         all_avg_results.append(avg_result)
 
