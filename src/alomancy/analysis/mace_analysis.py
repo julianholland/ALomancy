@@ -76,7 +76,14 @@ class Plot:
         print("Updated data:", self.data)
 
 
-def mace_al_loop_average_error(mlip_committee_job_dict, plot=False):
+def mace_recover_train_txt_final_results(
+    base_name: str,
+    mlip_committee_job_dict: dict, 
+) -> pd.DataFrame:
+    """
+    Recover final results from train.txt files in MACE AL loop directories.
+    """
+
     al_loop_dirs = list(Path.glob(Path("results"), "al_loop_*"))
     all_avg_results = []
     for al_loop_dir in al_loop_dirs:
@@ -96,6 +103,9 @@ def mace_al_loop_average_error(mlip_committee_job_dict, plot=False):
             if key not in ["mode", "epoch", "head"]
         }
         all_avg_results.append(avg_result)
+    return pd.DataFrame(all_avg_results)
+
+def mace_al_loop_average_error(all_avg_results, plot=False):
 
     df = pd.DataFrame(all_avg_results)
     if plot:
@@ -109,9 +119,6 @@ def mace_al_loop_average_error(mlip_committee_job_dict, plot=False):
         plot_object.create()
         plot_object.save()
 
-        
-
-    return df
 
 
 if __name__ == "__main__":
