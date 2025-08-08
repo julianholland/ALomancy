@@ -27,6 +27,7 @@ def load_dictionaries():
     JOB_DICT = {
         "mlip_committee": {
             "name": "mlip_committee",
+            "size_of_committee": 5,
             "max_time": "5H",
             "hpc": {
                 # "raven_gpu": {
@@ -39,6 +40,7 @@ def load_dictionaries():
         },
         "structure_generation": {
             "name": "structure_generation",
+            "number_of_concurrent_jobs": 5,
             "max_time": "10H",
             "hpc": {
                 # "raven_gpu": {

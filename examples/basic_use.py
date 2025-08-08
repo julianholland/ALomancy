@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 al_workflow=ActiveLearningStandardMACE(
-    initial_train_file_path=Path('../results/al_loop_0/train_set.xyz'),
-    initial_test_file_path=Path('../results/al_loop_0/test_set.xyz'),
+    initial_train_file_path=Path('structure_data/ac_all_33_2025_07_11_ftrim_100_train_set.xyz'),
+    initial_test_file_path=Path('structure_data/ac_all_33_2025_07_11_ftrim_100_test_set.xyz'),
     number_of_al_loops=5,
     verbose=1,
     start_loop=0,

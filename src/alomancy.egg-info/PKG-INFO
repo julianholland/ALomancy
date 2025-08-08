@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: alomancy
-Version: 0.1.dev16+gaa94b57.d20250806
+Version: 0.1.dev27+g37de6a3.d20250808
 Summary: Active Learning framework for atomistic simulations with MACE using wfl
 Author-email: Julian Holland <your.email@example.com>
 License: MIT

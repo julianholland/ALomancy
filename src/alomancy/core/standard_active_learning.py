@@ -38,7 +38,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     ) -> Optional[str]:
         workdir = Path("results", base_name)
 
-        model_path_list = committee_remote_submitter(
+        committee_remote_submitter(
             remote_info=get_remote_info(
                 mlip_committee_job_dict,
                 input_files=[
@@ -49,10 +49,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             base_name=base_name,
             target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
             seed=803,
-            size_of_committee=2,
+            size_of_committee=mlip_committee_job_dict["size_of_committee"],
             function=mace_fit,
             function_kwargs={
-                "epochs": 10,
+                "epochs": 80,
                 "mlip_committee_job_dict": mlip_committee_job_dict,
                 "workdir_str": str(workdir),
             },
@@ -71,7 +71,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         input_structures = select_initial_structures(
             base_name=base_name,
             structure_generation_job_dict=job_dict["structure_generation"],
-            desired_initial_structures=2,
+            desired_initial_structures=job_dict["structure_generation"]['number_of_concurrent_jobs'],
             chem_formula_list=[],
             atom_number_range=(9, 21),
             enforce_chemical_diversity=True,
