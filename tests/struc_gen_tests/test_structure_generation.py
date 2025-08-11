@@ -369,7 +369,7 @@ class TestTrajectoryProcessing:
     
     def test_trajectory_file_reading(self, sample_md_structures):
         """Test reading trajectory files."""
-        from ase.io import write, read
+        from ase.io import write, read    
         
         with tempfile.TemporaryDirectory() as tmpdir:
             traj_file = Path(tmpdir) / "trajectory.xyz"
@@ -385,6 +385,7 @@ class TestTrajectoryProcessing:
     
     def test_trajectory_concatenation(self, sample_md_structures):
         """Test concatenating multiple trajectory files."""
+        from ase.io import write, read    
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create multiple trajectory files
             traj_files = []
