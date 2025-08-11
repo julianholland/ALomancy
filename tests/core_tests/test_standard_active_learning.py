@@ -7,7 +7,7 @@ of the active learning workflow using MACE, MD, and Quantum Espresso.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pandas as pd
@@ -355,6 +355,8 @@ class TestActiveLearningStandardMACE:
         for atoms in mock_qe_structures:
             atoms.info["energy"] = -20.5
             atoms.arrays["forces"] = np.random.random((3, 3)) * 0.1
+            atoms.get_potential_energy = Mock(return_value=-1.0)
+            atoms.get_forces = Mock(return_value=np.array([[0, 0, 0]]))
         mock_read.side_effect = mock_qe_structures
         
         mock_remote_info = MagicMock()
@@ -412,7 +414,10 @@ class TestActiveLearningStandardMACEIntegration:
                     mock_eval.return_value = pd.DataFrame({'rmse': [0.1]})
                     mock_gen.return_value = [sample_atoms_co2.copy() for _ in range(5)]
                     mock_ha.return_value = [sample_atoms_co2.copy() for _ in range(3)]
-                    
+                    for atoms in mock_ha.return_value:
+                        atoms.get_potential_energy = Mock(return_value=-1.0)
+                        atoms.get_forces = Mock(return_value=np.array([[0, 0, 0]]))
+                        
                     workflow = ActiveLearningStandardMACE(
                         initial_train_file_path=train_file,
                         initial_test_file_path=test_file,
