@@ -16,7 +16,7 @@ import pytest
 from ase import Atoms
 from ase.io import write
 from yaml import safe_load, dump
-
+from ase.calculators.emt import EMT
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 
 
@@ -48,16 +48,17 @@ class ConcreteActiveLearningWorkflow(BaseActiveLearningWorkflow):
             atoms.info["job_id"] = i
             mock_structures.append(atoms)
         return mock_structures
-    
+
     def high_accuracy_evaluation(self, base_name, high_accuracy_eval_job_dict, structures, **kwargs):
         self.high_accuracy_evaluation_calls.append((base_name, high_accuracy_eval_job_dict, structures, kwargs))
         # Add energy and forces to structures
         for atoms in structures:
             atoms.info["energy"] = -1.0
             atoms.arrays["forces"] = np.array([[0, 0, 0]])
+            # Mock the get_potential_energy method
+            atoms.get_potential_energy = Mock(return_value=-1.0)
+            atoms.get_forces = Mock(return_value=np.array([[0, 0, 0]]))
         return structures
-
-
 @pytest.fixture
 def sample_atoms_h2o():
     """Create a sample H2O molecule."""
@@ -77,6 +78,7 @@ def sample_training_data(sample_atoms_h2o):
         atoms = sample_atoms_h2o.copy()
         atoms.positions += np.random.random((3, 3)) * 0.1
         atoms.info["energy"] = -10.0 + i * 0.1
+        atoms.calc = EMT()
         atoms.arrays["forces"] = np.random.random((3, 3)) * 0.1
         atoms_list.append(atoms)
     return atoms_list
@@ -195,7 +197,7 @@ class TestBaseActiveLearningWorkflow:
         mock_load_dict.return_value = {
             'mlip_committee': {'name': 'test_mlip'},
             'structure_generation': {'name': 'test_md'},
-            'high_accuracy_evaluation': {'name': 'test_qe'}
+            'high_accuracy_evaluation': {'name': 'test_emt'}
         }
         
         workflow = ConcreteActiveLearningWorkflow(
