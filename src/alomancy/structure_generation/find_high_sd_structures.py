@@ -1,12 +1,8 @@
-from ase.md.langevin import Langevin
-from mace.calculators import MACECalculator
 from ase.io import write, read
-from ase.units import fs
 from ase import Atom, Atoms
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing_extensions import Optional
 from tqdm import tqdm
 
 def find_high_sd_structures(

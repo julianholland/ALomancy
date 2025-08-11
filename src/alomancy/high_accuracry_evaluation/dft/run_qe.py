@@ -47,7 +47,7 @@ def get_qe_input_data(calculation_type: str) -> dict:
 
 def create_espresso_profile(
     para_info_dict: dict, npool: int, pwx_path: str, pp_path: str
-):
+) -> EspressoProfile:
     command = f"srun --ntasks={para_info_dict['ranks_per_system']} --tasks-per-node={para_info_dict['ranks_per_node']} --cpus-per-task={para_info_dict['threads_per_rank']} --distribution=block:block --hint=nomultithread --mem={para_info_dict['max_mem_per_node']} {pwx_path} -nk {npool}"
 
     print(command)
