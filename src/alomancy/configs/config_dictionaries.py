@@ -1,9 +1,13 @@
-def load_dictionaries():
+from typing import Dict, Any
+from yaml import safe_load
+from pathlib import Path
+
+def load_dictionaries(config_path: Path) -> Dict[str, Any]:
     """
     Set the information for the HPCs and jobs used in the active learning workflow.
 
     three jobs are required
-    mace_committee: advised to use a GPU based HPC
+    mlip_committee: advised to use a GPU based HPC
     structure_generation: advised to use a GPU based HPC
     high_accuracy_evaluation: advised to use a CPU based HPC
 
@@ -14,63 +18,33 @@ def load_dictionaries():
         - pre_cmds: commands to run before starting the job, e.g. activating a virtual environment
         - partitions: the partition used for the job on the HPC
 
+        
+    for the mlip_committee job, the following information is required:
+    - size_of_committee: the number of models in the committee
+    - epochs: the number of epochs to train the models for
+
+    for the structure_generation job, the following information is required:
+    - number_of_concurrent_jobs: the number of concurrent jobs to run
+    
+    for the high_accuracy_evaluation job, the following information is required in the hpc dictionary:
+    - node_info: a dictionary containing information about the nodes available for the job
+        - ranks_per_system: the number of ranks per system
+        - ranks_per_node: the number of ranks per node
+        - threads_per_rank: the number of threads per rank
+        - max_mem_per_node: the maximum memory per node
+    - pwx_path: the path to the Quantum Espresso pw.x executable
+    - pp_path: the path to the pseudopotentials directory
+    - pseudo_dict: a dictionary containing the pseudopotentials used for each element
     Returns
     -------
     dict
         A dictionary containing the HPC and job information.
     """
-    PP_DICT = {
-            "C": "C.pbe-n-kjpaw_psl.1.0.0.UPF",
-            "Na": "na_pbe_v1.5.uspp.F.UPF",
-        }  # make this general
 
-    JOB_DICT = {
-        "mlip_committee": {
-            "name": "mlip_committee",
-            "size_of_committee": 5,
-            "max_time": "5H",
-            "hpc": {
-                # "raven_gpu": {
-                #     "pre_cmds": ["source /u/jholl/venvs/wfl/bin/activate"],
-                #     "partitions": ["gpu"],
-                "hpc_name": "fhi-raccoon",
-                "pre_cmds": ["source /home/jholl/venvs/alomancy/bin/activate"],
-                "partitions": ["gpusmall"],
-            },
-        },
-        "structure_generation": {
-            "name": "structure_generation",
-            "number_of_concurrent_jobs": 5,
-            "desired_structures": 50,
-            "max_time": "10H",
-            "hpc": {
-                # "raven_gpu": {
-                #     "pre_cmds": ["source /u/jholl/venvs/wfl/bin/activate"],
-                #     "partitions": ["gpu"],
-                # },
-                "hpc_name": "fhi-raccoon",
-                "pre_cmds": ["source /home/jholl/venvs/alomancy/bin/activate"],
-                "partitions": ["gpusmall"],
-            },
-        },
-        "high_accuracy_evaluation": {
-            "name": "high_accuracy_evaluation",
-            "max_time": "30m",
-            "hpc": {
-                "hpc_name": "raven",
-                "pre_cmds": ["source /u/jholl/venvs/alomancy/bin/activate"],
-                "partitions": ["general"],
-                "node_info": {
-                    "ranks_per_system": 72,
-                    "ranks_per_node": 72,
-                    "threads_per_rank": 1,
-                    "max_mem_per_node": "60GB",
-                },
-                "pwx_path": "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x",
-                "pp_path": "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency",
-                "pseudo_dict": PP_DICT,
-            },
-        },
-    }
+    JOB_DICT = safe_load(open(config_path, "r"))
 
     return JOB_DICT
+
+if __name__ == "__main__":
+    config_path = 'standard_config.yaml'
+    print(load_dictionaries(config_path))
