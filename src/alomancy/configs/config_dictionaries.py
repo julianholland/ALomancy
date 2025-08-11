@@ -2,6 +2,7 @@ from typing import Dict, Any
 from yaml import safe_load
 from pathlib import Path
 
+
 def load_dictionaries(config_path: Path) -> Dict[str, Any]:
     """
     Set the information for the HPCs and jobs used in the active learning workflow.
@@ -18,14 +19,14 @@ def load_dictionaries(config_path: Path) -> Dict[str, Any]:
         - pre_cmds: commands to run before starting the job, e.g. activating a virtual environment
         - partitions: the partition used for the job on the HPC
 
-        
+
     for the mlip_committee job, the following information is required:
     - size_of_committee: the number of models in the committee
     - epochs: the number of epochs to train the models for
 
     for the structure_generation job, the following information is required:
     - number_of_concurrent_jobs: the number of concurrent jobs to run
-    
+
     for the high_accuracy_evaluation job, the following information is required in the hpc dictionary:
     - node_info: a dictionary containing information about the nodes available for the job
         - ranks_per_system: the number of ranks per system
@@ -45,6 +46,7 @@ def load_dictionaries(config_path: Path) -> Dict[str, Any]:
 
     return JOB_DICT
 
+
 if __name__ == "__main__":
-    config_path = 'standard_config.yaml'
+    config_path = "standard_config.yaml"
     print(load_dictionaries(config_path))

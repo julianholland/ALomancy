@@ -7,15 +7,15 @@ from wfl.autoparallelize.remoteinfo import RemoteInfo
 class RemoteJobExecutor:
     """
     General-purpose remote job submission utility.
-    
+
     Handles submitting arbitrary functions to remote compute resources
     using the ExPyRe framework.
     """
-    
+
     def __init__(self, remote_info: RemoteInfo):
         """
         Initialize the remote executor.
-        
+
         Parameters
         ----------
         remote_info : RemoteInfo
@@ -23,7 +23,7 @@ class RemoteJobExecutor:
         """
         self.remote_info = remote_info
         self.jobs = []
-    
+
     def submit_job(
         self,
         function: Callable,
@@ -31,11 +31,11 @@ class RemoteJobExecutor:
         input_files: List[Union[str, Path]] = None,
         output_files: List[Union[str, Path]] = None,
         job_name: Optional[str] = None,
-        **expyre_kwargs
+        **expyre_kwargs,
     ) -> ExPyRe:
         """
         Submit a single job to remote execution.
-        
+
         Parameters
         ----------
         function : Callable
@@ -50,7 +50,7 @@ class RemoteJobExecutor:
             Name for this specific job (overrides remote_info.job_name)
         **expyre_kwargs
             Additional ExPyRe-specific arguments
-            
+
         Returns
         -------
         ExPyRe
@@ -59,37 +59,39 @@ class RemoteJobExecutor:
         # Convert paths to strings
         input_files = [str(f) for f in (input_files or [])]
         output_files = [str(f) for f in (output_files or [])]
-        
+
         # Use provided files or fall back to remote_info defaults
         final_input_files = input_files or self.remote_info.input_files
-        final_output_files = output_files or getattr(self.remote_info, 'output_files', [])
-        
+        final_output_files = output_files or getattr(
+            self.remote_info, "output_files", []
+        )
+
         job = ExPyRe(
             name=job_name or self.remote_info.job_name,
             pre_run_commands=self.remote_info.pre_cmds,
-            post_run_commands=getattr(self.remote_info, 'post_cmds', []),
-            env_vars=getattr(self.remote_info, 'env_vars', {}),
+            post_run_commands=getattr(self.remote_info, "post_cmds", []),
+            env_vars=getattr(self.remote_info, "env_vars", {}),
             input_files=final_input_files,
             output_files=final_output_files,
             function=function,
             kwargs=function_kwargs,
-            **expyre_kwargs
+            **expyre_kwargs,
         )
-        
+
         self.jobs.append(job)
         return job
-    
+
     def submit_multiple_jobs(
         self,
         function: Callable,
         job_configs: List[Dict[str, Any]],
         common_input_files: List[Union[str, Path]] = None,
         common_output_pattern: Optional[str] = None,
-        job_name_pattern: Optional[str] = None
+        job_name_pattern: Optional[str] = None,
     ) -> List[ExPyRe]:
         """
         Submit multiple similar jobs with different parameters.
-        
+
         Parameters
         ----------
         function : Callable
@@ -106,7 +108,7 @@ class RemoteJobExecutor:
             Pattern for output files, use {job_id} for job index
         job_name_pattern : str, optional
             Pattern for job names, use {job_id} for job index
-            
+
         Returns
         -------
         List[ExPyRe]
@@ -114,38 +116,38 @@ class RemoteJobExecutor:
         """
         jobs = []
         common_input_files = common_input_files or []
-        
+
         for i, config in enumerate(job_configs):
             # Prepare input files
             job_input_files = list(common_input_files)
-            if 'input_files' in config:
-                job_input_files.extend(config['input_files'])
-            
+            if "input_files" in config:
+                job_input_files.extend(config["input_files"])
+
             # Prepare output files
-            job_output_files = config.get('output_files', [])
+            job_output_files = config.get("output_files", [])
             if common_output_pattern:
                 job_output_files.append(common_output_pattern.format(job_id=i))
-            
+
             # Prepare job name
-            job_name = config.get('job_name')
+            job_name = config.get("job_name")
             if not job_name and job_name_pattern:
                 job_name = job_name_pattern.format(job_id=i)
-            
+
             job = self.submit_job(
                 function=function,
-                function_kwargs=config['function_kwargs'],
+                function_kwargs=config["function_kwargs"],
                 input_files=job_input_files,
                 output_files=job_output_files,
-                job_name=job_name
+                job_name=job_name,
             )
             jobs.append(job)
-        
+
         return jobs
-    
+
     def start_all_jobs(self, **start_kwargs) -> None:
         """
         Start all submitted jobs.
-        
+
         Parameters
         ----------
         **start_kwargs
@@ -155,69 +157,69 @@ class RemoteJobExecutor:
             job.start(
                 resources=self.remote_info.resources,
                 system_name=self.remote_info.sys_name,
-                header_extra=getattr(self.remote_info, 'header_extra', []),
-                exact_fit=getattr(self.remote_info, 'exact_fit', True),
-                partial_node=getattr(self.remote_info, 'partial_node', False),
-                **start_kwargs
+                header_extra=getattr(self.remote_info, "header_extra", []),
+                exact_fit=getattr(self.remote_info, "exact_fit", True),
+                partial_node=getattr(self.remote_info, "partial_node", False),
+                **start_kwargs,
             )
-    
+
     def wait_for_all_jobs(self, verbose: bool = True) -> List[Any]:
         """
         Wait for all jobs to complete and gather results.
-        
+
         Parameters
         ----------
         verbose : bool
             Whether to print job completion status
-            
+
         Returns
         -------
         List[Any]
             List of results from all jobs
         """
         results = []
-        
+
         for i, job in enumerate(self.jobs):
             if verbose:
-                job_name= getattr(job, 'name', f'job_{i}')
-                print(f"Waiting for job {i+1}/{len(self.jobs)}: {job_name}")
+                job_name = getattr(job, "name", f"job_{i}")
+                print(f"Waiting for job {i + 1}/{len(self.jobs)}: {job_name}")
 
             try:
                 result, stdout, stderr = job.get_results(
                     timeout=self.remote_info.timeout,
-                    check_interval=getattr(self.remote_info, 'check_interval', 10)
+                    check_interval=getattr(self.remote_info, "check_interval", 10),
                 )
                 results.append(result)
-                
+
                 if verbose:
-                    print(f"Job {i+1} completed successfully")
-                    
+                    print(f"Job {i + 1} completed successfully")
+
             except Exception as exc:
                 if verbose:
-                    print(f"Job {i+1} failed with error: {exc}")
+                    print(f"Job {i + 1} failed with error: {exc}")
                     print("stdout", "-" * 30)
                     print(stdout)
                     print("stderr", "-" * 30)
                     print(stderr)
                 results.append(None)
-        
+
         return results
-    
+
     def cleanup_jobs(self) -> None:
         """Mark all jobs as processed for cleanup."""
         for job in self.jobs:
             job.mark_processed()
-    
+
     def run_and_wait(
         self,
         function: Callable,
         job_configs: List[Dict[str, Any]],
         verbose: bool = True,
-        **kwargs
+        **kwargs,
     ) -> List[Any]:
         """
         Convenience method to submit, start, and wait for multiple jobs.
-        
+
         Parameters
         ----------
         function : Callable
@@ -228,7 +230,7 @@ class RemoteJobExecutor:
             Whether to print progress
         **kwargs
             Additional arguments for submit_multiple_jobs
-            
+
         Returns
         -------
         List[Any]
@@ -252,13 +254,13 @@ class RemoteJobExecutor:
 # ) -> List[Any]:
 #     """
 #     Submit committee of jobs (like MACE ensemble training).
-    
+
 #     This maintains backward compatibility with your original use case.
 #     """
 #     executor = RemoteJobExecutor(remote_info)
-    
+
 #     workdir = Path("results", base_name)
-    
+
 #     # Create job configs for committee
 #     job_configs = []
 #     for i in range(size_of_committee):
@@ -270,14 +272,14 @@ class RemoteJobExecutor:
 #             },
 #             'output_files': [str(workdir / "MACE" / f"fit_{i}")]
 #         })
-    
+
 #     # Common input files
 #     common_input_files = [
 #         "mace_wfl.py",
 #         str(workdir / "train_set.xyz"),
 #         str(workdir / "test_set.xyz"),
 #     ]
-    
+
 #     return executor.run_and_wait(
 #         function=function,
 #         job_configs=job_configs,
@@ -285,5 +287,3 @@ class RemoteJobExecutor:
 #         job_name_pattern=f"{remote_info.job_name}_{{job_id}}",
 #         **kwargs
 #     )
-
-    

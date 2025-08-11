@@ -5,7 +5,6 @@ from ase.io import write
 from pathlib import Path
 
 
-
 def get_qe_input_data(calculation_type: str) -> dict:
     return {
         "control": {
@@ -86,7 +85,9 @@ def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict, out_dir):
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
-        ranks_per_system=high_accuracy_eval_hpc_job_dict['node_info']['ranks_per_system'],
+        ranks_per_system=high_accuracy_eval_hpc_job_dict["node_info"][
+            "ranks_per_system"
+        ],
         min_ranks_per_pool=8,
     )
 
@@ -100,29 +101,29 @@ def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict, out_dir):
         input_data=get_qe_input_data("scf"),
         kpts=list(kpt_arr),
         pseudopotentials=high_accuracy_eval_hpc_job_dict["pseudo_dict"],
-        directory=out_dir
+        directory=out_dir,
     )
 
+
 def run_qe(
-        input_structure: Atoms,
-        out_dir: str,
-        high_accuracy_eval_job_dict: dict,
-        verbose: int = 0,
-    ):
-    
+    input_structure: Atoms,
+    out_dir: str,
+    high_accuracy_eval_job_dict: dict,
+    verbose: int = 0,
+):
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 
     calc = create_qe_calc_object(
-            input_structure, high_accuracy_eval_job_dict['hpc'], out_dir
-        )
+        input_structure, high_accuracy_eval_job_dict["hpc"], out_dir
+    )
 
     input_structure.calc = calc
     input_structure.get_potential_energy()
 
-    write(Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"), input_structure, format="extxyz")
+    write(
+        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
+        input_structure,
+        format="extxyz",
+    )
 
     return input_structure
-
-
-
-                

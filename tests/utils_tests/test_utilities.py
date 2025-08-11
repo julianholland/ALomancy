@@ -41,7 +41,6 @@ def write_temporary_yaml():
                     "threads_per_rank": 8,
                 }
             },
-            
             "pwx_path": "/path/to/pw.x",
             "pp_path": "/path/to/pseudopotentials",
             "pseudo_dict": {"H": "H.pz-vbc.UPF", "O": "O.pz-vbc.UPF"},
@@ -58,6 +57,7 @@ def write_temporary_yaml():
 class TestRemoteJobExecutor:
     """Test remote job execution utilities."""
 
+    @pytest.mark.unit
     @patch("wfl.autoparallelize.remoteinfo.RemoteInfo")
     def test_remote_job_executor_initialization(self, mock_remote_info_class):
         """Test RemoteJobExecutor initialization."""
@@ -69,6 +69,7 @@ class TestRemoteJobExecutor:
         # Test that we can create a mock remote info
         assert mock_remote_info is not None
 
+    @pytest.mark.unit
     def test_job_config_validation(self):
         """Test job configuration validation."""
         # Test valid job config
@@ -77,6 +78,7 @@ class TestRemoteJobExecutor:
         assert "function_kwargs" in valid_config
         assert isinstance(valid_config["function_kwargs"], dict)
 
+    @pytest.mark.unit
     def test_invalid_job_config(self):
         """Test handling of invalid job configurations."""
         invalid_configs = [
@@ -95,6 +97,7 @@ class TestRemoteJobExecutor:
 class TestConfigurationUtils:
     """Test configuration utility functions."""
 
+    @pytest.mark.unit
     def test_load_dictionaries_structure(self, write_temporary_yaml):
         """Test that load_dictionaries returns expected structure."""
         from alomancy.configs.config_dictionaries import load_dictionaries
@@ -116,6 +119,7 @@ class TestConfigurationUtils:
             assert "max_time" in job_config
             assert "hpc" in job_config
 
+    @pytest.mark.unit
     def test_job_dict_validation(self, write_temporary_yaml):
         """Test validation of job dictionary structure."""
         from alomancy.configs.config_dictionaries import load_dictionaries
@@ -146,6 +150,7 @@ class TestConfigurationUtils:
             for field in required_node_fields:
                 assert field in node_info
 
+    @pytest.mark.unit
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     def test_config_customization(self, mock_load_dict):
         """Test that configuration can be customized."""
@@ -180,6 +185,7 @@ class TestConfigurationUtils:
 class TestFileOperations:
     """Test file operation utilities."""
 
+    @pytest.mark.unit
     def test_path_operations(self):
         """Test path manipulation utilities."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -197,9 +203,11 @@ class TestFileOperations:
             assert test_file.exists()
             assert test_file.read_text() == "test content"
 
+
 class TestDataValidation:
     """Test data validation utilities."""
 
+    @pytest.mark.unit
     def test_atoms_validation(self):
         """Test validation of ASE Atoms objects."""
         # Valid atoms object
@@ -222,6 +230,7 @@ class TestDataValidation:
         assert "forces" in valid_atoms.arrays
         assert valid_atoms.arrays["forces"].shape == (3, 3)
 
+    @pytest.mark.unit
     def test_structure_list_validation(self):
         """Test validation of structure lists."""
         atoms_list = []
@@ -239,6 +248,7 @@ class TestDataValidation:
         assert all("energy" in atoms.info for atoms in atoms_list)
         assert all("forces" in atoms.arrays for atoms in atoms_list)
 
+    @pytest.mark.unit
     def test_energy_forces_consistency(self):
         """Test consistency between energy and forces data."""
         atoms = Atoms(
@@ -263,6 +273,7 @@ class TestDataValidation:
 class TestArrayOperations:
     """Test array operation utilities."""
 
+    @pytest.mark.unit
     def test_force_array_operations(self):
         """Test operations on force arrays."""
         # Test force flattening (from md_wfl.py)
@@ -278,6 +289,7 @@ class TestArrayOperations:
         unflattened = flattened.reshape((5, 3))
         np.testing.assert_array_equal(forces, unflattened)
 
+    @pytest.mark.unit
     def test_statistical_operations(self):
         """Test statistical operations on arrays."""
         # Create sample force data from multiple models

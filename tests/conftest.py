@@ -138,7 +138,10 @@ def mock_remote_info():
 def mock_mace_calculator():
     """Mock MACE calculator."""
     mock_calc = MagicMock()
-    mock_calc.calculate.return_value = {"energy": -10.0, "forces": np.random.random((3, 3))}
+    mock_calc.calculate.return_value = {
+        "energy": -10.0,
+        "forces": np.random.random((3, 3)),
+    }
     return mock_calc
 
 
@@ -146,7 +149,10 @@ def mock_mace_calculator():
 def mock_espresso_calculator():
     """Mock Espresso calculator."""
     mock_calc = MagicMock()
-    mock_calc.calculate.return_value = {"energy": -10.0, "forces": np.random.random((3, 3))}
+    mock_calc.calculate.return_value = {
+        "energy": -10.0,
+        "forces": np.random.random((3, 3)),
+    }
     return mock_calc
 
 
@@ -156,7 +162,7 @@ def setup_test_environment(monkeypatch, temp_dir):
     # Set up test environment
     monkeypatch.setenv("ALOMANCY_TEST_MODE", "1")
     monkeypatch.setenv("ALOMANCY_TEST_DATA_DIR", str(temp_dir))
-    
+
     # Mock external dependencies by default
     monkeypatch.setenv("ALOMANCY_MOCK_EXTERNAL", "1")
 
@@ -173,6 +179,7 @@ def skip_if_no_gpu():
     """Skip test if GPU is not available."""
     try:
         import torch
+
         if not torch.cuda.is_available():
             pytest.skip("GPU not available")
     except ImportError:
@@ -192,19 +199,21 @@ def skip_if_no_mace():
 def mock_wfl_autoparallelize(monkeypatch):
     """Mock wfl autoparallelize functionality."""
     mock_remote_info = MagicMock()
-    
+
     # Mock the RemoteInfo class
     mock_remote_info_class = MagicMock()
     mock_remote_info_class.return_value = mock_remote_info
-    
-    monkeypatch.setattr("wfl.autoparallelize.remoteinfo.RemoteInfo", mock_remote_info_class)
-    
+
+    monkeypatch.setattr(
+        "wfl.autoparallelize.remoteinfo.RemoteInfo", mock_remote_info_class
+    )
+
     return mock_remote_info
 
 
 class MockActiveLearningWorkflow:
     """Mock implementation of BaseActiveLearningWorkflow for testing."""
-    
+
     def __init__(self, *args, **kwargs):
         self.initial_train_file = Path("mock_train.xyz")
         self.initial_test_file = Path("mock_test.xyz")
@@ -212,18 +221,21 @@ class MockActiveLearningWorkflow:
         self.verbose = 0
         self.start_loop = 0
         self.jobs_dict = {}
-    
+
     def train_mlip(self, base_name, mlip_committee_job_dict, **kwargs):
         return "mock_model.pt"
-    
+
     def evaluate_mlip(self, base_name, mlip_committee_job_dict, **kwargs):
         import pandas as pd
+
         return pd.DataFrame({"rmse": [0.1], "mae": [0.05]})
-    
+
     def generate_structures(self, base_name, job_dict, train_data, **kwargs):
         return [Atoms(symbols=["H"], positions=[[0, 0, 0]])]
-    
-    def high_accuracy_evaluation(self, base_name, high_accuracy_eval_job_dict, structures, **kwargs):
+
+    def high_accuracy_evaluation(
+        self, base_name, high_accuracy_eval_job_dict, structures, **kwargs
+    ):
         for atoms in structures:
             atoms.info["energy"] = -1.0
             atoms.arrays["forces"] = np.array([[0, 0, 0]])

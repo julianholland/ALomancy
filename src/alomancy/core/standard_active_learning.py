@@ -6,7 +6,10 @@ from ase import Atoms
 from ase.io import read, write
 from mace.calculators import MACECalculator
 
-from alomancy.analysis.mace_analysis import mace_al_loop_average_error, mace_recover_train_txt_final_results
+from alomancy.analysis.mace_analysis import (
+    mace_al_loop_average_error,
+    mace_recover_train_txt_final_results,
+)
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracry_evaluation.dft.qe_remote_submitter import (
@@ -62,13 +65,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     def evaluate_mlip(
         self, base_name: str, mlip_committee_job_dict: Dict, **kwargs
     ) -> pd.DataFrame:
-
         all_avg_results = mace_recover_train_txt_final_results(
             mlip_committee_job_dict=mlip_committee_job_dict
         )
-        mace_al_loop_average_error(
-            all_avg_results=all_avg_results, plot=True
-        )
+        mace_al_loop_average_error(all_avg_results=all_avg_results, plot=True)
         return all_avg_results
 
     def generate_structures(
@@ -77,7 +77,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         input_structures = select_initial_structures(
             base_name=base_name,
             structure_generation_job_dict=job_dict["structure_generation"],
-            desired_initial_structures=job_dict["structure_generation"]['number_of_concurrent_jobs'],
+            desired_initial_structures=job_dict["structure_generation"][
+                "number_of_concurrent_jobs"
+            ],
             chem_formula_list=[],
             atom_number_range=(0, 21),
             enforce_chemical_diversity=True,

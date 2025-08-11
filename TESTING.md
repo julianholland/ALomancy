@@ -8,8 +8,8 @@ The alomancy package uses pytest as the primary testing framework with a compreh
 
 - **Unit tests**: Individual functions and classes
 - **Integration tests**: Component interactions
-- **Mock tests**: External dependencies (MACE, Quantum Espresso)
-- **Performance tests**: Slow/compute-intensive operations
+- **Mock tests**: External dependencies (MACE, Quantum Espresso), (NOT IMPLEMENTED (v0.1))
+- **Performance tests**: Slow/compute-intensive operations, (NOT IMPLEMENTED (v0.1))
 
 ## Test Structure
 

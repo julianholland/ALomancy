@@ -3,6 +3,7 @@ from wfl.fit.mace import fit
 from pathlib import Path
 import numpy as np
 
+
 def mace_fit(seed, epochs, mlip_committee_job_dict, workdir_str, fit_idx=0):
     workdir = Path(workdir_str)
     mlip_dir = Path(workdir, mlip_committee_job_dict["name"])
@@ -55,6 +56,7 @@ def mace_fit(seed, epochs, mlip_committee_job_dict, workdir_str, fit_idx=0):
         dry_run=False,
         wait_for_results=True,
     )
+
 
 # def train_mace(remote_info, base_name, job_name, seed=803, fit_idx=0, epochs=60):
 #     workdir = Path("results", base_name)

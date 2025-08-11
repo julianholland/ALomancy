@@ -5,7 +5,14 @@ import matplotlib.pyplot as plt
 
 
 class Plot:
-    def __init__(self, data: pd.DataFrame , title: str, xlabel: str, ylabel: str, directory: str = '.'):
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        title: str,
+        xlabel: str,
+        ylabel: str,
+        directory: str = ".",
+    ):
         """
         data: pd.DataFrame or dict-like, where each column/field is a series to plot
         """
@@ -14,7 +21,9 @@ class Plot:
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.directory = directory
-        self.filename = str(Path(self.directory, f"{title.replace(' ', '_').lower()}_plot.png"))
+        self.filename = str(
+            Path(self.directory, f"{title.replace(' ', '_').lower()}_plot.png")
+        )
 
     def find_data(self, data_name):
         if isinstance(self.data, pd.DataFrame):
@@ -78,7 +87,7 @@ class Plot:
 
 def mace_recover_train_txt_final_results(
     base_name: str,
-    mlip_committee_job_dict: dict, 
+    mlip_committee_job_dict: dict,
 ) -> pd.DataFrame:
     """
     Recover final results from train.txt files in MACE AL loop directories.
@@ -88,7 +97,10 @@ def mace_recover_train_txt_final_results(
     all_avg_results = []
     for al_loop_dir in al_loop_dirs:
         results_files = list(
-            Path.glob(Path(al_loop_dir, mlip_committee_job_dict['name']), "fit_*/results/*train.txt")
+            Path.glob(
+                Path(al_loop_dir, mlip_committee_job_dict["name"]),
+                "fit_*/results/*train.txt",
+            )
         )
         results = []
         for results_file in results_files:
@@ -105,20 +117,19 @@ def mace_recover_train_txt_final_results(
         all_avg_results.append(avg_result)
     return pd.DataFrame(all_avg_results)
 
-def mace_al_loop_average_error(all_avg_results, plot=False):
 
+def mace_al_loop_average_error(all_avg_results, plot=False):
     df = pd.DataFrame(all_avg_results)
     if plot:
-        plot_object=Plot(
+        plot_object = Plot(
             data=df[["mae_e", "mae_f"]],
             title="MACE AL Loop MAE",
             xlabel="AL Loop Iteration",
             ylabel="Mean Absolute Error",
-            directory=str(Path("results"))
+            directory=str(Path("results")),
         )
         plot_object.create()
         plot_object.save()
-
 
 
 if __name__ == "__main__":

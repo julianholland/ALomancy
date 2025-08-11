@@ -21,8 +21,13 @@ def run_md(
     timestep_fs: float = 0.5,
     verbose: int = 0,
 ):
-    assert structure_generation_job_dict['desired_number_of_structures'] > 0, "Number of structures must be greater than 0"
-    assert steps > structure_generation_job_dict['desired_number_of_structures'] / total_md_runs, (
+    assert structure_generation_job_dict["desired_number_of_structures"] > 0, (
+        "Number of structures must be greater than 0"
+    )
+    assert (
+        steps
+        > structure_generation_job_dict["desired_number_of_structures"] / total_md_runs
+    ), (
         "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
     )
     # further asserting needed here to avoid:
@@ -46,10 +51,19 @@ def run_md(
         timestep=timestep_fs * fs,
         temperature_K=temperature,
         friction=0.002,
-        logfile=str(Path(out_dir, f"{structure_generation_job_dict['name']}_{md_structure.info['job_id']}.log")),
+        logfile=str(
+            Path(
+                out_dir,
+                f"{structure_generation_job_dict['name']}_{md_structure.info['job_id']}.log",
+            )
+        ),
     )
 
-    snapshot_interval = steps * total_md_runs // structure_generation_job_dict['desired_number_of_structures']
+    snapshot_interval = (
+        steps
+        * total_md_runs
+        // structure_generation_job_dict["desired_number_of_structures"]
+    )
 
     for _ in range(steps // snapshot_interval):
         # recording
@@ -63,7 +77,9 @@ def run_md(
         # force check
         max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
         if np.any(max_forces > 1000):
-            print(f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}")
+            print(
+                f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}"
+            )
             break
         # run
         dyn.run(steps=snapshot_interval)

@@ -10,16 +10,15 @@ from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.utils.clean_structures import clean_structures
 
 
-
 class BaseActiveLearningWorkflow(ABC):
     """
     Abstract base class for active learning workflows.
-    
+
     This class provides the core AL loop structure while requiring
     subclasses to implement the specific methods for structure generation,
     high-accuracy evaluation, MLIP training, and evaluation.
     """
-    
+
     def __init__(
         self,
         initial_train_file_path: str,
@@ -40,12 +39,14 @@ class BaseActiveLearningWorkflow(ABC):
     def run(self, **kwargs) -> None:
         """
         Run the active learning workflow.
-        
+
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
-        
-        def load_initial_train_test_sets(dummy_run: bool = False) -> Tuple[List[Atoms], List[Atoms]]:
+
+        def load_initial_train_test_sets(
+            dummy_run: bool = False,
+        ) -> Tuple[List[Atoms], List[Atoms]]:
             train_xyzs = [
                 atoms
                 for atoms in read(self.initial_train_file, ":")
@@ -91,65 +92,73 @@ class BaseActiveLearningWorkflow(ABC):
                     raise
                 print(f"Warning: Could not write files (test environment): {e}")
 
-
             if self.verbose > 0:
                 print(f"Starting AL loop {loop}")
                 print(f"  Training set size: {len(train_xyzs)}")
                 print(f"  Test set size: {len(test_xyzs)}")
 
             # Core AL loop steps - these methods must be implemented by subclasses
-            self.train_mlip(base_name, self.jobs_dict['mlip_committee'], **kwargs)
+            self.train_mlip(base_name, self.jobs_dict["mlip_committee"], **kwargs)
 
-            evaluation_results = self.evaluate_mlip(base_name, self.jobs_dict['mlip_committee'], **kwargs)
+            evaluation_results = self.evaluate_mlip(
+                base_name, self.jobs_dict["mlip_committee"], **kwargs
+            )
             if self.verbose > 0:
                 print(f"AL Loop {loop} evaluation results: \n{evaluation_results}")
 
-            generated_structures = self.generate_structures(base_name, self.jobs_dict, train_xyzs, **kwargs)
-
-            new_training_data = self.high_accuracy_evaluation(
-                base_name, self.jobs_dict['high_accuracy_evaluation'], generated_structures, **kwargs
+            generated_structures = self.generate_structures(
+                base_name, self.jobs_dict, train_xyzs, **kwargs
             )
 
-            train_xyzs += clean_structures(new_training_data, base_name, self.jobs_dict['high_accuracy_evaluation'])
+            new_training_data = self.high_accuracy_evaluation(
+                base_name,
+                self.jobs_dict["high_accuracy_evaluation"],
+                generated_structures,
+                **kwargs,
+            )
+
+            train_xyzs += clean_structures(
+                new_training_data, base_name, self.jobs_dict["high_accuracy_evaluation"]
+            )
 
             if self.verbose > 0:
-                print(f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures.")
-
+                print(
+                    f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures."
+                )
 
     def process_structure(self, structure: Atoms) -> Atoms:
         """
         Process a structure before adding it to the training set.
-        
-        We will 
-        
+
+        We will
+
         Parameters
         ----------
         structure : Atoms
             The structure to process.
-        
+
         Returns
         -------
         Atoms
             The processed structure.
         """
         new_structure = structure.copy()
-        new_structure.info['REF_energy'] = structure.get_potential_energy()
-        new_structure.arrays['REF_forces'] = structure.get_forces()
-        
+        new_structure.info["REF_energy"] = structure.get_potential_energy()
+        new_structure.arrays["REF_forces"] = structure.get_forces()
 
         return new_structure
 
     @abstractmethod
     def high_accuracy_evaluation(
-        self, 
-        base_name: str, 
+        self,
+        base_name: str,
         high_accuracy_eval_job_dict: dict,
-        structures: List[Atoms], 
-        **kwargs
+        structures: List[Atoms],
+        **kwargs,
     ) -> List[Atoms]:
         """
         Run high-accuracy calculations on selected structures.
-        
+
         Parameters
         ----------
         base_name : str
@@ -160,7 +169,7 @@ class BaseActiveLearningWorkflow(ABC):
             Structures to evaluate with high-accuracy method
         **kwargs
             Additional keyword arguments
-            
+
         Returns
         -------
         List[Atoms]
@@ -169,10 +178,12 @@ class BaseActiveLearningWorkflow(ABC):
         pass
 
     @abstractmethod
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> Optional[str]:
+    def train_mlip(
+        self, base_name: str, mlip_committee_job_dict: dict, **kwargs
+    ) -> Optional[str]:
         """
         Train machine learning interatomic potential.
-        
+
         Parameters
         ----------
         base_name : str
@@ -183,7 +194,7 @@ class BaseActiveLearningWorkflow(ABC):
             Training data for MLIP
         **kwargs
             Additional keyword arguments
-            
+
         Returns
         -------
         Optional[str]
@@ -195,7 +206,7 @@ class BaseActiveLearningWorkflow(ABC):
     def evaluate_mlip(self, mlip_committee_job_dict: dict, **kwargs) -> pd.DataFrame:
         """
         Evaluate MLIP model on test data.
-        
+
         Parameters
         ----------
         base_name : str
@@ -206,7 +217,7 @@ class BaseActiveLearningWorkflow(ABC):
             Test data for evaluation
         **kwargs
             Additional keyword arguments
-            
+
         Returns
         -------
         Dict[str, Any]
@@ -215,10 +226,16 @@ class BaseActiveLearningWorkflow(ABC):
         pass
 
     @abstractmethod
-    def generate_structures(self, base_name: str, structure_generation_job_dict: dict, train_data: List[Atoms], **kwargs) -> List[Atoms]:
+    def generate_structures(
+        self,
+        base_name: str,
+        structure_generation_job_dict: dict,
+        train_data: List[Atoms],
+        **kwargs,
+    ) -> List[Atoms]:
         """
         Generate structures for active learning selection.
-        
+
         Parameters
         ----------
         base_name : str
@@ -229,7 +246,7 @@ class BaseActiveLearningWorkflow(ABC):
             Current training data
         **kwargs
             Additional keyword arguments
-            
+
         Returns
         -------
         List[Atoms]

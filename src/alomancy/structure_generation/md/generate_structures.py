@@ -76,7 +76,7 @@ def get_structures_for_dft(
             str(Path(md_dir, f"{job_dict['md_run']['name']}_*"))
         ]
         remote_info.check_interval = 10
-        
+
         autopara_md(
             inputs=initial_atoms,
             outputs=OutputSpec(),
@@ -88,7 +88,9 @@ def get_structures_for_dft(
 
     structure_list = []
     for i in range(len(initial_atoms)):
-        structures = read(Path(md_dir, f"{job_dict['md_run']['name']}_{i}.xyz"), ":", format="extxyz")
+        structures = read(
+            Path(md_dir, f"{job_dict['md_run']['name']}_{i}.xyz"), ":", format="extxyz"
+        )
         structure_list.extend(structures)
 
     if verbose > 0:
@@ -98,6 +100,7 @@ def get_structures_for_dft(
         std_dev_df = pd.read_csv(Path(md_dir, "std_dev_forces.csv"), index_col=0)
 
     else:
+
         def find_fits_to_use():
             path_list = list(
                 Path.glob(
@@ -117,15 +120,14 @@ def get_structures_for_dft(
 
         std_dev_df = std_deviation_of_forces(structure_forces_dict, md_dir)
 
-
     index_list = list(std_dev_df[:number_of_structures].index)
-    
-    high_sd_structures = [
-        structure_list[i] for i in index_list
-    ]
-    
+
+    high_sd_structures = [structure_list[i] for i in index_list]
+
     if verbose > 0:
-        print(f"Selected {len(high_sd_structures)} structures for DFT calculations based on standard deviation of forces.")
+        print(
+            f"Selected {len(high_sd_structures)} structures for DFT calculations based on standard deviation of forces."
+        )
         print(std_dev_df[:number_of_structures])
         print(f"total mean: {std_dev_df['mean_std_dev'].mean()}")
 

@@ -12,20 +12,24 @@ def committee_remote_submitter(
     size_of_committee: int = 5,
     function: Callable = None,
     function_kwargs=None,
-)-> List[str]:
+) -> List[str]:
     workdir = Path("results", base_name)
 
     def find_target_files():
-        return list(Path.glob(Path(workdir, 'mlip_committee'), f'fit_*/{target_file}'))
+        return list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
 
     target_file_list = find_target_files()
 
     if len(target_file_list) >= size_of_committee:
-        print(f"All {size_of_committee} committee members already trained. Skipping submission.")
+        print(
+            f"All {size_of_committee} committee members already trained. Skipping submission."
+        )
         return target_file_list
-    
+
     elif len(target_file_list) != 0:
-        print(f"Found {len(target_file_list)} existing committee members. Reusing them.")
+        print(
+            f"Found {len(target_file_list)} existing committee members. Reusing them."
+        )
         size_of_committee -= len(target_file_list)
         seed += len(target_file_list)
 
@@ -39,7 +43,7 @@ def committee_remote_submitter(
     executor.run_and_wait(
         function=function,
         job_configs=job_configs,
-        common_output_pattern=str(Path(workdir, "mlip_committee", "fit_{job_id}"))
+        common_output_pattern=str(Path(workdir, "mlip_committee", "fit_{job_id}")),
     )
 
     return find_target_files()

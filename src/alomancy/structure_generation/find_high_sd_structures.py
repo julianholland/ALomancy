@@ -5,6 +5,7 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 
+
 def find_high_sd_structures(
     structure_list: list[Atoms],
     base_name: str,
@@ -22,17 +23,27 @@ def find_high_sd_structures(
     )
 
     std_dev_csv_name = Path(
-        "results", base_name, job_dict["structure_generation"]["name"], "std_dev_forces.csv"
+        "results",
+        base_name,
+        job_dict["structure_generation"]["name"],
+        "std_dev_forces.csv",
     )
     high_sd_structures_xyz_name = Path(
-        "results", base_name, job_dict["structure_generation"]["name"], "high_sd_structures.xyz"
+        "results",
+        base_name,
+        job_dict["structure_generation"]["name"],
+        "high_sd_structures.xyz",
     )
 
-    if read_xyz and Path.exists(std_dev_csv_name) and Path.exists(high_sd_structures_xyz_name):
+    if (
+        read_xyz
+        and Path.exists(std_dev_csv_name)
+        and Path.exists(high_sd_structures_xyz_name)
+    ):
         std_dev_df = pd.read_csv(std_dev_csv_name, index_col=0)
         high_sd_structures = read(high_sd_structures_xyz_name, ":", format="extxyz")
 
-    else: 
+    else:
         std_dev_df = find_sd_of_all_structures(
             structure_list=structure_list,
             base_name=base_name,
@@ -67,7 +78,7 @@ def find_high_sd_structures(
         )
         print(std_dev_df[:desired_structures])
         print(f"total mean: {std_dev_df['mean_std_dev'].mean()}")
-    
+
     return high_sd_structures
 
 
