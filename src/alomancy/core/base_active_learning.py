@@ -7,6 +7,7 @@ from ase import Atoms
 from ase.io import read, write
 
 from alomancy.configs.config_dictionaries import load_dictionaries
+from alomancy.utils.clean_structures import clean_structures
 
 
 
@@ -96,13 +97,34 @@ class BaseActiveLearningWorkflow(ABC):
                 base_name, self.jobs_dict['high_accuracy_evaluation'], generated_structures, **kwargs
             )
 
-            train_xyzs += new_training_data
+            train_xyzs += clean_structures(new_training_data, base_name, self.jobs_dict['high_accuracy_evaluation'])
 
             if self.verbose > 0:
                 print(f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures.")
 
 
+    def process_structure(self, structure: Atoms) -> Atoms:
+        """
+        Process a structure before adding it to the training set.
+        
+        We will 
+        
+        Parameters
+        ----------
+        structure : Atoms
+            The structure to process.
+        
+        Returns
+        -------
+        Atoms
+            The processed structure.
+        """
+        new_structure = structure.copy()
+        new_structure.info['REF_energy'] = structure.get_potential_energy()
+        new_structure.arrays['REF_forces'] = structure.get_forces()
+        
 
+        return new_structure
 
     @abstractmethod
     def high_accuracy_evaluation(

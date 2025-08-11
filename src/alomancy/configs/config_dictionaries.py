@@ -41,6 +41,7 @@ def load_dictionaries():
         "structure_generation": {
             "name": "structure_generation",
             "number_of_concurrent_jobs": 5,
+            "desired_structures": 50,
             "max_time": "10H",
             "hpc": {
                 # "raven_gpu": {

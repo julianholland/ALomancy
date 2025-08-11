@@ -110,9 +110,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             "model_path": [
                 base_mace_model_path
             ],  # need to pass model path to preserve consistant dtype
-            "steps": 100,
-            "temperature": 300,
-            "desired_number_of_structures": 20,
+            "steps": 20000,
+            "temperature": 1200,
             "timestep_fs": 0.5,
             "verbose": self.verbose,
         }
