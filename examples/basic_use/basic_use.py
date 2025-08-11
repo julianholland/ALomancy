@@ -1,7 +1,7 @@
 # from expyre.func import ExPyRe
-from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
 from pathlib import Path
 
+from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
 
 al_workflow = ActiveLearningStandardMACE(
     initial_train_file_path=Path(

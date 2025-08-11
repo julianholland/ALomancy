@@ -1,7 +1,8 @@
+from pathlib import Path
+
+import numpy as np
 from wfl.configset import ConfigSet
 from wfl.fit.mace import fit
-from pathlib import Path
-import numpy as np
 
 
 def mace_fit(seed, epochs, mlip_committee_job_dict, workdir_str, fit_idx=0):

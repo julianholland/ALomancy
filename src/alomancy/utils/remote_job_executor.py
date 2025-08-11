@@ -1,5 +1,6 @@
-from typing import List, Dict, Any, Callable, Optional, Union
 from pathlib import Path
+from typing import Any, Callable, Optional, Union
+
 from expyre.func import ExPyRe
 from wfl.autoparallelize.remoteinfo import RemoteInfo
 
@@ -27,10 +28,10 @@ class RemoteJobExecutor:
     def submit_job(
         self,
         function: Callable,
-        function_kwargs: Dict[str, Any],
-        input_files: List[Union[str, Path]] = None,
-        output_files: List[Union[str, Path]] = None,
-        job_name: Optional[str] = None,
+        function_kwargs: dict[str, Any],
+        input_files: list[Union[str, Path]] | None = None,
+        output_files: list[Union[str, Path]] | None = None,
+        job_name: Optional[str] | None = None,
         **expyre_kwargs,
     ) -> ExPyRe:
         """
@@ -56,6 +57,13 @@ class RemoteJobExecutor:
         ExPyRe
             The ExPyRe job object
         """
+
+        if input_files is None:
+            input_files = []
+        if output_files is None:
+            output_files = []
+        if job_name is None:
+            job_name = self.remote_info.job_name
         # Convert paths to strings
         input_files = [str(f) for f in (input_files or [])]
         output_files = [str(f) for f in (output_files or [])]
@@ -84,11 +92,11 @@ class RemoteJobExecutor:
     def submit_multiple_jobs(
         self,
         function: Callable,
-        job_configs: List[Dict[str, Any]],
-        common_input_files: List[Union[str, Path]] = None,
-        common_output_pattern: Optional[str] = None,
-        job_name_pattern: Optional[str] = None,
-    ) -> List[ExPyRe]:
+        job_configs: list[dict[str, Any]],
+        common_input_files: list[Union[str, Path]] | None = None,
+        common_output_pattern: Optional[str] | None = None,
+        job_name_pattern: Optional[str] | None = None,
+    ) -> list[ExPyRe]:
         """
         Submit multiple similar jobs with different parameters.
 
@@ -114,6 +122,11 @@ class RemoteJobExecutor:
         List[ExPyRe]
             List of ExPyRe job objects
         """
+        if common_input_files is None:
+            common_input_files = []
+        if job_name_pattern is None:
+            job_name_pattern = self.remote_info.job_name
+
         jobs = []
         common_input_files = common_input_files or []
 
@@ -163,7 +176,7 @@ class RemoteJobExecutor:
                 **start_kwargs,
             )
 
-    def wait_for_all_jobs(self, verbose: bool = True) -> List[Any]:
+    def wait_for_all_jobs(self, verbose: bool = True) -> list[Any]:
         """
         Wait for all jobs to complete and gather results.
 
@@ -213,10 +226,10 @@ class RemoteJobExecutor:
     def run_and_wait(
         self,
         function: Callable,
-        job_configs: List[Dict[str, Any]],
+        job_configs: list[dict[str, Any]],
         verbose: bool = True,
         **kwargs,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """
         Convenience method to submit, start, and wait for multiple jobs.
 

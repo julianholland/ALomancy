@@ -1,5 +1,5 @@
-from ase import Atoms
 import numpy as np
+from ase import Atoms
 
 
 def select_initial_structures(
@@ -7,7 +7,7 @@ def select_initial_structures(
     structure_generation_job_dict: dict,
     train_atoms_list: list[Atoms],
     desired_initial_structures: int = 5,
-    chem_formula_list: list[str] = [],
+    chem_formula_list: list[str] | None = None,
     atom_number_range: tuple[int, int] = (0, 0),
     enforce_chemical_diversity: bool = False,
     verbose: int = 0,
@@ -28,6 +28,9 @@ def select_initial_structures(
     Returns:
         list[Atoms]: Selected Atoms objects for structure generation.
     """
+    # Handle None default for mutable argument
+    if chem_formula_list is None:
+        chem_formula_list = []
 
     if atom_number_range != (0, 0) and len(chem_formula_list) > 0:
         filtered_structures = [
@@ -50,17 +53,17 @@ def select_initial_structures(
     else:
         filtered_structures = train_atoms_list
 
-    assert len(filtered_structures) >= desired_initial_structures, (
-        f"Not enough structures to select {desired_initial_structures} from. Available: {len(filtered_structures)}"
-    )
+    assert (
+        len(filtered_structures) >= desired_initial_structures
+    ), f"Not enough structures to select {desired_initial_structures} from. Available: {len(filtered_structures)}"
 
     if enforce_chemical_diversity:
         # Ensure chemical diversity by selecting unique chemical formulas
         # If there are fewer unique formulas than `desired_initial_structures`, select all
         # Otherwise, randomly select `desired_initial_structures` unique formulas
-        unique_chemical_formulas = set(
+        unique_chemical_formulas = {
             s.get_chemical_formula() for s in filtered_structures
-        )
+        }
 
         if len(unique_chemical_formulas) <= desired_initial_structures:
             list_of_formulas = list(unique_chemical_formulas)
@@ -101,9 +104,9 @@ def select_initial_structures(
 
     for i, atoms in enumerate(initial_atoms):
         atoms.info["job_id"] = i
-        atoms.info["config_type"] = (
-            f"{base_name}_{structure_generation_job_dict['name']}"
-        )
+        atoms.info[
+            "config_type"
+        ] = f"{base_name}_{structure_generation_job_dict['name']}"
 
     if verbose > 0:
         print(

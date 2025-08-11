@@ -1,9 +1,10 @@
-from typing import Dict, Any
-from yaml import safe_load
 from pathlib import Path
+from typing import Any
+
+from yaml import safe_load
 
 
-def load_dictionaries(config_path: Path) -> Dict[str, Any]:
+def load_dictionaries(config_path: Path) -> dict[str, Any]:
     """
     Set the information for the HPCs and jobs used in the active learning workflow.
 
@@ -41,8 +42,8 @@ def load_dictionaries(config_path: Path) -> Dict[str, Any]:
     dict
         A dictionary containing the HPC and job information.
     """
-
-    JOB_DICT = safe_load(open(config_path, "r"))
+    with open(config_path) as file:
+        JOB_DICT = safe_load(file)
 
     return JOB_DICT
 

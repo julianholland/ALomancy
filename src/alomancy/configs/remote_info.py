@@ -1,11 +1,13 @@
-from wfl.autoparallelize.remoteinfo import RemoteInfo
 from expyre.resources import Resources
+from wfl.autoparallelize.remoteinfo import RemoteInfo
 
 
-def get_remote_info(job_dict, input_files: list[str] = []):
+def get_remote_info(job_dict, input_files: list[str] | None = None):
     """
     Returns a RemoteInfo object for running MACE fits on a GPU cluster.
     """
+    if input_files is None:
+        input_files = []
 
     print(f"HPC: {job_dict['hpc']['hpc_name']}, Job: {job_dict['name']}")
     return RemoteInfo(

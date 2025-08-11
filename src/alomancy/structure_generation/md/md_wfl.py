@@ -1,12 +1,12 @@
-from ase.md.langevin import Langevin
-from mace.calculators import MACECalculator
-from ase.io import write
-from ase.units import fs
-from ase import Atom, Atoms
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing_extensions import Optional
+from ase import Atoms
+from ase.io import write
+from ase.md.langevin import Langevin
+from ase.units import fs
+from mace.calculators import MACECalculator
 from tqdm import tqdm
 
 
@@ -21,15 +21,13 @@ def run_md(
     timestep_fs: float = 0.5,
     verbose: int = 0,
 ):
-    assert structure_generation_job_dict["desired_number_of_structures"] > 0, (
-        "Number of structures must be greater than 0"
-    )
+    assert (
+        structure_generation_job_dict["desired_number_of_structures"] > 0
+    ), "Number of structures must be greater than 0"
     assert (
         steps
         > structure_generation_job_dict["desired_number_of_structures"] / total_md_runs
-    ), (
-        "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
-    )
+    ), "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
     # further asserting needed here to avoid:
     # for i in range(steps // snapshot_interval):
     #                ~~~~~~^^~~~~~~~~~~~~~~~~~~
@@ -170,11 +168,15 @@ def get_forces_for_all_maces(
     base_name: str,
     job_dict: dict[str, dict[str, str]],
     base_mace: str,
-    fits_to_use: list[int] = [0],
+    fits_to_use: list[int] | None = None,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
     Get forces for all MACE models specified in fits_to_use.
     """
+
+    if fits_to_use is None:
+        fits_to_use = [0]
+
     calc = MACECalculator(model_paths=base_mace, device="cpu")
 
     for atoms in structure_list:

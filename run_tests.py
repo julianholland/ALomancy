@@ -8,7 +8,6 @@ This script provides convenient ways to run different types of tests.
 import argparse
 import subprocess
 import sys
-from pathlib import Path
 
 
 def run_command(cmd, capture_output=False):

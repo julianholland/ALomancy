@@ -165,10 +165,10 @@ def test_remote_jobs(mock_executor):
 def test_functionality():
     # Arrange
     setup_data()
-    
+
     # Act
     result = function_under_test()
-    
+
     # Assert
     assert result == expected
 ```
@@ -221,12 +221,12 @@ def test_functionality():
 def test_large_system_performance():
     # Create large system
     atoms_list = create_large_dataset(10000)
-    
+
     # Time the operation
     start_time = time.time()
     result = process_large_dataset(atoms_list)
     elapsed = time.time() - start_time
-    
+
     # Assert performance requirements
     assert elapsed < 60.0  # Should complete in under 1 minute
 ```

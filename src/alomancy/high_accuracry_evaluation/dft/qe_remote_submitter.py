@@ -1,18 +1,20 @@
 from pathlib import Path
-from wfl.autoparallelize.remoteinfo import RemoteInfo
-from typing import List, Callable
-from alomancy.utils.remote_job_executor import RemoteJobExecutor
+from typing import Any, Callable
+
 from ase import Atoms
+from wfl.autoparallelize.remoteinfo import RemoteInfo
+
+from alomancy.utils.remote_job_executor import RemoteJobExecutor
 
 
 def qe_remote_submitter(
     remote_info: RemoteInfo,
     base_name: str,
     target_file: str,
-    input_atoms_list: List[Atoms],
-    function: Callable = None,
-    function_kwargs=None,
-) -> List[str]:
+    input_atoms_list: list[Atoms],
+    function: Callable | None = None,
+    function_kwargs: dict[str, Any] | None = None,
+) -> list[str]:
     workdir = Path("results", base_name)
     qe_dir = Path(workdir, "high_accuracy_evaluation")
 

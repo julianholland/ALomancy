@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 import pandas as pd
 from ase import Atoms
@@ -37,7 +37,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
 
     def train_mlip(
-        self, base_name: str, mlip_committee_job_dict: dict, **kwargs
+        self, base_name: str, mlip_committee_job_dict: dict
     ) -> Optional[str]:
         workdir = Path("results", base_name)
 
@@ -62,9 +62,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
         return f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
 
-    def evaluate_mlip(
-        self, base_name: str, mlip_committee_job_dict: Dict, **kwargs
-    ) -> pd.DataFrame:
+    def evaluate_mlip(self, mlip_committee_job_dict: dict) -> pd.DataFrame:
         all_avg_results = mace_recover_train_txt_final_results(
             mlip_committee_job_dict=mlip_committee_job_dict
         )
@@ -72,8 +70,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         return all_avg_results
 
     def generate_structures(
-        self, base_name: str, job_dict: dict, train_atoms_list: List[Atoms], **kwargs
-    ) -> List[Atoms]:
+        self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]
+    ) -> list[Atoms]:
         input_structures = select_initial_structures(
             base_name=base_name,
             structure_generation_job_dict=job_dict["structure_generation"],
@@ -179,12 +177,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         self,
         base_name: str,
         high_accuracy_eval_job_dict: dict,
-        structures: List[Atoms],
-        **kwargs,
-    ) -> List[Atoms]:
+        structures: list[Atoms],
+    ) -> list[Atoms]:
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
-            "verbose": self.verbose,
         }
 
         high_accuracy_structure_paths = qe_remote_submitter(

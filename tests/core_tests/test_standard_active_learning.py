@@ -11,11 +11,9 @@ from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pandas as pd
-from pandas._config import config
 import pytest
 from ase import Atoms
 from ase.io import write
-
 from yaml import dump
 
 from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
@@ -258,9 +256,7 @@ class TestActiveLearningStandardMACE:
             config_file_path=config_file,
         )
 
-        result = workflow.evaluate_mlip(
-            "test_loop_0", mock_job_config["mlip_committee"]
-        )
+        result = workflow.evaluate_mlip(mock_job_config["mlip_committee"])
 
         # Verify the recovery function was called
         mock_mace_recover.assert_called_once_with(
@@ -441,8 +437,8 @@ class TestActiveLearningStandardMACEIntegration:
         train_file, test_file, config_file = temp_files_co2
         mock_load_dict.return_value = mock_job_config
 
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             old_cwd = os.getcwd()

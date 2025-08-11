@@ -1,6 +1,7 @@
 from pathlib import Path
-from ase.io import read
+
 from ase import Atoms
+from ase.io import read
 
 
 def add_new_training_data(

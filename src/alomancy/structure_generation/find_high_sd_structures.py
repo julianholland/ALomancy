@@ -1,8 +1,9 @@
-from ase.io import write, read
-from ase import Atom, Atoms
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
+from ase import Atoms
+from ase.io import read, write
 from tqdm import tqdm
 
 
@@ -18,9 +19,9 @@ def find_high_sd_structures(
     read_xyz: bool = True,
 ) -> list[Atoms]:
     assert desired_structures > 0, "Number of structures must be greater than 0"
-    assert len(structure_list) >= desired_structures, (
-        f"Not enough structures to select {desired_structures} from. Available: {len(structure_list)}"
-    )
+    assert (
+        len(structure_list) >= desired_structures
+    ), f"Not enough structures to select {desired_structures} from. Available: {len(structure_list)}"
 
     std_dev_csv_name = Path(
         "results",

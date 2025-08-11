@@ -4,19 +4,18 @@ Tests for the base active learning workflow.
 This module tests the BaseActiveLearningWorkflow abstract class and its core functionality.
 """
 
-from logging import config
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
-from alomancy.configs.config_dictionaries import load_dictionaries
 import numpy as np
 import pandas as pd
 import pytest
 from ase import Atoms
-from ase.io import write
-from yaml import safe_load, dump
 from ase.calculators.emt import EMT
+from ase.io import write
+from yaml import dump
+
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 
 
@@ -34,8 +33,8 @@ class ConcreteActiveLearningWorkflow(BaseActiveLearningWorkflow):
         self.train_mlip_calls.append((base_name, mlip_committee_job_dict, kwargs))
         return "mock_model.pt"
 
-    def evaluate_mlip(self, base_name, mlip_committee_job_dict, **kwargs):
-        self.evaluate_mlip_calls.append((base_name, mlip_committee_job_dict, kwargs))
+    def evaluate_mlip(self, mlip_committee_job_dict, **kwargs):
+        self.evaluate_mlip_calls.append((mlip_committee_job_dict, kwargs))
         return pd.DataFrame({"rmse": [0.1], "mae": [0.05]})
 
     def generate_structures(self, base_name, job_dict, train_data, **kwargs):
@@ -196,15 +195,20 @@ class TestBaseActiveLearningWorkflow:
         assert workflow.jobs_dict == {"test": "dict"}
 
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    @patch("os.makedirs")
-    def test_run_workflow_structure(self, mock_makedirs, mock_load_dict, temp_files):
-        """Test the overall structure of the run method."""
+    @patch("alomancy.utils.clean_structures.clean_structures")
+    def test_run_workflow_structure(
+        self, mock_clean_structures, mock_load_dict, temp_files
+    ):
+        """Test the overall structure of running the AL workflow."""
         train_file, test_file, config_file = temp_files
         mock_load_dict.return_value = {
             "mlip_committee": {"name": "test_mlip"},
             "structure_generation": {"name": "test_md"},
-            "high_accuracy_evaluation": {"name": "test_emt"},
+            "high_accuracy_evaluation": {"name": "test_qe"},
         }
+
+        # Mock clean_structures to return the input structures
+        mock_clean_structures.side_effect = lambda structures, *args: structures
 
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
@@ -217,7 +221,7 @@ class TestBaseActiveLearningWorkflow:
         # Mock the results directory creation and file operations
         with (
             patch("pathlib.Path.mkdir"),
-            patch("alomancy.core.base_active_learning.write") as mock_write,
+            patch("alomancy.core.base_active_learning.write"),  # Add this patch
         ):
             workflow.run()
 
@@ -230,6 +234,46 @@ class TestBaseActiveLearningWorkflow:
         # Check that base_name is correct for each loop
         assert workflow.train_mlip_calls[0][0] == "al_loop_0"
         assert workflow.train_mlip_calls[1][0] == "al_loop_1"
+
+    # @patch("alomancy.configs.config_dictionaries.load_dictionaries")
+    # @patch("alomancy.utils.clean_structures.clean_structures")  # Add this patch
+    # def test_run_workflow_structure(
+    #     self, mock_clean_structures, mock_load_dict, temp_files
+    # ):
+    #     """Test the overall structure of running the AL workflow."""
+    #     train_file, test_file, config_file = temp_files
+    #     mock_load_dict.return_value = {
+    #         "mlip_committee": {"name": "test_mlip"},
+    #         "structure_generation": {"name": "test_md"},
+    #         "high_accuracy_evaluation": {"name": "test_qe"},
+    #     }
+
+    #     # Mock clean_structures to return the input structures
+    #     mock_clean_structures.side_effect = lambda structures, *args: structures
+
+    #     workflow = ConcreteActiveLearningWorkflow(
+    #         initial_train_file_path=train_file,
+    #         initial_test_file_path=test_file,
+    #         config_file_path=config_file,
+    #         number_of_al_loops=2,
+    #         start_loop=0,
+    #     )
+
+    #     # Mock the results directory creation and file operations
+    #     with (
+    #         patch("pathlib.Path.mkdir"),
+    #     ):
+    #         workflow.run()
+
+    #     # Check that all abstract methods were called the expected number of times
+    #     assert len(workflow.train_mlip_calls) == 2  # 2 loops
+    #     assert len(workflow.evaluate_mlip_calls) == 2  # 2 loops
+    #     assert len(workflow.generate_structures_calls) == 2  # 2 loops
+    #     assert len(workflow.high_accuracy_evaluation_calls) == 2  # 2 loops
+
+    #     # Check that base_name is correct for each loop
+    #     assert workflow.train_mlip_calls[0][0] == "al_loop_0"
+    #     assert workflow.train_mlip_calls[1][0] == "al_loop_1"
 
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     def test_run_with_start_loop(self, mock_load_dict, temp_files):

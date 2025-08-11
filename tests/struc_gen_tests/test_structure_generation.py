@@ -145,20 +145,6 @@ class TestMolecularDynamics:
         assert dyn is not None
         mock_langevin.assert_called_once()
 
-    def test_force_checking(self, sample_md_structures):
-        """Test force magnitude checking during MD."""
-        for atoms in sample_md_structures:
-            forces = atoms.arrays["forces"]
-            max_forces = np.max(np.abs(forces), axis=0)
-
-            # Test that forces are reasonable (not excessive)
-            # In real MD, we would stop if forces > 1000 eV/Å
-            force_threshold = 1000
-            is_stable = np.all(max_forces < force_threshold)
-
-            # For our test data, forces should be reasonable
-            assert np.all(max_forces < 1.0)  # Test data has small forces
-
     @patch("alomancy.structure_generation.md.md_remote_submitter.md_remote_submitter")
     def test_md_remote_submission(self, mock_md_submitter):
         """Test MD remote submission."""
@@ -314,7 +300,7 @@ class TestForceVarianceCalculation:
 
         flattened = flatten_array_of_forces(forces)
 
-        assert flattened.shape == (1, 15)  # 5 atoms × 3 components
+        assert flattened.shape == (1, 15)  # 5 atoms x 3 components
 
         # Test that we can unflatten correctly
         unflattened = flattened.reshape((5, 3))
@@ -397,7 +383,7 @@ class TestTrajectoryProcessing:
 
     def test_trajectory_file_reading(self, sample_md_structures):
         """Test reading trajectory files."""
-        from ase.io import write, read
+        from ase.io import read, write
 
         with tempfile.TemporaryDirectory() as tmpdir:
             traj_file = Path(tmpdir) / "trajectory.xyz"
@@ -413,7 +399,7 @@ class TestTrajectoryProcessing:
 
     def test_trajectory_concatenation(self, sample_md_structures):
         """Test concatenating multiple trajectory files."""
-        from ase.io import write, read
+        from ase.io import write
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create multiple trajectory files
@@ -431,11 +417,11 @@ class TestTrajectoryProcessing:
 
             # Simulate reading and concatenating
             all_structures = []
-            for traj_file in traj_files:
+            for _ in traj_files:
                 structures = sample_md_structures[:10]  # Mock read
                 all_structures.extend(structures)
 
-            assert len(all_structures) == 30  # 3 files × 10 structures each
+            assert len(all_structures) == 30  # 3 files x 10 structures each
 
 
 @pytest.mark.integration

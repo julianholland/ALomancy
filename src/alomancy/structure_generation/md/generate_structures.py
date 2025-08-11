@@ -1,17 +1,17 @@
-from re import S
-from ase.io import read, write
-from wfl.autoparallelize import AutoparaInfo, RemoteInfo
-from wfl.autoparallelize.base import autoparallelize
 from pathlib import Path
 
-from wfl.configset import OutputSpec, ConfigSet
-from md_wfl import (
-    primary_run,
-    get_forces_for_all_maces,
-    std_deviation_of_forces,
-)
 import pandas as pd
 from ase import Atoms
+from ase.io import read, write
+from md_wfl import (
+    get_forces_for_all_maces,
+    primary_run,
+    std_deviation_of_forces,
+)
+from wfl.autoparallelize import AutoparaInfo, RemoteInfo
+from wfl.autoparallelize.base import autoparallelize
+from wfl.configset import OutputSpec
+
 # calc=MACECalculator(model_paths=[f'MACE_model/fit_{i}/test_stagetwo_compiled.model' for i in range(2)],device='cpu')
 
 
@@ -47,9 +47,9 @@ def get_structures_for_dft(
         List of structures selected for DFT calculations.
     """
 
-    assert number_of_structures < steps * len(initial_atoms), (
-        "Number of structures must be less than the number of steps times the number of initial atoms"
-    )
+    assert (
+        number_of_structures < steps * len(initial_atoms)
+    ), "Number of structures must be less than the number of steps times the number of initial atoms"
 
     md_dir = Path("results", base_name, "MD/md_trajs")
     md_dir.mkdir(exist_ok=True, parents=True)

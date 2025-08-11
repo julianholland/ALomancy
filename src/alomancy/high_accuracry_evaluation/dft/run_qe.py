@@ -1,8 +1,9 @@
-from ase.calculators.espresso import Espresso, EspressoProfile
+from pathlib import Path
+
 import numpy as np
 from ase import Atoms
+from ase.calculators.espresso import Espresso, EspressoProfile
 from ase.io import write
-from pathlib import Path
 
 
 def get_qe_input_data(calculation_type: str) -> dict:
@@ -109,7 +110,6 @@ def run_qe(
     input_structure: Atoms,
     out_dir: str,
     high_accuracy_eval_job_dict: dict,
-    verbose: int = 0,
 ):
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 

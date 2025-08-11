@@ -1,7 +1,8 @@
 from pathlib import Path
-import pandas as pd
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 
 class Plot:
@@ -86,7 +87,6 @@ class Plot:
 
 
 def mace_recover_train_txt_final_results(
-    base_name: str,
     mlip_committee_job_dict: dict,
 ) -> pd.DataFrame:
     """
@@ -104,14 +104,14 @@ def mace_recover_train_txt_final_results(
         )
         results = []
         for results_file in results_files:
-            with open(results_file, "r") as file:
+            with open(results_file) as file:
                 data_line = file.readlines()[-1]
                 result = dict(eval(data_line))
                 results.append(result)
 
         avg_result = {
             key: np.mean([np.float32(result[key]) for result in results])
-            for key in results[0].keys()
+            for key in results[0]
             if key not in ["mode", "epoch", "head"]
         }
         all_avg_results.append(avg_result)

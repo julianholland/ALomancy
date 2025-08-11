@@ -4,7 +4,6 @@ Tests for high-accuracy evaluation components.
 This module tests DFT calculations, Quantum Espresso integration, and related functionality.
 """
 
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -207,8 +206,9 @@ class TestQuantumEspressoExecution:
         self, mock_create_calc, sample_qe_structures, mock_qe_job_dict
     ):
         """Test QE run function."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
         import tempfile
+
+        from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
 
         # Mock calculator
         mock_calc = MagicMock()
@@ -224,7 +224,6 @@ class TestQuantumEspressoExecution:
                 input_structure=atoms,
                 out_dir=tmpdir,  # Use real temp directory
                 high_accuracy_eval_job_dict=mock_qe_job_dict,
-                verbose=0,
             )
 
             # Check that calculation was performed

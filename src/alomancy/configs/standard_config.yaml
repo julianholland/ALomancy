@@ -5,40 +5,40 @@ JOB_DICT:
     max_time: "5H"
     hpc:
       # raven_gpu:
-      #   pre_cmds: 
+      #   pre_cmds:
       #     - "source /u/jholl/venvs/wfl/bin/activate"
-      #   partitions: 
+      #   partitions:
       #     - "gpu"
       hpc_name: "fhi-raccoon"
-      pre_cmds: 
+      pre_cmds:
         - "source /home/jholl/venvs/alomancy/bin/activate"
-      partitions: 
+      partitions:
         - "gpusmall"
-  
+
   structure_generation:
     name: "structure_generation"
     number_of_concurrent_jobs: 5
     max_time: "10H"
     hpc:
       # raven_gpu:
-      #   pre_cmds: 
+      #   pre_cmds:
       #     - "source /u/jholl/venvs/wfl/bin/activate"
-      #   partitions: 
+      #   partitions:
       #     - "gpu"
       hpc_name: "fhi-raccoon"
-      pre_cmds: 
+      pre_cmds:
         - "source /home/jholl/venvs/alomancy/bin/activate"
-      partitions: 
+      partitions:
         - "gpusmall"
-  
+
   high_accuracy_evaluation:
     name: "high_accuracy_evaluation"
     max_time: "30m"
     hpc:
       hpc_name: "raven"
-      pre_cmds: 
+      pre_cmds:
         - "source /u/jholl/venvs/alomancy/bin/activate"
-      partitions: 
+      partitions:
         - "general"
       node_info:
         ranks_per_system: 72
@@ -47,6 +47,6 @@ JOB_DICT:
         max_mem_per_node: "60GB"
       pwx_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
       pp_path: "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency"
-      pseudo_dict: 
+      pseudo_dict:
         C: "C.pbe-n-kjpaw_psl.1.0.0.UPF"
-        Na: "na_pbe_v1.5.uspp.F.UPF"  
+        Na: "na_pbe_v1.5.uspp.F.UPF"

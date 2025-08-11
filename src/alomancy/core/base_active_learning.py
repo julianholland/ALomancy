@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import pandas as pd
 from ase import Atoms
@@ -46,7 +46,7 @@ class BaseActiveLearningWorkflow(ABC):
 
         def load_initial_train_test_sets(
             dummy_run: bool = False,
-        ) -> Tuple[List[Atoms], List[Atoms]]:
+        ) -> tuple[list[Atoms], list[Atoms]]:
             train_xyzs = [
                 atoms
                 for atoms in read(self.initial_train_file, ":")
@@ -87,7 +87,7 @@ class BaseActiveLearningWorkflow(ABC):
             try:
                 write(train_file, train_xyzs, format="extxyz")
                 write(test_file, test_xyzs, format="extxyz")
-            except (OSError, IOError) as e:
+            except OSError as e:
                 if "test" not in str(e).lower():  # Don't fail in tests
                     raise
                 print(f"Warning: Could not write files (test environment): {e}")
@@ -101,7 +101,7 @@ class BaseActiveLearningWorkflow(ABC):
             self.train_mlip(base_name, self.jobs_dict["mlip_committee"], **kwargs)
 
             evaluation_results = self.evaluate_mlip(
-                base_name, self.jobs_dict["mlip_committee"], **kwargs
+                self.jobs_dict["mlip_committee"], **kwargs
             )
             if self.verbose > 0:
                 print(f"AL Loop {loop} evaluation results: \n{evaluation_results}")
@@ -153,9 +153,9 @@ class BaseActiveLearningWorkflow(ABC):
         self,
         base_name: str,
         high_accuracy_eval_job_dict: dict,
-        structures: List[Atoms],
+        structures: list[Atoms],
         **kwargs,
-    ) -> List[Atoms]:
+    ) -> list[Atoms]:
         """
         Run high-accuracy calculations on selected structures.
 
@@ -209,19 +209,15 @@ class BaseActiveLearningWorkflow(ABC):
 
         Parameters
         ----------
-        base_name : str
-            Base name for this AL loop
         mlip_committee_job_dict : dict
             Dictionary containing job name and HPC parameters for MLIP evaluation
-        test_data : List[Atoms]
-            Test data for evaluation
         **kwargs
             Additional keyword arguments
 
         Returns
         -------
         Dict[str, Any]
-            Evaluation metrics (RMSE, MAE, etc.)
+            Evaluation metrics (MAE_F, MAE_E etc.)
         """
         pass
 
@@ -230,9 +226,9 @@ class BaseActiveLearningWorkflow(ABC):
         self,
         base_name: str,
         structure_generation_job_dict: dict,
-        train_data: List[Atoms],
+        train_data: list[Atoms],
         **kwargs,
-    ) -> List[Atoms]:
+    ) -> list[Atoms]:
         """
         Generate structures for active learning selection.
 

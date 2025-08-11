@@ -1,6 +1,8 @@
 from pathlib import Path
+from typing import Any, Callable
+
 from wfl.autoparallelize.remoteinfo import RemoteInfo
-from typing import List, Callable
+
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
 
 
@@ -10,9 +12,9 @@ def committee_remote_submitter(
     target_file: str,
     seed: int = 803,
     size_of_committee: int = 5,
-    function: Callable = None,
-    function_kwargs=None,
-) -> List[str]:
+    function: Callable | None = None,
+    function_kwargs: dict[str, Any] | None = None,
+) -> list[str]:
     workdir = Path("results", base_name)
 
     def find_target_files():
