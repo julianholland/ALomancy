@@ -12,10 +12,10 @@ from alomancy.analysis.mace_analysis import (
 )
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
-from alomancy.high_accuracry_evaluation.dft.qe_remote_submitter import (
+from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
     qe_remote_submitter,
 )
-from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
+from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.structure_generation.find_high_sd_structures import (

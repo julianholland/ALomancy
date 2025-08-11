@@ -88,7 +88,7 @@ class TestQuantumEspressoSetup:
 
     def test_qe_input_data_generation(self):
         """Test QE input data dictionary generation."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import get_qe_input_data
+        from alomancy.high_accuracy_evaluation.dft.run_qe import get_qe_input_data
 
         input_data = get_qe_input_data("scf")
 
@@ -116,7 +116,7 @@ class TestQuantumEspressoSetup:
 
     def test_kpoint_generation(self):
         """Test k-point grid generation."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import generate_kpts
+        from alomancy.high_accuracy_evaluation.dft.run_qe import generate_kpts
 
         # Test cubic cell
         cell = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]])
@@ -133,7 +133,7 @@ class TestQuantumEspressoSetup:
 
     def test_npool_optimization(self):
         """Test optimal npool calculation."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import find_optimal_npool
+        from alomancy.high_accuracy_evaluation.dft.run_qe import find_optimal_npool
 
         # Test with 8 cores and 4 k-points
         npool = find_optimal_npool(
@@ -146,7 +146,7 @@ class TestQuantumEspressoSetup:
 
     def test_debug_espresso_profile_creation(self):
         """Debug what create_espresso_profile actually returns."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import (
+        from alomancy.high_accuracy_evaluation.dft.run_qe import (
             create_espresso_profile,
         )
 
@@ -174,13 +174,13 @@ class TestQuantumEspressoSetup:
         assert profile is not None
 
     @patch(
-        "alomancy.high_accuracry_evaluation.dft.run_qe.Espresso"
+        "alomancy.high_accuracy_evaluation.dft.run_qe.Espresso"
     )  # Patch where it's imported
     def test_qe_calculator_creation(
         self, mock_espresso_class, sample_qe_structures, mock_qe_job_dict
     ):
         """Test QE calculator creation."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import create_qe_calc_object
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_qe_calc_object
 
         # Mock calculator
         mock_calc = MagicMock()
@@ -201,14 +201,14 @@ class TestQuantumEspressoSetup:
 class TestQuantumEspressoExecution:
     """Test Quantum Espresso execution."""
 
-    @patch("alomancy.high_accuracry_evaluation.dft.run_qe.create_qe_calc_object")
+    @patch("alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object")
     def test_run_qe_function(
         self, mock_create_calc, sample_qe_structures, mock_qe_job_dict
     ):
         """Test QE run function."""
         import tempfile
 
-        from alomancy.high_accuracry_evaluation.dft.run_qe import run_qe
+        from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
 
         # Mock calculator
         mock_calc = MagicMock()
@@ -238,11 +238,11 @@ class TestQuantumEspressoExecution:
             assert expected_file.exists()
 
     @patch(
-        "alomancy.high_accuracry_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
+        "alomancy.high_accuracy_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
     )
     def test_qe_remote_submission(self, mock_qe_submitter, sample_qe_structures):
         """Test QE remote submission."""
-        from alomancy.high_accuracry_evaluation.dft.qe_remote_submitter import (
+        from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
             qe_remote_submitter,
         )
 
@@ -315,7 +315,7 @@ class TestHighAccuracyEvaluationIntegration:
     """Integration tests for high-accuracy evaluation."""
 
     @patch(
-        "alomancy.high_accuracry_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
+        "alomancy.high_accuracy_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
     )
     @patch("ase.io.read")
     def test_complete_evaluation_workflow(
@@ -366,7 +366,7 @@ class TestHighAccuracyEvaluationIntegration:
 
     def test_error_handling(self, sample_qe_structures, mock_qe_job_dict):
         """Test error handling in QE calculations."""
-        from alomancy.high_accuracry_evaluation.dft.run_qe import get_qe_input_data
+        from alomancy.high_accuracy_evaluation.dft.run_qe import get_qe_input_data
 
         # Test invalid calculation type
         try:
@@ -409,9 +409,9 @@ class TestHighAccuracyEvaluationIntegration:
 class TestQuantumEspressoIntegration:
     """Integration tests for QE components."""
 
-    @patch("alomancy.high_accuracry_evaluation.dft.run_qe.run_qe")
+    @patch("alomancy.high_accuracy_evaluation.dft.run_qe.run_qe")
     @patch(
-        "alomancy.high_accuracry_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
+        "alomancy.high_accuracy_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
     )
     def test_full_qe_pipeline(
         self, mock_submitter, mock_run_qe, sample_qe_structures, mock_qe_job_dict
