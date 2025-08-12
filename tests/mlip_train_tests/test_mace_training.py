@@ -336,7 +336,7 @@ class TestMLIPIntegration:
 
     @patch("alomancy.mlip.committee_remote_submitter.committee_remote_submitter")
     @patch("alomancy.analysis.mace_analysis.mace_al_loop_average_error")
-    def test_full_mlip_workflow(self, mock_eval, mock_submitter, sample_training_atoms):
+    def test_full_mlip_workflow(self, mock_eval, mock_submitter):
         """Test complete MLIP training and evaluation workflow."""
         import pandas as pd
 
@@ -349,9 +349,7 @@ class TestMLIPIntegration:
         )
 
         # Test workflow
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workdir = Path(tmpdir)
-
+        with tempfile.TemporaryDirectory():
             # Mock training
             training_result = mock_submitter(
                 remote_info=MagicMock(),
