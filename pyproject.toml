@@ -58,8 +58,9 @@ dev = [
     "pre-commit>=3.0",
 ]
 docs = [
-    "sphinx>=6.0",
+        "sphinx>=6.0",
     "sphinx-rtd-theme>=1.2",
+    "myst-parser>=0.18",
     "sphinxcontrib-napoleon>=0.7",
 ]
 test = [
