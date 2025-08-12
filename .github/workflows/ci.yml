@@ -34,10 +34,10 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint with ruff
-        run: ruff check src/core src/analysis src/alomancy/configs src/alomancy/utils src/alomancy/high_accuracy_evaluation src/alomancy/mlip src/alomancy/structure_generation tests
+        run: ruff check src/alomancy/core src/alomancy/analysis src/alomancy/configs src/alomancy/utils src/alomancy/high_accuracy_evaluation src/alomancy/mlip src/alomancy/structure_generation tests
 
       - name: Check formatting with ruff
-        run: ruff format --check src/core src/analysis src/alomancy/configs src/alomancy/utils src/alomancy/high_accuracy_evaluation src/alomancy/mlip src/alomancy/structure_generation tests
+        run: ruff format --check src/alomancy/core src/alomancy/analysis src/alomancy/configs src/alomancy/utils src/alomancy/high_accuracy_evaluation src/alomancy/mlip src/alomancy/structure_generation tests
 
       - name: Type check with mypy
         run: mypy src/alomancy
