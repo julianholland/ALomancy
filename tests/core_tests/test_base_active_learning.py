@@ -216,6 +216,7 @@ class TestBaseActiveLearningWorkflow:
             config_file_path=config_file,
             number_of_al_loops=2,
             start_loop=0,
+            plots=False,
         )
 
         # Mock the results directory creation and file operations
@@ -227,7 +228,6 @@ class TestBaseActiveLearningWorkflow:
 
         # Check that all abstract methods were called the expected number of times
         assert len(workflow.train_mlip_calls) == 2  # 2 loops
-        assert len(workflow.evaluate_mlip_calls) == 2  # 2 loops
         assert len(workflow.generate_structures_calls) == 2  # 2 loops
         assert len(workflow.high_accuracy_evaluation_calls) == 2  # 2 loops
 
@@ -291,6 +291,7 @@ class TestBaseActiveLearningWorkflow:
             config_file_path=config_file,
             number_of_al_loops=3,
             start_loop=1,
+            plots=False,
         )
 
         with (
@@ -332,6 +333,7 @@ class TestBaseActiveLearningWorkflow:
             config_file_path=config_file,
             number_of_al_loops=1,
             verbose=1,
+            plots=False,
         )
 
         with (
@@ -405,6 +407,7 @@ class TestActiveLearningIntegration:
             config_file_path=config_file,
             number_of_al_loops=2,
             verbose=0,
+            plots=False,
         )
 
         with (
@@ -415,7 +418,6 @@ class TestActiveLearningIntegration:
 
         # Verify the workflow completed all steps
         assert len(workflow.train_mlip_calls) == 2
-        assert len(workflow.evaluate_mlip_calls) == 2
         assert len(workflow.generate_structures_calls) == 2
         assert len(workflow.high_accuracy_evaluation_calls) == 2
 

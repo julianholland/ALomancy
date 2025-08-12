@@ -260,7 +260,7 @@ class TestMACECalculator:
 class TestMLIPEvaluation:
     """Test MLIP evaluation functionality."""
 
-    @patch("alomancy.analysis.mace_analysis.mace_al_loop_average_error")
+    @patch("alomancy.mlip.get_mace_eval_info.get_mace_eval_info")
     def test_mace_evaluation_function(self, mock_eval_func):
         """Test MACE evaluation function."""
         # Mock evaluation results
@@ -268,23 +268,19 @@ class TestMLIPEvaluation:
 
         mock_results = pd.DataFrame(
             {
-                "rmse_energy": [0.1, 0.08, 0.12],
-                "rmse_forces": [0.2, 0.18, 0.22],
-                "mae_energy": [0.05, 0.04, 0.06],
-                "mae_forces": [0.1, 0.09, 0.11],
+                "mae_e": [0.05, 0.04, 0.06],
+                "mae_f": [0.1, 0.09, 0.11],
             }
         )
         mock_eval_func.return_value = mock_results
 
-        from alomancy.analysis.mace_analysis import mace_al_loop_average_error
+        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
 
-        result = mace_al_loop_average_error(
-            mlip_committee_job_dict={"name": "test"}, plot=False
-        )
+        result = get_mace_eval_info(mlip_committee_job_dict={"name": "test"})
 
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 3
-        assert "rmse_energy" in result.columns
+        assert "mae_e" in result.columns
         mock_eval_func.assert_called_once()
 
     def test_evaluation_metrics(self):
@@ -335,7 +331,7 @@ class TestMLIPIntegration:
     """Integration tests for MLIP components."""
 
     @patch("alomancy.mlip.committee_remote_submitter.committee_remote_submitter")
-    @patch("alomancy.analysis.mace_analysis.mace_al_loop_average_error")
+    @patch("alomancy.mlip.get_mace_eval_info.get_mace_eval_info")
     def test_full_mlip_workflow(self, mock_eval, mock_submitter):
         """Test complete MLIP training and evaluation workflow."""
         import pandas as pd
@@ -344,14 +340,12 @@ class TestMLIPIntegration:
         mock_submitter.return_value = ["model_0.pt", "model_1.pt", "model_2.pt"]
 
         # Mock evaluation to return metrics
-        mock_eval.return_value = pd.DataFrame(
-            {"rmse_energy": [0.1], "rmse_forces": [0.2]}
-        )
+        mock_eval.return_value = pd.DataFrame({"mae_e": [0.1], "mae_f": [0.2]})
 
         # Test workflow
         with tempfile.TemporaryDirectory():
             # Mock training
-            training_result = mock_submitter(
+            submitter_result = mock_submitter(
                 remote_info=MagicMock(),
                 base_name="test_loop_0",
                 target_file="test_model.pt",
@@ -362,11 +356,9 @@ class TestMLIPIntegration:
             )
 
             # Mock evaluation
-            eval_result = mock_eval(
-                mlip_committee_job_dict={"name": "test"}, plot=False
-            )
+            eval_result = mock_eval(mlip_committee_job_dict={"name": "test"})
 
-            assert len(training_result) == 3
+            assert len(submitter_result) == 3
             assert isinstance(eval_result, pd.DataFrame)
 
 
