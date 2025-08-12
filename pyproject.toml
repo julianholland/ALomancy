@@ -69,8 +69,8 @@ test = [
     "pytest-xdist>=3.0",
 ]
 
-[project.scripts]
-alomancy = "alomancy.cli.main:main"
+# [project.scripts]
+# alomancy = "alomancy.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/julianholland/ALomancy"
@@ -79,6 +79,8 @@ Documentation = "https://alomancy.readthedocs.io"
 
 [tool.setuptools_scm]
 write_to = "src/alomancy/version.py"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
 # Add setuptools configuration for src layout
 [tool.setuptools.packages.find]
