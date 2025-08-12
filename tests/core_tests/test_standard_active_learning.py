@@ -171,10 +171,12 @@ class TestActiveLearningStandardMACE:
 
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     @patch("alomancy.core.standard_active_learning.committee_remote_submitter")
+    @patch("alomancy.core.standard_active_learning.get_mace_eval_info")
     @patch("alomancy.configs.remote_info.get_remote_info")
     def test_train_mlip(
         self,
         mock_get_remote_info,
+        mock_mace_recover,
         mock_committee_submitter,
         mock_load_dict,
         temp_files_co2,
@@ -193,10 +195,19 @@ class TestActiveLearningStandardMACE:
             f"{mock_job_config['mlip_committee']['name']}_stagetwo_compiled.model"
         ]
 
+        mock_results_df = pd.DataFrame(
+            {
+                "mae_e": [0.1, 0.08, 0.12],
+                "mae_f": [0.2, 0.18, 0.22],
+            }
+        )
+        mock_mace_recover.return_value = mock_results_df
+
         workflow = ActiveLearningStandardMACE(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
             config_file_path=config_file,
+            plots=False,
         )
 
         # Test train_mlip method
@@ -214,63 +225,12 @@ class TestActiveLearningStandardMACE:
         )
         assert call_args[1]["size_of_committee"] == 3
 
-        # Verify the result
-        assert (
-            result
-            == f"{mock_job_config['mlip_committee']['name']}_stagetwo_compiled.model"
-        )
-
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    @patch(
-        "alomancy.core.standard_active_learning.mace_recover_train_txt_final_results"
-    )
-    @patch("alomancy.core.standard_active_learning.mace_al_loop_average_error")
-    def test_evaluate_mlip(
-        self,
-        mock_mace_average_error,
-        mock_mace_recover,
-        mock_load_dict,
-        temp_files_co2,
-        mock_job_config,
-    ):
-        """Test MLIP evaluation method."""
-        train_file, test_file, config_file = temp_files_co2
-        mock_load_dict.return_value = mock_job_config
-
-        # Mock the recovery and analysis functions
-        mock_results_df = pd.DataFrame(
-            {
-                "rmse_energy": [0.1, 0.08, 0.12],
-                "rmse_forces": [0.2, 0.18, 0.22],
-                "mae_energy": [0.05, 0.04, 0.06],
-            }
-        )
-        mock_mace_recover.return_value = mock_results_df
-        mock_mace_average_error.return_value = (
-            None  # This function plots but doesn't return
-        )
-
-        workflow = ActiveLearningStandardMACE(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            config_file_path=config_file,
-        )
-
-        result = workflow.evaluate_mlip(mock_job_config["mlip_committee"])
-
-        # Verify the recovery function was called
         mock_mace_recover.assert_called_once_with(
             mlip_committee_job_dict=mock_job_config["mlip_committee"]
         )
 
-        # Verify the analysis function was called
-        mock_mace_average_error.assert_called_once_with(
-            all_avg_results=mock_results_df, plot=True
-        )
-
-        # Verify the result is returned correctly
+        # Verify the result is the DataFrame returned by mace_recover
         assert isinstance(result, pd.DataFrame)
-        assert len(result) == 3
         pd.testing.assert_frame_equal(result, mock_results_df)
 
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
@@ -451,9 +411,6 @@ class TestActiveLearningStandardMACEIntegration:
                         ActiveLearningStandardMACE, "train_mlip"
                     ) as mock_train,
                     patch.object(
-                        ActiveLearningStandardMACE, "evaluate_mlip"
-                    ) as mock_eval,
-                    patch.object(
                         ActiveLearningStandardMACE, "generate_structures"
                     ) as mock_gen,
                     patch.object(
@@ -461,8 +418,9 @@ class TestActiveLearningStandardMACEIntegration:
                     ) as mock_ha,
                 ):
                     # Configure method return values
-                    mock_train.return_value = "model_path"
-                    mock_eval.return_value = pd.DataFrame({"rmse": [0.1]})
+                    mock_train.return_value = pd.DataFrame(
+                        {"mae_f": [0.1], "mae_e": [0.2]}
+                    )
                     mock_gen.return_value = [sample_atoms_co2.copy() for _ in range(5)]
                     mock_ha.return_value = [sample_atoms_co2.copy() for _ in range(3)]
                     for atoms in mock_ha.return_value:
@@ -482,7 +440,6 @@ class TestActiveLearningStandardMACEIntegration:
 
                     # Verify workflow executed properly
                     mock_train.assert_called_once()
-                    mock_eval.assert_called_once()
                     mock_gen.assert_called_once()
                     mock_ha.assert_called_once()
 

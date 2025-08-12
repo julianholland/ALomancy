@@ -1,15 +1,10 @@
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 from ase import Atoms
 from ase.io import read, write
 from mace.calculators import MACECalculator
 
-from alomancy.analysis.mace_analysis import (
-    mace_al_loop_average_error,
-    mace_recover_train_txt_final_results,
-)
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
@@ -17,6 +12,9 @@ from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
 )
 from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
+from alomancy.mlip.get_mace_eval_info import (
+    get_mace_eval_info,
+)
 from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
@@ -36,9 +34,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     High-Accuracy Evaluation: Quantum Espresso (DFT)
     """
 
-    def train_mlip(
-        self, base_name: str, mlip_committee_job_dict: dict
-    ) -> Optional[str]:
+    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
         workdir = Path("results", base_name)
 
         committee_remote_submitter(
@@ -60,14 +56,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "workdir_str": str(workdir),
             },
         )
-        return f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
 
-    def evaluate_mlip(self, mlip_committee_job_dict: dict) -> pd.DataFrame:
-        all_avg_results = mace_recover_train_txt_final_results(
+        mae_avg_results = get_mace_eval_info(
             mlip_committee_job_dict=mlip_committee_job_dict
         )
-        mace_al_loop_average_error(all_avg_results=all_avg_results, plot=True)
-        return all_avg_results
+
+        return mae_avg_results
 
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]

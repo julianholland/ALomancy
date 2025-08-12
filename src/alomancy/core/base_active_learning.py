@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 from ase import Atoms
 from ase.io import read, write
 
+from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.utils.clean_structures import clean_structures
 
@@ -17,6 +17,13 @@ class BaseActiveLearningWorkflow(ABC):
     This class provides the core AL loop structure while requiring
     subclasses to implement the specific methods for structure generation,
     high-accuracy evaluation, MLIP training, and evaluation.
+
+    Subclasses must implement the following abstract methods:
+    - `high_accuracy_evaluation`
+    - `train_mlip`
+    - `generate_structures`
+
+
     """
 
     def __init__(
@@ -27,6 +34,7 @@ class BaseActiveLearningWorkflow(ABC):
         number_of_al_loops: int = 5,
         verbose: int = 0,
         start_loop: int = 0,
+        plots: bool = True,
     ):
         self.initial_train_file = Path(initial_train_file_path)
         self.initial_test_file = Path(initial_test_file_path)
@@ -34,6 +42,7 @@ class BaseActiveLearningWorkflow(ABC):
         self.number_of_al_loops = number_of_al_loops
         self.verbose = verbose
         self.start_loop = start_loop
+        self.plots = plots
         self.jobs_dict = load_dictionaries(config_file_path)
 
     def run(self, **kwargs) -> None:
@@ -98,13 +107,15 @@ class BaseActiveLearningWorkflow(ABC):
                 print(f"  Test set size: {len(test_xyzs)}")
 
             # Core AL loop steps - these methods must be implemented by subclasses
-            self.train_mlip(base_name, self.jobs_dict["mlip_committee"], **kwargs)
-
-            evaluation_results = self.evaluate_mlip(
-                self.jobs_dict["mlip_committee"], **kwargs
+            evaluation_results = self.train_mlip(
+                base_name, self.jobs_dict["mlip_committee"], **kwargs
             )
+
             if self.verbose > 0:
                 print(f"AL Loop {loop} evaluation results: \n{evaluation_results}")
+
+            if self.plots:
+                mae_al_loop_plot(evaluation_results, self.jobs_dict["mlip_committee"])
 
             generated_structures = self.generate_structures(
                 base_name, self.jobs_dict, train_xyzs, **kwargs
@@ -180,7 +191,7 @@ class BaseActiveLearningWorkflow(ABC):
     @abstractmethod
     def train_mlip(
         self, base_name: str, mlip_committee_job_dict: dict, **kwargs
-    ) -> Optional[str]:
+    ) -> pd.DataFrame:
         """
         Train machine learning interatomic potential.
 
@@ -199,25 +210,6 @@ class BaseActiveLearningWorkflow(ABC):
         -------
         Optional[str]
             Path to trained model file, if applicable
-        """
-        pass
-
-    @abstractmethod
-    def evaluate_mlip(self, mlip_committee_job_dict: dict, **kwargs) -> pd.DataFrame:
-        """
-        Evaluate MLIP model on test data.
-
-        Parameters
-        ----------
-        mlip_committee_job_dict : dict
-            Dictionary containing job name and HPC parameters for MLIP evaluation
-        **kwargs
-            Additional keyword arguments
-
-        Returns
-        -------
-        Dict[str, Any]
-            Evaluation metrics (MAE_F, MAE_E etc.)
         """
         pass
 
