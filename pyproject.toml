@@ -27,12 +27,25 @@ dependencies = [
     "ase>=3.22.0",
     "numpy>=1.21.0",
     "pandas>=1.3.0",
-    "matplotlib>=3.5.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.60.0",
     "scipy>=1.7.0",
-    "wfl",
-    "expyre",  # Let wfl pull in the correct expyre version
-    "mace-torch",
+    "matplotlib>=3.5.0",
+    "wfl==0.3.3",
+    "expyre-wfl==0.1.6",
+    "seaborn>=0.11.0",
+    "mace-torch>=0.3.0",
 ]
+# dependencies = [
+#     "ase>=3.22.0",
+#     "numpy>=1.21.0",
+#     "pandas>=1.3.0",
+#     "matplotlib>=3.5.0",
+#     "scipy>=1.7.0",
+#     "wfl",
+#     "expyre",  # Let wfl pull in the correct expyre version
+#     "mace-torch",
+# ]
 
 [project.optional-dependencies]
 dev = [
