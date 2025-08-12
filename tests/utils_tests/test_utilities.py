@@ -114,7 +114,7 @@ class TestConfigurationUtils:
             assert key in config
 
         # Test that each job dict has required fields
-        for job_name, job_config in config.items():
+        for _, job_config in config.items():
             assert "name" in job_config
             assert "max_time" in job_config
             assert "hpc" in job_config
