@@ -1,3 +1,52 @@
+Metadata-Version: 2.4
+Name: alomancy
+Version: 0.1.0.post0
+Summary: Active Learning framework for atomistic simulations with flexible workflows and HPC submission.
+Author-email: Julian Holland <holland@fhi.mpg.de>
+License: MIT
+Project-URL: Homepage, https://github.com/julianholland/ALomancy
+Project-URL: Repository, https://github.com/julianholland/ALomancy
+Project-URL: Documentation, https://alomancy.readthedocs.io
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: ase>=3.22.0
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: pandas>=1.3.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: tqdm>=4.60.0
+Requires-Dist: scipy>=1.7.0
+Requires-Dist: matplotlib>=3.5.0
+Requires-Dist: wfl==0.3.3
+Requires-Dist: expyre-wfl==0.1.6
+Requires-Dist: seaborn>=0.11.0
+Requires-Dist: mace-torch>=0.3.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: pytest-mock>=3.10; extra == "dev"
+Requires-Dist: pytest-xdist>=3.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: mypy>=1.0; extra == "dev"
+Requires-Dist: pre-commit>=3.0; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx>=6.0; extra == "docs"
+Requires-Dist: sphinx-rtd-theme>=1.2; extra == "docs"
+Requires-Dist: sphinxcontrib-napoleon>=0.7; extra == "docs"
+Provides-Extra: test
+Requires-Dist: pytest>=7.0; extra == "test"
+Requires-Dist: pytest-cov>=4.0; extra == "test"
+Requires-Dist: pytest-mock>=3.10; extra == "test"
+Requires-Dist: pytest-xdist>=3.0; extra == "test"
+
 <div align="center">
 
 </div>
@@ -11,9 +60,9 @@
 [![PyPI version](https://badge.fury.io/py/alomancy.svg)](https://badge.fury.io/py/alomancy)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/julianholland/ALomancy/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/julianholland/ALomancy/actions)
-[![codecov](https://codecov.io/gh/julianholland/ALomancy/branch/main/graph/badge.svg)](https://codecov.io/gh/julianholland/ALomancy)
+[![Tests](https://github.com/yourusername/ALomnacy/workflows/CI/badge.svg)](https://github.com/yourusername/ALomnacy/actions)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 
 [Installation](#installation) • [Quick Start](#quick-start) • [Documentation](#documentation) • [Examples](#examples) • [Contributing](#contributing)
 
@@ -29,29 +78,28 @@ ALomnacy is a Python framework for running active learning (AL) workflows for tr
 
 - 🚀 **Automated AL Workflows**: End-to-end active learning with minimal manual intervention
 - 🔧 **HPC Integration**: Built-in support for remote job submission on HPC clusters
-- ⚡ **Parallelization**: Ensures that jobs run concurrently where possible increasing speed to results
+- **Parallelization**: Ensures that jobs run concurrently where possible
 - 🔄 **Extensible Design**: Abstract base classes for easy customization and extension
 - 📊 **Analysis Tools**: Built-in utilities for monitoring and analyzing AL progress
 
 ### Workflow Overview
 
 ```mermaid
-flowchart TD
-    A((Initial Dataset)) --> B[Train MLIP Committee]
-    B --> C[Structure Generation]
-    C --> D((Uncertainty-based Selection))
+graph LR
+    A[Initial Dataset] --> B[Train MLIP Committee]
+    B --> C[Generate Structures]
+    C --> D[Uncertainty Quantification]
     D --> E[High-Accuracy Evaluation]
-    E --> F((Update Training Dataset))
+    E --> F[Update Dataset]
     F --> B
 
-    style A fill:#e66027
-    style B fill:#e87322
-    style C fill:#eb861e
-    style D fill:#efa119
-    style E fill:#708e4c
-    style F fill:#328566
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+    style E fill:#fce4ec
+    style F fill:#f1f8e9
 ```
-
 
 ## 🚀 Installation
 
@@ -172,7 +220,7 @@ class CustomActiveLearningWorkflow(BaseActiveLearningWorkflow):
                                high_accuracy_eval_job_dict: dict,
                                structures: list[Atoms], **kwargs) -> list[Atoms]:
         """Custom high-accuracy evaluation"""
-        # Your high-accuracy calculation logic here
+        # Your DFT calculation logic here
         return evaluated_structures
 ```
 
@@ -215,9 +263,9 @@ alomancy/
 - **Quantum Espresso**: Automated DFT calculations for reference data
 - **Job Management**: Parallel submission and monitoring of DFT jobs
 
-<!-- ## 📊 Monitoring and Analysis -->
+## 📊 Monitoring and Analysis
 
-<!-- Monitor your AL progress with built-in analysis tools:
+Monitor your AL progress with built-in analysis tools:
 
 ```python
 from alomancy.analysis import MACEAnalysis
@@ -227,7 +275,7 @@ analyzer = MACEAnalysis("results/")
 analyzer.plot_learning_curves()
 analyzer.analyze_uncertainty_evolution()
 analyzer.generate_report()
-``` -->
+```
 
 ## 🤝 Contributing
 
