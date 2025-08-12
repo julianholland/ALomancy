@@ -94,6 +94,11 @@ jobs:
         name: codecov-umbrella
         fail_ci_if_error: false
 
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+
   integration-test:
     runs-on: ubuntu-latest
     needs: test
