@@ -10,6 +10,7 @@ requirements.txt
 run_tests.py
 .github/workflows/ci.yml
 examples/basic_use/basic_use.py
+examples/basic_use/input_files/standard_config.yaml
 src/alomancy/__init__.py
 src/alomancy/version.py
 src/alomancy.egg-info/PKG-INFO

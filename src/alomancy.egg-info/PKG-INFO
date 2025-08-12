@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: alomancy
-Version: 0.1.dev41+g05cc3c9d1.d20250812
+Version: 0.1.1.dev0+g017ac180f.d20250812
 Summary: Active Learning framework for atomistic simulations with flexible workflows and HPC submission.
 Author-email: Julian Holland <holland@fhi.mpg.de>
 License: MIT
