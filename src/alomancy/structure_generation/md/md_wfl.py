@@ -19,6 +19,7 @@ def run_md(
     steps=100,
     temperature=300,
     timestep_fs: float = 0.5,
+    friction: float = 0.002,
     verbose: int = 0,
 ):
     assert (
@@ -48,7 +49,7 @@ def run_md(
         atoms=md_structure,
         timestep=timestep_fs * fs,
         temperature_K=temperature,
-        friction=0.002,
+        friction=friction,
         logfile=str(
             Path(
                 out_dir,

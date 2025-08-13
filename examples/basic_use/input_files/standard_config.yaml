@@ -1,51 +1,57 @@
 mlip_committee:
-  name: "mace_committee"
+  name: "mlip_committee"
   size_of_committee: 5
   max_time: "5H"
-  hpc:
-    # raven_gpu:
-    #   pre_cmds:
-    #     - "source /u/jholl/venvs/wfl/bin/activate"
-    #   partitions:
-    #     - "gpu"
-    hpc_name: "fhi-raccoon"
-    pre_cmds:
-      - "source /home/jholl/venvs/alomancy/bin/activate"
-    partitions:
-      - "gpusmall"
+  mace_fit_kwargs:
+    max_num_epochs: 80
+    E0s:
+      6: -241.94038776317848
+      11: -1296.5877903540002
+    model: "MACE"
+    energy_key: "REF_energy"
+    forces_key: "REF_forces"
+    atomic_numbers: [6, 11]
+    correlation: 3
+    device: "cuda"
+    ema: null
+    energy_weight: 1
+    forces_weight: 10
+    error_table: "PerAtomMAE"
+    eval_interval: 1
+    max_L: 2
+    num_channels: 128
+    num_interactions: 2
+    patience: 30
+    r_max: 5.0
+    restart_latest: null
+    save_cpu: null
+    scheduler_patience: 15
+    swa: null
+    batch_size: 16
+    valid_batch_size: 16
+    distributed: null
+  hpc: 'raccoon_big'
 
 structure_generation:
-  name: "md_1200_structure_generation"
-  number_of_concurrent_jobs: 5
+  name: "structure_generation"
+  desired_number_of_structures: 50
   max_time: "10H"
-  hpc:
-    # raven_gpu:
-    #   pre_cmds:
-    #     - "source /u/jholl/venvs/wfl/bin/activate"
-    #   partitions:
-    #     - "gpu"
-    hpc_name: "fhi-raccoon"
-    pre_cmds:
-      - "source /home/jholl/venvs/alomancy/bin/activate"
-    partitions:
-      - "gpusmall"
+  structure_selection_kwargs:
+    max_number_of_concurrent_jobs: 5
+    chem_formula_list: null
+    atom_number_range: [0, 21]
+    enforce_chemical_diversity: True
+  run_md_kwargs:
+    steps: 20000
+    temperature: 1200
+    timestep_fs: 0.5
+    friction: 0.002
+  hpc: 'raccoon_small'
 
 high_accuracy_evaluation:
-  name: "qe_dft_high_accuracy_evaluation"
+  name: "high_accuracy_evaluation"
   max_time: "30m"
-  hpc:
-    hpc_name: "raven"
-    pre_cmds:
-      - "source /u/jholl/venvs/alomancy/bin/activate"
-    partitions:
-      - "general"
-    node_info:
-      ranks_per_system: 72
-      ranks_per_node: 72
-      threads_per_rank: 1
-      max_mem_per_node: "60GB"
-    pwx_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
-    pp_path: "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency"
-    pseudo_dict:
-      C: "C.pbe-n-kjpaw_psl.1.0.0.UPF"
-      Na: "na_pbe_v1.5.uspp.F.UPF"
+  qe_input_kwargs:
+    system:
+      input_dft: "pbe"
+  hpc: 'raven'

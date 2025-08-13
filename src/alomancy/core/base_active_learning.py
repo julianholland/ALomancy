@@ -6,7 +6,6 @@ from ase import Atoms
 from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
-from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.utils.clean_structures import clean_structures
 
 
@@ -30,7 +29,7 @@ class BaseActiveLearningWorkflow(ABC):
         self,
         initial_train_file_path: str,
         initial_test_file_path: str,
-        config_file_path: Path,
+        jobs_dict: dict,
         number_of_al_loops: int = 5,
         verbose: int = 0,
         start_loop: int = 0,
@@ -38,12 +37,11 @@ class BaseActiveLearningWorkflow(ABC):
     ):
         self.initial_train_file = Path(initial_train_file_path)
         self.initial_test_file = Path(initial_test_file_path)
-        self.config_file_path = config_file_path
+        self.jobs_dict = jobs_dict
         self.number_of_al_loops = number_of_al_loops
         self.verbose = verbose
         self.start_loop = start_loop
         self.plots = plots
-        self.jobs_dict = load_dictionaries(config_file_path)
 
     def run(self, **kwargs) -> None:
         """

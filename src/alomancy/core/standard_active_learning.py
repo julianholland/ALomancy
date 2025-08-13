@@ -37,6 +37,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
         workdir = Path("results", base_name)
 
+        if "mace_fit_kwargs" not in mlip_committee_job_dict:
+            mlip_committee_job_dict["mace_fit_kwargs"] = {}
+
         committee_remote_submitter(
             remote_info=get_remote_info(
                 mlip_committee_job_dict,
@@ -51,7 +54,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             size_of_committee=mlip_committee_job_dict["size_of_committee"],
             function=mace_fit,
             function_kwargs={
-                "epochs": 80,
                 "mlip_committee_job_dict": mlip_committee_job_dict,
                 "workdir_str": str(workdir),
             },
@@ -66,17 +68,15 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]
     ) -> list[Atoms]:
+        if "structure_selection_kwargs" not in job_dict["structure_generation"]:
+            job_dict["structure_generation"]["structure_selection_kwargs"] = {}
+
         input_structures = select_initial_structures(
             base_name=base_name,
             structure_generation_job_dict=job_dict["structure_generation"],
-            desired_initial_structures=job_dict["structure_generation"][
-                "number_of_concurrent_jobs"
-            ],
-            chem_formula_list=[],
-            atom_number_range=(0, 21),
-            enforce_chemical_diversity=True,
             train_atoms_list=train_atoms_list,  # type: ignore
             verbose=self.verbose,
+            **job_dict["structure_generation"]["structure_selection_kwargs"],
         )
 
         Path.mkdir(
@@ -104,16 +104,17 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
         )
 
+        if "run_md_kwargs" not in job_dict["structure_generation"]:
+            job_dict["structure_generation"]["run_md_kwargs"] = {}
+
         function_kwargs = {
             "structure_generation_job_dict": job_dict["structure_generation"],
             "total_md_runs": len(input_structures),
             "model_path": [
                 base_mace_model_path
-            ],  # need to pass model path to preserve consistant dtype
-            "steps": 20000,
-            "temperature": 1200,
-            "timestep_fs": 0.5,
+            ],  # need to pass model path to preserve consistent dtype
             "verbose": self.verbose,
+            **job_dict["structure_generation"]["run_md_kwargs"],
         }
 
         md_trajectory_paths = md_remote_submitter(
@@ -156,8 +157,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             base_name=base_name,
             job_dict=job_dict,
             list_of_other_calculators=list_of_other_calculators,
-            forces_name="REF_forces",
-            energy_name="REF_energy",
             verbose=self.verbose,
         )
 
