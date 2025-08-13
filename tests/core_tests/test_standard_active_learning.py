@@ -14,17 +14,15 @@ import pandas as pd
 import pytest
 from ase import Atoms
 from ase.io import write
-from yaml import dump
 
 from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
 
 
 @pytest.fixture
 def mock_job_config():
-    """Create a mock job configuration dictionary."""
     return {
         "mlip_committee": {
-            "name": "test_mlip",
+            "name": "test_committee",
             "size_of_committee": 3,
             "max_time": "1H",
             "hpc": {
@@ -34,9 +32,21 @@ def mock_job_config():
             },
         },
         "structure_generation": {
-            "name": "test_md",
-            "number_of_concurrent_jobs": 2,
-            "max_time": "30m",
+            "name": "test_structure_generation",
+            "desired_number_of_structures": 10,
+            "max_time": "1H",
+            "structure_selection_kwargs": {  # Add this missing section
+                "max_number_of_concurrent_jobs": 5,
+                "chem_formula_list": None,
+                "atom_number_range": (0, 21),
+                "enforce_chemical_diversity": True,
+            },
+            "run_md_kwargs": {  # Also add this section if it's missing
+                "steps": 1000,
+                "temperature": 300,
+                "timestep_fs": 0.5,
+                "friction": 0.002,
+            },
             "hpc": {
                 "hpc_name": "test-hpc",
                 "pre_cmds": ["echo 'test'"],
@@ -44,21 +54,12 @@ def mock_job_config():
             },
         },
         "high_accuracy_evaluation": {
-            "name": "test_qe",
+            "name": "test_dft",
             "max_time": "2H",
             "hpc": {
                 "hpc_name": "test-hpc",
-                "node_info": {
-                    "ranks_per_system": 16,
-                    "ranks_per_node": 4,
-                    "threads_per_rank": 1,
-                    "max_mem_per_node": "8GB",
-                },
-                "pwx_path": "/path/to/pwx",
                 "pre_cmds": ["echo 'test'"],
                 "partitions": ["test"],
-                "pp_path": "/path/to/pp",
-                "pseudo_dict": {"O": "/path/to/O.pseudo", "H": "/path/to/H.pseudo"},
             },
         },
     }
@@ -89,77 +90,31 @@ def sample_training_data_co2(sample_atoms_co2):
 
 
 @pytest.fixture
-def temp_files_co2(sample_training_data_co2):
+def temp_files_co2(sample_training_data_co2, mock_job_config):
     """Create temporary training and test files with CO2 data."""
     with tempfile.TemporaryDirectory() as tmpdir:
         train_file = Path(tmpdir) / "train_co2.xyz"
         test_file = Path(tmpdir) / "test_co2.xyz"
-        config_file = Path(tmpdir) / "config_co2.yaml"
 
         # Write training data
         write(str(train_file), sample_training_data_co2[:7], format="extxyz")
         # Write test data
         write(str(test_file), sample_training_data_co2[7:], format="extxyz")
 
-        sample_config = {
-            "mlip_committee": {
-                "name": "test_mlip",
-                "size_of_committee": 3,
-                "max_time": "1H",
-                "hpc": {
-                    "hpc_name": "test-hpc",
-                    "pre_cmds": ["echo 'test'"],
-                    "partitions": ["test"],
-                },
-            },
-            "structure_generation": {
-                "name": "test_md",
-                "number_of_concurrent_jobs": 2,
-                "max_time": "30m",
-                "hpc": {
-                    "hpc_name": "test-hpc",
-                    "pre_cmds": ["echo 'test'"],
-                    "partitions": ["test"],
-                },
-            },
-            "high_accuracy_evaluation": {
-                "name": "test_qe",
-                "max_time": "2H",
-                "hpc": {
-                    "hpc_name": "test-hpc",
-                    "node_info": {
-                        "ranks_per_system": 16,
-                        "ranks_per_node": 4,
-                        "threads_per_rank": 1,
-                        "max_mem_per_node": "8GB",
-                    },
-                    "pwx_path": "/path/to/pwx",
-                    "pre_cmds": ["echo 'test'"],
-                    "partitions": ["test"],
-                    "pp_path": "/path/to/pp",
-                    "pseudo_dict": {"O": "/path/to/O.pseudo", "H": "/path/to/H.pseudo"},
-                },
-            },
-        }
-        with open(config_file, "w") as f:
-            dump(sample_config, f)
-
-        yield str(train_file), str(test_file), str(config_file)
+        yield str(train_file), str(test_file), mock_job_config
 
 
 class TestActiveLearningStandardMACE:
     """Test the ActiveLearningStandardMACE class."""
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    def test_initialization(self, mock_load_dict, temp_files_co2, mock_job_config):
+    def test_initialization(self, temp_files_co2):
         """Test workflow initialization."""
-        train_file, test_file, config_file = temp_files_co2
-        mock_load_dict.return_value = mock_job_config
+        train_file, test_file, mock_job_config = temp_files_co2
 
         workflow = ActiveLearningStandardMACE(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=mock_job_config,
             number_of_al_loops=3,
             verbose=1,
         )
@@ -169,7 +124,6 @@ class TestActiveLearningStandardMACE:
         assert workflow.number_of_al_loops == 3
         assert workflow.verbose == 1
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     @patch("alomancy.core.standard_active_learning.committee_remote_submitter")
     @patch("alomancy.core.standard_active_learning.get_mace_eval_info")
     @patch("alomancy.configs.remote_info.get_remote_info")
@@ -178,13 +132,11 @@ class TestActiveLearningStandardMACE:
         mock_get_remote_info,
         mock_mace_recover,
         mock_committee_submitter,
-        mock_load_dict,
         temp_files_co2,
         mock_job_config,
     ):
         """Test MLIP training method."""
-        train_file, test_file, config_file = temp_files_co2
-        mock_load_dict.return_value = mock_job_config
+        train_file, test_file, mock_job_config = temp_files_co2
 
         # Set up mocks
         mock_remote_info = MagicMock()
@@ -206,7 +158,7 @@ class TestActiveLearningStandardMACE:
         workflow = ActiveLearningStandardMACE(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=mock_job_config,
             plots=False,
         )
 
@@ -233,107 +185,236 @@ class TestActiveLearningStandardMACE:
         assert isinstance(result, pd.DataFrame)
         pd.testing.assert_frame_equal(result, mock_results_df)
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    @patch(
-        "alomancy.structure_generation.select_initial_structures.select_initial_structures"
-    )
-    @patch("alomancy.structure_generation.md.md_remote_submitter.md_remote_submitter")
+    def test_select_initial_structures_mock_directly(self):
+        """Test that the mock works when calling the function directly."""
+        with patch(
+            "alomancy.structure_generation.select_initial_structures.select_initial_structures"
+        ) as mock_select:
+
+            def debug_select_initial(*args, **kwargs):
+                print("=== DIRECT MOCK CALLED ===")
+                return [Atoms("CO2")]
+
+            mock_select.side_effect = debug_select_initial
+
+            # Import and call the function directly
+            from alomancy.structure_generation.select_initial_structures import (
+                select_initial_structures,
+            )
+
+            result = select_initial_structures(
+                base_name="test",
+                structure_generation_job_dict={"name": "test"},
+                train_atoms_list=[Atoms("CO2")],
+                verbose=0,
+                chem_formula_list=None,
+                atom_number_range=(0, 21),
+                enforce_chemical_diversity=True,
+            )
+
+            print(f"Direct call result: {result}")
+            mock_select.assert_called_once()
+
+    @patch("alomancy.core.standard_active_learning.select_initial_structures")
+    @patch("alomancy.core.standard_active_learning.md_remote_submitter")
     @patch("alomancy.core.standard_active_learning.find_high_sd_structures")
     @patch("alomancy.configs.remote_info.get_remote_info")
     @patch("alomancy.core.standard_active_learning.read")
-    @patch("pathlib.Path.glob")
-    @patch("pathlib.Path.mkdir")
     @patch("alomancy.core.standard_active_learning.write")
     @patch("alomancy.core.standard_active_learning.MACECalculator")
     def test_generate_structures(
         self,
         mock_mace_calc,
         mock_write,
-        mock_mkdir,
-        mock_glob,
         mock_read,
         mock_get_remote_info,
         mock_find_high_sd,
         mock_md_submitter,
         mock_select_initial,
-        mock_load_dict,
         temp_files_co2,
-        mock_job_config,
-        sample_atoms_co2,
     ):
         """Test structure generation method."""
-        train_file, test_file, config_file = temp_files_co2
-        mock_load_dict.return_value = mock_job_config
+        train_file, test_file, mock_job_config = temp_files_co2
 
-        # Set up mocks
-        mock_initial_structures = [sample_atoms_co2.copy() for _ in range(4)]
-        mock_select_initial.return_value = mock_initial_structures
+        # Add debugging to the mock
+        def debug_select_initial(*args, **kwargs):
+            print("=== SELECT_INITIAL_STRUCTURES MOCK CALLED ===")
+            print(f"Args: {args}")
+            print(f"Kwargs: {kwargs}")
+            return [Atoms("CO2") for _ in range(5)]
 
-        mock_md_trajectories = ["/path/to/traj1.xyz", "/path/to/traj2.xyz"]
-        mock_md_submitter.return_value = mock_md_trajectories
+        mock_select_initial.side_effect = debug_select_initial
 
-        mock_md_structures = [sample_atoms_co2.copy() for _ in range(20)]
-        # Add required arrays for find_high_sd_structures
-        for atoms in mock_md_structures:
-            atoms.arrays["REF_forces"] = np.random.random((3, 3)) * 0.1
-            atoms.info["REF_energy"] = -20.0 + np.random.random() * 0.1
-        mock_read.return_value = mock_md_structures
+        # Ensure all required keys are present
+        mock_job_config["structure_generation"].update(
+            {
+                "structure_selection_kwargs": {
+                    "max_number_of_concurrent_jobs": 3,
+                    "chem_formula_list": None,
+                    "atom_number_range": (0, 21),
+                    "enforce_chemical_diversity": True,
+                },
+                "run_md_kwargs": {
+                    "steps": 1000,
+                    "temperature": 300,
+                    "timestep_fs": 0.5,
+                    "friction": 0.002,
+                },
+            }
+        )
 
-        mock_model_paths = [
-            Path("results/test_loop_0/test_mlip/fit_0/test_mlip_stagetwo.model"),
-            Path("results/test_loop_0/test_mlip/fit_1/test_mlip_stagetwo.model"),
+        # Set up other mocks
+        mock_atoms = [Atoms("CO2") for _ in range(5)]
+
+        # Mock md_submitter to return trajectory paths
+        mock_md_submitter.return_value = [
+            "results/test_loop_0/structure_generation/md_output_0",
+            "results/test_loop_0/structure_generation/md_output_1",
         ]
-        mock_glob.return_value = mock_model_paths
 
-        mock_high_sd_structures = [sample_atoms_co2.copy() for _ in range(5)]
-        for i, atoms in enumerate(mock_high_sd_structures):
-            atoms.info["job_id"] = i
+        mock_read.return_value = [Atoms("CO2")]
+        mock_find_high_sd.return_value = mock_atoms
 
-        # Mock find_high_sd_structures to return our test structures directly
-        mock_find_high_sd.return_value = mock_high_sd_structures
-
+        # Mock remote info
         mock_remote_info = MagicMock()
+        mock_remote_info.name = "test-hpc"
         mock_get_remote_info.return_value = mock_remote_info
 
-        # Mock MACE calculator - important to return a mock object
-        mock_calculator = MagicMock()
-        mock_mace_calc.return_value = mock_calculator
-
+        # Create workflow instance
         workflow = ActiveLearningStandardMACE(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=mock_job_config,
+            plots=False,
         )
 
-        train_atoms_list = [sample_atoms_co2.copy() for _ in range(10)]
+        # Test the method with exception handling
+        train_atoms_list = [Atoms("CO2") for _ in range(10)]
 
-        # Add debugging to understand execution flow
+        print("=== BEFORE CALLING generate_structures ===")
+        print(f"mock_select_initial called: {mock_select_initial.called}")
+
         try:
             result = workflow.generate_structures(
                 "test_loop_0", mock_job_config, train_atoms_list
             )
+            print("=== generate_structures completed successfully ===")
         except Exception as e:
-            print(f"Exception during generate_structures: {e}")
+            print(f"=== EXCEPTION in generate_structures: {e} ===")
+            import traceback
+
+            traceback.print_exc()
             raise
 
-        # Debug: Print mock call counts
-        print(f"mock_select_initial called: {mock_select_initial.call_count} times")
-        print(f"mock_md_submitter called: {mock_md_submitter.call_count} times")
-        print(f"mock_find_high_sd called: {mock_find_high_sd.call_count} times")
-        print(f"Result length: {len(result) if result else 'None'}")
-        print(f"Result type: {type(result)}")
+        print("=== AFTER CALLING generate_structures ===")
+        print(f"mock_select_initial called: {mock_select_initial.called}")
+        print(f"mock_select_initial call_count: {mock_select_initial.call_count}")
 
-        # The system detects existing MD runs and skips initial steps
-        # This is actually correct behavior - verify the final result is produced
+        # Verify the result
+        assert result == mock_atoms
+
+        # Now these should all be called
+        mock_select_initial.assert_called_once()
+        mock_md_submitter.assert_called_once()
         mock_find_high_sd.assert_called_once()
 
-        # Verify result - the function should return our mocked structures
-        assert len(result) == 5
-        assert all(
-            hasattr(atoms, "info") and "job_id" in atoms.info for atoms in result
-        )
+    # @patch(
+    #     "alomancy.structure_generation.select_initial_structures.select_initial_structures"
+    # )
+    # @patch("alomancy.structure_generation.md.md_remote_submitter.md_remote_submitter")
+    # @patch("alomancy.core.standard_active_learning.find_high_sd_structures")
+    # @patch("alomancy.configs.remote_info.get_remote_info")
+    # @patch("alomancy.core.standard_active_learning.read")
+    # @patch("pathlib.Path.glob")
+    # @patch("pathlib.Path.mkdir")
+    # @patch("alomancy.core.standard_active_learning.write")
+    # @patch("alomancy.core.standard_active_learning.MACECalculator")
+    # def test_generate_structures(
+    #     self,
+    #     mock_mace_calc,
+    #     mock_write,
+    #     mock_mkdir,
+    #     mock_glob,
+    #     mock_read,
+    #     mock_get_remote_info,
+    #     mock_find_high_sd,
+    #     mock_md_submitter,
+    #     mock_select_initial,
+    #     temp_files_co2,
+    #     mock_job_config,
+    #     sample_atoms_co2,
+    # ):
+    #     """Test structure generation method."""
+    #     train_file, test_file, config_dict = temp_files_co2
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
+    #     # Set up mocks
+    #     mock_initial_structures = [sample_atoms_co2.copy() for _ in range(4)]
+    #     mock_select_initial.return_value = mock_initial_structures
+
+    #     mock_md_trajectories = ["/path/to/traj1.xyz", "/path/to/traj2.xyz"]
+    #     mock_md_submitter.return_value = mock_md_trajectories
+
+    #     mock_md_structures = [sample_atoms_co2.copy() for _ in range(20)]
+    #     # Add required arrays for find_high_sd_structures
+    #     for atoms in mock_md_structures:
+    #         atoms.arrays["REF_forces"] = np.random.random((3, 3)) * 0.1
+    #         atoms.info["REF_energy"] = -20.0 + np.random.random() * 0.1
+    #     mock_read.return_value = mock_md_structures
+
+    #     mock_model_paths = [
+    #         Path("results/test_loop_0/test_mlip/fit_0/test_mlip_stagetwo.model"),
+    #         Path("results/test_loop_0/test_mlip/fit_1/test_mlip_stagetwo.model"),
+    #     ]
+    #     mock_glob.return_value = mock_model_paths
+
+    #     mock_high_sd_structures = [sample_atoms_co2.copy() for _ in range(5)]
+    #     for i, atoms in enumerate(mock_high_sd_structures):
+    #         atoms.info["job_id"] = i
+
+    #     # Mock find_high_sd_structures to return our test structures directly
+    #     mock_find_high_sd.return_value = mock_high_sd_structures
+
+    #     mock_remote_info = MagicMock()
+    #     mock_get_remote_info.return_value = mock_remote_info
+
+    #     # Mock MACE calculator - important to return a mock object
+    #     mock_calculator = MagicMock()
+    #     mock_mace_calc.return_value = mock_calculator
+
+    #     workflow = ActiveLearningStandardMACE(
+    #         initial_train_file_path=train_file,
+    #         initial_test_file_path=test_file,
+    #         jobs_dict=mock_job_config,
+    #     )
+
+    #     train_atoms_list = [sample_atoms_co2.copy() for _ in range(10)]
+
+    #     # Add debugging to understand execution flow
+    #     try:
+    #         result = workflow.generate_structures(
+    #             "test_loop_0", mock_job_config, train_atoms_list
+    #         )
+    #     except Exception as e:
+    #         print(f"Exception during generate_structures: {e}")
+    #         raise
+
+    #     # Debug: Print mock call counts
+    #     print(f"mock_select_initial called: {mock_select_initial.call_count} times")
+    #     print(f"mock_md_submitter called: {mock_md_submitter.call_count} times")
+    #     print(f"mock_find_high_sd called: {mock_find_high_sd.call_count} times")
+    #     print(f"Result length: {len(result) if result else 'None'}")
+    #     print(f"Result type: {type(result)}")
+
+    #     # The system detects existing MD runs and skips initial steps
+    #     # This is actually correct behavior - verify the final result is produced
+    #     mock_find_high_sd.assert_called_once()
+
+    #     # Verify result - the function should return our mocked structures
+    #     assert len(result) == 5
+    #     assert all(
+    #         hasattr(atoms, "info") and "job_id" in atoms.info for atoms in result
+    #     )
+
     @patch("alomancy.core.standard_active_learning.qe_remote_submitter")
     @patch("alomancy.configs.remote_info.get_remote_info")
     @patch("alomancy.core.standard_active_learning.read")
@@ -342,14 +423,11 @@ class TestActiveLearningStandardMACE:
         mock_read,
         mock_get_remote_info,
         mock_qe_submitter,
-        mock_load_dict,
         temp_files_co2,
-        mock_job_config,
         sample_atoms_co2,
     ):
         """Test high accuracy evaluation method."""
-        train_file, test_file, config_file = temp_files_co2
-        mock_load_dict.return_value = mock_job_config
+        train_file, test_file, mock_job_config = temp_files_co2
 
         # Set up mocks
         mock_structure_paths = ["/path/to/qe_result1.xyz", "/path/to/qe_result2.xyz"]
@@ -369,7 +447,7 @@ class TestActiveLearningStandardMACE:
         workflow = ActiveLearningStandardMACE(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=mock_job_config,
         )
 
         input_structures = [sample_atoms_co2.copy() for _ in range(2)]
@@ -389,13 +467,11 @@ class TestActiveLearningStandardMACE:
 
 @pytest.mark.integration
 class TestActiveLearningStandardMACEIntegration:
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     def test_full_workflow_execution_with_tempdir(
-        self, mock_load_dict, temp_files_co2, mock_job_config, sample_atoms_co2
+        self, temp_files_co2, sample_atoms_co2
     ):
         """Test workflow execution in a controlled temporary directory."""
-        train_file, test_file, config_file = temp_files_co2
-        mock_load_dict.return_value = mock_job_config
+        train_file, test_file, mock_job_config = temp_files_co2
 
         import os
         import tempfile
@@ -430,7 +506,7 @@ class TestActiveLearningStandardMACEIntegration:
                     workflow = ActiveLearningStandardMACE(
                         initial_train_file_path=train_file,
                         initial_test_file_path=test_file,
-                        config_file_path=config_file,
+                        jobs_dict=mock_job_config,
                         number_of_al_loops=1,
                         verbose=0,
                     )

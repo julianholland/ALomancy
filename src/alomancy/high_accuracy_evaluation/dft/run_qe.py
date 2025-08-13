@@ -6,17 +6,16 @@ from ase.calculators.espresso import Espresso, EspressoProfile
 from ase.io import write
 
 
-def get_qe_input_data(calculation_type: str) -> dict:
+def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
     return {
         "control": {
             "calculation": calculation_type,
             "verbosity": "high",
-            "prefix": "ac",
+            "prefix": "qe",
             "nstep": 999,
             "tstress": False,
             "tprnfor": True,
             "disk_io": "none",
-            "outdir": "./ac_data/",
             "etot_conv_thr": 1.0e-5,
             "forc_conv_thr": 1.0e-5,
         },
@@ -42,6 +41,7 @@ def get_qe_input_data(calculation_type: str) -> dict:
         },
         "ions": {"ion_dynamics": "bfgs", "upscale": 1e8, "bfgs_ndim": 6},
         "cell": {"press_conv_thr": 0.1, "cell_dofree": "all"},
+        **qe_input_kwargs,  # Allow additional parameters to be passed
     }
 
 
@@ -82,11 +82,11 @@ def find_optimal_npool(
     return int(npool)
 
 
-def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict, out_dir):
+def create_qe_calc_object(atoms, high_accuracy_eval_job_dict, out_dir):
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
-        ranks_per_system=high_accuracy_eval_hpc_job_dict["node_info"][
+        ranks_per_system=high_accuracy_eval_job_dict["hpc"]["node_info"][
             "ranks_per_system"
         ],
         min_ranks_per_pool=8,
@@ -94,14 +94,16 @@ def create_qe_calc_object(atoms, high_accuracy_eval_hpc_job_dict, out_dir):
 
     return Espresso(
         profile=create_espresso_profile(
-            para_info_dict=high_accuracy_eval_hpc_job_dict["node_info"],
+            para_info_dict=high_accuracy_eval_job_dict["hpc"]["node_info"],
             npool=npool,
-            pwx_path=high_accuracy_eval_hpc_job_dict["pwx_path"],
-            pp_path=high_accuracy_eval_hpc_job_dict["pp_path"],
+            pwx_path=high_accuracy_eval_job_dict["hpc"]["pwx_path"],
+            pp_path=high_accuracy_eval_job_dict["hpc"]["pp_path"],
         ),
-        input_data=get_qe_input_data("scf"),
+        input_data=get_qe_input_data(
+            "scf", high_accuracy_eval_job_dict["qe_input_kwargs"]
+        ),
         kpts=list(kpt_arr),
-        pseudopotentials=high_accuracy_eval_hpc_job_dict["pseudo_dict"],
+        pseudopotentials=high_accuracy_eval_job_dict["hpc"]["pseudo_dict"],
         directory=out_dir,
     )
 
@@ -113,9 +115,7 @@ def run_qe(
 ):
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 
-    calc = create_qe_calc_object(
-        input_structure, high_accuracy_eval_job_dict["hpc"], out_dir
-    )
+    calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
 
     input_structure.calc = calc
     input_structure.get_potential_energy()

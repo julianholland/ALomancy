@@ -29,6 +29,7 @@ def select_initial_structures(
         list[Atoms]: Selected Atoms objects for structure generation.
     """
     # Handle None default for mutable argument
+
     if chem_formula_list is None:
         chem_formula_list = []
 

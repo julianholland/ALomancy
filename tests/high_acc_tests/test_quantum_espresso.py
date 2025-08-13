@@ -61,6 +61,9 @@ def mock_qe_job_dict():
     return {
         "name": "test_qe_calculation",
         "max_time": "1H",
+        "qe_input_kwargs": {
+            "input_dft": "pbe",
+        },
         "hpc": {
             "hpc_name": "test-cpu-cluster",
             "pre_cmds": ["source /test/env/bin/activate"],
@@ -90,7 +93,7 @@ class TestQuantumEspressoSetup:
         """Test QE input data dictionary generation."""
         from alomancy.high_accuracy_evaluation.dft.run_qe import get_qe_input_data
 
-        input_data = get_qe_input_data("scf")
+        input_data = get_qe_input_data("scf", {})
 
         # Check required sections
         assert "control" in input_data
@@ -190,7 +193,7 @@ class TestQuantumEspressoSetup:
 
         calc = create_qe_calc_object(
             atoms=atoms,
-            high_accuracy_eval_hpc_job_dict=mock_qe_job_dict["hpc"],
+            high_accuracy_eval_job_dict=mock_qe_job_dict,
             out_dir="/tmp/test",
         )
 

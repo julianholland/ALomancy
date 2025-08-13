@@ -12,12 +12,13 @@ def find_high_sd_structures(
     base_name: str,
     job_dict: dict[str, dict[str, str]],
     list_of_other_calculators: list,
-    forces_name: str = "REF_forces",
-    energy_name: str = "REF_energy",
     verbose: int = 0,
-    desired_structures: int = 10,
     read_xyz: bool = True,
 ) -> list[Atoms]:
+    desired_structures = job_dict["structure_generation"][
+        "desired_number_of_structures"
+    ]
+
     assert desired_structures > 0, "Number of structures must be greater than 0"
     assert (
         len(structure_list) >= desired_structures
@@ -50,8 +51,8 @@ def find_high_sd_structures(
             base_name=base_name,
             job_dict=job_dict,
             list_of_other_calculators=list_of_other_calculators,
-            forces_name=forces_name,
-            energy_name=energy_name,
+            forces_name=job_dict["mlip_committee"]["mace_fit_kwargs"]["forces_key"],
+            energy_name=job_dict["mlip_committee"]["mace_fit_kwargs"]["energy_key"],
             verbose=verbose,
         )
 

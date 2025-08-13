@@ -14,7 +14,6 @@ import pytest
 from ase import Atoms
 from ase.calculators.emt import EMT
 from ase.io import write
-from yaml import dump
 
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 
@@ -25,17 +24,12 @@ class ConcreteActiveLearningWorkflow(BaseActiveLearningWorkflow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.train_mlip_calls = []
-        self.evaluate_mlip_calls = []
         self.generate_structures_calls = []
         self.high_accuracy_evaluation_calls = []
 
     def train_mlip(self, base_name, mlip_committee_job_dict, **kwargs):
         self.train_mlip_calls.append((base_name, mlip_committee_job_dict, kwargs))
-        return "mock_model.pt"
-
-    def evaluate_mlip(self, mlip_committee_job_dict, **kwargs):
-        self.evaluate_mlip_calls.append((mlip_committee_job_dict, kwargs))
-        return pd.DataFrame({"rmse": [0.1], "mae": [0.05]})
+        return pd.DataFrame({"mae_e": [0.1, 0.2, 0.3], "mae_f": [0.9, 0.8, 0.7]})
 
     def generate_structures(self, base_name, job_dict, train_data, **kwargs):
         self.generate_structures_calls.append((base_name, job_dict, train_data, kwargs))
@@ -94,14 +88,13 @@ def temp_files(sample_training_data):
     with tempfile.TemporaryDirectory() as tmpdir:
         train_file = Path(tmpdir) / "train.xyz"
         test_file = Path(tmpdir) / "test.xyz"
-        config_file = Path(tmpdir) / "config.yaml"
 
         # Write training data
         write(str(train_file), sample_training_data[:3], format="extxyz")
         # Write test data
         write(str(test_file), sample_training_data[3:], format="extxyz")
 
-        sample_config = {
+        config_dict = {
             "mlip_committee": {
                 "name": "test_mlip",
                 "size_of_committee": 3,
@@ -136,10 +129,7 @@ def temp_files(sample_training_data):
             },
         }
 
-        with open(config_file, "w") as f:
-            dump(sample_config, f)
-
-        yield str(train_file), str(test_file), str(config_file)
+        yield str(train_file), str(test_file), config_dict
 
 
 class TestBaseActiveLearningWorkflow:
@@ -147,12 +137,12 @@ class TestBaseActiveLearningWorkflow:
 
     def test_initialization(self, temp_files):
         """Test workflow initialization."""
-        train_file, test_file, config_file = temp_files
+        train_file, test_file, config_dict = temp_files
 
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=config_dict,
             number_of_al_loops=3,
             verbose=1,
             start_loop=1,
@@ -160,48 +150,32 @@ class TestBaseActiveLearningWorkflow:
 
         assert workflow.initial_train_file == Path(train_file)
         assert workflow.initial_test_file == Path(test_file)
-        assert workflow.config_file_path == str(Path(config_file))
+        assert workflow.jobs_dict == config_dict
         assert workflow.number_of_al_loops == 3
         assert workflow.verbose == 1
         assert workflow.start_loop == 1
 
     def test_initialization_defaults(self, temp_files):
         """Test workflow initialization with defaults."""
-        train_file, test_file, config_file = temp_files
-
+        train_file, test_file, config_dict = temp_files
+        config_dict = {"test": "dict"}  # Minimal config for testing
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=config_dict,
         )
 
         assert workflow.number_of_al_loops == 5
         assert workflow.verbose == 0
         assert workflow.start_loop == 0
 
-    @patch("alomancy.core.base_active_learning.load_dictionaries")
-    def test_load_dictionaries_called(self, mock_load_dict, temp_files):
-        """Test that load_dictionaries is called during initialization."""
-        train_file, test_file, config_file = temp_files
-        mock_load_dict.return_value = {"test": "dict"}
-
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            config_file_path=config_file,
-        )
-
-        mock_load_dict.assert_called_once_with(config_file)
         assert workflow.jobs_dict == {"test": "dict"}
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     @patch("alomancy.utils.clean_structures.clean_structures")
-    def test_run_workflow_structure(
-        self, mock_clean_structures, mock_load_dict, temp_files
-    ):
+    def test_run_workflow_structure(self, mock_clean_structures, temp_files):
         """Test the overall structure of running the AL workflow."""
-        train_file, test_file, config_file = temp_files
-        mock_load_dict.return_value = {
+        train_file, test_file, config_dict = temp_files
+        config_dict = {
             "mlip_committee": {"name": "test_mlip"},
             "structure_generation": {"name": "test_md"},
             "high_accuracy_evaluation": {"name": "test_qe"},
@@ -213,7 +187,7 @@ class TestBaseActiveLearningWorkflow:
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=config_dict,
             number_of_al_loops=2,
             start_loop=0,
             plots=False,
@@ -275,11 +249,10 @@ class TestBaseActiveLearningWorkflow:
     #     assert workflow.train_mlip_calls[0][0] == "al_loop_0"
     #     assert workflow.train_mlip_calls[1][0] == "al_loop_1"
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    def test_run_with_start_loop(self, mock_load_dict, temp_files):
+    def test_run_with_start_loop(self, temp_files):
         """Test running with a non-zero start loop."""
-        train_file, test_file, config_file = temp_files
-        mock_load_dict.return_value = {
+        train_file, test_file, config_dict = temp_files
+        config_dict = {
             "mlip_committee": {"name": "test_mlip"},
             "structure_generation": {"name": "test_md"},
             "high_accuracy_evaluation": {"name": "test_qe"},
@@ -288,7 +261,7 @@ class TestBaseActiveLearningWorkflow:
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=config_dict,
             number_of_al_loops=3,
             start_loop=1,
             plots=False,
@@ -307,21 +280,20 @@ class TestBaseActiveLearningWorkflow:
 
     def test_abstract_methods_must_be_implemented(self, temp_files):
         """Test that abstract methods must be implemented."""
-        train_file, test_file, config_file = temp_files
+        train_file, test_file, config_dict = temp_files
 
         # Should not be able to instantiate the abstract base class
         with pytest.raises(TypeError):
             BaseActiveLearningWorkflow(
                 initial_train_file_path=train_file,
                 initial_test_file_path=test_file,
-                config_file_path=config_file,
+                jobs_dict=config_dict,
             )  # ignore: para
 
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    def test_verbose_output(self, mock_load_dict, temp_files, capsys):
+    def test_verbos_output(self, temp_files, capsys):
         """Test verbose output during workflow execution."""
-        train_file, test_file, config_file = temp_files
-        mock_load_dict.return_value = {
+        train_file, test_file, config_dict = temp_files
+        config_dict = {
             "mlip_committee": {"name": "test_mlip"},
             "structure_generation": {"name": "test_md"},
             "high_accuracy_evaluation": {"name": "test_qe"},
@@ -330,7 +302,7 @@ class TestBaseActiveLearningWorkflow:
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=config_dict,
             number_of_al_loops=1,
             verbose=1,
             plots=False,
@@ -355,14 +327,14 @@ class TestBaseActiveLearningWorkflow:
             workflow = ConcreteActiveLearningWorkflow(
                 initial_train_file_path="nonexistent_train.xyz",
                 initial_test_file_path="nonexistent_test.xyz",
-                config_file_path="nonexistent_config.yaml",
+                jobs_dict={"test": "dict"},
             )
             workflow.run()
 
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     def test_insufficient_training_data(self, mock_load_dict, temp_files):
         """Test error when insufficient training data is provided."""
-        train_file, test_file, config_file = temp_files
+        train_file, test_file, config_dict = temp_files
         mock_load_dict.return_value = {
             "mlip_committee": {"name": "test_mlip"},
             "structure_generation": {"name": "test_md"},
@@ -378,7 +350,7 @@ class TestBaseActiveLearningWorkflow:
             workflow = ConcreteActiveLearningWorkflow(
                 initial_train_file_path=str(single_train_file),
                 initial_test_file_path=test_file,
-                config_file_path=config_file,
+                jobs_dict=config_dict,
             )
 
             with pytest.raises(
@@ -394,7 +366,7 @@ class TestActiveLearningIntegration:
     @patch("alomancy.configs.config_dictionaries.load_dictionaries")
     def test_full_workflow_integration(self, mock_load_dict, temp_files):
         """Test a complete workflow execution."""
-        train_file, test_file, config_file = temp_files
+        train_file, test_file, config_dict = temp_files
         mock_load_dict.return_value = {
             "mlip_committee": {"name": "test_mlip"},
             "structure_generation": {"name": "test_md"},
@@ -404,7 +376,7 @@ class TestActiveLearningIntegration:
         workflow = ConcreteActiveLearningWorkflow(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
-            config_file_path=config_file,
+            jobs_dict=config_dict,
             number_of_al_loops=2,
             verbose=0,
             plots=False,
