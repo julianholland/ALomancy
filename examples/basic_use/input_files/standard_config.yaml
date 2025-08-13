@@ -40,7 +40,7 @@ structure_generation:
     max_number_of_concurrent_jobs: 5
     chem_formula_list: null
     atom_number_range: [0, 21]
-    enforce_chemical_diversity: True
+    enforce_chemical_diversity: true
   run_md_kwargs:
     steps: 20000
     temperature: 1200
