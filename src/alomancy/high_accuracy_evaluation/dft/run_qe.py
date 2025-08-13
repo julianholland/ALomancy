@@ -91,6 +91,8 @@ def create_qe_calc_object(atoms, high_accuracy_eval_job_dict, out_dir):
         ],
         min_ranks_per_pool=8,
     )
+    if "qe_input_kwargs" not in high_accuracy_eval_job_dict:
+        high_accuracy_eval_job_dict["qe_input_kwargs"] = {}
 
     return Espresso(
         profile=create_espresso_profile(

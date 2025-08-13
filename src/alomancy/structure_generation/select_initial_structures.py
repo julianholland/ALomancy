@@ -6,7 +6,7 @@ def select_initial_structures(
     base_name,
     structure_generation_job_dict: dict,
     train_atoms_list: list[Atoms],
-    desired_initial_structures: int = 5,
+    max_number_of_concurrent_jobs: int = 5,
     chem_formula_list: list[str] | None = None,
     atom_number_range: tuple[int, int] = (0, 0),
     enforce_chemical_diversity: bool = False,
@@ -29,6 +29,7 @@ def select_initial_structures(
         list[Atoms]: Selected Atoms objects for structure generation.
     """
     # Handle None default for mutable argument
+    atom_number_range = tuple(atom_number_range)
 
     if chem_formula_list is None:
         chem_formula_list = []
@@ -55,29 +56,29 @@ def select_initial_structures(
         filtered_structures = train_atoms_list
 
     assert (
-        len(filtered_structures) >= desired_initial_structures
-    ), f"Not enough structures to select {desired_initial_structures} from. Available: {len(filtered_structures)}"
+        len(filtered_structures) >= max_number_of_concurrent_jobs
+    ), f"Not enough structures to select {max_number_of_concurrent_jobs} from. Available: {len(filtered_structures)}"
 
     if enforce_chemical_diversity:
         # Ensure chemical diversity by selecting unique chemical formulas
-        # If there are fewer unique formulas than `desired_initial_structures`, select all
-        # Otherwise, randomly select `desired_initial_structures` unique formulas
+        # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
+        # Otherwise, randomly select `max_number_of_concurrent_jobs` unique formulas
         unique_chemical_formulas = {
             s.get_chemical_formula() for s in filtered_structures
         }
 
-        if len(unique_chemical_formulas) <= desired_initial_structures:
+        if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
             list_of_formulas = list(unique_chemical_formulas)
             extra_formulas = [
                 np.random.choice(list(unique_chemical_formulas), replace=False)
-                for _ in range(desired_initial_structures - len(list_of_formulas))
+                for _ in range(max_number_of_concurrent_jobs - len(list_of_formulas))
             ]
             list_of_formulas.extend(extra_formulas)
 
         else:
             list_of_formulas = np.random.choice(
                 list(unique_chemical_formulas),
-                desired_initial_structures,
+                max_number_of_concurrent_jobs,
                 replace=False,
             )
 
@@ -98,7 +99,7 @@ def select_initial_structures(
             filtered_structures[x]
             for x in np.random.choice(
                 np.array(range(len(filtered_structures))),
-                desired_initial_structures,
+                max_number_of_concurrent_jobs,
                 replace=False,
             )
         ]

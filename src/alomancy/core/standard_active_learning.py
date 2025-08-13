@@ -37,6 +37,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
         workdir = Path("results", base_name)
 
+        if "mace_fit_kwargs" not in mlip_committee_job_dict:
+            mlip_committee_job_dict["mace_fit_kwargs"] = {}
+
         committee_remote_submitter(
             remote_info=get_remote_info(
                 mlip_committee_job_dict,
@@ -65,6 +68,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]
     ) -> list[Atoms]:
+        if "structure_selection_kwargs" not in job_dict["structure_generation"]:
+            job_dict["structure_generation"]["structure_selection_kwargs"] = {}
+
         input_structures = select_initial_structures(
             base_name=base_name,
             structure_generation_job_dict=job_dict["structure_generation"],
@@ -97,6 +103,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 f"{job_dict['mlip_committee']['name']}_stagetwo.model",
             )
         )
+
+        if "run_md_kwargs" not in job_dict["structure_generation"]:
+            job_dict["structure_generation"]["run_md_kwargs"] = {}
 
         function_kwargs = {
             "structure_generation_job_dict": job_dict["structure_generation"],
