@@ -12,3 +12,5 @@ build
 *.egg-info
 *.egg
 __pycache__
+src/alomancy.egg-info/SOURCES.txt
+src/alomancy.egg-info/dependency_links.txt
