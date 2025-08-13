@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: alomancy
-Version: 0.1.0.post0
+Version: 0.1.1.post0
 Summary: Active Learning framework for atomistic simulations with flexible workflows and HPC submission.
 Author-email: Julian Holland <holland@fhi.mpg.de>
 License: MIT
@@ -40,6 +40,7 @@ Requires-Dist: pre-commit>=3.0; extra == "dev"
 Provides-Extra: docs
 Requires-Dist: sphinx>=6.0; extra == "docs"
 Requires-Dist: sphinx-rtd-theme>=1.2; extra == "docs"
+Requires-Dist: myst-parser>=0.18; extra == "docs"
 Requires-Dist: sphinxcontrib-napoleon>=0.7; extra == "docs"
 Provides-Extra: test
 Requires-Dist: pytest>=7.0; extra == "test"
@@ -60,11 +61,12 @@ Requires-Dist: pytest-xdist>=3.0; extra == "test"
 [![PyPI version](https://badge.fury.io/py/alomancy.svg)](https://badge.fury.io/py/alomancy)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/yourusername/ALomnacy/workflows/CI/badge.svg)](https://github.com/yourusername/ALomnacy/actions)
+[![Tests](https://github.com/julianholland/ALomancy/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/julianholland/ALomancy/actions)
+[![codecov](https://codecov.io/gh/julianholland/ALomancy/branch/main/graph/badge.svg)](https://codecov.io/gh/julianholland/ALomancy)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Documentation Status](https://readthedocs.org/projects/alomancy/badge/?version=latest)](https://alomancy.readthedocs.io/en/latest/index.html)
 
-
-[Installation](#installation) • [Quick Start](#quick-start) • [Documentation](#documentation) • [Examples](#examples) • [Contributing](#contributing)
+[Installation](#installation) • [Quick Start](#quick-start) • [Documentation](https://alomancy.readthedocs.io/en/latest/index.html) • [Examples](#examples) • [Contributing](#contributing)
 
 </div>
 
@@ -78,28 +80,29 @@ ALomnacy is a Python framework for running active learning (AL) workflows for tr
 
 - 🚀 **Automated AL Workflows**: End-to-end active learning with minimal manual intervention
 - 🔧 **HPC Integration**: Built-in support for remote job submission on HPC clusters
-- **Parallelization**: Ensures that jobs run concurrently where possible
+- ⚡ **Parallelization**: Ensures that jobs run concurrently where possible increasing speed to results
 - 🔄 **Extensible Design**: Abstract base classes for easy customization and extension
 - 📊 **Analysis Tools**: Built-in utilities for monitoring and analyzing AL progress
 
 ### Workflow Overview
 
 ```mermaid
-graph LR
-    A[Initial Dataset] --> B[Train MLIP Committee]
-    B --> C[Generate Structures]
-    C --> D[Uncertainty Quantification]
+flowchart TD
+    A((Initial Dataset)) --> B[Train MLIP Committee]
+    B --> C[Structure Generation]
+    C --> D((Uncertainty-based Selection))
     D --> E[High-Accuracy Evaluation]
-    E --> F[Update Dataset]
+    E --> F((Update Training Dataset))
     F --> B
 
-    style A fill:#e1f5fe
-    style B fill:#f3e5f5
-    style C fill:#e8f5e8
-    style D fill:#fff3e0
-    style E fill:#fce4ec
-    style F fill:#f1f8e9
+    style A fill:#e66027
+    style B fill:#e87322
+    style C fill:#eb861e
+    style D fill:#efa119
+    style E fill:#708e4c
+    style F fill:#328566
 ```
+
 
 ## 🚀 Installation
 
@@ -220,7 +223,7 @@ class CustomActiveLearningWorkflow(BaseActiveLearningWorkflow):
                                high_accuracy_eval_job_dict: dict,
                                structures: list[Atoms], **kwargs) -> list[Atoms]:
         """Custom high-accuracy evaluation"""
-        # Your DFT calculation logic here
+        # Your high-accuracy calculation logic here
         return evaluated_structures
 ```
 
@@ -263,9 +266,9 @@ alomancy/
 - **Quantum Espresso**: Automated DFT calculations for reference data
 - **Job Management**: Parallel submission and monitoring of DFT jobs
 
-## 📊 Monitoring and Analysis
+<!-- ## 📊 Monitoring and Analysis -->
 
-Monitor your AL progress with built-in analysis tools:
+<!-- Monitor your AL progress with built-in analysis tools:
 
 ```python
 from alomancy.analysis import MACEAnalysis
@@ -275,7 +278,7 @@ analyzer = MACEAnalysis("results/")
 analyzer.plot_learning_curves()
 analyzer.analyze_uncertainty_evolution()
 analyzer.generate_report()
-```
+``` -->
 
 ## 🤝 Contributing
 
@@ -338,7 +341,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📖 **Documentation**: [Link to docs]
+- 📖 **Documentation**: [https://alomancy.readthedocs.io](https://alomancy.readthedocs.io)
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/ALomnacy/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/ALomnacy/discussions)
 - 📧 **Email**: holland@fhi.mpg.de
