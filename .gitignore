@@ -9,6 +9,7 @@ MACE_model
 archive
 dist
 build
+version.py
 *.egg-info
 *.egg
 __pycache__
