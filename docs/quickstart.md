@@ -5,6 +5,8 @@
 ```python
 from alomancy.core import StandardActiveLearningWorkflow
 
+
+
 # Initialize workflow
 workflow = StandardActiveLearningWorkflow(
     initial_train_file_path="train_set.xyz",
