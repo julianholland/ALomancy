@@ -20,6 +20,8 @@ def get_mace_eval_info(
                 "fit_*/results/*train.txt",
             )
         )
+        if not results_files:
+            continue
         results = []
         for results_file in results_files:
             with open(results_file) as file:
