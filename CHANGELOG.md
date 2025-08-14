@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
+- Warning if structure generation could contain 1 atom atoms objects
 ### Changed
-
+- improved documentation
 ### Fixed
 
 ### Dependencies

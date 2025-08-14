@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from ase import Atoms
 
@@ -30,6 +32,18 @@ def select_initial_structures(
     """
     # Handle None default for mutable argument
     atom_number_range = tuple(atom_number_range)
+    if atom_number_range != (0, 0):
+        assert (
+            atom_number_range[0] <= atom_number_range[1]
+        ), "atom_number_range must be a tuple of two integers where the first is less than or equal to the second"
+        if atom_number_range[0] < 2:
+            warnings.warn(
+                f"atom_number_range minimum value is {atom_number_range[0]}, which allows single-atom structures. "
+                "This can lead to problems with some structure generators like MD simulations, as single atoms "
+                "cannot form proper molecular dynamics trajectories. Consider setting the minimum to 2 or higher.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     if chem_formula_list is None:
         chem_formula_list = []
