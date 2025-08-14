@@ -203,7 +203,7 @@ class TestStructureSelection:
         result = select_initial_structures(
             base_name="test_loop_0",
             structure_generation_job_dict={"name": "test"},
-            desired_initial_structures=2,
+            max_number_of_concurrent_jobs=2,
             chem_formula_list=[],
             atom_number_range=(2, 10),
             enforce_chemical_diversity=True,
@@ -213,6 +213,31 @@ class TestStructureSelection:
 
         assert len(result) == 2
         mock_select_initial.assert_called_once()
+
+    def test_less_than_two_atoms_warning(self):
+        """Test warning for structures with less than two atoms."""
+        import warnings
+
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            select_initial_structures(
+                base_name="test_loop_0",
+                structure_generation_job_dict={"name": "test"},
+                max_number_of_concurrent_jobs=1,
+                chem_formula_list=[],
+                atom_number_range=(1, 10),
+                enforce_chemical_diversity=False,
+                train_atoms_list=[Atoms(symbols=["H"], positions=[[0, 0, 0]])],
+                verbose=0,
+            )
+
+            assert len(w) == 1
+            assert issubclass(w[-1].category, UserWarning)
+            assert "single-atom structures" in str(w[-1].message)
 
     def test_chemical_diversity_check(self):
         """Test chemical diversity checking."""
