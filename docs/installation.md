@@ -18,9 +18,8 @@ pip install -e ".[dev]"
 
 - Python 3.9+
 - [ASE](https://wiki.fysik.dtu.dk/ase/) - Atomic Simulation Environment
-- [WFL](https://github.com/libAtoms/workflow) - Workflow for atomistic simulations
 - [Expyre](https://github.com/libAtoms/ExPyRe) - Remote job execution
-- [MACE](https://github.com/ACEsuit/mace) - Machine Learning Accelerated Computational Engine
+- [MACE](https://github.com/ACEsuit/mace) - MLIP training
 
 ## Development Installation
 

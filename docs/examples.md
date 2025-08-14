@@ -1,4 +1,5 @@
 # Examples
+Here are some examples of how you may wish to set up your workflow
 
 ## Basic Usage
 
@@ -7,7 +8,7 @@ from alomancy.core import StandardActiveLearningWorkflow
 from pathlib import Path
 
 # a bare minimum settings dict for running the StandardActiveLearningWorkflow module
-# this can also be loaded in as a .yaml file (c.f. examples)
+# this can also be loaded in as a .yaml file (c.f. tutorials)
 
 your_hpc_dict = {
   'hpc_name' : 'your_ssh_hpc_name',
@@ -51,7 +52,7 @@ jobs_dict= {
     'structure_selection_kwargs':,
       'max_number_of_concurrent_jobs': 5,
       'chem_formula_list': None,
-      'atom_number_range': [0, 21],
+      'atom_number_range': [9, 21],
       'enforce_chemical_diversity': True,
     'run_md_kwargs':,
       'steps': 20000,
@@ -59,17 +60,45 @@ jobs_dict= {
       'timestep_fs': 0.5,
       'friction': 0.002,
     'hpc': your_hpc_dict,
-  }
-
   },
   'high_accuracy_evaluation': {
     'name': 'qe_dft',
     'max_time': "30m",
-    'qe_input_kwargs':,
-      'system':,
-        'input_dft': "pbe",
+    'qe_input_kwargs': {
+        'control': {
+            'verbosity': "high",
+            'prefix': "qe",
+            'nstep': 999,
+            'tstress': False,
+            'tprnfor': True,
+            'disk_io': "none",
+            'etot_conv_thr': 1.0e-5,
+            'forc_conv_thr': 1.0e-5,
+            },
+        'system': {
+            'ibrav': 0,
+            'tot_charge': 0.0,
+            'ecutwfc': 40.0,
+            'ecutrho': 600,
+            'occupations': 'smearing',
+            'degauss': 0.01,
+            'smearing': 'cold',
+            'input_dft': 'pbe',
+            'nspin': 1,
+            },
+        'electrons': {
+            'electron_maxstep': 999,
+            'scf_must_converge': True,
+            'conv_thr': 1.0e-12,
+            'mixing_mode': 'local-TF',
+            'mixing_beta': 0.25,
+            'startingwfc': 'random',
+            'diagonalization': 'david',
+            },
+        },
     'hpc': your_hpc_dict,
-} # the hpc can/should be changed to whatever is the most appropriate hpc for each step of the workflow
+    } # the hpc can/should be changed to whatever is the most appropriate hpc for each step of the workflow
+}
 
 # Initialize workflow
 workflow = StandardActiveLearningWorkflow(

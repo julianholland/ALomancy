@@ -11,6 +11,7 @@ installation
 quickstart
 api/index
 examples
+tutorials
 contributing
 ```
 
