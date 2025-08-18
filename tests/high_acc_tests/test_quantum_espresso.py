@@ -59,7 +59,7 @@ def sample_qe_structures():
 def mock_qe_job_dict():
     """Mock job dictionary for QE calculations."""
     return {
-        "name": "test_qe_calculation",
+        "name": "qe",
         "max_time": "1H",
         "qe_input_kwargs": {
             "input_dft": "pbe",
@@ -240,19 +240,17 @@ class TestQuantumEspressoExecution:
             expected_file = Path(tmpdir) / f"{mock_qe_job_dict['name']}.xyz"
             assert expected_file.exists()
 
-    @patch(
-        "alomancy.high_accuracy_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
-    )
+    @patch("alomancy.utils.remote_atoms_list_submitter.remote_atoms_list_submitter")
     def test_qe_remote_submission(self, mock_qe_submitter, sample_qe_structures):
         """Test QE remote submission."""
-        from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
-            qe_remote_submitter,
+        from alomancy.utils.remote_atoms_list_submitter import (
+            remote_atoms_list_submitter,
         )
 
         # Mock return result files
         mock_result_files = [
-            "/test/path/qe_output_0/result.xyz",
-            "/test/path/qe_output_1/result.xyz",
+            "/test/path/qe_output_0/qe_result.xyz",
+            "/test/path/qe_output_1/qe_result.xyz",
         ]
         mock_qe_submitter.return_value = mock_result_files
 
@@ -261,9 +259,10 @@ class TestQuantumEspressoExecution:
         target_file = "result.xyz"
         input_atoms_list = sample_qe_structures[:2]
 
-        result = qe_remote_submitter(
+        result = remote_atoms_list_submitter(
             remote_info=mock_remote_info,
             base_name=base_name,
+            specific_job_dict={"name": "qe"},
             target_file=target_file,
             input_atoms_list=input_atoms_list,
             function=MagicMock(),
@@ -317,9 +316,7 @@ class TestDFTResults:
 class TestHighAccuracyEvaluationIntegration:
     """Integration tests for high-accuracy evaluation."""
 
-    @patch(
-        "alomancy.high_accuracy_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
-    )
+    @patch("alomancy.utils.remote_atoms_list_submitter.remote_atoms_list_submitter")
     @patch("ase.io.read")
     def test_complete_evaluation_workflow(
         self, mock_read, mock_qe_submitter, sample_qe_structures, mock_qe_job_dict
@@ -327,8 +324,8 @@ class TestHighAccuracyEvaluationIntegration:
         """Test complete high-accuracy evaluation workflow."""
         # Mock QE submission
         mock_result_paths = [
-            "/test/qe_output_0/result.xyz",
-            "/test/qe_output_1/result.xyz",
+            "/test/qe_output_0/qe_result.xyz",
+            "/test/qe_output_1/qe_result.xyz",
         ]
         mock_qe_submitter.return_value = mock_result_paths
 
@@ -349,6 +346,7 @@ class TestHighAccuracyEvaluationIntegration:
         result_paths = mock_qe_submitter(
             remote_info=MagicMock(),
             base_name="test_loop_0",
+            specific_job_dict=mock_qe_job_dict,
             target_file="result.xyz",
             input_atoms_list=input_structures,
             function=MagicMock(),
@@ -413,9 +411,7 @@ class TestQuantumEspressoIntegration:
     """Integration tests for QE components."""
 
     @patch("alomancy.high_accuracy_evaluation.dft.run_qe.run_qe")
-    @patch(
-        "alomancy.high_accuracy_evaluation.dft.qe_remote_submitter.qe_remote_submitter"
-    )
+    @patch("alomancy.utils.remote_atoms_list_submitter.remote_atoms_list_submitter")
     def test_full_qe_pipeline(
         self, mock_submitter, mock_run_qe, sample_qe_structures, mock_qe_job_dict
     ):
@@ -436,8 +432,8 @@ class TestQuantumEspressoIntegration:
 
         # Mock remote submission
         mock_submitter.return_value = [
-            "/test/qe_output_0/result.xyz",
-            "/test/qe_output_1/result.xyz",
+            "/test/qe_output_0/qe_result.xyz",
+            "/test/qe_output_1/qe_result.xyz",
         ]
 
         # Test pipeline
@@ -447,6 +443,7 @@ class TestQuantumEspressoIntegration:
         result_paths = mock_submitter(
             remote_info=MagicMock(),
             base_name="test_loop_0",
+            specific_job_dict=mock_qe_job_dict,
             target_file="result.xyz",
             input_atoms_list=input_structures,
             function=mock_run_qe,

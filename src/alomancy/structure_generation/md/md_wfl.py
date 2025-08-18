@@ -13,7 +13,7 @@ from tqdm import tqdm
 def run_md(
     structure_generation_job_dict: dict,
     initial_structure: Atoms,
-    total_md_runs: int,
+    concurrent_runs: int,
     out_dir,
     model_path,
     steps=100,
@@ -22,12 +22,16 @@ def run_md(
     friction: float = 0.002,
     verbose: int = 0,
 ):
+    concurrent_runs = structure_generation_job_dict["structure_selection_kwargs"][
+        "max_number_of_concurrent_jobs"
+    ]
     assert (
         structure_generation_job_dict["desired_number_of_structures"] > 0
     ), "Number of structures must be greater than 0"
     assert (
         steps
-        > structure_generation_job_dict["desired_number_of_structures"] / total_md_runs
+        > structure_generation_job_dict["desired_number_of_structures"]
+        / concurrent_runs
     ), "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
     # further asserting needed here to avoid:
     # for i in range(steps // snapshot_interval):
@@ -59,9 +63,12 @@ def run_md(
     )
 
     snapshot_interval = (
-        steps
-        * total_md_runs
-        // structure_generation_job_dict["desired_number_of_structures"]
+        steps  # total steps to run the calculation for
+        * concurrent_runs  # times total number of concurrent runs
+        // structure_generation_job_dict[
+            "desired_number_of_structures"
+        ]  # to get the total number of structures wanted
+        // 5  # to get 5 times the number of structures we want to filter later
     )
 
     for _ in range(steps // snapshot_interval):

@@ -1,67 +1,21 @@
 from pathlib import Path
 
-import pandas as pd
-from ase import Atoms
-from ase.io import read, write
+from ase import Atoms, read, write
 from mace.calculators import MACECalculator
 
-from alomancy.configs.remote_info import get_remote_info
-from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
-from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
-from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
-from alomancy.mlip.get_mace_eval_info import (
-    get_mace_eval_info,
-)
-from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
-from alomancy.structure_generation.md.md_wfl import run_md
+from alomancy.structure_generation.mc.fbmc import run_fbmc
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
 from alomancy.utils.remote_atoms_list_submitter import remote_atoms_list_submitter
+from alomancy.utils.remote_info import get_remote_info
 
 
-class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
-    """
-    AL Technique: Committee
-    MLIP: MACE
-    Structure Generation: MD
-    High-Accuracy Evaluation: Quantum Espresso (DFT)
-    """
-
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
-        workdir = Path("results", base_name)
-
-        if "mace_fit_kwargs" not in mlip_committee_job_dict:
-            mlip_committee_job_dict["mace_fit_kwargs"] = {}
-
-        committee_remote_submitter(
-            remote_info=get_remote_info(
-                mlip_committee_job_dict,
-                input_files=[
-                    str(Path(workdir, "train_set.xyz")),
-                    str(Path(workdir, "test_set.xyz")),
-                ],
-            ),
-            base_name=base_name,
-            target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
-            seed=803,
-            size_of_committee=mlip_committee_job_dict["size_of_committee"],
-            function=mace_fit,
-            function_kwargs={
-                "mlip_committee_job_dict": mlip_committee_job_dict,
-                "workdir_str": str(workdir),
-            },
-        )
-
-        mae_avg_results = get_mace_eval_info(
-            mlip_committee_job_dict=mlip_committee_job_dict
-        )
-
-        return mae_avg_results
-
+class ActiveLearningForceBiasMCMACE(ActiveLearningStandardMACE):
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]
     ) -> list[Atoms]:
@@ -91,6 +45,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             input_structures,
             format="extxyz",
         )
+
         base_mace_model_path = str(
             Path(
                 "results",
@@ -122,7 +77,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             specific_job_dict=job_dict["structure_generation"],
             target_file=f"{job_dict['structure_generation']['name']}.xyz",
             input_atoms_list=input_structures,
-            function=run_md,
+            function=run_fbmc,
             function_kwargs=function_kwargs,
             verbose=self.verbose,
         )
@@ -164,31 +119,3 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             high_sd_structures[i].info["job_id"] = i
 
         return high_sd_structures
-
-    def high_accuracy_evaluation(
-        self,
-        base_name: str,
-        high_accuracy_eval_job_dict: dict,
-        structures: list[Atoms],
-    ) -> list[Atoms]:
-        function_kwargs = {
-            "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
-        }
-
-        high_accuracy_structure_paths = remote_atoms_list_submitter(
-            remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
-            base_name=base_name,
-            specific_job_dict=high_accuracy_eval_job_dict,
-            target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
-            input_atoms_list=structures,
-            function=run_qe,
-            function_kwargs=function_kwargs,
-            verbose=self.verbose,
-        )
-
-        high_accuracy_structures = []
-        for path in high_accuracy_structure_paths:
-            structure = read(path, format="extxyz")
-            high_accuracy_structures.append(structure)
-
-        return high_accuracy_structures

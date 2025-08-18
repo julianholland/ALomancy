@@ -216,7 +216,7 @@ class TestActiveLearningStandardMACE:
             mock_select.assert_called_once()
 
     @patch("alomancy.core.standard_active_learning.select_initial_structures")
-    @patch("alomancy.core.standard_active_learning.md_remote_submitter")
+    @patch("alomancy.core.standard_active_learning.remote_atoms_list_submitter")
     @patch("alomancy.core.standard_active_learning.find_high_sd_structures")
     @patch("alomancy.configs.remote_info.get_remote_info")
     @patch("alomancy.core.standard_active_learning.read")
@@ -291,24 +291,9 @@ class TestActiveLearningStandardMACE:
         # Test the method with exception handling
         train_atoms_list = [Atoms("CO2") for _ in range(10)]
 
-        print("=== BEFORE CALLING generate_structures ===")
-        print(f"mock_select_initial called: {mock_select_initial.called}")
-
-        try:
-            result = workflow.generate_structures(
-                "test_loop_0", mock_job_config, train_atoms_list
-            )
-            print("=== generate_structures completed successfully ===")
-        except Exception as e:
-            print(f"=== EXCEPTION in generate_structures: {e} ===")
-            import traceback
-
-            traceback.print_exc()
-            raise
-
-        print("=== AFTER CALLING generate_structures ===")
-        print(f"mock_select_initial called: {mock_select_initial.called}")
-        print(f"mock_select_initial call_count: {mock_select_initial.call_count}")
+        result = workflow.generate_structures(
+            "test_loop_0", mock_job_config, train_atoms_list
+        )
 
         # Verify the result
         assert result == mock_atoms
@@ -318,104 +303,7 @@ class TestActiveLearningStandardMACE:
         mock_md_submitter.assert_called_once()
         mock_find_high_sd.assert_called_once()
 
-    # @patch(
-    #     "alomancy.structure_generation.select_initial_structures.select_initial_structures"
-    # )
-    # @patch("alomancy.structure_generation.md.md_remote_submitter.md_remote_submitter")
-    # @patch("alomancy.core.standard_active_learning.find_high_sd_structures")
-    # @patch("alomancy.configs.remote_info.get_remote_info")
-    # @patch("alomancy.core.standard_active_learning.read")
-    # @patch("pathlib.Path.glob")
-    # @patch("pathlib.Path.mkdir")
-    # @patch("alomancy.core.standard_active_learning.write")
-    # @patch("alomancy.core.standard_active_learning.MACECalculator")
-    # def test_generate_structures(
-    #     self,
-    #     mock_mace_calc,
-    #     mock_write,
-    #     mock_mkdir,
-    #     mock_glob,
-    #     mock_read,
-    #     mock_get_remote_info,
-    #     mock_find_high_sd,
-    #     mock_md_submitter,
-    #     mock_select_initial,
-    #     temp_files_co2,
-    #     mock_job_config,
-    #     sample_atoms_co2,
-    # ):
-    #     """Test structure generation method."""
-    #     train_file, test_file, config_dict = temp_files_co2
-
-    #     # Set up mocks
-    #     mock_initial_structures = [sample_atoms_co2.copy() for _ in range(4)]
-    #     mock_select_initial.return_value = mock_initial_structures
-
-    #     mock_md_trajectories = ["/path/to/traj1.xyz", "/path/to/traj2.xyz"]
-    #     mock_md_submitter.return_value = mock_md_trajectories
-
-    #     mock_md_structures = [sample_atoms_co2.copy() for _ in range(20)]
-    #     # Add required arrays for find_high_sd_structures
-    #     for atoms in mock_md_structures:
-    #         atoms.arrays["REF_forces"] = np.random.random((3, 3)) * 0.1
-    #         atoms.info["REF_energy"] = -20.0 + np.random.random() * 0.1
-    #     mock_read.return_value = mock_md_structures
-
-    #     mock_model_paths = [
-    #         Path("results/test_loop_0/test_mlip/fit_0/test_mlip_stagetwo.model"),
-    #         Path("results/test_loop_0/test_mlip/fit_1/test_mlip_stagetwo.model"),
-    #     ]
-    #     mock_glob.return_value = mock_model_paths
-
-    #     mock_high_sd_structures = [sample_atoms_co2.copy() for _ in range(5)]
-    #     for i, atoms in enumerate(mock_high_sd_structures):
-    #         atoms.info["job_id"] = i
-
-    #     # Mock find_high_sd_structures to return our test structures directly
-    #     mock_find_high_sd.return_value = mock_high_sd_structures
-
-    #     mock_remote_info = MagicMock()
-    #     mock_get_remote_info.return_value = mock_remote_info
-
-    #     # Mock MACE calculator - important to return a mock object
-    #     mock_calculator = MagicMock()
-    #     mock_mace_calc.return_value = mock_calculator
-
-    #     workflow = ActiveLearningStandardMACE(
-    #         initial_train_file_path=train_file,
-    #         initial_test_file_path=test_file,
-    #         jobs_dict=mock_job_config,
-    #     )
-
-    #     train_atoms_list = [sample_atoms_co2.copy() for _ in range(10)]
-
-    #     # Add debugging to understand execution flow
-    #     try:
-    #         result = workflow.generate_structures(
-    #             "test_loop_0", mock_job_config, train_atoms_list
-    #         )
-    #     except Exception as e:
-    #         print(f"Exception during generate_structures: {e}")
-    #         raise
-
-    #     # Debug: Print mock call counts
-    #     print(f"mock_select_initial called: {mock_select_initial.call_count} times")
-    #     print(f"mock_md_submitter called: {mock_md_submitter.call_count} times")
-    #     print(f"mock_find_high_sd called: {mock_find_high_sd.call_count} times")
-    #     print(f"Result length: {len(result) if result else 'None'}")
-    #     print(f"Result type: {type(result)}")
-
-    #     # The system detects existing MD runs and skips initial steps
-    #     # This is actually correct behavior - verify the final result is produced
-    #     mock_find_high_sd.assert_called_once()
-
-    #     # Verify result - the function should return our mocked structures
-    #     assert len(result) == 5
-    #     assert all(
-    #         hasattr(atoms, "info") and "job_id" in atoms.info for atoms in result
-    #     )
-
-    @patch("alomancy.core.standard_active_learning.qe_remote_submitter")
+    @patch("alomancy.core.standard_active_learning.remote_atoms_list_submitter")
     @patch("alomancy.configs.remote_info.get_remote_info")
     @patch("alomancy.core.standard_active_learning.read")
     def test_high_accuracy_evaluation(
