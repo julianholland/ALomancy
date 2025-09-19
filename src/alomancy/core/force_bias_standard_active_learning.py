@@ -1,9 +1,12 @@
 from pathlib import Path
 
-from ase import Atoms, read, write
+from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+from ase import Atoms
+from ase.io import read, write
 from mace.calculators import MACECalculator
 
-from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+from alomancy.configs.remote_info import get_remote_info
+
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
@@ -12,10 +15,16 @@ from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
 from alomancy.utils.remote_atoms_list_submitter import remote_atoms_list_submitter
-from alomancy.utils.remote_info import get_remote_info
 
 
 class ActiveLearningForceBiasMCMACE(ActiveLearningStandardMACE):
+    """
+    AL Technique: Committee
+    MLIP: MACE
+    Structure Generation: force-bias MC
+    High-Accuracy Evaluation: Quantum Espresso (DFT)
+    """
+
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]
     ) -> list[Atoms]:
@@ -45,7 +54,6 @@ class ActiveLearningForceBiasMCMACE(ActiveLearningStandardMACE):
             input_structures,
             format="extxyz",
         )
-
         base_mace_model_path = str(
             Path(
                 "results",
@@ -56,17 +64,17 @@ class ActiveLearningForceBiasMCMACE(ActiveLearningStandardMACE):
             )
         )
 
-        if "run_md_kwargs" not in job_dict["structure_generation"]:
-            job_dict["structure_generation"]["run_md_kwargs"] = {}
+        if "run_function_kwargs" not in job_dict["structure_generation"]:
+            job_dict["structure_generation"]["run_function_kwargs"] = {}
 
         function_kwargs = {
             "structure_generation_job_dict": job_dict["structure_generation"],
-            "total_md_runs": len(input_structures),
+            "max_number_of_concurrent_jobs": len(input_structures),
             "model_path": [
                 base_mace_model_path
             ],  # need to pass model path to preserve consistent dtype
             "verbose": self.verbose,
-            **job_dict["structure_generation"]["run_md_kwargs"],
+            **job_dict["structure_generation"]["run_function_kwargs"],
         }
 
         md_trajectory_paths = remote_atoms_list_submitter(
@@ -119,3 +127,5 @@ class ActiveLearningForceBiasMCMACE(ActiveLearningStandardMACE):
             high_sd_structures[i].info["job_id"] = i
 
         return high_sd_structures
+
+     

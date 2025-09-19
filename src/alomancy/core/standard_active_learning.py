@@ -98,17 +98,17 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
         )
 
-        if "run_md_kwargs" not in job_dict["structure_generation"]:
-            job_dict["structure_generation"]["run_md_kwargs"] = {}
+        if "run_function_kwargs" not in job_dict["structure_generation"]:
+            job_dict["structure_generation"]["run_function_kwargs"] = {}
 
         function_kwargs = {
             "structure_generation_job_dict": job_dict["structure_generation"],
-            "total_md_runs": len(input_structures),
+            "max_number_of_concurrent_jobs": len(input_structures),
             "model_path": [
                 base_mace_model_path
             ],  # need to pass model path to preserve consistent dtype
             "verbose": self.verbose,
-            **job_dict["structure_generation"]["run_md_kwargs"],
+            **job_dict["structure_generation"]["run_function_kwargs"],
         }
 
         md_trajectory_paths = remote_atoms_list_submitter(
