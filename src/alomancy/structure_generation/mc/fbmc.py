@@ -9,7 +9,7 @@ from quansino.constraints import FixRot
 
 def run_fbmc(
     structure_generation_job_dict: dict,
-    initial_structure: Atoms,
+    input_structure: Atoms,
     out_dir: str,
     model_path: str,
     delta: float = 0.2,
@@ -53,7 +53,7 @@ def run_fbmc(
         )
     device = "cuda" if structure_generation_job_dict["hpc"]["gpu"] else "cpu"
 
-    fbmc_structure = initial_structure.copy()
+    fbmc_structure = input_structure.copy()
     fbmc_structure.calc = MACECalculator(
         model_paths=model_path,
         device=device,
