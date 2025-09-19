@@ -11,7 +11,6 @@ from mace.calculators import MACECalculator
 def run_langevin_md(
     structure_generation_job_dict: dict,
     initial_structure: Atoms,
-    concurrent_runs: int,
     out_dir,
     model_path,
     steps=100,

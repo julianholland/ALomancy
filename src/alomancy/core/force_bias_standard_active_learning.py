@@ -69,7 +69,7 @@ class ActiveLearningForceBiasMCMACE(ActiveLearningStandardMACE):
 
         function_kwargs = {
             "structure_generation_job_dict": job_dict["structure_generation"],
-            "max_number_of_concurrent_jobs": len(input_structures),
+            # "max_number_of_concurrent_jobs": len(input_structures),
             "model_path": [
                 base_mace_model_path
             ],  # need to pass model path to preserve consistent dtype

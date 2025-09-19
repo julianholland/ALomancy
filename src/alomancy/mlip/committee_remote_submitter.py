@@ -41,7 +41,7 @@ def committee_remote_submitter(
         {"function_kwargs": {"seed": seed + i, "fit_idx": i, **function_kwargs}}
         for i in range(size_of_committee)
     ]
-
+    
     executor.run_and_wait(
         function=function,
         job_configs=job_configs,
