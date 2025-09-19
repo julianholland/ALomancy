@@ -9,7 +9,7 @@ from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
-from alomancy.mlip.mace.mace_train_from_scratch import mace_fit, get_mace_eval_info
+from alomancy.mlip.mace.mace_train_from_scratch import get_mace_eval_info, mace_fit
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
@@ -43,7 +43,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 ],
             ),
             base_name=base_name,
-            model_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model", 
+            model_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
             seed=803,
             size_of_committee=mlip_committee_job_dict["size_of_committee"],
             function=mace_fit,

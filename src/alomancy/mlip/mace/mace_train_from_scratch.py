@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from wfl.configset import ConfigSet
 from wfl.fit.mace import fit
 
-import pandas as pd
 
 def mace_fit(seed: int, mlip_committee_job_dict: dict, workdir_str: str, fit_idx: int = 0):
     workdir = Path(workdir_str)
