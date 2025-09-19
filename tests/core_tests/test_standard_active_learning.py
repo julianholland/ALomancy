@@ -172,7 +172,7 @@ class TestActiveLearningStandardMACE:
         call_args = mock_committee_submitter.call_args
         assert call_args[1]["base_name"] == "test_loop_0"
         assert (
-            call_args[1]["target_file"]
+            call_args[1]["model_file"]
             == f"{mock_job_config['mlip_committee']['name']}_stagetwo_compiled.model"
         )
         assert call_args[1]["size_of_committee"] == 3

@@ -9,7 +9,7 @@ from alomancy.utils.remote_job_executor import RemoteJobExecutor
 def committee_remote_submitter(
     remote_info: RemoteInfo,
     base_name: str,
-    target_file: str,
+    model_file: str,
     seed: int = 803,
     size_of_committee: int = 5,
     function: Callable | None = None,
@@ -18,7 +18,7 @@ def committee_remote_submitter(
     workdir = Path("results", base_name)
 
     def find_target_files():
-        return list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
+        return list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{model_file}"))
 
     target_file_list = find_target_files()
 

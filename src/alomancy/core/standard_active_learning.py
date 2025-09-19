@@ -9,14 +9,11 @@ from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
-from alomancy.mlip.get_mace_eval_info import (
-    get_mace_eval_info,
-)
-from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.mlip.mace.mace_train_from_scratch import mace_fit, get_mace_eval_info
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
-from alomancy.structure_generation.md.md_wfl import run_md
+from alomancy.structure_generation.md.langevin_md import run_langevin_md
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
@@ -46,7 +43,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 ],
             ),
             base_name=base_name,
-            target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
+            model_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model", 
             seed=803,
             size_of_committee=mlip_committee_job_dict["size_of_committee"],
             function=mace_fit,
@@ -122,7 +119,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             specific_job_dict=job_dict["structure_generation"],
             target_file=f"{job_dict['structure_generation']['name']}.xyz",
             input_atoms_list=input_structures,
-            function=run_md,
+            function=run_langevin_md,
             function_kwargs=function_kwargs,
             verbose=self.verbose,
         )

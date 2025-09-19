@@ -76,16 +76,16 @@ def mock_mace_job_dict():
 class TestMACETraining:
     """Test MACE training functionality."""
 
-    @patch("alomancy.mlip.mace_wfl.mace_fit")
+    @patch("alomancy.mlip.mace.mace_train_from_scratch.mace_fit")
     def test_mace_fit_function_exists(self, mock_mace_fit):
         """Test that mace_fit function can be imported and called."""
         # Mock the function to return success
         mock_mace_fit.return_value = "success"
 
         # Test that we can import and call it
-        from alomancy.mlip.mace_wfl import mace_fit
+        from alomancy.mlip.mace.mace_train_from_scratch import mace_fit
 
-        result = mace_fit()
+        result = mace_fit(seed=42, workdir_str="/tmp/test", mlip_committee_job_dict={})
 
         assert result == "success"
         mock_mace_fit.assert_called_once()
@@ -101,12 +101,12 @@ class TestMACETraining:
         # Test parameters
         mock_remote_info = MagicMock()
         base_name = "test_al_loop_0"
-        target_file = "test_model.pt"
+        model_file = "test_model.pt"
 
         result = committee_remote_submitter(
             remote_info=mock_remote_info,
             base_name=base_name,
-            target_file=target_file,
+            model_file=model_file,
             seed=42,
             size_of_committee=3,
             function=MagicMock(),
@@ -260,7 +260,7 @@ class TestMACECalculator:
 class TestMLIPEvaluation:
     """Test MLIP evaluation functionality."""
 
-    @patch("alomancy.mlip.get_mace_eval_info.get_mace_eval_info")
+    @patch("alomancy.mlip.mace.mace_train_from_scratch.get_mace_eval_info")
     def test_mace_evaluation_function(self, mock_eval_func):
         """Test MACE evaluation function."""
         # Mock evaluation results
@@ -274,7 +274,7 @@ class TestMLIPEvaluation:
         )
         mock_eval_func.return_value = mock_results
 
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.mace_train_from_scratch import get_mace_eval_info
 
         result = get_mace_eval_info(mlip_committee_job_dict={"name": "test"})
 
@@ -331,7 +331,7 @@ class TestMLIPIntegration:
     """Integration tests for MLIP components."""
 
     @patch("alomancy.mlip.committee_remote_submitter.committee_remote_submitter")
-    @patch("alomancy.mlip.get_mace_eval_info.get_mace_eval_info")
+    @patch("alomancy.mlip.mace.mace_train_from_scratch.get_mace_eval_info")
     def test_full_mlip_workflow(self, mock_eval, mock_submitter):
         """Test complete MLIP training and evaluation workflow."""
         import pandas as pd

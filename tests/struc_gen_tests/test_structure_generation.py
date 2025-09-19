@@ -58,10 +58,10 @@ def mock_md_job_dict():
 class TestMolecularDynamics:
     """Test molecular dynamics functionality."""
 
-    @patch("alomancy.structure_generation.md.md_wfl.run_md")
+    @patch("alomancy.structure_generation.md.langevin_md.run_langevin_md")
     def test_run_md_function(self, mock_run_md):
         """Test MD run function."""
-        from alomancy.structure_generation.md.md_wfl import run_md
+        from alomancy.structure_generation.md.langevin_md import run_langevin_md
 
         # Mock MD run
         mock_run_md.return_value = None
@@ -70,15 +70,14 @@ class TestMolecularDynamics:
         structure_generation_job_dict = {"name": "test_md"}
         initial_structure = Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [0, 0, 1]])
 
-        run_md(
+        run_langevin_md(
             structure_generation_job_dict=structure_generation_job_dict,
             initial_structure=initial_structure,
-            total_md_runs=1,
+            concurrent_runs=1,
             out_dir="/tmp/test",
             model_path=["test_model.pt"],
             steps=100,
             temperature=300,
-            desired_number_of_structures=10,
             timestep_fs=0.5,
             verbose=0,
         )
@@ -296,7 +295,7 @@ class TestStructureSelection:
 
         structure_list = sample_md_structures
         base_name = "test_loop_0"
-        job_dict = {"test": "dict"}
+        job_dict = {"test": {"dict": "value"}}
         list_of_calculators = [MagicMock() for _ in range(3)]
 
         result = find_high_sd_structures(
@@ -304,8 +303,6 @@ class TestStructureSelection:
             base_name=base_name,
             job_dict=job_dict,
             list_of_other_calculators=list_of_calculators,
-            forces_name="REF_forces",
-            energy_name="REF_energy",
             verbose=0,
         )
 
@@ -318,7 +315,7 @@ class TestForceVarianceCalculation:
 
     def test_force_flattening(self):
         """Test force array flattening."""
-        # Test the flatten_array_of_forces function from md_wfl.py
+        # Test the flatten_array_of_forces function from langevin_md.py
         forces = np.random.random((5, 3))  # 5 atoms, 3 components each
 
         def flatten_array_of_forces(forces_array):
