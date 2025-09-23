@@ -10,7 +10,7 @@ from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
     qe_remote_submitter,
 )
-from alomancy.high_accuracy_evaluation.dft.run_qe import run_qe
+from alomancy.high_accuracy_evaluation.dft.run_qe import run_sp_qe, run_go_qe
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.get_mace_eval_info import (
     get_mace_eval_info,
@@ -33,6 +33,15 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     Structure Generation: MD
     High-Accuracy Evaluation: Quantum Espresso (DFT)
     """
+
+    def initialize_training_set(
+        self, base_name: str, initialization_dict: dict, **kwargs) -> tuple[list[Atoms], list[Atoms]]:
+        train_xyzs, test_xyzs = [], []
+        if Path.exists(Path(self.initial_train_file)) and Path.exists(
+            Path(self.initial_test_file)
+        ):
+            train_xyzs, test_xyzs = self.load_initial_train_test_sets()
+        
 
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
         workdir = Path("results", base_name)
@@ -172,17 +181,42 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         high_accuracy_eval_job_dict: dict,
         structures: list[Atoms],
     ) -> list[Atoms]:
+        print('Starting high accuracy evaluation with', len(structures), 'structures.')
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
         }
+        sp_structures =[]
+        go_structures = []
+        for structure in structures:
+            if 'needs_relaxation' not in structure.info:
+                structure.info['needs_relaxation'] = False
+            if structure.info['needs_relaxation'] is False:
+                sp_structures.append(structure)
+            else:
+                go_structures.append(structure)
 
-        high_accuracy_structure_paths = qe_remote_submitter(
+        print('sp_structures:', sp_structures)
+        print('go_structures:', go_structures)
+
+        high_accuracy_sp_structure_paths = qe_remote_submitter(
             remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
             base_name=base_name,
             target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
-            input_atoms_list=structures,
-            function=run_qe,
+            input_atoms_list=sp_structures,
+            function=run_sp_qe,
             function_kwargs=function_kwargs,
+        )
+
+        high_accuracy_go_structure_paths = qe_remote_submitter(
+            remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
+            base_name=base_name,
+            target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
+            input_atoms_list=go_structures,
+            function=run_go_qe,
+            function_kwargs=function_kwargs,
+        )
+        high_accuracy_structure_paths = (
+            high_accuracy_sp_structure_paths + high_accuracy_go_structure_paths
         )
 
         high_accuracy_structures = []

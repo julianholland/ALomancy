@@ -4,6 +4,7 @@ import numpy as np
 from ase import Atoms
 from ase.calculators.espresso import Espresso, EspressoProfile
 from ase.io import write
+from ase.optimize import BFGS
 
 
 def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
@@ -110,7 +111,7 @@ def create_qe_calc_object(atoms, high_accuracy_eval_job_dict, out_dir):
     )
 
 
-def run_qe(
+def run_sp_qe(
     input_structure: Atoms,
     out_dir: str,
     high_accuracy_eval_job_dict: dict,
@@ -120,10 +121,43 @@ def run_qe(
     calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
 
     input_structure.calc = calc
+    # if 'needs_relaxation' not in input_structure.info:
+    #     if input_structure.info['needs_relaxation'] is True:
+    #         print("Relaxing structure with QE")
+    #         opt = BFGS(input_structure, logfile=str(Path(out_dir, "qe_opt.log")), trajectory=str(Path(out_dir, "qe_opt.traj")))
+    #         opt.run(fmax=0.05, steps=200)
+    #         # input_structure.info['needs_relaxation'] = False
+    #     else:
+    #         print('needs relaxation is False, not relaxing structure with QE')
+    # else:
+    #     input_structure.info['needs_relaxation'] = False
+    #     print('needs relaxation is not present, not relaxing structure with QE')
+
     input_structure.get_potential_energy()
 
     write(
-        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
+        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}_unrelaxed.xyz"),
+        input_structure,
+        format="extxyz",
+    )
+
+    return input_structure
+
+def run_go_qe(
+    input_structure: Atoms,
+    out_dir: str,
+    high_accuracy_eval_job_dict: dict,
+):
+    Path(out_dir).mkdir(exist_ok=True, parents=True)
+
+    calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
+
+    input_structure.calc = calc
+    opt = BFGS(input_structure, logfile=str(Path(out_dir, "qe_opt.log")), trajectory=str(Path(out_dir, "qe_opt.traj")))
+    opt.run(fmax=0.05, steps=200)
+
+    write(
+        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}_relaxed.xyz"),
         input_structure,
         format="extxyz",
     )

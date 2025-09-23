@@ -16,10 +16,10 @@ def qe_remote_submitter(
     function_kwargs: dict[str, Any] | None = None,
 ) -> list[str]:
     workdir = Path("results", base_name)
-    qe_dir = Path(workdir, "high_accuracy_evaluation")
+    qe_dir = Path(workdir, Path(target_file).stem)
 
     def find_target_files():
-        return list(Path.glob(qe_dir, f"qe_output_*/{target_file}"))
+        return list(Path.glob(qe_dir, f"qe_output_*/{Path(target_file).stem}*.xyz"))
 
     target_file_list = find_target_files()
 
@@ -48,7 +48,7 @@ def qe_remote_submitter(
         for i in range(len(input_atoms_list))
     ]
 
-    print(job_configs)
+
     executor.run_and_wait(
         function=function,
         job_configs=job_configs,

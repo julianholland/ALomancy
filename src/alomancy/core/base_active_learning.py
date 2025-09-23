@@ -7,6 +7,9 @@ from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.utils.clean_structures import clean_structures
+from alomancy.initialize.initialization_structure_list import (
+    create_initialization_atoms_list,
+)
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -34,6 +37,9 @@ class BaseActiveLearningWorkflow(ABC):
         verbose: int = 0,
         start_loop: int = 0,
         plots: bool = True,
+        seed: int = 803,
+        # generate_initialization_atoms: bool = False,
+        # generation_dict: dict = {},
     ):
         self.initial_train_file = Path(initial_train_file_path)
         self.initial_test_file = Path(initial_test_file_path)
@@ -42,6 +48,9 @@ class BaseActiveLearningWorkflow(ABC):
         self.verbose = verbose
         self.start_loop = start_loop
         self.plots = plots
+        # self.generate_initialization_atoms = generate_initialization_atoms
+        # self.generation_dict = generation_dict
+        self.seed = seed
 
     def run(self, **kwargs) -> None:
         """
@@ -51,30 +60,33 @@ class BaseActiveLearningWorkflow(ABC):
         that must be implemented by subclasses.
         """
 
-        def load_initial_train_test_sets(
-            dummy_run: bool = False,
-        ) -> tuple[list[Atoms], list[Atoms]]:
-            train_xyzs = [
-                atoms
-                for atoms in read(self.initial_train_file, ":")
-                if isinstance(atoms, Atoms)
-            ]
-            test_xyzs = [
-                atoms
-                for atoms in read(self.initial_test_file, ":")
-                if isinstance(atoms, Atoms)
-            ]
+       
 
-            assert len(train_xyzs) > 1, "More than one training structure required."
-            assert len(test_xyzs) > 1, "More than one test structure required."
-
-            if dummy_run:
-                train_xyzs = train_xyzs[:500]
-                test_xyzs = test_xyzs[:200]
-
-            return train_xyzs, test_xyzs
-
-        train_xyzs, test_xyzs = load_initial_train_test_sets(dummy_run=False)
+        # if self.generate_initialization_atoms:
+        #     # train_xyzs = create_initialization_atoms_list(
+        #     #     **self.generation_dict['train_config'], seed=self.seed
+        #     # )
+        #     train_xyzs = read('dummy_train.xyz', ':')  # For testing purposes only
+        #     print(f"Generated {len(train_xyzs)} initial training structures.")
+        #     self.high_accuracy_evaluation(
+        #         "initialization",
+        #         self.jobs_dict["train_high_accuracy_evaluation"],
+        #         train_xyzs,
+        #         )
+        #     test_xyzs = create_initialization_atoms_list(
+        #         **self.generation_dict['test_config'], seed=self.seed + 1
+        #     )
+        #     self.high_accuracy_evaluation(
+        #         "initialization",
+        #         self.jobs_dict["test_high_accuracy_evaluation"],
+        #         test_xyzs,
+        #     )
+        #     write(self.initial_train_file, train_xyzs, format="extxyz")
+        #     write(self.initial_test_file, test_xyzs, format="extxyz")
+        # else:
+        train_xyzs, test_xyzs = self.initialize_training_set('initialization', 
+                                                             self.jobs_dict['initialization'], 
+                                                             **kwargs)
 
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
@@ -135,6 +147,29 @@ class BaseActiveLearningWorkflow(ABC):
                     f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures."
                 )
 
+    def load_initial_train_test_sets(self,
+            dummy_run: bool = False,
+        ) -> tuple[list[Atoms], list[Atoms]]:
+            train_xyzs = [
+                atoms
+                for atoms in read(self.initial_train_file, ":")
+                if isinstance(atoms, Atoms)
+            ]
+            test_xyzs = [
+                atoms
+                for atoms in read(self.initial_test_file, ":")
+                if isinstance(atoms, Atoms)
+            ]
+
+            assert len(train_xyzs) > 1, "More than one training structure required."
+            assert len(test_xyzs) > 1, "More than one test structure required."
+
+            if dummy_run:
+                train_xyzs = train_xyzs[:500]
+                test_xyzs = test_xyzs[:200]
+
+            return train_xyzs, test_xyzs
+    
     def process_structure(self, structure: Atoms) -> Atoms:
         """
         Process a structure before adding it to the training set.
@@ -156,6 +191,23 @@ class BaseActiveLearningWorkflow(ABC):
         new_structure.arrays["REF_forces"] = structure.get_forces()
 
         return new_structure
+
+    @abstractmethod
+    def initialize_training_set(
+        self, base_name: str, initialization_dict: dict, **kwargs
+    ) -> tuple[list[Atoms], list[Atoms]]:
+        """
+        Initialize the training and test sets.
+
+        This method can be used to generate or load initial structures
+        for training and testing.
+
+        Returns
+        -------
+        Tuple[List[Atoms], List[Atoms]]
+            Initial training and test structures.
+        """
+        pass
 
     @abstractmethod
     def high_accuracy_evaluation(
