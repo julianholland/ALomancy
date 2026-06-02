@@ -23,12 +23,12 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
     if num_structures > 0: 
         for i in np.linspace(1-max_deformation, 1+max_deformation, num_structures):
             deformed_atoms = atoms.copy()
-            if deform_xyz is True:
-                cell_multiplier = np.eye(3) * i
-            elif deform_xyz is False:
-                cell_multiplier = np.eye(3)
-            elif isinstance(deform_xyz, list) and len(deform_xyz) == 3:
+            if isinstance(deform_xyz, list) and len(deform_xyz) == 3:
                 cell_multiplier = np.diag([i if deform else 1 for deform in deform_xyz])
+            if bool(deform_xyz) is True:
+                cell_multiplier = np.eye(3) * i
+            elif bool(deform_xyz) is False:
+                cell_multiplier = np.eye(3)
             else:
                 raise ValueError("deform_xyz must be a bool or a list of three bools.")
 
@@ -38,7 +38,6 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
             deformed_atoms.info['deformation'] = f'{i:.3f}'
             deformed_atoms.info['needs_relaxation'] = False
             deformed_atoms_list.append(deformed_atoms)
-            print([deformed_atoms.info for deformed_atoms in deformed_atoms_list])
 
     return deformed_atoms_list
     

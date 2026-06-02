@@ -4,6 +4,7 @@ import pandas as pd
 from ase import Atoms
 from ase.io import read, write
 from mace.calculators import MACECalculator
+import test
 
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
@@ -24,7 +25,10 @@ from alomancy.structure_generation.md.md_wfl import run_md
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
-
+from alomancy.initialize.initialization_structure_list import (
+    create_initialization_atoms_list,
+)
+import numpy as np
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
@@ -35,14 +39,66 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
 
     def initialize_training_set(
-        self, base_name: str, initialization_dict: dict, **kwargs) -> tuple[list[Atoms], list[Atoms]]:
+        self, base_name: str, jobs_dict: dict, **kwargs
+    ) -> tuple[list[Atoms], list[Atoms]]:
+
         train_xyzs, test_xyzs = [], []
         if Path.exists(Path(self.initial_train_file)) and Path.exists(
             Path(self.initial_test_file)
         ):
             train_xyzs, test_xyzs = self.load_initial_train_test_sets()
-        
 
+        def generate_init_atoms_list(init_dict: dict) -> list[Atoms]:
+            if 'target_non_mp_structures_to_add' in init_dict['creation_kwargs'] and init_dict['creation_kwargs']['target_non_mp_structures_to_add'] > 0:
+                atoms_list = create_initialization_atoms_list(**init_dict['creation_kwargs'])
+                sp_atoms_list = [atom for atom in atoms_list if 'needs_relaxation' not in atom.info or atom.info['needs_relaxation'] is False]
+                go_atoms_list = [atom for atom in atoms_list if 'needs_relaxation' in atom.info and atom.info['needs_relaxation'] is True]
+                print(f'Created {len(sp_atoms_list)} structures that do not need relaxation and {len(go_atoms_list)} structures that do need relaxation.')
+
+            function_kwargs = {
+                "high_accuracy_eval_job_dict": jobs_dict["high_accuracy_evaluation"],
+            }
+            function_kwargs['name'] = init_dict['name']
+            high_accuracy_sp_structure_paths = qe_remote_submitter(
+                remote_info=get_remote_info(jobs_dict["high_accuracy_evaluation"], input_files=[]),
+                base_name=base_name,
+                target_file=f"{init_dict['name']}.xyz",
+                input_atoms_list=sp_atoms_list,
+                function=run_sp_qe,
+                function_kwargs=function_kwargs,
+            )
+            high_accuracy_go_structure_paths = qe_remote_submitter(
+                remote_info=get_remote_info(jobs_dict["high_accuracy_evaluation"], input_files=[]),
+                base_name=base_name,
+                target_file=f"{init_dict['name']}.xyz",
+                input_atoms_list=go_atoms_list,
+                function=run_go_qe,
+                function_kwargs=function_kwargs,
+            )
+            high_accuracy_structure_paths = (
+                high_accuracy_sp_structure_paths + high_accuracy_go_structure_paths
+            )
+            
+
+            high_accuracy_structures = []
+            for path in high_accuracy_structure_paths:
+                structure = read(path, format="extxyz")
+                high_accuracy_structures.append(structure)
+            
+            return high_accuracy_structures
+        
+        all_init = generate_init_atoms_list(jobs_dict["initialization"])
+        test_structure_count = int(len(all_init) * jobs_dict["initialization"]["test_to_train_ratio"])
+        elegible_test_structures = [atoms for atoms in all_init if 'config_type' in atoms.info and atoms.info['config_type'] in jobs_dict["initialization"]["test_config_types"]]
+        rng = np.random.default_rng(seed=jobs_dict["initialization"]["seed"])
+        new_test_xyzs = [elegible_test_structures[i] for i in rng.choice(range(len(elegible_test_structures)), size=test_structure_count, replace=False)]
+        new_train_xyzs = [atoms for atoms in all_init if atoms not in test_xyzs]
+
+        train_xyzs.extend(new_train_xyzs)
+        test_xyzs.extend(new_test_xyzs)
+
+        return train_xyzs, test_xyzs
+    
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
         workdir = Path("results", base_name)
 
@@ -185,38 +241,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
         }
-        sp_structures =[]
-        go_structures = []
-        for structure in structures:
-            if 'needs_relaxation' not in structure.info:
-                structure.info['needs_relaxation'] = False
-            if structure.info['needs_relaxation'] is False:
-                sp_structures.append(structure)
-            else:
-                go_structures.append(structure)
 
-        print('sp_structures:', sp_structures)
-        print('go_structures:', go_structures)
-
-        high_accuracy_sp_structure_paths = qe_remote_submitter(
+        high_accuracy_structure_paths = qe_remote_submitter(
             remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
             base_name=base_name,
             target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
-            input_atoms_list=sp_structures,
+            input_atoms_list=structures,
             function=run_sp_qe,
             function_kwargs=function_kwargs,
-        )
-
-        high_accuracy_go_structure_paths = qe_remote_submitter(
-            remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
-            base_name=base_name,
-            target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
-            input_atoms_list=go_structures,
-            function=run_go_qe,
-            function_kwargs=function_kwargs,
-        )
-        high_accuracy_structure_paths = (
-            high_accuracy_sp_structure_paths + high_accuracy_go_structure_paths
         )
 
         high_accuracy_structures = []

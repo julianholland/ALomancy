@@ -35,30 +35,30 @@ def create_amorphous_atoms_list(elements: list[str], atom_number: int, density:f
     """
     amorphous_atoms_list = []
     if num_structures > 0:
+        rng= np.random.default_rng(seed)
         if composition_list is None:
-            np.random.seed(seed)
+            
             composition_tuple_list = list(itertools.combinations_with_replacement(elements, atom_number))
             composition_list = [list(comp) for comp in composition_tuple_list]
 
         if len(composition_list) < num_structures:
-            extra_composition_indices=list(np.random.choice(range(len(composition_list)), num_structures - len(composition_list)))
+            extra_composition_indices=list(rng.choice(range(len(composition_list)), num_structures - len(composition_list)))
             extra_compositions=[composition_list[i] for i in extra_composition_indices]
             composition_list.extend(extra_compositions)
 
         if len(composition_list) > num_structures:
-            composition_indices=list(np.random.choice(range(len(composition_list)), num_structures))
+            composition_indices=list(rng.choice(range(len(composition_list)), num_structures))
             composition_list = [composition_list[i] for i in composition_indices]
 
         def calculate_side_length(composition: list[str]) -> float:
             molecular_weight=sum(atomic_masses[atomic_numbers[el]] for el in composition) # in amu
             volume = molecular_weight / (density * 0.6022)  # in Å^3
             return volume ** (1/3)  # Assuming cubic cell for simplicity
-        
-        
+
         for composition in composition_list:
             cell = np.eye(3) * calculate_side_length(composition)
             atoms=  Atoms(symbols=composition,
-                        positions=np.random.rand(atom_number, 3) * cell[0,0],
+                        positions=rng.random((atom_number, 3)) * cell[0,0],
                         cell=cell,
                         pbc=True)
             amorphous_atoms_list.append(atoms)

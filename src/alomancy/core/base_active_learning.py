@@ -85,7 +85,7 @@ class BaseActiveLearningWorkflow(ABC):
         #     write(self.initial_test_file, test_xyzs, format="extxyz")
         # else:
         train_xyzs, test_xyzs = self.initialize_training_set('initialization', 
-                                                             self.jobs_dict['initialization'], 
+                                                             self.jobs_dict,
                                                              **kwargs)
 
         for loop in range(self.start_loop, self.number_of_al_loops):

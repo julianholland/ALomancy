@@ -3,8 +3,11 @@ import os
 from mp_api.client import MPRester
 from pymatgen.io.ase import AseAtomsAdaptor
 import itertools
-# from pymatgen.
 
+# from pymatgen.
+mp_api_key = os.getenv("MP_API_KEY")
+if not mp_api_key:
+    raise ValueError("MP_API_KEY environment variable not set. Please set it to your Materials Project API key.")
 
 def retrieve_mp_material_docs(
     elements: list, max_energy_above_hull: float, max_num_atoms: int, 
@@ -14,11 +17,11 @@ def retrieve_mp_material_docs(
         n_elements = list(itertools.combinations(elements, i + 1))
         element_permutations.extend(n_elements)
 
-    print(f"Element permutations: {element_permutations}")
+    
     docs_list = []
     for el in element_permutations:
-        mp_api_key = "0qR6VlWDWYQ3rzzwrBqKlnVsXpWcOOyp"
-        print(mp_api_key)
+        print(f"Retrieving structures from Materials Project with elements {el}, energy above hull < {max_energy_above_hull} eV, and number of atoms <= {max_num_atoms}.")
+        
         with MPRester(mp_api_key) as mpr:
             docs = mpr.materials.summary.search(
                 elements=el,
