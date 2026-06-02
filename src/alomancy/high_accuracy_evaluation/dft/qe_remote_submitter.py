@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ase import Atoms
-from wfl.autoparallelize.remoteinfo import RemoteInfo
 
+from alomancy.configs.remote_info import RemoteInfo
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
 
 
@@ -47,7 +47,6 @@ def qe_remote_submitter(
         }
         for i in range(len(input_atoms_list))
     ]
-
 
     executor.run_and_wait(
         function=function,

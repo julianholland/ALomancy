@@ -4,7 +4,6 @@ import pandas as pd
 from ase import Atoms
 from ase.io import read, write
 from mace.calculators import MACECalculator
-import test
 
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow

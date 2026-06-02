@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from expyre.func import ExPyRe
-from wfl.autoparallelize.remoteinfo import RemoteInfo
+from alomancy.configs.remote_info import RemoteInfo
 
 
 class RemoteJobExecutor:

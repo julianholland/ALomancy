@@ -1,8 +1,7 @@
 from pathlib import Path
 from typing import Any, Callable
 
-from wfl.autoparallelize.remoteinfo import RemoteInfo
-
+from alomancy.configs.remote_info import RemoteInfo
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
 
 
@@ -10,15 +9,16 @@ def committee_remote_submitter(
     remote_info: RemoteInfo,
     base_name: str,
     target_file: str,
+    function: Callable,
     seed: int = 803,
     size_of_committee: int = 5,
-    function: Callable | None = None,
     function_kwargs: dict[str, Any] | None = None,
 ) -> list[str]:
     workdir = Path("results", base_name)
 
-    def find_target_files():
-        return list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
+    def find_target_files() -> list[str]:
+        files = list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
+        return [ str(file) for file in files ]
 
     target_file_list = find_target_files()
 
@@ -38,7 +38,7 @@ def committee_remote_submitter(
     executor = RemoteJobExecutor(remote_info)
 
     job_configs = [
-        {"function_kwargs": {"seed": seed + i, "fit_idx": i, **function_kwargs}}
+        {"function_kwargs": {"seed": seed + i, "fit_idx": i, **(function_kwargs or {})}}
         for i in range(size_of_committee)
     ]
 
