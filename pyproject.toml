@@ -31,9 +31,11 @@ dependencies = [
     "tqdm>=4.60.0",
     "scipy>=1.7.0",
     "matplotlib>=3.5.0",
-    "expyre>=0.1.0",
+    "expyre-wfl>=0.1.0",
+    "mp_api>=0.40.0",
     "seaborn>=0.11.0",
     "mace-torch>=0.3.0",
+    "pathlib>=1.0.0",
 ]
 
 [project.optional-dependencies]

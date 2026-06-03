@@ -36,7 +36,7 @@ def create_initialization_atoms_list(
 
     if read_from_prior_file is not None:
         assert Path(read_from_prior_file).is_file(), (
-            f"File {read_from_prior_file} does not exist."
+            f"File {read_from_prior_file} does not exist and config request reading from this file. Please check the file path or set read_from_prior_file to None to create new initialization structures without reading from a prior file."
         )
         prior_atoms_list = read(read_from_prior_file, ":")
         if (
@@ -194,6 +194,8 @@ def create_initialization_atoms_list(
                 write(save_file_name, total_atoms_list)
                 print(f"Saved initialization structures to {save_file_name}.")
             return total_atoms_list
+
+# def 
 
 
 if __name__ == "__main__":

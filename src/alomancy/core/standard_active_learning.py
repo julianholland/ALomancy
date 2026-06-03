@@ -57,7 +57,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             function_kwargs = {
                 "high_accuracy_eval_job_dict": jobs_dict["high_accuracy_evaluation"],
             }
-            function_kwargs['name'] = init_dict['name']
             high_accuracy_sp_structure_paths = qe_remote_submitter(
                 remote_info=get_remote_info(jobs_dict["high_accuracy_evaluation"], input_files=[]),
                 base_name=base_name,
@@ -89,7 +88,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         all_init = generate_init_atoms_list(jobs_dict["initialization"])
         test_structure_count = int(len(all_init) * jobs_dict["initialization"]["test_to_train_ratio"])
         elegible_test_structures = [atoms for atoms in all_init if 'config_type' in atoms.info and atoms.info['config_type'] in jobs_dict["initialization"]["test_config_types"]]
-        rng = np.random.default_rng(seed=jobs_dict["initialization"]["seed"])
+        rng = np.random.default_rng(seed=jobs_dict["initialization"]["creation_kwargs"]["seed"])
         new_test_xyzs = [elegible_test_structures[i] for i in rng.choice(range(len(elegible_test_structures)), size=test_structure_count, replace=False)]
         new_train_xyzs = [atoms for atoms in all_init if atoms not in test_xyzs]
 

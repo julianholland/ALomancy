@@ -1,4 +1,5 @@
 from pathlib import Path
+from turtle import st
 from typing import Any, Callable, Optional, Union
 
 from expyre.func import ExPyRe
@@ -193,6 +194,7 @@ class RemoteJobExecutor:
         results = []
 
         for i, job in enumerate(self.jobs):
+            stdout, stderr = None, None
             if verbose:
                 job_name = getattr(job, "name", f"job_{i}")
                 print(f"Waiting for job {i + 1}/{len(self.jobs)}: {job_name}")
@@ -208,7 +210,7 @@ class RemoteJobExecutor:
                     print(f"Job {i + 1} completed successfully")
 
             except Exception as exc:
-                if verbose:
+                if verbose and stdout is not None and stderr is not None:
                     print(f"Job {i + 1} failed with error: {exc}")
                     print("stdout", "-" * 30)
                     print(stdout)

@@ -61,7 +61,7 @@ def create_espresso_profile(
 def generate_kpts(
     cell: np.ndarray, periodic_3d: bool = True, kspacing: float = 0.1
 ) -> np.ndarray:
-    cell_lengths = cell.diagonal()
+    cell_lengths = np.linalg.norm(cell, axis=1)
     kpts = np.ceil(2 * np.pi / (cell_lengths * kspacing)).astype(int)
     return kpts if periodic_3d else np.array([kpts[0], kpts[1], 1])
 
@@ -163,3 +163,11 @@ def run_go_qe(
     )
 
     return input_structure
+
+
+if __name__ == "__main__":
+    lattice = np.array([[-1.22784411000000, -2.12668916000000, 0.00000000000000],
+                        [-1.22784411000000, 2.12668916000000, -0.00000000000000],
+                        [-0.00000000000000, -0.00000000000000, -12.04582282000000]])
+    kpoints=generate_kpts(lattice, periodic_3d=True, kspacing=0.15)
+    print(kpoints)
