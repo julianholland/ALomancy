@@ -1,7 +1,6 @@
 from ase import Atoms
 
-
-def clean_structures(structures, base_name, high_accuracy_evaluation_job_dict):
+def clean_structures(structures: list[Atoms], config_type: str, override_config_type: bool = False, already_computed: bool = True) -> list[Atoms]:
     """
     adds DFT results to copy of structures info dictionary.
     """
@@ -14,11 +13,15 @@ def clean_structures(structures, base_name, high_accuracy_evaluation_job_dict):
             cell=structure.get_cell(),
             pbc=structure.get_pbc(),
         )
-        structure_copy.info["REF_energy"] = structure.get_potential_energy()
-        structure_copy.arrays["REF_forces"] = structure.get_forces()
-        structure_copy.info[
-            "config_type"
-        ] = f"{high_accuracy_evaluation_job_dict['name']}_{base_name}"
+        if already_computed:
+            structure_copy.info["REF_energy"] = structure.get_potential_energy()
+            structure_copy.arrays["REF_forces"] = structure.get_forces()
+
+        if override_config_type or "config_type" not in structure.info:
+            structure_copy.info[
+                "config_type"
+            ] = config_type
+
         cleaned_structures.append(structure_copy)
 
     return cleaned_structures

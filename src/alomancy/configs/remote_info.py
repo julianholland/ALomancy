@@ -1,5 +1,8 @@
-from expyre.resources import Resources
 import copy
+from pathlib import Path
+
+from expyre.resources import Resources
+
 
 class RemoteInfo:
     """Create a RemoteInfo object
@@ -73,12 +76,15 @@ class RemoteInfo:
                 f'{self.partial_node} {self.timeout} {self.check_interval}')
 
 
-def get_remote_info(job_dict, input_files: list[str] | None = None):
+def get_remote_info(job_dict, input_files: list[str] | None = None, output_files: list[str] | None = None) -> RemoteInfo:
     """
     Returns a RemoteInfo object for running MACE fits on a GPU cluster.
     """
     if input_files is None:
         input_files = []
+    if output_files is None:
+        output_files = []
+
 
     print(f"HPC: {job_dict['hpc']['hpc_name']}, Job: {job_dict['name']}")
     return RemoteInfo(
@@ -87,7 +93,8 @@ def get_remote_info(job_dict, input_files: list[str] | None = None):
         num_inputs_per_queued_job=1,
         timeout=36000 * 3,
         input_files=input_files,
-        pre_cmds=job_dict["hpc"]["pre_cmds"],
+        output_files=output_files,
+        pre_cmds=job_dict["hpc"].get("pre_cmds", []),
         resources=Resources(
             max_time=job_dict["max_time"],
             num_nodes=1,

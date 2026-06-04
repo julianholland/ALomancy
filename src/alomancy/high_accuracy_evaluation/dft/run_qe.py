@@ -83,7 +83,7 @@ def find_optimal_npool(
     return int(npool)
 
 
-def create_qe_calc_object(atoms, high_accuracy_eval_job_dict, out_dir):
+def create_qe_calc_object(atoms: Atoms, high_accuracy_eval_job_dict: dict, out_dir: str) -> Espresso:
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
@@ -115,7 +115,7 @@ def run_sp_qe(
     input_structure: Atoms,
     out_dir: str,
     high_accuracy_eval_job_dict: dict,
-):
+) -> Atoms:
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 
     calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
@@ -134,9 +134,10 @@ def run_sp_qe(
     #     print('needs relaxation is not present, not relaxing structure with QE')
 
     input_structure.get_potential_energy()
-
+    print(input_structure)
+    print(f'writing structures to {out_dir} as {high_accuracy_eval_job_dict["name"]}.xyz')
     write(
-        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}_unrelaxed.xyz"),
+        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
         input_structure,
         format="extxyz",
     )
@@ -147,7 +148,7 @@ def run_go_qe(
     input_structure: Atoms,
     out_dir: str,
     high_accuracy_eval_job_dict: dict,
-):
+) -> Atoms:
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 
     calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
@@ -157,17 +158,9 @@ def run_go_qe(
     opt.run(fmax=0.05, steps=200)
 
     write(
-        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}_relaxed.xyz"),
+        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
         input_structure,
         format="extxyz",
     )
-
+    print(f'writing structures to {out_dir} as {high_accuracy_eval_job_dict["name"]}.xyz')
     return input_structure
-
-
-if __name__ == "__main__":
-    lattice = np.array([[-1.22784411000000, -2.12668916000000, 0.00000000000000],
-                        [-1.22784411000000, 2.12668916000000, -0.00000000000000],
-                        [-0.00000000000000, -0.00000000000000, -12.04582282000000]])
-    kpoints=generate_kpts(lattice, periodic_3d=True, kspacing=0.15)
-    print(kpoints)

@@ -86,7 +86,7 @@ class RemoteJobExecutor:
             kwargs=function_kwargs,
             **expyre_kwargs,
         )
-
+        
         self.jobs.append(job)
         return job
 
@@ -141,7 +141,7 @@ class RemoteJobExecutor:
             job_output_files = config.get("output_files", [])
             if common_output_pattern:
                 job_output_files.append(common_output_pattern.format(job_id=i))
-
+            print(f"job {i}, output files: {job_output_files}")
             # Prepare job name
             job_name = config.get("job_name")
             if not job_name and job_name_pattern:
@@ -217,7 +217,8 @@ class RemoteJobExecutor:
                     print("stderr", "-" * 30)
                     print(stderr)
                 results.append(None)
-
+        
+        print(results)
         return results
 
     def cleanup_jobs(self) -> None:

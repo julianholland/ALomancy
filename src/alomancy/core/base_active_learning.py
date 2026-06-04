@@ -10,6 +10,7 @@ from alomancy.utils.clean_structures import clean_structures
 from alomancy.initialize.initialization_structure_list import (
     create_initialization_atoms_list,
 )
+from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -38,7 +39,6 @@ class BaseActiveLearningWorkflow(ABC):
         start_loop: int = 0,
         plots: bool = True,
         seed: int = 803,
-        # generate_initialization_atoms: bool = False,
         # generation_dict: dict = {},
     ):
         self.initial_train_file = Path(initial_train_file_path)
@@ -84,10 +84,10 @@ class BaseActiveLearningWorkflow(ABC):
         #     write(self.initial_train_file, train_xyzs, format="extxyz")
         #     write(self.initial_test_file, test_xyzs, format="extxyz")
         # else:
-        train_xyzs, test_xyzs = self.initialize_training_set('initialization', 
-                                                             self.jobs_dict,
+        train_xyzs, test_xyzs = self.initialize_training_set('initialization',
                                                              **kwargs)
-
+        
+        print(f"Initialized training set with {len(train_xyzs)} structures.")
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
             workdir = Path(f"results/{base_name}")
@@ -150,16 +150,13 @@ class BaseActiveLearningWorkflow(ABC):
     def load_initial_train_test_sets(self,
             dummy_run: bool = False,
         ) -> tuple[list[Atoms], list[Atoms]]:
-            train_xyzs = [
-                atoms
-                for atoms in read(self.initial_train_file, ":")
-                if isinstance(atoms, Atoms)
-            ]
-            test_xyzs = [
-                atoms
-                for atoms in read(self.initial_test_file, ":")
-                if isinstance(atoms, Atoms)
-            ]
+            train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file)
+            test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file)
+
+            if train_xyzs is None or test_xyzs is None:
+                raise FileNotFoundError(
+                    "Initial training or test file not found. Please provide valid file paths."
+                )
 
             assert len(train_xyzs) > 1, "More than one training structure required."
             assert len(test_xyzs) > 1, "More than one test structure required."
@@ -194,7 +191,7 @@ class BaseActiveLearningWorkflow(ABC):
 
     @abstractmethod
     def initialize_training_set(
-        self, base_name: str, initialization_dict: dict, **kwargs
+        self, base_name: str, **kwargs
     ) -> tuple[list[Atoms], list[Atoms]]:
         """
         Initialize the training and test sets.

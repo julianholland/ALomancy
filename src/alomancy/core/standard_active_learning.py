@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from ase import Atoms
 from ase.io import read, write
@@ -10,7 +11,10 @@ from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
     qe_remote_submitter,
 )
-from alomancy.high_accuracy_evaluation.dft.run_qe import run_sp_qe, run_go_qe
+from alomancy.high_accuracy_evaluation.dft.run_qe import run_go_qe, run_sp_qe
+from alomancy.initialize.initialization_structure_list import (
+    create_initialization_atoms_list,
+)
 from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.get_mace_eval_info import (
     get_mace_eval_info,
@@ -24,10 +28,14 @@ from alomancy.structure_generation.md.md_wfl import run_md
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
-from alomancy.initialize.initialization_structure_list import (
-    create_initialization_atoms_list,
+from alomancy.utils.file_saving_and_parsing import (
+    read_atoms_file_if_enabled,
 )
-import numpy as np
+from alomancy.utils.test_train_manager import (
+    extend_test_and_train_sets_with_extra_dataset,
+    split_atoms_list_into_test_and_train,
+)
+
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
@@ -38,65 +46,169 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
 
     def initialize_training_set(
-        self, base_name: str, jobs_dict: dict, **kwargs
+        self, base_name: str, **kwargs
     ) -> tuple[list[Atoms], list[Atoms]]:
 
+        work_dir = Path("results", base_name)
+        Path.mkdir(work_dir, exist_ok=True, parents=True)
+
+        init_job_dict = self.jobs_dict["initialization"]
         train_xyzs, test_xyzs = [], []
+
+        # check if test and train files already exist
         if Path.exists(Path(self.initial_train_file)) and Path.exists(
             Path(self.initial_test_file)
         ):
             train_xyzs, test_xyzs = self.load_initial_train_test_sets()
 
-        def generate_init_atoms_list(init_dict: dict) -> list[Atoms]:
-            if 'target_non_mp_structures_to_add' in init_dict['creation_kwargs'] and init_dict['creation_kwargs']['target_non_mp_structures_to_add'] > 0:
-                atoms_list = create_initialization_atoms_list(**init_dict['creation_kwargs'])
-                sp_atoms_list = [atom for atom in atoms_list if 'needs_relaxation' not in atom.info or atom.info['needs_relaxation'] is False]
-                go_atoms_list = [atom for atom in atoms_list if 'needs_relaxation' in atom.info and atom.info['needs_relaxation'] is True]
-                print(f'Created {len(sp_atoms_list)} structures that do not need relaxation and {len(go_atoms_list)} structures that do need relaxation.')
+            # check if extra datasets are specified and add them to the train and test sets if so
+            if (
+                init_job_dict["extra_datasets"] is not None
+                and len(init_job_dict["extra_datasets"]) > 0
+            ):
+                for extra_dataset in init_job_dict["extra_datasets"]:
+                    train_xyzs, test_xyzs = (
+                        extend_test_and_train_sets_with_extra_dataset(
+                            extra_dataset=extra_dataset,
+                            train_xyzs=train_xyzs,
+                            test_xyzs=test_xyzs,
+                            test_fraction=init_job_dict["test_fraction"],
+                            seed=self.seed,
+                            fall_back_config_type=f"extra_dataset_{Path(extra_dataset).name}",
+                        )
+                    )
+            return train_xyzs, test_xyzs
 
-            function_kwargs = {
-                "high_accuracy_eval_job_dict": jobs_dict["high_accuracy_evaluation"],
-            }
-            high_accuracy_sp_structure_paths = qe_remote_submitter(
-                remote_info=get_remote_info(jobs_dict["high_accuracy_evaluation"], input_files=[]),
+        # check if generated dataset structures should be read from a file
+        generated_atoms_list = None
+        if init_job_dict["read_generated_file"] is not None:
+            generated_atoms_list = read_atoms_file_if_enabled(
+                True, Path(work_dir, init_job_dict["read_generated_file"])
+            )
+            print(
+                "Read generated structures from file:",
+                init_job_dict["read_generated_file"],
+            )
+
+        print("Generated atoms list:", generated_atoms_list)
+        if generated_atoms_list is None:
+            generated_atoms_list = create_initialization_atoms_list(
+                work_dir=str(work_dir), **init_job_dict["creation_kwargs"]
+            )
+
+        if generated_atoms_list is None or len(generated_atoms_list) == 0:
+            raise ValueError(
+                "No generated structures found. Please check the configuration for the initialization step."
+            )
+
+        sp_atoms_list = [
+            atom
+            for atom in generated_atoms_list
+            if "needs_relaxation" not in atom.info
+            or atom.info["needs_relaxation"] is False
+        ]
+
+        go_atoms_list = [
+            atom
+            for atom in generated_atoms_list
+            if "needs_relaxation" in atom.info and atom.info["needs_relaxation"] is True
+        ]
+
+        print(
+            f"Created {len(sp_atoms_list)} structures that do not need relaxation and {len(go_atoms_list)} structures that do need relaxation."
+        )
+
+        function_kwargs = {
+            "high_accuracy_eval_job_dict": self.jobs_dict["high_accuracy_evaluation"],
+        }
+        dummy = False
+        if dummy:
+            high_accuracy_structure_paths = list(
+                Path("/home/jholl/.expyre").glob(
+                    "run_high_accuracy_evaluation_*/results/initialization/initialization/qe_output_*/*.xyz"
+                )
+            )
+        else:
+            qe_remote_submitter(
+                remote_info=get_remote_info(
+                    job_dict=self.jobs_dict["high_accuracy_evaluation"],
+                    input_files=[],
+                    output_files=[],
+                ),
                 base_name=base_name,
-                target_file=f"{init_dict['name']}.xyz",
                 input_atoms_list=sp_atoms_list,
                 function=run_sp_qe,
                 function_kwargs=function_kwargs,
             )
-            high_accuracy_go_structure_paths = qe_remote_submitter(
-                remote_info=get_remote_info(jobs_dict["high_accuracy_evaluation"], input_files=[]),
-                base_name=base_name,
-                target_file=f"{init_dict['name']}.xyz",
-                input_atoms_list=go_atoms_list,
-                function=run_go_qe,
-                function_kwargs=function_kwargs,
+
+            # high_accuracy_go_structure_paths = qe_remote_submitter(
+            #     remote_info=get_remote_info(
+            #         self.jobs_dict["high_accuracy_evaluation"], input_files=[]
+            #     ),
+            #     base_name=base_name,
+            #     target_file=f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
+            #     input_atoms_list=go_atoms_list,
+            #     function=run_go_qe,
+            #     function_kwargs=function_kwargs,
+            # )
+            collected_output_files = list(
+                Path.glob(
+                    Path("results", base_name, "qe_output_*"),
+                    f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
+                )
+            )
+            print(
+                f"Found {len(collected_output_files)} high accuracy structure files from SP QE runs."
             )
             high_accuracy_structure_paths = (
-                high_accuracy_sp_structure_paths + high_accuracy_go_structure_paths
+                collected_output_files  # + high_accuracy_go_structure_paths
             )
-            
+        print()
+        print(
+            len(high_accuracy_structure_paths), "high accuracy structure files found."
+        )
 
-            high_accuracy_structures = []
-            for path in high_accuracy_structure_paths:
-                structure = read(path, format="extxyz")
-                high_accuracy_structures.append(structure)
-            
-            return high_accuracy_structures
-        
-        all_init = generate_init_atoms_list(jobs_dict["initialization"])
-        test_structure_count = int(len(all_init) * jobs_dict["initialization"]["test_to_train_ratio"])
-        elegible_test_structures = [atoms for atoms in all_init if 'config_type' in atoms.info and atoms.info['config_type'] in jobs_dict["initialization"]["test_config_types"]]
-        rng = np.random.default_rng(seed=jobs_dict["initialization"]["creation_kwargs"]["seed"])
-        new_test_xyzs = [elegible_test_structures[i] for i in rng.choice(range(len(elegible_test_structures)), size=test_structure_count, replace=False)]
-        new_train_xyzs = [atoms for atoms in all_init if atoms not in test_xyzs]
+        if len(high_accuracy_structure_paths) == 0:
+            raise ValueError(
+                "No high accuracy structures found. Please check the configuration for the high accuracy evaluation step and make sure the remote jobs are running correctly."
+            )
+
+        high_accuracy_structures = []
+        for path in high_accuracy_structure_paths:
+            structure = read(path, format="extxyz")
+            high_accuracy_structures.append(structure)
+
+        test_structure_count = int(
+            len(high_accuracy_structures) * init_job_dict["test_to_train_ratio"]
+        )
+
+        elegible_test_structures = [
+            atoms
+            for atoms in high_accuracy_structures
+            if "config_type" in atoms.info
+            and atoms.info["config_type"] in init_job_dict["test_config_types"]
+        ]
+        print(test_structure_count, len(elegible_test_structures))
+        if test_structure_count > len(elegible_test_structures):
+            print(
+                f"WARNING: Not enough elegible structures found for the test set based on the specified test_config_types. Found {len(elegible_test_structures)} elegible structures but need {test_structure_count} for the test set based on the specified test_to_train_ratio. Consider adjusting the test_to_train_ratio or the test_config_types in the configuration. For now, all elegible structures will be added to the test set and the rest will be added to the training set."
+            )
+            test_structure_count = len(elegible_test_structures)
+
+        new_train_xyzs, new_test_xyzs = split_atoms_list_into_test_and_train(
+            high_accuracy_structures,
+            test_structure_count / len(elegible_test_structures),
+            self.seed,
+        )
 
         train_xyzs.extend(new_train_xyzs)
         test_xyzs.extend(new_test_xyzs)
 
+        write(Path(work_dir, self.initial_train_file), train_xyzs, format="extxyz")
+        write(Path(work_dir, self.initial_test_file), test_xyzs, format="extxyz")
+
         return train_xyzs, test_xyzs
-    
+
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
         workdir = Path("results", base_name)
 
@@ -235,22 +347,27 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         high_accuracy_eval_job_dict: dict,
         structures: list[Atoms],
     ) -> list[Atoms]:
-        print('Starting high accuracy evaluation with', len(structures), 'structures.')
+        print("Starting high accuracy evaluation with", len(structures), "structures.")
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
         }
 
-        high_accuracy_structure_paths = qe_remote_submitter(
+        qe_remote_submitter(
             remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
             base_name=base_name,
-            target_file=f"{high_accuracy_eval_job_dict['name']}.xyz",
             input_atoms_list=structures,
             function=run_sp_qe,
             function_kwargs=function_kwargs,
         )
 
         high_accuracy_structures = []
-        for path in high_accuracy_structure_paths:
+        collected_output_files = list(
+                Path.glob(
+                    Path("results", base_name, "qe_output_*"),
+                    f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
+                )
+            )
+        for path in collected_output_files:
             structure = read(path, format="extxyz")
             high_accuracy_structures.append(structure)
 

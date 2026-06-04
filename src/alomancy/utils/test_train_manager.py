@@ -1,7 +1,82 @@
 from pathlib import Path
+from warnings import warn
 
 from ase import Atoms
 from ase.io import read
+import numpy as np
+from alomancy.utils.clean_structures import clean_structures
+from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+
+from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+
+
+def split_atoms_list_into_test_and_train(
+    atoms_list: list[Atoms], test_fraction: float, seed: int
+) -> tuple[list[Atoms], list[Atoms]]:
+    """
+    Split a list of Atoms objects into training and test sets.
+
+    Args:
+        atoms_list (list[Atoms]): List of Atoms objects to split.
+        test_fraction (float): Fraction of the data to use for the test set.
+        seed (int): Random seed for reproducibility.
+
+    Returns:
+        tuple[list[Atoms], list[Atoms]]: A tuple containing the training and test sets.
+    """
+    rng = np.random.default_rng(seed=seed)
+    shuffled_indices = rng.permutation(len(atoms_list))
+    split_index = int(len(atoms_list) * (1 - test_fraction))
+    train_indices = shuffled_indices[:split_index]
+    test_indices = shuffled_indices[split_index:]
+
+    train_set = [atoms_list[i] for i in train_indices]
+    test_set = [atoms_list[i] for i in test_indices]
+
+    return train_set, test_set
+
+
+def extend_test_and_train_sets_with_extra_dataset(
+    extra_dataset: str | Path,
+    train_xyzs: list[Atoms],
+    test_xyzs: list[Atoms],
+    test_fraction: float,
+    seed: int,
+    fall_back_config_type: None | str = None,
+) -> tuple[list[Atoms], list[Atoms]]:
+
+    extra_dataset_atoms = read_atoms_file_if_enabled(True, extra_dataset)
+
+    if fall_back_config_type is None:
+        config_type = f"undefined_from_{Path(extra_dataset).name}"
+    if extra_dataset_atoms is not None:
+        extra_dataset_atoms = clean_structures(
+            extra_dataset_atoms,
+            config_type,
+            override_config_type=False,
+            already_computed=True,
+        )
+        for i in range(len(extra_dataset_atoms)):
+            if "config_type" not in extra_dataset_atoms[i].info:
+                extra_dataset_atoms[i].info["config_type"] = config_type
+
+        extra_dataset_train, extra_dataset_test = split_atoms_list_into_test_and_train(
+            extra_dataset_atoms, test_fraction, seed
+        )
+        train_xyzs.extend(extra_dataset_train)
+        test_xyzs.extend(extra_dataset_test)
+        print(
+            f"Added {len(extra_dataset_train)} structures from {extra_dataset} to training set and {len(extra_dataset_test)} structures to test set."
+        )
+        print(
+            f"Please remove {extra_dataset} from the extra_datasets list if you want to avoid duplicates upon restart."
+        )
+    else:
+        print(
+            f"WARNING: Could not read dataset from {extra_dataset}. Please check the file path and format. No structures were added from this dataset."
+        )
+
+    return train_xyzs, test_xyzs
 
 
 def add_new_training_data(
