@@ -76,15 +76,12 @@ class RemoteInfo:
                 f'{self.partial_node} {self.timeout} {self.check_interval}')
 
 
-def get_remote_info(job_dict, input_files: list[str] | None = None, output_files: list[str] | None = None) -> RemoteInfo:
+def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInfo:
     """
     Returns a RemoteInfo object for running MACE fits on a GPU cluster.
     """
     if input_files is None:
         input_files = []
-    if output_files is None:
-        output_files = []
-
 
     print(f"HPC: {job_dict['hpc']['hpc_name']}, Job: {job_dict['name']}")
     return RemoteInfo(

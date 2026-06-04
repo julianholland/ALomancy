@@ -5,7 +5,7 @@ from typing import Any, Callable, Optional, Union
 from expyre.func import ExPyRe
 from alomancy.configs.remote_info import RemoteInfo
 
-
+import os
 class RemoteJobExecutor:
     """
     General-purpose remote job submission utility.
@@ -205,7 +205,10 @@ class RemoteJobExecutor:
                     check_interval=getattr(self.remote_info, "check_interval", 10),
                 )
                 results.append(result)
-
+                print("cwd during get_results:", Path.cwd())
+                print("job status:", job.status)
+                print("stdout:", stdout)
+                print("stderr:", stderr)
                 if verbose:
                     print(f"Job {i + 1} completed successfully")
 
@@ -252,6 +255,7 @@ class RemoteJobExecutor:
         List[Any]
             Results from all jobs
         """
+        print('run and wait running in directory:', os.getcwd())
         self.submit_multiple_jobs(function, job_configs, **kwargs)
         self.start_all_jobs()
         results = self.wait_for_all_jobs(verbose=verbose)

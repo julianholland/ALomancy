@@ -133,7 +133,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 remote_info=get_remote_info(
                     job_dict=self.jobs_dict["high_accuracy_evaluation"],
                     input_files=[],
-                    output_files=[],
                 ),
                 base_name=base_name,
                 input_atoms_list=sp_atoms_list,

@@ -19,6 +19,13 @@ def qe_remote_submitter(
     qe_dir = Path("results", base_name)
     qe_dir.mkdir(exist_ok=True, parents=True)
     print("QE Dir:", qe_dir)
+    print("Current Working Directory:", Path.cwd())
+    print("Local cwd before run_and_wait:", Path.cwd())
+    print(
+        "Local output pattern:",
+        Path(qe_dir, "qe_output_{job_id}", f"{remote_info.job_name}.xyz"),
+    )
+    print("Expected local root:", Path.cwd() / qe_dir)
 
     executor = RemoteJobExecutor(remote_info)
 
@@ -38,7 +45,8 @@ def qe_remote_submitter(
         print("No function provided for remote execution. This is a no-op.")
         return None
 
-    print(f"will try and access {Path(qe_dir, 'qe_output_i', f'{remote_info.job_name}.xyz')}")
+    print(f"will try and access {Path(qe_dir, 'qe_output_{job_id}', f'{remote_info.job_name}.xyz')}")
+
     executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
