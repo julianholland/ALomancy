@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ase import Atoms
-from ase.io import write
 
 from alomancy.configs.remote_info import RemoteInfo
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
@@ -18,15 +17,6 @@ def qe_remote_submitter(
     # actual path of structure should be results/base_name/qe_output_i/target_file
     qe_dir = Path("results", base_name)
     qe_dir.mkdir(exist_ok=True, parents=True)
-    print("QE Dir:", qe_dir)
-    print("Current Working Directory:", Path.cwd())
-    print("Local cwd before run_and_wait:", Path.cwd())
-    print(
-        "Local output pattern:",
-        Path(qe_dir, "qe_output_{job_id}", f"{remote_info.job_name}.xyz"),
-    )
-    print("Expected local root:", Path.cwd() / qe_dir)
-
     executor = RemoteJobExecutor(remote_info)
 
     job_configs = [
@@ -45,13 +35,12 @@ def qe_remote_submitter(
         print("No function provided for remote execution. This is a no-op.")
         return None
 
-    print(f"will try and access {Path(qe_dir, 'qe_output_{job_id}', f'{remote_info.job_name}.xyz')}")
-
     executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
-        common_output_pattern=str(Path(qe_dir, "qe_output_{job_id}", f"{remote_info.job_name}.xyz")),
+        common_output_pattern=str(Path(qe_dir, "qe_output_{job_id}")), # f"{remote_info.job_name}.xyz for just the file
     )
+
 
     # if not find_target_files() and results:
     #     output_name = Path(target_file).name

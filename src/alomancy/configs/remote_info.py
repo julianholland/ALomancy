@@ -1,9 +1,13 @@
 import copy
-from pathlib import Path
+import sys
+
+
 
 from expyre.resources import Resources
+import pathlib # wizadry to solve pickle problem 
+sys.modules["pathlib._local"]=pathlib
 
-
+from pathlib import Path
 class RemoteInfo:
     """Create a RemoteInfo object
 
@@ -90,7 +94,6 @@ def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInf
         num_inputs_per_queued_job=1,
         timeout=36000 * 3,
         input_files=input_files,
-        output_files=output_files,
         pre_cmds=job_dict["hpc"].get("pre_cmds", []),
         resources=Resources(
             max_time=job_dict["max_time"],

@@ -110,7 +110,7 @@ def _mace_fit_expyre_call(
     remote_func_kwargs = {
         "train_atoms_path": train_atoms_path,
         "test_atoms_path": test_atoms_path,
-        "remote_info": "_IGNORE",
+        "remote_info": remote_info,
         "mace_name": mace_name,
         "mace_fit_params": mace_fit_params,
         "mace_fit_cmd": mace_fit_cmd,

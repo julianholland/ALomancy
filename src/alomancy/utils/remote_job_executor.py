@@ -203,12 +203,8 @@ class RemoteJobExecutor:
                 result, stdout, stderr = job.get_results(
                     timeout=self.remote_info.timeout,
                     check_interval=getattr(self.remote_info, "check_interval", 10),
-                )
+                )           
                 results.append(result)
-                print("cwd during get_results:", Path.cwd())
-                print("job status:", job.status)
-                print("stdout:", stdout)
-                print("stderr:", stderr)
                 if verbose:
                     print(f"Job {i + 1} completed successfully")
 
@@ -220,8 +216,7 @@ class RemoteJobExecutor:
                     print("stderr", "-" * 30)
                     print(stderr)
                 results.append(None)
-        
-        print(results)
+
         return results
 
     def cleanup_jobs(self) -> None:
@@ -259,8 +254,19 @@ class RemoteJobExecutor:
         self.submit_multiple_jobs(function, job_configs, **kwargs)
         self.start_all_jobs()
         results = self.wait_for_all_jobs(verbose=verbose)
+        
+        new_results = []
+        # final run of this essential to get results to sync locally
+        for i, job in enumerate(self.jobs): 
+            result, stdout, stderr = job.get_results(
+                timeout=self.remote_info.timeout,
+                check_interval=getattr(self.remote_info, "check_interval", 10),
+                verbose = True,
+            )
+            new_results.append(result)
+        print('julian said I tried')
         self.cleanup_jobs()
-        return results
+        return new_results
 
 
 # Convenience functions for backward compatibility

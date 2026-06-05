@@ -13,27 +13,29 @@ def committee_remote_submitter(
     seed: int = 803,
     size_of_committee: int = 5,
     function_kwargs: dict[str, Any] | None = None,
-) -> list[str]:
-    workdir = Path("results", base_name)
+) -> None:
+    mace_dir = Path("results", base_name)
+    mace_dir.mkdir(exist_ok=True, parents=True)
 
-    def find_target_files() -> list[str]:
-        files = list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
-        return [ str(file) for file in files ]
 
-    target_file_list = find_target_files()
+    # def find_target_files() -> list[str]:
+    #     files = list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
+    #     return [ str(file) for file in files ]
 
-    if len(target_file_list) >= size_of_committee:
-        print(
-            f"All {size_of_committee} committee members already trained. Skipping submission."
-        )
-        return target_file_list
+    # target_file_list = find_target_files()
 
-    elif len(target_file_list) != 0:
-        print(
-            f"Found {len(target_file_list)} existing committee members. Reusing them."
-        )
-        size_of_committee -= len(target_file_list)
-        seed += len(target_file_list)
+    # if len(target_file_list) >= size_of_committee:
+    #     print(
+    #         f"All {size_of_committee} committee members already trained. Skipping submission."
+    #     )
+    #     return target_file_list
+
+    # elif len(target_file_list) != 0:
+    #     print(
+    #         f"Found {len(target_file_list)} existing committee members. Reusing them."
+    #     )
+    #     size_of_committee -= len(target_file_list)
+    #     seed += len(target_file_list)
 
     executor = RemoteJobExecutor(remote_info)
 
@@ -42,10 +44,15 @@ def committee_remote_submitter(
         for i in range(size_of_committee)
     ]
 
+        # run_and_wait expects a callable; provide a no-op if None was passed
+    def _noop(**_kwargs: Any) -> None:
+        print("No function provided for remote execution. This is a no-op.")
+        return None
+    
     executor.run_and_wait(
-        function=function,
+        function=(function or _noop),
         job_configs=job_configs,
-        common_output_pattern=str(Path(workdir, "mlip_committee", "fit_{job_id}")),
+        common_output_pattern=str(Path(mace_dir, "mlip_committee", "fit_{job_id}")),
     )
 
-    return find_target_files()
+    

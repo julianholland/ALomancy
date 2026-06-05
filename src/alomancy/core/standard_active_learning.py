@@ -56,11 +56,11 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         train_xyzs, test_xyzs = [], []
 
         # check if test and train files already exist
-        if Path.exists(Path(self.initial_train_file)) and Path.exists(
-            Path(self.initial_test_file)
+        if Path.exists(Path(self.initial_train_file_path)) and Path.exists(
+            Path(self.initial_test_file_path)
         ):
             train_xyzs, test_xyzs = self.load_initial_train_test_sets()
-
+            print('Initial train and test sets loaded from files:', self.initial_train_file_path, self.initial_test_file_path)
             # check if extra datasets are specified and add them to the train and test sets if so
             if (
                 init_job_dict["extra_datasets"] is not None
@@ -77,6 +77,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                             fall_back_config_type=f"extra_dataset_{Path(extra_dataset).name}",
                         )
                     )
+            write(Path(work_dir, Path(self.initial_train_file_path).name), train_xyzs, format="extxyz")
+            write(Path(work_dir, Path(self.initial_test_file_path).name), test_xyzs, format="extxyz")
             return train_xyzs, test_xyzs
 
         # check if generated dataset structures should be read from a file
@@ -121,48 +123,35 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         function_kwargs = {
             "high_accuracy_eval_job_dict": self.jobs_dict["high_accuracy_evaluation"],
         }
-        dummy = False
-        if dummy:
-            high_accuracy_structure_paths = list(
-                Path("/home/jholl/.expyre").glob(
-                    "run_high_accuracy_evaluation_*/results/initialization/initialization/qe_output_*/*.xyz"
+
+
+        qe_remote_submitter(
+            remote_info=get_remote_info(
+                job_dict=self.jobs_dict["high_accuracy_evaluation"],
+                input_files=[],
+            ),
+            base_name=base_name,
+            input_atoms_list=sp_atoms_list,
+            function=run_sp_qe,
+            function_kwargs=function_kwargs,
+        )
+
+        qe_remote_submitter(
+            remote_info=get_remote_info(
+                self.jobs_dict["high_accuracy_evaluation"], input_files=[]
+            ),
+            base_name=base_name,
+            input_atoms_list=go_atoms_list,
+            function=run_go_qe,
+            function_kwargs=function_kwargs,
+        )
+
+        high_accuracy_structure_paths = list(
+        Path("results", base_name).glob(
+                    f"qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz"
                 )
-            )
-        else:
-            qe_remote_submitter(
-                remote_info=get_remote_info(
-                    job_dict=self.jobs_dict["high_accuracy_evaluation"],
-                    input_files=[],
-                ),
-                base_name=base_name,
-                input_atoms_list=sp_atoms_list,
-                function=run_sp_qe,
-                function_kwargs=function_kwargs,
             )
 
-            # high_accuracy_go_structure_paths = qe_remote_submitter(
-            #     remote_info=get_remote_info(
-            #         self.jobs_dict["high_accuracy_evaluation"], input_files=[]
-            #     ),
-            #     base_name=base_name,
-            #     target_file=f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
-            #     input_atoms_list=go_atoms_list,
-            #     function=run_go_qe,
-            #     function_kwargs=function_kwargs,
-            # )
-            collected_output_files = list(
-                Path.glob(
-                    Path("results", base_name, "qe_output_*"),
-                    f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
-                )
-            )
-            print(
-                f"Found {len(collected_output_files)} high accuracy structure files from SP QE runs."
-            )
-            high_accuracy_structure_paths = (
-                collected_output_files  # + high_accuracy_go_structure_paths
-            )
-        print()
         print(
             len(high_accuracy_structure_paths), "high accuracy structure files found."
         )
@@ -203,8 +192,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         train_xyzs.extend(new_train_xyzs)
         test_xyzs.extend(new_test_xyzs)
 
-        write(Path(work_dir, self.initial_train_file), train_xyzs, format="extxyz")
-        write(Path(work_dir, self.initial_test_file), test_xyzs, format="extxyz")
+        write(Path(work_dir, Path(self.initial_train_file_path).name), train_xyzs, format="extxyz")
+        write(Path(work_dir, Path(self.initial_test_file_path).name), test_xyzs, format="extxyz")
 
         return train_xyzs, test_xyzs
 

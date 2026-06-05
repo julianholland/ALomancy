@@ -41,8 +41,8 @@ class BaseActiveLearningWorkflow(ABC):
         seed: int = 803,
         # generation_dict: dict = {},
     ):
-        self.initial_train_file = Path(initial_train_file_path)
-        self.initial_test_file = Path(initial_test_file_path)
+        self.initial_train_file_path = Path(initial_train_file_path)
+        self.initial_test_file_path = Path(initial_test_file_path)
         self.jobs_dict = jobs_dict
         self.number_of_al_loops = number_of_al_loops
         self.verbose = verbose
@@ -150,8 +150,8 @@ class BaseActiveLearningWorkflow(ABC):
     def load_initial_train_test_sets(self,
             dummy_run: bool = False,
         ) -> tuple[list[Atoms], list[Atoms]]:
-            train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file)
-            test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file)
+            train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file_path)
+            test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file_path)
 
             if train_xyzs is None or test_xyzs is None:
                 raise FileNotFoundError(
