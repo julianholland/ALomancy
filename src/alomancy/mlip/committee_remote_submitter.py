@@ -17,7 +17,24 @@ def committee_remote_submitter(
     mace_dir = Path("results", base_name)
     mace_dir.mkdir(exist_ok=True, parents=True)
 
+      # fill in some params from standard function arguments
 
+
+    # set number of threads in queued job, only if user hasn't set them
+    # if not any(
+    #     var.split("=")[0] == "WFL_MACE_FIT_OMP_NUM_THREADS"
+    #     for var in remote_info.env_vars
+    # ):
+    #     remote_info.env_vars.append(
+    #         "WFL_MACE_FIT_OMP_NUM_THREADS=$EXPYRE_NUM_CORES_PER_NODE"
+    #     )
+    # if not any(
+    #     var.split("=")[0] == "WFL_NUM_PYTHON_SUBPROCESSES"
+    #     for var in remote_info.env_vars
+    # ):
+    #     remote_info.env_vars.append(
+    #         "WFL_NUM_PYTHON_SUBPROCESSES=$EXPYRE_NUM_CORES_PER_NODE"
+    #     )
     # def find_target_files() -> list[str]:
     #     files = list(Path.glob(Path(workdir, "mlip_committee"), f"fit_*/{target_file}"))
     #     return [ str(file) for file in files ]

@@ -6,6 +6,7 @@ from expyre import ExPyRe
 
 from alomancy.configs.remote_info import RemoteInfo, get_remote_info
 
+from mace.cli.run_train import run
 
 def mace_fit(seed, mlip_committee_job_dict, workdir_str, fit_idx=0):
     workdir = Path(workdir_str)
@@ -35,6 +36,8 @@ def mace_fit(seed, mlip_committee_job_dict, workdir_str, fit_idx=0):
     # default MACE fit parameters
     # These can be overridden by the job_dict passed to the function
     mace_fit_params = {
+        "train_file": str(training_file),
+        "test_file": str(test_file),
         "model": "MACE",
         "correlation": 3,
         "device": "cuda",
@@ -62,14 +65,15 @@ def mace_fit(seed, mlip_committee_job_dict, workdir_str, fit_idx=0):
         **mlip_committee_job_dict["mace_fit_kwargs"],
     }
 
-    _mace_fit_expyre_call(
-        train_atoms_path=str(training_file),
-        test_atoms_path=str(test_file),
-        remote_info=get_remote_info(mlip_committee_job_dict, input_files=[str(training_file), str(test_file)]),
-        mace_name=mlip_committee_job_dict["name"],
-        mace_fit_params=mace_fit_params,
-        run_dir=Path(mlip_dir, f"fit_{fit_idx}")
-    )
+    run(args=mace_fit_params)
+    # _mace_fit_expyre_call(
+    #     train_atoms_path=str(training_file),
+    #     test_atoms_path=str(test_file),
+    #     remote_info=get_remote_info(mlip_committee_job_dict, input_files=[str(training_file), str(test_file)]),
+    #     mace_name=mlip_committee_job_dict["name"],
+    #     mace_fit_params=mace_fit_params,
+    #     run_dir=Path(mlip_dir, f"fit_{fit_idx}")
+    # )
 
 def _mace_fit_expyre_call(
     train_atoms_path: str,
