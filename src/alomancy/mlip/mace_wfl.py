@@ -5,7 +5,8 @@ import numpy as np
 from expyre import ExPyRe
 
 from alomancy.configs.remote_info import RemoteInfo, get_remote_info
-
+from argparse import Namespace
+from mace import tools
 from mace.cli.run_train import run
 
 def mace_fit(seed, mlip_committee_job_dict, workdir_str, fit_idx=0):
@@ -64,8 +65,16 @@ def mace_fit(seed, mlip_committee_job_dict, workdir_str, fit_idx=0):
         "seed": seed + fit_idx,
         **mlip_committee_job_dict["mace_fit_kwargs"],
     }
+    print("MACE fit parameters:")
+    for key, value in mace_fit_params.items():
+        print(f"  {key}: {value}")
+    
+    parser = tools.build_default_arg_parser()
+    args = parser.parse_args(["--name", mace_fit_params["name"]])  # seed defaults
+    for key, value in mace_fit_params.items():
+        setattr(args, key, value)
 
-    run(args=mace_fit_params)
+    run(args)
     # _mace_fit_expyre_call(
     #     train_atoms_path=str(training_file),
     #     test_atoms_path=str(test_file),
