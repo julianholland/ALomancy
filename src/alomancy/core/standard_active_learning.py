@@ -24,7 +24,10 @@ from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
-from alomancy.structure_generation.md.md_remote_submitter import all_maces_remote_submitter, md_remote_submitter
+from alomancy.structure_generation.md.md_remote_submitter import (
+    all_maces_remote_submitter,
+    md_remote_submitter,
+)
 from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, run_md
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
@@ -228,7 +231,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         if "mace_fit_kwargs" not in mlip_committee_job_dict:
             mlip_committee_job_dict["mace_fit_kwargs"] = {}
-        print('here when reading fit dirs:', os.getcwd())
+        print("here when reading fit dirs:", os.getcwd())
         if (
             len(
                 list(
@@ -269,12 +272,39 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     ) -> list[Atoms]:
         if "structure_selection_kwargs" not in job_dict["structure_generation"]:
             job_dict["structure_generation"]["structure_selection_kwargs"] = {}
-        if Path("results", base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_input_structures.xyz").exists():
-            input_structures = read(
-                Path("results", base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_input_structures.xyz"),
-                format="extxyz"
+
+        operating_dir = Path(
+            "results", base_name, job_dict["structure_generation"]["name"]
+        )
+
+        # skip step if high SD structures already exist from a previous run
+        if Path(operating_dir, "high_sd_structures.xyz").exists():
+            high_sd_structures = read(
+                Path(operating_dir, "high_sd_structures.xyz"), format="extxyz"
             )
-            print(f"Input structures for structure generation step loaded from file: {Path('results', base_name, job_dict['structure_generation']['name'], f'{job_dict['structure_generation']['name']}_input)_structures.xyz')}")
+            if isinstance(high_sd_structures, Atoms):
+                high_sd_structures = [high_sd_structures]
+
+            print(
+                f"{len(high_sd_structures)} High SD structures loaded from file: {Path(operating_dir, 'high_sd_structures.xyz')}"
+            )
+
+            return high_sd_structures
+
+        if Path(
+            operating_dir,
+            f"{job_dict['structure_generation']['name']}_input_structures.xyz",
+        ).exists():
+            input_structures = read(
+                Path(
+                    operating_dir,
+                    f"{job_dict['structure_generation']['name']}_input_structures.xyz",
+                ),
+                format="extxyz",
+            )
+            print(
+                f"Input structures for structure generation step loaded from file: {Path(operating_dir, f'{job_dict['structure_generation']['name']}_input_structures.xyz')}"
+            )
 
         else:
             input_structures = select_initial_structures(
@@ -282,25 +312,23 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 structure_generation_job_dict=job_dict["structure_generation"],
                 train_atoms_list=train_atoms_list,  # type: ignore
                 verbose=self.verbose,
-            **job_dict["structure_generation"]["structure_selection_kwargs"],
-        )
+                **job_dict["structure_generation"]["structure_selection_kwargs"],
+            )
 
         if isinstance(input_structures, Atoms):
             input_structures = [input_structures]
-            
+
         print(
             f"{len(input_structures)} structures selected for structure generation step."
         )
         Path.mkdir(
-            Path("results", base_name, job_dict["structure_generation"]["name"]),
+            Path(operating_dir),
             exist_ok=True,
             parents=True,
         )
         write(
             Path(
-                "results",
-                base_name,
-                job_dict["structure_generation"]["name"],
+                operating_dir,
                 f"{job_dict['structure_generation']['name']}_input_structures.xyz",
             ),
             input_structures,
@@ -357,7 +385,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         structure_forces_dict = all_maces_remote_submitter(
             remote_info=get_remote_info(
-                job_dict["structure_generation"], input_files=[str(m) for m in model_paths_list]
+                job_dict["structure_generation"],
+                input_files=[str(m) for m in model_paths_list],
             ),
             function=get_forces_for_all_maces,
             function_kwargs={
@@ -365,10 +394,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "base_name": base_name,
                 "job_dict": job_dict,
                 "base_mlip": base_mace_model_path,
-                "fits_to_use": list(range(1, job_dict["mlip_committee"]["size_of_committee"])),
+                "fits_to_use": list(
+                    range(1, job_dict["mlip_committee"]["size_of_committee"])
+                ),
             },
         )
-        
+
         high_sd_structures = find_high_sd_structures(
             structure_list=structure_list,
             base_name=base_name,
