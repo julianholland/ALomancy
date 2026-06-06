@@ -207,6 +207,7 @@ def std_deviation_of_forces(
     """
     Calculate the standard deviation of forces for each structure in the dictionary.
     """
+    print(structure_forces_dict.keys())
     number_of_structures = len(structure_forces_dict["base_mlip"])
     rows = []
 

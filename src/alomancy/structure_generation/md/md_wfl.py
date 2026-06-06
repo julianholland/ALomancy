@@ -168,7 +168,7 @@ def get_forces_for_all_maces(
     structure_list: list[Atoms],
     base_name: str,
     job_dict: dict[str, dict[str, str]],
-    base_mace: str,
+    base_mlip: str,
     fits_to_use: list[int] | None = None,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
@@ -178,12 +178,12 @@ def get_forces_for_all_maces(
     if fits_to_use is None:
         fits_to_use = [0]
 
-    calc = MACECalculator(model_paths=base_mace, device="cuda", default_dtype="float64")
+    calc = MACECalculator(model_paths=base_mlip, device="cuda", default_dtype="float64")
 
     for atoms in structure_list:
         atoms.calc = calc
     structure_forces_dict = {
-        "base_mace": {
+        "base_mlip": {
             f"structure_{i}": {
                 "forces": flatten_array_of_forces(structure_list[i].get_forces()),
                 "energy": np.array(structure_list[i].get_potential_energy()),

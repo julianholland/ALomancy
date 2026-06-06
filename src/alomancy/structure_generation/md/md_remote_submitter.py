@@ -75,6 +75,6 @@ def all_maces_remote_submitter(
         forces_dict= executor.run_and_wait(
             function=function,
             job_configs=job_configs,
-        )
+        )[0]
 
         return forces_dict

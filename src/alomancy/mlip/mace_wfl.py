@@ -166,10 +166,11 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
         "swa": None,
         "batch_size": 16,
         "valid_batch_size": 16,
-        "distributed": None,
-        "seed": seed + fit_idx,
+        "distributed": None,    
         **mlip_committee_job_dict["mace_fit_kwargs"],
     }
+
+    mace_fit_params["seed"] = seed + fit_idx
     print("MACE fit parameters:")
     for key, value in mace_fit_params.items():
         print(f"  {key}: {value}")

@@ -364,8 +364,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "structure_list": structure_list,
                 "base_name": base_name,
                 "job_dict": job_dict,
-                "base_mace": base_mace_model_path,
-                "fits_to_use": list(range(job_dict["mlip_committee"]["size_of_committee"])),
+                "base_mlip": base_mace_model_path,
+                "fits_to_use": list(range(1, job_dict["mlip_committee"]["size_of_committee"])),
             },
         )
         
