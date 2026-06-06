@@ -136,8 +136,8 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
         epochs = mlip_committee_job_dict["max_num_epochs"]
 
     # Read MACE fit parameters
-    training_file = Path(workdir, "train_set.xyz")
-    test_file = Path(workdir, "test_set.xyz")
+    training_file = Path("../../train_set.xyz")
+    test_file = Path("../../test_set.xyz")
 
     # default MACE fit parameters
     # These can be overridden by the job_dict passed to the function
