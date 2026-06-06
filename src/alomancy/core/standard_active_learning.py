@@ -390,6 +390,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         structures: list[Atoms],
     ) -> list[Atoms]:
         print("Starting high accuracy evaluation with", len(structures), "structures.")
+
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
         }

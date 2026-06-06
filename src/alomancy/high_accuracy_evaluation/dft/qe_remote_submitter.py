@@ -15,7 +15,7 @@ def qe_remote_submitter(
     function_kwargs: dict[str, Any] | None = None,
 ) -> None:
     # actual path of structure should be results/base_name/qe_output_i/target_file
-    qe_dir = Path("results", base_name)
+    qe_dir = Path("results", base_name, "high_accuracy_evaluation")
     qe_dir.mkdir(exist_ok=True, parents=True)
     executor = RemoteJobExecutor(remote_info)
 

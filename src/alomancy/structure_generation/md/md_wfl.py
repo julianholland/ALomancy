@@ -61,6 +61,7 @@ def run_md(
     snapshot_interval = (
         steps
         * total_md_runs
+        * 10
         // structure_generation_job_dict["desired_number_of_structures"]
     )
 
