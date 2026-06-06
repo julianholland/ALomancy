@@ -24,6 +24,7 @@ def split_atoms_list_into_test_and_train(
     Returns:
         tuple[list[Atoms], list[Atoms]]: A tuple containing the training and test sets.
     """
+    
     rng = np.random.default_rng(seed=seed)
     shuffled_indices = rng.permutation(len(atoms_list))
     split_index = int(len(atoms_list) * (1 - test_fraction))

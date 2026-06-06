@@ -13,6 +13,7 @@ from alomancy.initialize.initialization_structure_list import (
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 from alomancy.utils.test_train_manager import (
     extend_test_and_train_sets_with_extra_dataset,
+    split_atoms_list_into_test_and_train,
 )
 
 
@@ -154,10 +155,25 @@ class BaseActiveLearningWorkflow(ABC):
                 generated_structures,
                 **kwargs,
             )
-
-            train_xyzs += clean_structures(
-                new_training_data, base_name, self.jobs_dict["high_accuracy_evaluation"]
+            print(f"High-accuracy evaluation completed for {len(new_training_data)} structures.")
+            
+            new_training_data = clean_structures(
+                new_training_data,
+                config_type=f"al_loop_{loop}",
+                override_config_type=True,
+                already_computed=True,
             )
+
+            new_train_data, new_test_data = split_atoms_list_into_test_and_train(
+                new_training_data,
+                test_fraction=self.jobs_dict["initialization"][
+                    "test_to_train_ratio"
+                ],
+                seed=self.seed,
+            )
+            
+            train_xyzs += new_train_data
+            test_xyzs += new_test_data
 
             if self.verbose > 0:
                 print(

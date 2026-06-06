@@ -280,7 +280,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         # skip step if high SD structures already exist from a previous run
         if Path(operating_dir, "high_sd_structures.xyz").exists():
             high_sd_structures = read(
-                Path(operating_dir, "high_sd_structures.xyz"), format="extxyz"
+                Path(operating_dir, "high_sd_structures.xyz"), ':', format="extxyz"
             )
             if isinstance(high_sd_structures, Atoms):
                 high_sd_structures = [high_sd_structures]
@@ -420,12 +420,30 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         high_accuracy_eval_job_dict: dict,
         structures: list[Atoms],
     ) -> list[Atoms]:
+        
+        
         print("Starting high accuracy evaluation with", len(structures), "structures.")
 
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
         }
+        if Path("results", base_name, "high_accuracy_evaluation").exists():
+            found_structures = list(
+                Path("results", base_name, "high_accuracy_evaluation").glob(
+                    f"qe_output_*/{high_accuracy_eval_job_dict['name']}.xyz"
+                )
+            )
+            if len(found_structures) > 0:
+                print(
+                    f"Found {len(found_structures)} structures from previous high accuracy evaluation. Skipping remote submission and reusing these structures for high accuracy evaluation results."
+                )
+                high_accuracy_structures = []
+                for path in found_structures:
+                    structure = read(path, format="extxyz")
+                    high_accuracy_structures.append(structure)
 
+                return high_accuracy_structures
+        
         qe_remote_submitter(
             remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
             base_name=base_name,
