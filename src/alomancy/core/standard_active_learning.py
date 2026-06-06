@@ -35,6 +35,7 @@ from alomancy.utils.test_train_manager import (
     extend_test_and_train_sets_with_extra_dataset,
     split_atoms_list_into_test_and_train,
 )
+from alomancy.utils.clean_structures import clean_structures
 
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
@@ -77,6 +78,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                             fall_back_config_type=f"extra_dataset_{Path(extra_dataset).name}",
                         )
                     )
+            train_xyzs = clean_structures(
+                train_xyzs, base_name, init_job_dict, already_computed=True
+            )
+            test_xyzs = clean_structures(
+                test_xyzs, base_name, init_job_dict, already_computed=True
+            )
             write(Path(work_dir, Path(self.initial_train_file_path).name), train_xyzs, format="extxyz")
             write(Path(work_dir, Path(self.initial_test_file_path).name), test_xyzs, format="extxyz")
             return train_xyzs, test_xyzs
@@ -165,6 +172,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         for path in high_accuracy_structure_paths:
             structure = read(path, format="extxyz")
             high_accuracy_structures.append(structure)
+        
+        high_accuracy_structures = clean_structures(
+            high_accuracy_structures, base_name, self.jobs_dict["high_accuracy_evaluation"], already_computed=True
+        )
 
         test_structure_count = int(
             len(high_accuracy_structures) * init_job_dict["test_to_train_ratio"]

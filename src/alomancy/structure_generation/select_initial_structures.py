@@ -73,42 +73,7 @@ def select_initial_structures(
         len(filtered_structures) >= max_number_of_concurrent_jobs
     ), f"Not enough structures to select {max_number_of_concurrent_jobs} from. Available: {len(filtered_structures)}"
 
-    if enforce_chemical_diversity:
-        # Ensure chemical diversity by selecting unique chemical formulas
-        # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
-        # Otherwise, randomly select `max_number_of_concurrent_jobs` unique formulas
-        unique_chemical_formulas = {
-            s.get_chemical_formula() for s in filtered_structures
-        }
-
-        if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
-            list_of_formulas = list(unique_chemical_formulas)
-            extra_formulas = [
-                np.random.choice(list(unique_chemical_formulas), replace=False)
-                for _ in range(max_number_of_concurrent_jobs - len(list_of_formulas))
-            ]
-            list_of_formulas.extend(extra_formulas)
-
-        else:
-            list_of_formulas = np.random.choice(
-                list(unique_chemical_formulas),
-                max_number_of_concurrent_jobs,
-                replace=False,
-            )
-
-        initial_atoms = []
-        for chemical_formula in list_of_formulas:
-            formula_structures = [
-                s
-                for s in filtered_structures
-                if s.get_chemical_formula() == chemical_formula
-            ]
-            selected_structure = np.random.choice(
-                np.array(range(len(formula_structures)))
-            )
-            initial_atoms.append(formula_structures[selected_structure])
-
-    else:
+    if not enforce_chemical_diversity:
         initial_atoms = [
             filtered_structures[x]
             for x in np.random.choice(
@@ -117,12 +82,45 @@ def select_initial_structures(
                 replace=False,
             )
         ]
+        mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["job_name"])
+        return initial_atoms
+    
+    # Ensure chemical diversity by selecting unique chemical formulas
+    # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
+    # Otherwise, randomly select `max_number_of_concurrent_jobs` unique formulas
+    unique_chemical_formulas = {
+        s.get_chemical_formula() for s in filtered_structures
+    }
 
-    for i, atoms in enumerate(initial_atoms):
-        atoms.info["job_id"] = i
-        atoms.info[
-            "config_type"
-        ] = f"{base_name}_{structure_generation_job_dict['name']}"
+    if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
+        list_of_formulas = list(unique_chemical_formulas)
+        extra_formulas = [
+            np.random.choice(list(unique_chemical_formulas), replace=False)
+            for _ in range(max_number_of_concurrent_jobs - len(list_of_formulas))
+        ]
+        list_of_formulas.extend(extra_formulas)
+
+    else:
+        list_of_formulas = np.random.choice(
+            list(unique_chemical_formulas),
+            max_number_of_concurrent_jobs,
+            replace=False,
+        )
+
+    initial_atoms = []
+    for chemical_formula in list_of_formulas:
+        formula_structures = [
+            s
+            for s in filtered_structures
+            if s.get_chemical_formula() == chemical_formula
+        ]
+        selected_structure = np.random.choice(
+            np.array(range(len(formula_structures)))
+        )
+        initial_atoms.append(formula_structures[selected_structure])
+
+
+    mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["job_name"])
 
     if verbose > 0:
         print(
@@ -130,3 +128,8 @@ def select_initial_structures(
         )
 
     return initial_atoms
+
+def mark_structures_for_dft(atoms_list: list[Atoms], base_name: str, job_name: str) -> None:
+    for atoms in atoms_list:
+        atoms.info["job_id"] = atoms.info.get("job_id", -1)
+        atoms.info["config_type"] = f"{base_name}_{job_name}"
