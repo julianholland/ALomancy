@@ -178,7 +178,7 @@ def get_forces_for_all_maces(
     if fits_to_use is None:
         fits_to_use = [0]
 
-    calc = MACECalculator(model_paths=base_mace, device="cpu")
+    calc = MACECalculator(model_paths=base_mace, device="cuda", default_dtype="float64")
 
     for atoms in structure_list:
         atoms.calc = calc
@@ -198,14 +198,16 @@ def get_forces_for_all_maces(
                 Path(
                     "results",
                     base_name,
-                    f"MACE/fit_{i}/{job_dict['mace_committee']['name']}_stagetwo.model",
+                    f"{job_dict['mlip_committee']['name']}/fit_{i}/{job_dict['mlip_committee']['name']}_stagetwo.model",
                 )
             ),
-            device="cpu",
+            device="cuda",
             default_dtype="float64",
         )
+
         for atoms in tqdm(structure_list):
             atoms.calc = calc
+        
         structure_forces_dict[f"fit_{i}"] = {
             f"structure_{i}": {
                 "forces": flatten_array_of_forces(structure_list[i].get_forces()),

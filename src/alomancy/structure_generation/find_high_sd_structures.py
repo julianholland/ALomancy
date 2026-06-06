@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from ase import Atoms
 from ase.io import read, write
 from tqdm import tqdm
@@ -11,7 +11,7 @@ def find_high_sd_structures(
     structure_list: list[Atoms],
     base_name: str,
     job_dict: dict[str, dict[str, str]],
-    list_of_other_calculators: list,
+    structure_forces_dict: dict,
     verbose: int = 0,
     read_xyz: bool = True,
 ) -> list[Atoms]:
@@ -42,22 +42,18 @@ def find_high_sd_structures(
         and Path.exists(std_dev_csv_name)
         and Path.exists(high_sd_structures_xyz_name)
     ):
-        std_dev_df = pd.read_csv(std_dev_csv_name, index_col=0)
+        std_dev_df = pl.read_csv(std_dev_csv_name, ignore_errors=True)
         high_sd_structures = read(high_sd_structures_xyz_name, ":", format="extxyz")
 
     else:
-        std_dev_df = find_sd_of_all_structures(
-            structure_list=structure_list,
-            base_name=base_name,
-            job_dict=job_dict,
-            list_of_other_calculators=list_of_other_calculators,
-            forces_name=job_dict["mlip_committee"]["mace_fit_kwargs"]["forces_key"],
-            energy_name=job_dict["mlip_committee"]["mace_fit_kwargs"]["energy_key"],
+        std_dev_df = std_deviation_of_forces(
+            structure_forces_dict=structure_forces_dict,
+            structure_generation_dir=Path(
+                "results", base_name, job_dict["structure_generation"]["name"]
+            ),
             verbose=verbose,
         )
-
-        index_list = list(std_dev_df[:desired_structures].index)
-
+        index_list = std_dev_df["structure_index"][:desired_structures].to_list()
         high_sd_structures = [structure_list[i] for i in index_list]
 
         for structure in high_sd_structures:
@@ -131,38 +127,89 @@ def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
     return np.reshape(forces, (1, forces.shape[0] * 3))
 
 
+# def std_deviation_of_forces(
+#     structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
+#     structure_generation_dir: Path,
+#     verbose: int = 0,
+# ) -> pd.DataFrame:
+#     """
+#     Calculate the standard deviation of forces for each structure in the dictionary.
+
+#     Parameters
+#     ----------
+#     structure_force_dict : dict
+#         A dictionary where keys are fit names and values are dictionaries with structure names as keys and forces as values.
+
+#         e.g.:
+#         {
+#             'base_mace': {
+#                 'structure_0': {'forces': np.ndarray, 'energy': float},
+#                 'structure_1': {'forces': np.ndarray, 'energy': float},
+#                 ...
+#             },
+#             'fit_1': {
+#                 ...
+#             },
+#         }
+
+#     Returns
+#     -------
+#     list
+#         A list of standard deviations of forces for each structure.
+#     """
+#     number_of_structures = len(structure_forces_dict["base_mlip"])
+#     std_dev_array = np.zeros((number_of_structures, 3))
+#     for structure in range(number_of_structures):
+#         forces_array = np.concatenate(
+#             [
+#                 structure_forces_dict[fit][f"structure_{structure}"]["forces"]
+#                 for fit in structure_forces_dict
+#             ],
+#             axis=0,
+#         )
+#         std_dev_per_force_fragment = np.std(forces_array, axis=0)
+#         energy_array = np.array(
+#             [
+#                 structure_forces_dict[fit][f"structure_{structure}"]["energy"]
+#                 for fit in structure_forces_dict
+#             ]
+#         )
+#         std_dev_per_energy = np.std(energy_array)
+
+#         if verbose > 0:
+#             print(
+#                 f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
+#             )
+
+#         std_dev_array[structure, :] = np.array(
+#             [
+#                 np.max(std_dev_per_force_fragment),
+#                 np.mean(std_dev_per_force_fragment),
+#                 std_dev_per_energy,
+#             ]
+#         )
+
+#     df = pd.DataFrame(
+#         std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
+#     ).sort_values(by="max_std_dev", ascending=False)
+
+#     df.to_csv(str(Path(structure_generation_dir, "std_dev_forces.csv")), index=True)
+
+#     return df
+
+
+
 def std_deviation_of_forces(
     structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
     structure_generation_dir: Path,
     verbose: int = 0,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """
     Calculate the standard deviation of forces for each structure in the dictionary.
-
-    Parameters
-    ----------
-    structure_force_dict : dict
-        A dictionary where keys are fit names and values are dictionaries with structure names as keys and forces as values.
-
-        e.g.:
-        {
-            'base_mace': {
-                'structure_0': {'forces': np.ndarray, 'energy': float},
-                'structure_1': {'forces': np.ndarray, 'energy': float},
-                ...
-            },
-            'fit_1': {
-                ...
-            },
-        }
-
-    Returns
-    -------
-    list
-        A list of standard deviations of forces for each structure.
     """
     number_of_structures = len(structure_forces_dict["base_mlip"])
-    std_dev_array = np.zeros((number_of_structures, 3))
+    rows = []
+
     for structure in range(number_of_structures):
         forces_array = np.concatenate(
             [
@@ -172,6 +219,7 @@ def std_deviation_of_forces(
             axis=0,
         )
         std_dev_per_force_fragment = np.std(forces_array, axis=0)
+
         energy_array = np.array(
             [
                 structure_forces_dict[fit][f"structure_{structure}"]["energy"]
@@ -182,21 +230,22 @@ def std_deviation_of_forces(
 
         if verbose > 0:
             print(
-                f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
+                f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, "
+                f"mean std dev: {np.mean(std_dev_per_force_fragment)}, "
+                f"std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
             )
 
-        std_dev_array[structure, :] = np.array(
-            [
-                np.max(std_dev_per_force_fragment),
-                np.mean(std_dev_per_force_fragment),
-                std_dev_per_energy,
-            ]
+        rows.append(
+            {
+                "structure_index": structure,
+                "max_std_dev": float(np.max(std_dev_per_force_fragment)),
+                "mean_std_dev": float(np.mean(std_dev_per_force_fragment)),
+                "std_dev_energy": float(std_dev_per_energy),
+            }
         )
 
-    df = pd.DataFrame(
-        std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
-    ).sort_values(by="max_std_dev", ascending=False)
-
-    df.to_csv(str(Path(structure_generation_dir, "std_dev_forces.csv")), index=True)
+    df = pl.DataFrame(rows).sort("max_std_dev", descending=True)
+    df.write_csv(Path(structure_generation_dir) / "std_dev_forces.csv")
+    print(df)
 
     return df

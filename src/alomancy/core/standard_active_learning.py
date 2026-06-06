@@ -24,8 +24,8 @@ from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
-from alomancy.structure_generation.md.md_remote_submitter import md_remote_submitter
-from alomancy.structure_generation.md.md_wfl import run_md
+from alomancy.structure_generation.md.md_remote_submitter import all_maces_remote_submitter, md_remote_submitter
+from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, run_md
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
@@ -355,20 +355,25 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
         )
 
-        list_of_other_calculators = [
-            MACECalculator(
-                model_paths=[mace_model_path],
-                device="cpu",
-                default_dtype="float64",
-            )
-            for mace_model_path in model_paths_list
-            if str(mace_model_path) != base_mace_model_path
-        ]
+        structure_forces_dict = all_maces_remote_submitter(
+            remote_info=get_remote_info(
+                job_dict["structure_generation"], input_files=[str(m) for m in model_paths_list]
+            ),
+            function=get_forces_for_all_maces,
+            function_kwargs={
+                "structure_list": structure_list,
+                "base_name": base_name,
+                "job_dict": job_dict,
+                "base_mace": base_mace_model_path,
+                "fits_to_use": list(range(job_dict["mlip_committee"]["size_of_committee"])),
+            },
+        )
+        
         high_sd_structures = find_high_sd_structures(
             structure_list=structure_list,
             base_name=base_name,
             job_dict=job_dict,
-            list_of_other_calculators=list_of_other_calculators,
+            structure_forces_dict=structure_forces_dict,
             verbose=self.verbose,
         )
 

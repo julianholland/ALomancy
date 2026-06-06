@@ -57,3 +57,24 @@ def md_remote_submitter(
     )
 
     return find_target_files()
+
+def all_maces_remote_submitter(
+        remote_info: RemoteInfo,
+        function: Callable | None = None,
+        function_kwargs: dict[str, Any] | None = None,
+    ) -> dict:
+        executor = RemoteJobExecutor(remote_info)
+        job_configs = [
+            {
+                "function_kwargs": {
+                    **function_kwargs,
+                }
+            }
+        ]
+
+        forces_dict= executor.run_and_wait(
+            function=function,
+            job_configs=job_configs,
+        )
+
+        return forces_dict
