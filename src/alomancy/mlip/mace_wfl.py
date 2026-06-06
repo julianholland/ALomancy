@@ -189,7 +189,12 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     for key, value in mace_fit_params.items():
         setattr(args, key, value)
 
-    run(args)
+    orig_dir = os.getcwd()
+    try:
+        os.chdir(mlip_dir)
+        run(args)
+    finally:
+        os.chdir(orig_dir)
     # # Build CLI command string
     # for key, val in mace_fit_params.items():
     #     if isinstance(val, (int, float)):
