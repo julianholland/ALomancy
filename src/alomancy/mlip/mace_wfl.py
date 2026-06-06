@@ -116,7 +116,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
         Directory to run fitting in. Created if it doesn't exist.
     """
     workdir = Path(workdir_str)
-    mlip_dir = Path(workdir, mlip_committee_job_dict["name"])
+    mlip_dir = Path(workdir, mlip_committee_job_dict["name"], f"fit_{fit_idx}")
     print(f"Creating MLIP directory: {mlip_dir}")
     mlip_dir.mkdir(exist_ok=True, parents=True)
 
@@ -171,6 +171,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     }
 
     mace_fit_params["seed"] = seed + fit_idx
+    mace_fit_params["results_dir"] = str(mlip_dir)
     print("MACE fit parameters:")
     for key, value in mace_fit_params.items():
         print(f"  {key}: {value}")
