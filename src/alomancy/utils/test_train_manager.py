@@ -35,35 +35,43 @@ def split_atoms_list_into_test_and_train(
 
     return train_set, test_set
 
-
 def extend_test_and_train_sets_with_extra_dataset(
     extra_dataset: str | Path,
     train_xyzs: list[Atoms],
     test_xyzs: list[Atoms],
     test_fraction: float,
     seed: int,
+    filter_out_config_types: list[str] | None = ["IsolatedAtom"],
     fall_back_config_type: None | str = None,
 ) -> tuple[list[Atoms], list[Atoms]]:
 
-    extra_dataset_atoms = read_atoms_file_if_enabled(True, extra_dataset)
+    extra_dataset_atoms = [
+        a
+        for a in read_atoms_file_if_enabled(True, extra_dataset)
+        if filter_out_config_types is None
+        or a.info.get("config_type") not in filter_out_config_types
+    ]
 
     if fall_back_config_type is None:
-        config_type = f"undefined_from_{Path(extra_dataset).name}"
+        fall_back_config_type = f"undefined_from_{Path(extra_dataset).name}"
+    
     if extra_dataset_atoms is not None:
         extra_dataset_atoms = clean_structures(
             extra_dataset_atoms,
-            config_type,
+            fall_back_config_type,
             override_config_type=False,
             already_computed=True,
         )
-        for i in range(len(extra_dataset_atoms)):
-            if "config_type" not in extra_dataset_atoms[i].info:
-                extra_dataset_atoms[i].info["config_type"] = config_type
-
+        
+        inelegible_configs= ["IsolatedAtom"]
+        elegible_extra_dataset_atoms = [
+            a for a in extra_dataset_atoms if a.info.get("config_type") not in inelegible_configs
+        ]
         extra_dataset_train, extra_dataset_test = split_atoms_list_into_test_and_train(
-            extra_dataset_atoms, test_fraction, seed
+            elegible_extra_dataset_atoms, test_fraction, seed
         )
-        train_xyzs.extend(extra_dataset_train)
+
+        train_xyzs.extend(extra_dataset_train + [a for a in extra_dataset_atoms if a.info.get("config_type") in inelegible_configs])
         test_xyzs.extend(extra_dataset_test)
         print(
             f"Added {len(extra_dataset_train)} structures from {extra_dataset} to training set and {len(extra_dataset_test)} structures to test set."

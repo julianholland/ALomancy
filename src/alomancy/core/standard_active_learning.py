@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import os
 import pandas as pd
 from ase import Atoms
 from ase.io import read, write
@@ -61,31 +62,21 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             Path(self.initial_test_file_path)
         ):
             train_xyzs, test_xyzs = self.load_initial_train_test_sets()
-            print('Initial train and test sets loaded from files:', self.initial_train_file_path, self.initial_test_file_path)
-            # check if extra datasets are specified and add them to the train and test sets if so
-            if (
-                init_job_dict["extra_datasets"] is not None
-                and len(init_job_dict["extra_datasets"]) > 0
-            ):
-                for extra_dataset in init_job_dict["extra_datasets"]:
-                    train_xyzs, test_xyzs = (
-                        extend_test_and_train_sets_with_extra_dataset(
-                            extra_dataset=extra_dataset,
-                            train_xyzs=train_xyzs,
-                            test_xyzs=test_xyzs,
-                            test_fraction=init_job_dict["test_fraction"],
-                            seed=self.seed,
-                            fall_back_config_type=f"extra_dataset_{Path(extra_dataset).name}",
-                        )
-                    )
-            train_xyzs = clean_structures(
-                train_xyzs, base_name, init_job_dict, already_computed=True
+            print(
+                "Initial train and test sets loaded from files:",
+                self.initial_train_file_path,
+                self.initial_test_file_path,
             )
-            test_xyzs = clean_structures(
-                test_xyzs, base_name, init_job_dict, already_computed=True
+            write(
+                Path(work_dir, Path(self.initial_train_file_path).name),
+                train_xyzs,
+                format="extxyz",
             )
-            write(Path(work_dir, Path(self.initial_train_file_path).name), train_xyzs, format="extxyz")
-            write(Path(work_dir, Path(self.initial_test_file_path).name), test_xyzs, format="extxyz")
+            write(
+                Path(work_dir, Path(self.initial_test_file_path).name),
+                test_xyzs,
+                format="extxyz",
+            )
             return train_xyzs, test_xyzs
 
         # check if generated dataset structures should be read from a file
@@ -131,7 +122,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             "high_accuracy_eval_job_dict": self.jobs_dict["high_accuracy_evaluation"],
         }
 
-
         qe_remote_submitter(
             remote_info=get_remote_info(
                 job_dict=self.jobs_dict["high_accuracy_evaluation"],
@@ -154,10 +144,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
 
         high_accuracy_structure_paths = list(
-        Path("results", base_name).glob(
-                    f"qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz"
-                )
+            Path("results", base_name).glob(
+                f"qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz"
             )
+        )
 
         print(
             len(high_accuracy_structure_paths), "high accuracy structure files found."
@@ -172,9 +162,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         for path in high_accuracy_structure_paths:
             structure = read(path, format="extxyz")
             high_accuracy_structures.append(structure)
-        
+
         high_accuracy_structures = clean_structures(
-            high_accuracy_structures, base_name, self.jobs_dict["high_accuracy_evaluation"], already_computed=True
+            high_accuracy_structures,
+            base_name,
+            self.jobs_dict["high_accuracy_evaluation"],
+            already_computed=True,
         )
 
         test_structure_count = int(
@@ -194,17 +187,39 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
             test_structure_count = len(elegible_test_structures)
 
-        new_train_xyzs, new_test_xyzs = split_atoms_list_into_test_and_train(
-            high_accuracy_structures,
-            test_structure_count / len(elegible_test_structures),
-            self.seed,
-        )
+        if len(elegible_test_structures) == 0:
+            print(
+                f"WARNING: No elegible structures found for the test set based on the specified test_config_types. Found {len(elegible_test_structures)} elegible structures. Consider adjusting the test_to_train_ratio or the test_config_types in the configuration. For now, all structures will be added to the training set and the test set will be empty."
+            )
+            new_test_xyzs = []
+            new_train_xyzs = high_accuracy_structures
+        else:
+            new_train_xyzs, new_test_xyzs = split_atoms_list_into_test_and_train(
+                high_accuracy_structures,
+                test_structure_count / len(elegible_test_structures),
+                self.seed,
+            )
 
         train_xyzs.extend(new_train_xyzs)
         test_xyzs.extend(new_test_xyzs)
 
-        write(Path(work_dir, Path(self.initial_train_file_path).name), train_xyzs, format="extxyz")
-        write(Path(work_dir, Path(self.initial_test_file_path).name), test_xyzs, format="extxyz")
+        write(
+            Path(work_dir, Path(self.initial_train_file_path).name),
+            train_xyzs,
+            format="extxyz",
+        )
+        write(
+            Path(work_dir, Path(self.initial_test_file_path).name),
+            test_xyzs,
+            format="extxyz",
+        )
+
+        config_types_in_train_set = set(
+            atoms.info["config_type"]
+            for atoms in train_xyzs
+            if "config_type" in atoms.info
+        )
+        print(f"Config types in training set: {config_types_in_train_set}")
 
         return train_xyzs, test_xyzs
 
@@ -213,25 +228,35 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         if "mace_fit_kwargs" not in mlip_committee_job_dict:
             mlip_committee_job_dict["mace_fit_kwargs"] = {}
-
-        committee_remote_submitter(
-            remote_info=get_remote_info(
-                mlip_committee_job_dict,
-                input_files=[
-                    str(Path(workdir, "train_set.xyz")),
-                    str(Path(workdir, "test_set.xyz")),
-                ],
-            ),
-            base_name=base_name,
-            target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
-            seed=803,
-            size_of_committee=mlip_committee_job_dict["size_of_committee"],
-            function=mace_fit,
-            function_kwargs={
-                "mlip_committee_job_dict": mlip_committee_job_dict,
-                "workdir_str": str(workdir),
-            },
-        )
+        print('here when reading fit dirs:', os.getcwd())
+        if (
+            len(
+                list(
+                    Path(f"results/{base_name}").glob(
+                        f"{mlip_committee_job_dict['name']}/fit_*/{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
+                    )
+                )
+            )
+            < mlip_committee_job_dict["size_of_committee"]
+        ):
+            committee_remote_submitter(
+                remote_info=get_remote_info(
+                    mlip_committee_job_dict,
+                    input_files=[
+                        str(Path(workdir, "train_set.xyz")),
+                        str(Path(workdir, "test_set.xyz")),
+                    ],
+                ),
+                base_name=base_name,
+                target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
+                seed=803,
+                size_of_committee=mlip_committee_job_dict["size_of_committee"],
+                function=mace_fit,
+                function_kwargs={
+                    "mlip_committee_job_dict": mlip_committee_job_dict,
+                    "workdir_str": str(workdir),
+                },
+            )
 
         mae_avg_results = get_mace_eval_info(
             mlip_committee_job_dict=mlip_committee_job_dict
@@ -244,15 +269,28 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     ) -> list[Atoms]:
         if "structure_selection_kwargs" not in job_dict["structure_generation"]:
             job_dict["structure_generation"]["structure_selection_kwargs"] = {}
+        if Path("results", base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_input_structures.xyz").exists():
+            input_structures = read(
+                Path("results", base_name, job_dict["structure_generation"]["name"], f"{job_dict['structure_generation']['name']}_input_structures.xyz"),
+                format="extxyz"
+            )
+            print(f"Input structures for structure generation step loaded from file: {Path('results', base_name, job_dict['structure_generation']['name'], f'{job_dict['structure_generation']['name']}_input)_structures.xyz')}")
 
-        input_structures = select_initial_structures(
-            base_name=base_name,
-            structure_generation_job_dict=job_dict["structure_generation"],
-            train_atoms_list=train_atoms_list,  # type: ignore
-            verbose=self.verbose,
+        else:
+            input_structures = select_initial_structures(
+                base_name=base_name,
+                structure_generation_job_dict=job_dict["structure_generation"],
+                train_atoms_list=train_atoms_list,  # type: ignore
+                verbose=self.verbose,
             **job_dict["structure_generation"]["structure_selection_kwargs"],
         )
 
+        if isinstance(input_structures, Atoms):
+            input_structures = [input_structures]
+            
+        print(
+            f"{len(input_structures)} structures selected for structure generation step."
+        )
         Path.mkdir(
             Path("results", base_name, job_dict["structure_generation"]["name"]),
             exist_ok=True,
@@ -361,11 +399,11 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         high_accuracy_structures = []
         collected_output_files = list(
-                Path.glob(
-                    Path("results", base_name, "qe_output_*"),
-                    f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
-                )
+            Path.glob(
+                Path("results", base_name, "qe_output_*"),
+                f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
             )
+        )
         for path in collected_output_files:
             structure = read(path, format="extxyz")
             high_accuracy_structures.append(structure)

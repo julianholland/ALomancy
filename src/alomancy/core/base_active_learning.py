@@ -11,6 +11,9 @@ from alomancy.initialize.initialization_structure_list import (
     create_initialization_atoms_list,
 )
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+from alomancy.utils.test_train_manager import (
+    extend_test_and_train_sets_with_extra_dataset,
+)
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -60,8 +63,6 @@ class BaseActiveLearningWorkflow(ABC):
         that must be implemented by subclasses.
         """
 
-       
-
         # if self.generate_initialization_atoms:
         #     # train_xyzs = create_initialization_atoms_list(
         #     #     **self.generation_dict['train_config'], seed=self.seed
@@ -84,9 +85,25 @@ class BaseActiveLearningWorkflow(ABC):
         #     write(self.initial_train_file, train_xyzs, format="extxyz")
         #     write(self.initial_test_file, test_xyzs, format="extxyz")
         # else:
-        train_xyzs, test_xyzs = self.initialize_training_set('initialization',
-                                                             **kwargs)
-        
+        train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
+
+        if (
+            self.jobs_dict["initialization"]["extra_datasets"] is not None
+            and len(self.jobs_dict["initialization"]["extra_datasets"]) > 0
+        ):
+            for extra_dataset in self.jobs_dict["initialization"]["extra_datasets"]:
+                train_xyzs, test_xyzs = extend_test_and_train_sets_with_extra_dataset(
+                    extra_dataset=extra_dataset,
+                    train_xyzs=train_xyzs,
+                    test_xyzs=test_xyzs,
+                    test_fraction=self.jobs_dict["initialization"][
+                        "test_to_train_ratio"
+                    ],
+                    seed=self.seed,
+                    fall_back_config_type=f"extra_dataset_{Path(extra_dataset).name}",
+                    filter_out_config_types=None,
+                )
+
         print(f"Initialized training set with {len(train_xyzs)} structures.")
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
@@ -147,26 +164,35 @@ class BaseActiveLearningWorkflow(ABC):
                     f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures."
                 )
 
-    def load_initial_train_test_sets(self,
-            dummy_run: bool = False,
-        ) -> tuple[list[Atoms], list[Atoms]]:
-            train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file_path)
-            test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file_path)
+    def load_initial_train_test_sets(
+        self,
+        dummy_run: bool = False,
+    ) -> tuple[list[Atoms], list[Atoms]]:
+        train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file_path)
+        test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file_path)
 
-            if train_xyzs is None or test_xyzs is None:
-                raise FileNotFoundError(
-                    "Initial training or test file not found. Please provide valid file paths."
-                )
+        if train_xyzs is None or test_xyzs is None:
+            raise FileNotFoundError(
+                "Initial training or test file not found. Please provide valid file paths."
+            )
 
-            assert len(train_xyzs) > 1, "More than one training structure required."
-            assert len(test_xyzs) > 1, "More than one test structure required."
+        # warn user if their train/test sets are too small
+        if len(train_xyzs) <= 1:
+            print(
+                f"WARNING: Only {len(train_xyzs)} structure(s) found in the training set. More than one structure is recommended to start active learning. Consider adding more structures to {self.initial_train_file_path}."
+            )
+        if len(test_xyzs) <= 1:
+            print(
+                f"WARNING: Only {len(test_xyzs)} structure(s) found in the test set. More than one structure is recommended to start active learning. Consider adding more structures to {self.initial_test_file_path}."
+            )
 
-            if dummy_run:
-                train_xyzs = train_xyzs[:500]
-                test_xyzs = test_xyzs[:200]
 
-            return train_xyzs, test_xyzs
-    
+        if dummy_run:
+            train_xyzs = train_xyzs[:500]
+            test_xyzs = test_xyzs[:200]
+
+        return train_xyzs, test_xyzs
+
     def process_structure(self, structure: Atoms) -> Atoms:
         """
         Process a structure before adding it to the training set.

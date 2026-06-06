@@ -82,7 +82,7 @@ def select_initial_structures(
                 replace=False,
             )
         ]
-        mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["job_name"])
+        mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["name"])
         return initial_atoms
     
     # Ensure chemical diversity by selecting unique chemical formulas
@@ -120,7 +120,7 @@ def select_initial_structures(
         initial_atoms.append(formula_structures[selected_structure])
 
 
-    mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["job_name"])
+    mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["name"])
 
     if verbose > 0:
         print(
