@@ -171,7 +171,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     }
 
     mace_fit_params["seed"] = seed + fit_idx
-    mace_fit_params["results_dir"] = str(mlip_dir)
+    # mace_fit_params["results_dir"] = str(mlip_dir)
     print("MACE fit parameters:")
     for key, value in mace_fit_params.items():
         print(f"  {key}: {value}")

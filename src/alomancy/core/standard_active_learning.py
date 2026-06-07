@@ -111,43 +111,25 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             or atom.info["needs_relaxation"] is False
         ]
 
+        self.high_accuracy_evaluation(base_name, 
+                                      self.jobs_dict["high_accuracy_evaluation"], 
+                                      sp_atoms_list,
+                                      optimize_structures=False)
+
         go_atoms_list = [
             atom
             for atom in generated_atoms_list
             if "needs_relaxation" in atom.info and atom.info["needs_relaxation"] is True
         ]
 
-        print(
-            f"Created {len(sp_atoms_list)} structures that do not need relaxation and {len(go_atoms_list)} structures that do need relaxation."
-        )
+        self.high_accuracy_evaluation(base_name, 
+                                      self.jobs_dict["high_accuracy_evaluation"], 
+                                      go_atoms_list,
+                                      optimize_structures=True)
 
-        function_kwargs = {
-            "high_accuracy_eval_job_dict": self.jobs_dict["high_accuracy_evaluation"],
-        }
-
-        qe_remote_submitter(
-            remote_info=get_remote_info(
-                job_dict=self.jobs_dict["high_accuracy_evaluation"],
-                input_files=[],
-            ),
-            base_name=base_name,
-            input_atoms_list=sp_atoms_list,
-            function=run_sp_qe,
-            function_kwargs=function_kwargs,
-        )
-
-        qe_remote_submitter(
-            remote_info=get_remote_info(
-                self.jobs_dict["high_accuracy_evaluation"], input_files=[]
-            ),
-            base_name=base_name,
-            input_atoms_list=go_atoms_list,
-            function=run_go_qe,
-            function_kwargs=function_kwargs,
-        )
 
         high_accuracy_structure_paths = list(
-            Path("results", base_name).glob(
+            Path("results", base_name, 'high_accuracy_evaluation').glob(
                 f"qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz"
             )
         )
@@ -419,8 +401,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         base_name: str,
         high_accuracy_eval_job_dict: dict,
         structures: list[Atoms],
+        optimize_structures: bool = False,
     ) -> list[Atoms]:
         
+        qe_function = run_sp_qe
+        if optimize_structures:
+            qe_function = run_go_qe
         
         print("Starting high accuracy evaluation with", len(structures), "structures.")
 
@@ -444,13 +430,23 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
                 return high_accuracy_structures
         
-        qe_remote_submitter(
-            remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
-            base_name=base_name,
-            input_atoms_list=structures,
-            function=run_sp_qe,
-            function_kwargs=function_kwargs,
-        )
+        total_batches= int(np.ceil(len(structures) / high_accuracy_eval_job_dict["max_batch_size"]))
+        print(f"Total structures: {len(structures)}, Max batch size: {high_accuracy_eval_job_dict['max_batch_size']}, Total batches needed: {total_batches}")
+
+        # split into batches and submit each batch separately to avoid overloading the remote server with too many jobs at once
+        for batch_num in range(total_batches):
+            batch_start = batch_num * high_accuracy_eval_job_dict["max_batch_size"]
+            batch_end = min((batch_num + 1) * high_accuracy_eval_job_dict["max_batch_size"], len(structures))
+            print(f"Submitting batch {batch_num + 1}/{total_batches} with structures {batch_start} to {batch_end - 1}")
+            batch_structures: list[Atoms] = structures[batch_start:batch_end]
+
+            qe_remote_submitter(
+                remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
+                base_name=base_name,
+                input_atoms_list=batch_structures,
+                function=qe_function,
+                function_kwargs=function_kwargs,
+            )
 
         high_accuracy_structures = []
         collected_output_files = list(
