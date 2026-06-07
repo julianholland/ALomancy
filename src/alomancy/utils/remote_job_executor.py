@@ -253,20 +253,12 @@ class RemoteJobExecutor:
         print('run and wait running in directory:', os.getcwd())
         self.submit_multiple_jobs(function, job_configs, **kwargs)
         self.start_all_jobs()
-        results = self.wait_for_all_jobs(verbose=verbose)
+        self.wait_for_all_jobs(verbose=verbose)
         
-        new_results = []
         # final run of this essential to get results to sync locally
-        for i, job in enumerate(self.jobs): 
-            result, stdout, stderr = job.get_results(
-                timeout=self.remote_info.timeout,
-                check_interval=getattr(self.remote_info, "check_interval", 10),
-                verbose = True,
-            )
-            new_results.append(result)
-        print('julian said I tried')
+        results = self.wait_for_all_jobs(verbose=verbose)
         self.cleanup_jobs()
-        return new_results
+        return results
 
 
 # Convenience functions for backward compatibility

@@ -111,10 +111,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             or atom.info["needs_relaxation"] is False
         ]
 
-        self.high_accuracy_evaluation(base_name, 
-                                      self.jobs_dict["high_accuracy_evaluation"], 
-                                      sp_atoms_list,
-                                      optimize_structures=False)
+        self.high_accuracy_evaluation(
+            base_name,
+            self.jobs_dict["high_accuracy_evaluation"],
+            sp_atoms_list,
+            optimize_structures=False,
+        )
 
         go_atoms_list = [
             atom
@@ -122,14 +124,16 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             if "needs_relaxation" in atom.info and atom.info["needs_relaxation"] is True
         ]
 
-        self.high_accuracy_evaluation(base_name, 
-                                      self.jobs_dict["high_accuracy_evaluation"], 
-                                      go_atoms_list,
-                                      optimize_structures=True)
-
+        self.high_accuracy_evaluation(
+            base_name,
+            self.jobs_dict["high_accuracy_evaluation"],
+            go_atoms_list,
+            optimize_structures=True,
+            start_index=len(sp_atoms_list),
+        )
 
         high_accuracy_structure_paths = list(
-            Path("results", base_name, 'high_accuracy_evaluation').glob(
+            Path("results", base_name, "high_accuracy_evaluation").glob(
                 f"qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz"
             )
         )
@@ -262,7 +266,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         # skip step if high SD structures already exist from a previous run
         if Path(operating_dir, "high_sd_structures.xyz").exists():
             high_sd_structures = read(
-                Path(operating_dir, "high_sd_structures.xyz"), ':', format="extxyz"
+                Path(operating_dir, "high_sd_structures.xyz"), ":", format="extxyz"
             )
             if isinstance(high_sd_structures, Atoms):
                 high_sd_structures = [high_sd_structures]
@@ -402,12 +406,13 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         high_accuracy_eval_job_dict: dict,
         structures: list[Atoms],
         optimize_structures: bool = False,
+        start_index: int = 0,
     ) -> list[Atoms]:
-        
+
         qe_function = run_sp_qe
         if optimize_structures:
             qe_function = run_go_qe
-        
+
         print("Starting high accuracy evaluation with", len(structures), "structures.")
 
         function_kwargs = {
@@ -416,10 +421,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         if Path("results", base_name, "high_accuracy_evaluation").exists():
             found_structures = list(
                 Path("results", base_name, "high_accuracy_evaluation").glob(
-                    f"qe_output_*/{high_accuracy_eval_job_dict['name']}.xyz"
+                    f"batch_*/qe_output_*/{high_accuracy_eval_job_dict['name']}.xyz"
                 )
             )
-            if len(found_structures) > 0:
+            if len(found_structures) >= len(structures) + start_index:
                 print(
                     f"Found {len(found_structures)} structures from previous high accuracy evaluation. Skipping remote submission and reusing these structures for high accuracy evaluation results."
                 )
@@ -429,30 +434,52 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     high_accuracy_structures.append(structure)
 
                 return high_accuracy_structures
-        
-        total_batches= int(np.ceil(len(structures) / high_accuracy_eval_job_dict["max_batch_size"]))
-        print(f"Total structures: {len(structures)}, Max batch size: {high_accuracy_eval_job_dict['max_batch_size']}, Total batches needed: {total_batches}")
+            elif len(found_structures) > 0:
+                print(
+                    f"Found {len(found_structures)} structures from previous high accuracy evaluation. These will be reused, and the rest of the structures will be evaluated with new remote jobs."
+                )
+                structures = structures[len(found_structures) + start_index :]
+            else:
+                print(
+                    f"No structures found from previous high accuracy evaluation. All {len(structures)} structures will be evaluated with new remote jobs."
+                )
 
+        total_batches = int(
+            np.ceil(len(structures) / high_accuracy_eval_job_dict["max_batch_size"])
+        )
+        print(
+            f"Total structures: {len(structures)}, Max batch size: {high_accuracy_eval_job_dict['max_batch_size']}, Total batches needed: {total_batches}"
+        )
+        current_batches = len(list(Path("results", base_name, "high_accuracy_evaluation").glob("batch_*")))
+                                   
         # split into batches and submit each batch separately to avoid overloading the remote server with too many jobs at once
-        for batch_num in range(total_batches):
+        for batch_num in range(current_batches, total_batches+ current_batches):
             batch_start = batch_num * high_accuracy_eval_job_dict["max_batch_size"]
-            batch_end = min((batch_num + 1) * high_accuracy_eval_job_dict["max_batch_size"], len(structures))
-            print(f"Submitting batch {batch_num + 1}/{total_batches} with structures {batch_start} to {batch_end - 1}")
+            batch_end = min(
+                (batch_num + 1) * high_accuracy_eval_job_dict["max_batch_size"],
+                len(structures),
+            )
+            print(
+                f"Submitting batch {batch_num + 1}/{total_batches} with structures {batch_start} to {batch_end - 1}"
+            )
             batch_structures: list[Atoms] = structures[batch_start:batch_end]
 
             qe_remote_submitter(
-                remote_info=get_remote_info(high_accuracy_eval_job_dict, input_files=[]),
+                remote_info=get_remote_info(
+                    high_accuracy_eval_job_dict, input_files=[]
+                ),
                 base_name=base_name,
                 input_atoms_list=batch_structures,
                 function=qe_function,
+                batch=batch_num,
                 function_kwargs=function_kwargs,
             )
 
         high_accuracy_structures = []
         collected_output_files = list(
             Path.glob(
-                Path("results", base_name, "qe_output_*"),
-                f"{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
+                Path("results", base_name),
+                f"{self.jobs_dict['high_accuracy_evaluation']['name']}/batch_*/qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz",
             )
         )
         for path in collected_output_files:
