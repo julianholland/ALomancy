@@ -103,7 +103,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             raise ValueError(
                 "No generated structures found. Please check the configuration for the initialization step."
             )
-
+        # remove these, spliting into go/sp lists handled in high_accuracy_evaluation step, left into finish prior job
         sp_atoms_list = [
             atom
             for atom in generated_atoms_list
@@ -111,46 +111,42 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             or atom.info["needs_relaxation"] is False
         ]
 
-        self.high_accuracy_evaluation(
-            base_name,
-            self.jobs_dict["high_accuracy_evaluation"],
-            sp_atoms_list,
-            optimize_structures=False,
-        )
-
+        # self.high_accuracy_evaluation(
+        #     base_name,
+        #     self.jobs_dict["high_accuracy_evaluation"],
+        #     sp_atoms_list,
+        #     allow_relaxation=True,
+        # )
+        
         go_atoms_list = [
             atom
             for atom in generated_atoms_list
             if "needs_relaxation" in atom.info and atom.info["needs_relaxation"] is True
         ]
 
-        self.high_accuracy_evaluation(
-            base_name,
-            self.jobs_dict["high_accuracy_evaluation"],
-            go_atoms_list,
-            optimize_structures=True,
+        print(
+            len(sp_atoms_list),
+            "structures do not need relaxation and will be evaluated directly with SP QE calculations.\n",
+            len(go_atoms_list),            
+            "structures need relaxation and will first be relaxed with GO QE calculations before being evaluated with SP QE calculations.",
+        )
+
+        high_accuracy_structures=self.high_accuracy_evaluation(
+            base_name=base_name,
+            high_accuracy_eval_job_dict=self.jobs_dict["high_accuracy_evaluation"],
+            structures=go_atoms_list,
+            allow_relaxation=True,
             start_index=len(sp_atoms_list),
         )
 
-        high_accuracy_structure_paths = list(
-            Path("results", base_name, "high_accuracy_evaluation").glob(
-                f"qe_output_*/{self.jobs_dict['high_accuracy_evaluation']['name']}.xyz"
-            )
-        )
-
         print(
-            len(high_accuracy_structure_paths), "high accuracy structure files found."
+            len(high_accuracy_structures), "high accuracy structures found."
         )
 
-        if len(high_accuracy_structure_paths) == 0:
+        if len(high_accuracy_structures) == 0:
             raise ValueError(
                 "No high accuracy structures found. Please check the configuration for the high accuracy evaluation step and make sure the remote jobs are running correctly."
             )
-
-        high_accuracy_structures = []
-        for path in high_accuracy_structure_paths:
-            structure = read(path, format="extxyz")
-            high_accuracy_structures.append(structure)
 
         high_accuracy_structures = clean_structures(
             high_accuracy_structures,
@@ -289,7 +285,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 format="extxyz",
             )
             print(
-                f"Input structures for structure generation step loaded from file: {Path(operating_dir, f'{job_dict['structure_generation']['name']}_input_structures.xyz')}"
+                "Input structures for structure generation step loaded from file:", {Path(operating_dir, f"{job_dict['structure_generation']['name']}_input_structures.xyz")}
             )
 
         else:
@@ -405,19 +401,17 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         base_name: str,
         high_accuracy_eval_job_dict: dict,
         structures: list[Atoms],
-        optimize_structures: bool = False,
+        allow_relaxation: bool = False,
         start_index: int = 0,
     ) -> list[Atoms]:
 
-        qe_function = run_sp_qe
-        if optimize_structures:
-            qe_function = run_go_qe
-
+        print('atom info upon high accuracy evaluation call:', structures[0].info)
         print("Starting high accuracy evaluation with", len(structures), "structures.")
 
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
         }
+
         if Path("results", base_name, "high_accuracy_evaluation").exists():
             found_structures = list(
                 Path("results", base_name, "high_accuracy_evaluation").glob(
@@ -438,14 +432,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 print(
                     f"Found {len(found_structures)} structures from previous high accuracy evaluation. These will be reused, and the rest of the structures will be evaluated with new remote jobs."
                 )
-                structures = structures[len(found_structures) + start_index :]
+                # structures = structures[len(found_structures) + start_index :] # untag this for real run
             else:
                 print(
                     f"No structures found from previous high accuracy evaluation. All {len(structures)} structures will be evaluated with new remote jobs."
                 )
 
         total_batches = int(
-            np.ceil(len(structures) / high_accuracy_eval_job_dict["max_batch_size"])
+            np.ceil(len(structures) + start_index) / high_accuracy_eval_job_dict["max_batch_size"]
         )
         print(
             f"Total structures: {len(structures)}, Max batch size: {high_accuracy_eval_job_dict['max_batch_size']}, Total batches needed: {total_batches}"
@@ -453,28 +447,70 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         current_batches = len(list(Path("results", base_name, "high_accuracy_evaluation").glob("batch_*")))
                                    
         # split into batches and submit each batch separately to avoid overloading the remote server with too many jobs at once
-        for batch_num in range(current_batches, total_batches+ current_batches):
+        for batch_num in range(0, total_batches - current_batches):
             batch_start = batch_num * high_accuracy_eval_job_dict["max_batch_size"]
             batch_end = min(
                 (batch_num + 1) * high_accuracy_eval_job_dict["max_batch_size"],
                 len(structures),
             )
             print(
-                f"Submitting batch {batch_num + 1}/{total_batches} with structures {batch_start} to {batch_end - 1}"
+                f"Submitting batch {batch_num + current_batches}/{total_batches} with structures {batch_start} to {batch_end - 1}"
             )
             batch_structures: list[Atoms] = structures[batch_start:batch_end]
+            print('atom info upon batching:', batch_structures[0].info)
+            
 
-            qe_remote_submitter(
-                remote_info=get_remote_info(
-                    high_accuracy_eval_job_dict, input_files=[]
-                ),
-                base_name=base_name,
-                input_atoms_list=batch_structures,
-                function=qe_function,
-                batch=batch_num,
-                function_kwargs=function_kwargs,
-            )
+            if allow_relaxation:
+                batch_structures_to_relax = [
+                    atom
+                    for atom in batch_structures
+                    if "needs_relaxation" in atom.info and atom.info["needs_relaxation"] is True
+                ]
+                print(len(batch_structures_to_relax), "structures to relax in batch.")
 
+                single_point_batch_structures = [
+                    atom
+                    for atom in batch_structures
+                    if "needs_relaxation" not in atom.info
+                    or atom.info["needs_relaxation"] is False
+                ]
+                print(len(single_point_batch_structures), "structures to evaluate in batch.")
+
+                qe_remote_submitter(
+                    remote_info=get_remote_info(
+                        high_accuracy_eval_job_dict, input_files=[]
+                    ),
+                    base_name=base_name,
+                    input_atoms_list=batch_structures_to_relax,
+                    function=run_go_qe,
+                    batch=batch_num + current_batches,
+                    function_kwargs=function_kwargs,
+                )
+
+
+                qe_remote_submitter(
+                    remote_info=get_remote_info(
+                        high_accuracy_eval_job_dict, input_files=[]
+                    ),
+                    base_name=base_name,
+                    input_atoms_list=single_point_batch_structures,
+                    function=run_sp_qe,
+                    batch=batch_num + current_batches,
+                    function_kwargs=function_kwargs,
+                )
+            else:
+
+                qe_remote_submitter(
+                    remote_info=get_remote_info(
+                        high_accuracy_eval_job_dict, input_files=[]
+                    ),
+                    base_name=base_name,
+                    input_atoms_list=batch_structures,
+                    function=run_sp_qe,
+                    batch=batch_num + current_batches,
+                    function_kwargs=function_kwargs,
+                )
+        
         high_accuracy_structures = []
         collected_output_files = list(
             Path.glob(

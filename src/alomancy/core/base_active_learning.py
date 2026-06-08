@@ -106,6 +106,7 @@ class BaseActiveLearningWorkflow(ABC):
                 )
 
         print(f"Initialized training set with {len(train_xyzs)} structures.")
+
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
             workdir = Path(f"results/{base_name}")
@@ -171,7 +172,7 @@ class BaseActiveLearningWorkflow(ABC):
                 ],
                 seed=self.seed,
             )
-            
+
             train_xyzs += new_train_data
             test_xyzs += new_test_data
 

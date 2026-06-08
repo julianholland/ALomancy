@@ -10,6 +10,7 @@ def select_initial_structures(
     train_atoms_list: list[Atoms],
     max_number_of_concurrent_jobs: int = 5,
     chem_formula_list: list[str] | None = None,
+    selectable_configs: list[str] | None = None,
     atom_number_range: tuple[int, int] = (0, 0),
     enforce_chemical_diversity: bool = False,
     verbose: int = 0,
@@ -56,18 +57,25 @@ def select_initial_structures(
             and len(s) <= atom_number_range[1]
             and len(s) >= atom_number_range[0]
         ]
+
     elif atom_number_range != (0, 0):
         filtered_structures = [
             s
             for s in train_atoms_list
             if len(s) <= atom_number_range[1] and len(s) >= atom_number_range[0]
         ]
+
     elif len(chem_formula_list) > 0:
         filtered_structures = [
             s for s in train_atoms_list if s.get_chemical_formula() in chem_formula_list
         ]
     else:
         filtered_structures = train_atoms_list
+    
+    if selectable_configs is not None:
+        filtered_structures = [
+            s for s in filtered_structures if s.info.get("config_type") in selectable_configs
+        ]
 
     assert (
         len(filtered_structures) >= max_number_of_concurrent_jobs
@@ -87,11 +95,10 @@ def select_initial_structures(
     
     # Ensure chemical diversity by selecting unique chemical formulas
     # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
-    # Otherwise, randomly select `max_number_of_concurrent_jobs` unique formulas
+    
     unique_chemical_formulas = {
         s.get_chemical_formula() for s in filtered_structures
     }
-
     if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
         list_of_formulas = list(unique_chemical_formulas)
         extra_formulas = [
@@ -100,11 +107,17 @@ def select_initial_structures(
         ]
         list_of_formulas.extend(extra_formulas)
 
+
     else:
+        # select formulas with probability inversely proportional to their frequency in the dataset to promote diversity
+        all_chemical_formulas = [s.get_chemical_formula() for s in filtered_structures]
+        formula_counts = {formula: all_chemical_formulas.count(formula) for formula in set(all_chemical_formulas)}
+        formula_probabilities = {formula: 1/count for formula, count in formula_counts.items()}
         list_of_formulas = np.random.choice(
             list(unique_chemical_formulas),
             max_number_of_concurrent_jobs,
             replace=False,
+            p=[formula_probabilities[formula]/sum(formula_probabilities.values()) for formula in unique_chemical_formulas]
         )
 
     initial_atoms = []
