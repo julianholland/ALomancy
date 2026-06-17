@@ -505,6 +505,76 @@ class TestCleanStructures:
         result = clean_structures(structures, config_type="batch")
         assert len(result) == 3
 
+    @pytest.mark.unit
+    def test_already_computed_missing_ref_no_calc_raises(self):
+        """Raises ValueError when already_computed=True but no REF data and no calculator."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        atoms = Atoms(symbols=["H"], positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        with pytest.raises(ValueError, match="already_computed"):
+            clean_structures([atoms], config_type="test", already_computed=True)
+
+    @pytest.mark.unit
+    def test_already_computed_false_skips_ref_check(self):
+        """With already_computed=False, no REF data is required or added."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        atoms = Atoms(symbols=["H"], positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        atoms.info["config_type"] = "test"
+        result = clean_structures([atoms], config_type="test", already_computed=False)
+        assert len(result) == 1
+        assert "REF_energy" not in result[0].info
+
+
+@pytest.mark.unit
+class TestReadAtomsFileIfEnabled:
+    """Test read_atoms_file_if_enabled function."""
+
+    def test_returns_none_when_disabled(self, tmp_path):
+        from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+        result = read_atoms_file_if_enabled(read_file=False, file_path=tmp_path / "dummy.xyz")
+        assert result is None
+
+    def test_returns_none_when_file_missing(self, tmp_path):
+        from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+        result = read_atoms_file_if_enabled(read_file=True, file_path=tmp_path / "nonexistent.xyz")
+        assert result is None
+
+    def test_returns_empty_list_for_empty_file(self, tmp_path):
+        from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+        empty_file = tmp_path / "empty.xyz"
+        empty_file.write_text("")
+        result = read_atoms_file_if_enabled(read_file=True, file_path=empty_file)
+        assert result == []
+
+    def test_returns_atoms_from_file(self, tmp_path, h2o_mol):
+        from ase.io import write
+
+        from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+        xyz_path = tmp_path / "structs.xyz"
+        write(str(xyz_path), [h2o_mol], format="extxyz")
+        result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)
+        assert result is not None
+        assert len(result) == 1
+
+    def test_returns_multiple_atoms(self, tmp_path, h2o_mol, h_atom):
+        from ase.io import write
+
+        from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+        xyz_path = tmp_path / "multi.xyz"
+        write(str(xyz_path), [h2o_mol, h_atom], format="extxyz")
+        result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)
+        assert len(result) == 2
+
+    def test_accepts_path_object(self, tmp_path, h2o_mol):
+        from ase.io import write
+
+        from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+        xyz_path = tmp_path / "test.xyz"
+        write(str(xyz_path), [h2o_mol], format="extxyz")
+        result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)
+        assert result is not None
+
 
 class TestLoadDictionaries:
     """Test load_dictionaries function."""

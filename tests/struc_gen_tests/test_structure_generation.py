@@ -213,6 +213,160 @@ class TestStdDeviationOfForces:
 
 
 # ============================================================================
+# Tests for find_high_sd_structures (top-level)
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestFindHighSdStructures:
+    """Test the find_high_sd_structures top-level function."""
+
+    @staticmethod
+    def _make_structure(seed=0):
+        rng = np.random.default_rng(seed)
+        atoms = Atoms(
+            symbols=["O", "H", "H"],
+            positions=rng.random((3, 3)) * 3,
+            cell=[10, 10, 10],
+            pbc=True,
+        )
+        atoms.info["REF_energy"] = float(rng.random())
+        atoms.arrays["REF_forces"] = rng.random((3, 3))
+        return atoms
+
+    @staticmethod
+    def _flatten(forces):
+        return np.reshape(forces, (1, forces.shape[0] * 3))
+
+    def _build_job_dict(self, desired=3):
+        return {
+            "structure_generation": {
+                "name": "structure_generation",
+                "desired_number_of_structures": desired,
+            }
+        }
+
+    def _build_forces_dict(self, structures, n_models=3):
+        rng = np.random.default_rng(42)
+        keys = ["base_mlip"] + [f"fit_{i}" for i in range(n_models - 1)]
+        d = {}
+        for key in keys:
+            d[key] = {}
+            for i, s in enumerate(structures):
+                forces = self._flatten(s.arrays["REF_forces"] + rng.random((3, 3)) * 0.1)
+                d[key][f"structure_{i}"] = {
+                    "forces": forces,
+                    "energy": s.info["REF_energy"] + float(rng.random() * 0.1),
+                }
+        return d
+
+    def test_returns_desired_count(self, tmp_path, monkeypatch):
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(10)]
+        forces_dict = self._build_forces_dict(structures)
+        job_dict = self._build_job_dict(desired=3)
+        (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
+        result = find_high_sd_structures(
+            structure_list=structures,
+            base_name="loop_0",
+            job_dict=job_dict,
+            structure_forces_dict=forces_dict,
+            read_xyz=False,
+        )
+        assert len(result) == 3
+
+    def test_result_items_from_structure_list(self, tmp_path, monkeypatch):
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(10)]
+        forces_dict = self._build_forces_dict(structures)
+        job_dict = self._build_job_dict(desired=3)
+        (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
+        result = find_high_sd_structures(
+            structure_list=structures,
+            base_name="loop_0",
+            job_dict=job_dict,
+            structure_forces_dict=forces_dict,
+            read_xyz=False,
+        )
+        assert all(a in structures for a in result)
+
+    def test_writes_xyz_file(self, tmp_path, monkeypatch):
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(10)]
+        forces_dict = self._build_forces_dict(structures)
+        job_dict = self._build_job_dict(desired=3)
+        out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
+        out_dir.mkdir(parents=True)
+        find_high_sd_structures(
+            structure_list=structures,
+            base_name="loop_0",
+            job_dict=job_dict,
+            structure_forces_dict=forces_dict,
+            read_xyz=False,
+        )
+        assert (out_dir / "high_sd_structures.xyz").exists()
+
+    def test_reads_from_cached_files(self, tmp_path, monkeypatch):
+        """When read_xyz=True and both cache files exist, load from disk."""
+        from ase.io import write
+
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(10)]
+        forces_dict = self._build_forces_dict(structures)
+        job_dict = self._build_job_dict(desired=2)
+        out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
+        out_dir.mkdir(parents=True)
+        # Write cache manually
+        write(str(out_dir / "high_sd_structures.xyz"), structures[:2], format="extxyz")
+        import polars as pl
+        df = pl.DataFrame({
+            "structure_index": [0, 1],
+            "max_std_dev": [0.9, 0.5],
+            "mean_std_dev": [0.5, 0.3],
+            "std_dev_energy": [0.1, 0.05],
+        })
+        df.write_csv(str(out_dir / "std_dev_forces.csv"))
+        result = find_high_sd_structures(
+            structure_list=structures,
+            base_name="loop_0",
+            job_dict=job_dict,
+            structure_forces_dict=forces_dict,
+            read_xyz=True,
+        )
+        assert len(result) == 2
+
+    def test_assertion_error_not_enough_structures(self, tmp_path, monkeypatch):
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(2)]
+        forces_dict = self._build_forces_dict(structures)
+        job_dict = self._build_job_dict(desired=5)
+        (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
+        with pytest.raises(AssertionError):
+            find_high_sd_structures(
+                structure_list=structures,
+                base_name="loop_0",
+                job_dict=job_dict,
+                structure_forces_dict=forces_dict,
+                read_xyz=False,
+            )
+
+
+# ============================================================================
 # Tests for select_initial_structures
 # ============================================================================
 
@@ -316,6 +470,79 @@ class TestSelectInitialStructures:
                 atom_number_range=(1, 5),
             )
         assert any(issubclass(warning.category, UserWarning) for warning in w)
+
+    def test_enforce_chemical_diversity_fewer_formulas_than_jobs(self):
+        """When unique formulas < jobs, all unique formulas are chosen and extras sampled."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        # Only 2 unique formulas but need 4 jobs
+        structures = (
+            [self._make_atoms(["H", "H"]) for _ in range(5)]
+            + [self._make_atoms(["O", "O"]) for _ in range(5)]
+        )
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=4,
+            enforce_chemical_diversity=True,
+        )
+        assert len(result) == 4
+
+    def test_enforce_chemical_diversity_more_formulas_than_jobs(self):
+        """When unique formulas > jobs, selects weighted diverse subset."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        # 6 unique formulas (H2, O2, HO, CO, CH, NO), need 3 jobs
+        structures = (
+            [self._make_atoms(["H", "H"]) for _ in range(4)]
+            + [self._make_atoms(["O", "O"]) for _ in range(4)]
+            + [self._make_atoms(["H", "O"]) for _ in range(4)]
+            + [self._make_atoms(["C", "O"]) for _ in range(4)]
+            + [self._make_atoms(["C", "H"]) for _ in range(4)]
+            + [self._make_atoms(["N", "O"]) for _ in range(4)]
+        )
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=3,
+            enforce_chemical_diversity=True,
+        )
+        assert len(result) == 3
+
+    def test_combined_formula_and_atom_range_filter(self):
+        """Test combined formula and atom-number range filter."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = (
+            [self._make_atoms(["H", "H"]) for _ in range(5)]
+            + [self._make_atoms(["O", "O"]) for _ in range(5)]
+            + [self._make_atoms(["H", "O", "O"]) for _ in range(5)]
+        )
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=3,
+            chem_formula_list=["H2", "O2"],
+            atom_number_range=(2, 2),
+        )
+        assert len(result) == 3
+        assert all(len(a) == 2 for a in result)
+        assert all(a.get_chemical_formula() in ["H2", "O2"] for a in result)
 
 
 # ============================================================================

@@ -107,7 +107,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         needs = compute_initialization_needs(
             db=self.db,
             elements=creation_kwargs["elements"],
-            single_atoms=creation_kwargs.get("single_atoms", True),
+            _single_atoms=creation_kwargs.get("single_atoms", True),
             mp_structures=creation_kwargs.get("mp_structures", True),
             num_dimers_per_combo=num_dimers_per_combo,
             num_trimers_per_combo=num_trimers_per_combo,
