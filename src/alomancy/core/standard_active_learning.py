@@ -11,25 +11,23 @@ from ase.io import read, write
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.database.global_database import _DEFAULT_DEDUP_CONFIG_TYPES
-from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
-    qe_remote_submitter,
-)
 from alomancy.high_accuracy_evaluation.dft.run_qe import run_go_qe, run_sp_qe
 from alomancy.initialize.initialization_structure_list import (
     compute_initialization_needs,
     create_initialization_atoms_list,
 )
-from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.get_mace_eval_info import (
     get_mace_eval_info,
 )
 from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.remote_submission import (
+    all_maces_remote_submitter,
+    committee_remote_submitter,
+    md_remote_submitter,
+    qe_remote_submitter,
+)
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
-)
-from alomancy.structure_generation.md.md_remote_submitter import (
-    all_maces_remote_submitter,
-    md_remote_submitter,
 )
 from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, run_md
 from alomancy.structure_generation.select_initial_structures import (
@@ -300,7 +298,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     ],
                 ),
                 base_name=base_name,
-                target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
                 seed=803,
                 size_of_committee=mlip_committee_job_dict["size_of_committee"],
                 function=mace_fit,

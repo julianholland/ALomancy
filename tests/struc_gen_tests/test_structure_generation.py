@@ -755,12 +755,10 @@ class TestMolecularDynamics:
         assert dyn is not None
         mock_langevin.assert_called_once()
 
-    @patch("alomancy.structure_generation.md.md_remote_submitter.md_remote_submitter")
+    @patch("alomancy.remote_submission.md_remote_submitter")
     def test_md_remote_submission(self, mock_md_submitter):
         """Test MD remote submission."""
-        from alomancy.structure_generation.md.md_remote_submitter import (
-            md_remote_submitter,
-        )
+        from alomancy.remote_submission import md_remote_submitter
 
         # Mock return trajectory files
         mock_trajectories = [
@@ -1041,7 +1039,7 @@ class TestStructureGenerationIntegration:
     @patch(
         "alomancy.structure_generation.select_initial_structures.select_initial_structures"
     )
-    @patch("alomancy.structure_generation.md.md_remote_submitter.md_remote_submitter")
+    @patch("alomancy.remote_submission.submitters.md_remote_submitter")
     @patch(
         "alomancy.structure_generation.find_high_sd_structures.find_high_sd_structures"
     )
