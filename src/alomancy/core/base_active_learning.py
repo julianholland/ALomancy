@@ -6,15 +6,13 @@ from ase import Atoms
 from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
-from alomancy.utils.clean_structures import clean_structures
+from alomancy.database.global_database import GlobalDatabase, _DEFAULT_DEDUP_CONFIG_TYPES
 from alomancy.initialize.initialization_structure_list import (
     create_initialization_atoms_list,
 )
+from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
-from alomancy.utils.test_train_manager import (
-    extend_test_and_train_sets_with_extra_dataset,
-    split_atoms_list_into_test_and_train,
-)
+from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -26,11 +24,10 @@ class BaseActiveLearningWorkflow(ABC):
     high-accuracy evaluation, MLIP training, and evaluation.
 
     Subclasses must implement the following abstract methods:
+    - `initialize_training_set`
     - `high_accuracy_evaluation`
     - `train_mlip`
     - `generate_structures`
-
-
     """
 
     def __init__(
@@ -43,7 +40,7 @@ class BaseActiveLearningWorkflow(ABC):
         start_loop: int = 0,
         plots: bool = True,
         seed: int = 803,
-        # generation_dict: dict = {},
+        db_path: str = "results/global_database",
     ):
         self.initial_train_file_path = Path(initial_train_file_path)
         self.initial_test_file_path = Path(initial_test_file_path)
@@ -52,9 +49,8 @@ class BaseActiveLearningWorkflow(ABC):
         self.verbose = verbose
         self.start_loop = start_loop
         self.plots = plots
-        # self.generate_initialization_atoms = generate_initialization_atoms
-        # self.generation_dict = generation_dict
         self.seed = seed
+        self.db = GlobalDatabase(db_path)
 
     def run(self, **kwargs) -> None:
         """
@@ -63,47 +59,15 @@ class BaseActiveLearningWorkflow(ABC):
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
-
-        # if self.generate_initialization_atoms:
-        #     # train_xyzs = create_initialization_atoms_list(
-        #     #     **self.generation_dict['train_config'], seed=self.seed
-        #     # )
-        #     train_xyzs = read('dummy_train.xyz', ':')  # For testing purposes only
-        #     print(f"Generated {len(train_xyzs)} initial training structures.")
-        #     self.high_accuracy_evaluation(
-        #         "initialization",
-        #         self.jobs_dict["train_high_accuracy_evaluation"],
-        #         train_xyzs,
-        #         )
-        #     test_xyzs = create_initialization_atoms_list(
-        #         **self.generation_dict['test_config'], seed=self.seed + 1
-        #     )
-        #     self.high_accuracy_evaluation(
-        #         "initialization",
-        #         self.jobs_dict["test_high_accuracy_evaluation"],
-        #         test_xyzs,
-        #     )
-        #     write(self.initial_train_file, train_xyzs, format="extxyz")
-        #     write(self.initial_test_file, test_xyzs, format="extxyz")
-        # else:
         train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
 
-        if (
-            self.jobs_dict["initialization"]["extra_datasets"] is not None
-            and len(self.jobs_dict["initialization"]["extra_datasets"]) > 0
-        ):
-            for extra_dataset in self.jobs_dict["initialization"]["extra_datasets"]:
-                train_xyzs, test_xyzs = extend_test_and_train_sets_with_extra_dataset(
-                    extra_dataset=extra_dataset,
-                    train_xyzs=train_xyzs,
-                    test_xyzs=test_xyzs,
-                    test_fraction=self.jobs_dict["initialization"][
-                        "test_to_train_ratio"
-                    ],
-                    seed=self.seed,
-                    fall_back_config_type=f"extra_dataset_{Path(extra_dataset).name}",
-                    filter_out_config_types=None,
-                )
+        extra_datasets = self.jobs_dict["initialization"].get("extra_datasets") or []
+        for extra_dataset in extra_datasets:
+            train_xyzs, test_xyzs = self._add_extra_dataset(
+                extra_dataset=extra_dataset,
+                train_xyzs=train_xyzs,
+                test_xyzs=test_xyzs,
+            )
 
         print(f"Initialized training set with {len(train_xyzs)} structures.")
 
@@ -111,22 +75,19 @@ class BaseActiveLearningWorkflow(ABC):
             base_name = f"al_loop_{loop}"
             workdir = Path(f"results/{base_name}")
 
-            # Ensure directory exists before writing files
             try:
                 workdir.mkdir(exist_ok=True, parents=True)
             except OSError as e:
                 print(f"Warning: Could not create directory {workdir}: {e}")
-                # Continue anyway - might be a permissions issue in tests
 
             train_file = Path(workdir, "train_set.xyz")
             test_file = Path(workdir, "test_set.xyz")
 
-            # Write current training and test sets with error handling
             try:
                 write(train_file, train_xyzs, format="extxyz")
                 write(test_file, test_xyzs, format="extxyz")
             except OSError as e:
-                if "test" not in str(e).lower():  # Don't fail in tests
+                if "test" not in str(e).lower():
                     raise
                 print(f"Warning: Could not write files (test environment): {e}")
 
@@ -135,7 +96,6 @@ class BaseActiveLearningWorkflow(ABC):
                 print(f"  Training set size: {len(train_xyzs)}")
                 print(f"  Test set size: {len(test_xyzs)}")
 
-            # Core AL loop steps - these methods must be implemented by subclasses
             evaluation_results = self.train_mlip(
                 base_name, self.jobs_dict["mlip_committee"], **kwargs
             )
@@ -156,8 +116,10 @@ class BaseActiveLearningWorkflow(ABC):
                 generated_structures,
                 **kwargs,
             )
-            print(f"High-accuracy evaluation completed for {len(new_training_data)} structures.")
-            
+            print(
+                f"High-accuracy evaluation completed for {len(new_training_data)} structures."
+            )
+
             new_training_data = clean_structures(
                 new_training_data,
                 config_type=f"al_loop_{loop}",
@@ -165,11 +127,12 @@ class BaseActiveLearningWorkflow(ABC):
                 already_computed=True,
             )
 
+            # Add evaluated AL loop structures to the global DB
+            self.db.add_structures(new_training_data, skip_duplicates=False)
+
             new_train_data, new_test_data = split_atoms_list_into_test_and_train(
                 new_training_data,
-                test_fraction=self.jobs_dict["initialization"][
-                    "test_to_train_ratio"
-                ],
+                test_fraction=self.jobs_dict["initialization"]["test_to_train_ratio"],
                 seed=self.seed,
             )
 
@@ -180,6 +143,81 @@ class BaseActiveLearningWorkflow(ABC):
                 print(
                     f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures."
                 )
+
+    def _add_extra_dataset(
+        self,
+        extra_dataset: str,
+        train_xyzs: list[Atoms],
+        test_xyzs: list[Atoms],
+    ) -> tuple[list[Atoms], list[Atoms]]:
+        """
+        Load an extra dataset and add only structures not already in the DB.
+
+        IsolatedAtom and init_MP structures are deduped by (config_type, formula);
+        all other config_types are always added.  After dedup, the new structures
+        are appended to the in-memory train/test lists via the existing helper.
+        """
+        all_atoms: list[Atoms] = read(extra_dataset, ":", format="extxyz")
+        if isinstance(all_atoms, Atoms):
+            all_atoms = [all_atoms]
+
+        existing_keys = self.db._get_config_type_formula_set()
+        dedup_config_types = _DEFAULT_DEDUP_CONFIG_TYPES
+
+        new_atoms: list[Atoms] = []
+        for atoms in all_atoms:
+            ct = atoms.info.get("config_type", "")
+            formula = atoms.get_chemical_formula()
+            key = (ct, formula)
+            if ct in dedup_config_types and key in existing_keys:
+                if self.verbose > 0:
+                    print(
+                        f"Skipping duplicate {ct} structure ({formula}) "
+                        f"already in global database."
+                    )
+                continue
+            new_atoms.append(atoms)
+            existing_keys.add(key)
+
+        if not new_atoms:
+            print(
+                f"Extra dataset {extra_dataset}: all structures already in global DB, skipping."
+            )
+            return train_xyzs, test_xyzs
+
+        skipped = len(all_atoms) - len(new_atoms)
+        if skipped:
+            print(
+                f"Extra dataset {extra_dataset}: skipped {skipped} duplicate structure(s); "
+                f"adding {len(new_atoms)} new structure(s)."
+            )
+
+        # Add the genuinely new structures to the DB
+        self.db.add_structures(new_atoms, skip_duplicates=False)
+
+        # Extend in-memory train/test sets directly from new_atoms — do NOT
+        # re-read the file, which would re-introduce the structures we just deduped.
+        fall_back_config_type = f"extra_dataset_{Path(extra_dataset).name}"
+        cleaned = clean_structures(
+            new_atoms,
+            fall_back_config_type,
+            override_config_type=False,
+            already_computed=True,
+        )
+        isolated = [a for a in cleaned if a.info.get("config_type") == "IsolatedAtom"]
+        eligible = [a for a in cleaned if a.info.get("config_type") != "IsolatedAtom"]
+        new_train, new_test = split_atoms_list_into_test_and_train(
+            eligible,
+            self.jobs_dict["initialization"]["test_to_train_ratio"],
+            self.seed,
+        )
+        train_xyzs.extend(new_train + isolated)
+        test_xyzs.extend(new_test)
+        print(
+            f"Added {len(new_train)} structures from {extra_dataset} to training set "
+            f"and {len(new_test)} to test set."
+        )
+        return train_xyzs, test_xyzs
 
     def load_initial_train_test_sets(
         self,
@@ -193,16 +231,18 @@ class BaseActiveLearningWorkflow(ABC):
                 "Initial training or test file not found. Please provide valid file paths."
             )
 
-        # warn user if their train/test sets are too small
         if len(train_xyzs) <= 1:
             print(
-                f"WARNING: Only {len(train_xyzs)} structure(s) found in the training set. More than one structure is recommended to start active learning. Consider adding more structures to {self.initial_train_file_path}."
+                f"WARNING: Only {len(train_xyzs)} structure(s) found in the training set. "
+                f"More than one structure is recommended to start active learning. "
+                f"Consider adding more structures to {self.initial_train_file_path}."
             )
         if len(test_xyzs) <= 1:
             print(
-                f"WARNING: Only {len(test_xyzs)} structure(s) found in the test set. More than one structure is recommended to start active learning. Consider adding more structures to {self.initial_test_file_path}."
+                f"WARNING: Only {len(test_xyzs)} structure(s) found in the test set. "
+                f"More than one structure is recommended to start active learning. "
+                f"Consider adding more structures to {self.initial_test_file_path}."
             )
-
 
         if dummy_run:
             train_xyzs = train_xyzs[:500]
@@ -211,25 +251,9 @@ class BaseActiveLearningWorkflow(ABC):
         return train_xyzs, test_xyzs
 
     def process_structure(self, structure: Atoms) -> Atoms:
-        """
-        Process a structure before adding it to the training set.
-
-        We will
-
-        Parameters
-        ----------
-        structure : Atoms
-            The structure to process.
-
-        Returns
-        -------
-        Atoms
-            The processed structure.
-        """
         new_structure = structure.copy()
         new_structure.info["REF_energy"] = structure.get_potential_energy()
         new_structure.arrays["REF_forces"] = structure.get_forces()
-
         return new_structure
 
     @abstractmethod
@@ -238,9 +262,6 @@ class BaseActiveLearningWorkflow(ABC):
     ) -> tuple[list[Atoms], list[Atoms]]:
         """
         Initialize the training and test sets.
-
-        This method can be used to generate or load initial structures
-        for training and testing.
 
         Returns
         -------
@@ -260,17 +281,6 @@ class BaseActiveLearningWorkflow(ABC):
         """
         Run high-accuracy calculations on selected structures.
 
-        Parameters
-        ----------
-        base_name : str
-            Base name for this AL loop
-        high_accuracy_eval_job_dict : dict
-            Dictionary containing job name and HPC parameters for high-accuracy evaluation
-        structures : List[Atoms]
-            Structures to evaluate with high-accuracy method
-        **kwargs
-            Additional keyword arguments
-
         Returns
         -------
         List[Atoms]
@@ -285,21 +295,10 @@ class BaseActiveLearningWorkflow(ABC):
         """
         Train machine learning interatomic potential.
 
-        Parameters
-        ----------
-        base_name : str
-            Base name for this AL loop
-        mlip_committee_job_dict : dict
-            Dictionary containing job name and HPC parameters for MLIP training
-        train_data : List[Atoms]
-            Training data for MLIP
-        **kwargs
-            Additional keyword arguments
-
         Returns
         -------
-        Optional[str]
-            Path to trained model file, if applicable
+        pd.DataFrame
+            Evaluation metrics (MAE, RMSE, etc.) for the trained committee.
         """
         pass
 
@@ -314,20 +313,9 @@ class BaseActiveLearningWorkflow(ABC):
         """
         Generate structures for active learning selection.
 
-        Parameters
-        ----------
-        base_name : str
-            Base name for this AL loop
-        structure_generation_job_dict : dict
-            Dictionary containing job name and HPC parameters for structure generation
-        train_data : List[Atoms]
-            Current training data
-        **kwargs
-            Additional keyword arguments
-
         Returns
         -------
         List[Atoms]
-            Generated structures for high-accuracy evaluation
+            Generated structures for high-accuracy evaluation.
         """
         pass

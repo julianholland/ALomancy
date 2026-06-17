@@ -1,5 +1,4 @@
 from pathlib import Path
-from turtle import st
 from typing import Any, Callable, Optional, Union
 
 from expyre.func import ExPyRe
