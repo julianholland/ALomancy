@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,8 @@ from ase.md.langevin import Langevin
 from ase.units import fs
 from mace.calculators import MACECalculator
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def run_md(
@@ -20,7 +23,6 @@ def run_md(
     temperature=300,
     timestep_fs: float = 0.5,
     friction: float = 0.002,
-    verbose: int = 0,
 ):
     assert (
         structure_generation_job_dict["desired_number_of_structures"] > 0
@@ -61,7 +63,7 @@ def run_md(
     snapshot_interval = (
         steps
         * total_md_runs
-        // structure_generation_job_dict["desired_number_of_structures"]
+        // (structure_generation_job_dict["desired_number_of_structures"] * 10)
     )
 
     for _ in range(steps // snapshot_interval):
@@ -76,17 +78,16 @@ def run_md(
         # force check
         max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
         if np.any(max_forces > 1000):
-            print(
+            logger.warning(
                 f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}"
             )
             break
         # run
         dyn.run(steps=snapshot_interval)
 
-    if verbose > 0:
-        print(
-            f"MD run {structure_generation_job_dict['name']} completed, {len(atom_traj_list)} structures generated."
-        )
+    logger.debug(
+        f"MD run {structure_generation_job_dict['name']} completed, {len(atom_traj_list)} structures generated."
+    )
 
 
 def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
@@ -96,7 +97,6 @@ def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
 def std_deviation_of_forces(
     structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
     md_dir,
-    verbose: int = 0,
 ) -> pd.DataFrame:
     """
     Calculate the standard deviation of forces for each structure in the dictionary.
@@ -142,10 +142,9 @@ def std_deviation_of_forces(
         )
         std_dev_per_energy = np.std(energy_array)
 
-        if verbose > 0:
-            print(
-                f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
-            )
+        logger.debug(
+            f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
+        )
 
         std_dev_array[structure, :] = np.array(
             [
@@ -168,7 +167,7 @@ def get_forces_for_all_maces(
     structure_list: list[Atoms],
     base_name: str,
     job_dict: dict[str, dict[str, str]],
-    base_mace: str,
+    base_mlip: str,
     fits_to_use: list[int] | None = None,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """
@@ -178,12 +177,12 @@ def get_forces_for_all_maces(
     if fits_to_use is None:
         fits_to_use = [0]
 
-    calc = MACECalculator(model_paths=base_mace, device="cpu")
+    calc = MACECalculator(model_paths=base_mlip, device="cuda", default_dtype="float64")
 
     for atoms in structure_list:
         atoms.calc = calc
     structure_forces_dict = {
-        "base_mace": {
+        "base_mlip": {
             f"structure_{i}": {
                 "forces": flatten_array_of_forces(structure_list[i].get_forces()),
                 "energy": np.array(structure_list[i].get_potential_energy()),
@@ -198,14 +197,16 @@ def get_forces_for_all_maces(
                 Path(
                     "results",
                     base_name,
-                    f"MACE/fit_{i}/{job_dict['mace_committee']['name']}_stagetwo.model",
+                    f"{job_dict['mlip_committee']['name']}/fit_{i}/{job_dict['mlip_committee']['name']}_stagetwo.model",
                 )
             ),
-            device="cpu",
+            device="cuda",
             default_dtype="float64",
         )
+
         for atoms in tqdm(structure_list):
             atoms.calc = calc
+
         structure_forces_dict[f"fit_{i}"] = {
             f"structure_{i}": {
                 "forces": flatten_array_of_forces(structure_list[i].get_forces()),

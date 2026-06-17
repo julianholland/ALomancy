@@ -1,10 +1,13 @@
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
 from ase import Atoms
-from wfl.autoparallelize.remoteinfo import RemoteInfo
 
+from alomancy.configs.remote_info import RemoteInfo
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
+
+logger = logging.getLogger(__name__)
 
 
 def md_remote_submitter(
@@ -24,13 +27,13 @@ def md_remote_submitter(
     target_file_list = find_target_files()
 
     if len(target_file_list) >= len(input_atoms_list):
-        print(
+        logger.info(
             f"All {len(input_atoms_list)} structure generation runs finished. Skipping submission."
         )
         return target_file_list
 
     elif len(target_file_list) != 0:
-        print(
+        logger.info(
             f"Found {len(target_file_list)} existing structure generation runs. Reusing them."
         )
         input_atoms_list = input_atoms_list[len(target_file_list) :]
@@ -48,7 +51,7 @@ def md_remote_submitter(
         for i in range(len(input_atoms_list))
     ]
 
-    print([job_config["function_kwargs"]["out_dir"] for job_config in job_configs])
+    logger.debug("MD output directories: %s", [job_config["function_kwargs"]["out_dir"] for job_config in job_configs])
 
     executor.run_and_wait(
         function=function,
@@ -57,3 +60,24 @@ def md_remote_submitter(
     )
 
     return find_target_files()
+
+def all_maces_remote_submitter(
+        remote_info: RemoteInfo,
+        function: Callable | None = None,
+        function_kwargs: dict[str, Any] | None = None,
+    ) -> dict:
+        executor = RemoteJobExecutor(remote_info)
+        job_configs = [
+            {
+                "function_kwargs": {
+                    **function_kwargs,
+                }
+            }
+        ]
+
+        forces_dict= executor.run_and_wait(
+            function=function,
+            job_configs=job_configs,
+        )[0]
+
+        return forces_dict

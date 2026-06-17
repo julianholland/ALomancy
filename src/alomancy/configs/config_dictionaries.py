@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from typing import Any
 
 from yaml import safe_load
+
+logger = logging.getLogger(__name__)
 
 
 def load_dictionaries(config_path: Path) -> dict[str, Any]:
@@ -50,4 +53,4 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
 
 if __name__ == "__main__":
     config_path = "standard_config.yaml"
-    print(load_dictionaries(config_path))
+    logger.info("%s", load_dictionaries(config_path))

@@ -1,3 +1,24 @@
+initialization:
+  name: "initialization"
+  max_time: "2H"
+  test_to_train_ratio: 0.1
+  test_config_types:
+    - "IsolatedAtom"
+    - "init_dimer"
+  creation_kwargs:
+    elements: [6, 11]  # Na, C by atomic number — match your system
+    mp_structures: true
+    single_atoms: true
+    num_dimers_per_combo: 10
+    num_trimers_per_combo: 5
+    num_amorphous: 300
+    num_stretch_compress_per_mp: 5
+    max_atom_number: 20
+    densities_list: [1.0, 2.0, 3.0]
+    deform_xyz: false
+    max_deformation: 0.2
+  hpc: 'raven'
+
 mlip_committee:
   name: "mlip_committee"
   size_of_committee: 5

@@ -24,7 +24,7 @@
 
 ## 🎯 Overview
 
-ALomnacy is a Python framework for running active learning (AL) workflows for training machine-learned inter-atomic potentials (MLIPs). This package focusses on customization and reproducibility to build robust training datasets and train MLIPs.
+ALomancy is a Python framework for running active learning (AL) workflows for training machine-learned inter-atomic potentials (MLIPs). This package focusses on customization and reproducibility to build robust training datasets and train MLIPs.
 
 ### Key Features
 
@@ -65,48 +65,57 @@ pip install alomancy
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/ALomnacy.git
-cd ALomnacy
+git clone https://github.com/julianholland/ALomancy.git
+cd ALomancy
 pip install -e ".[dev]"
 ```
 
 ### Dependencies
 
 - Python 3.9+
-- [ASE](https://wiki.fysik.dtu.dk/ase/) - Atomic Simulation Environment
-- [WFL](https://github.com/libAtoms/workflow) - Workflow for atomistic simulations
-- [Expyre](https://github.com/libAtoms/ExPyRe) - Remote job execution
+- [ASE](https://wiki.fysik.dtu.dk/ase/) — Atomic Simulation Environment
+- [expyre-wfl](https://github.com/libAtoms/ExPyRe) — Remote HPC job execution
+- [MACE](https://github.com/ACEsuit/mace) — Machine Learning Accelerated Computational Engine
+- [sage-lib](https://github.com/sage-lib/sage-lib) — Hybrid HDF5+SQLite structure database
+- [mp-api](https://github.com/materialsproject/api) — Materials Project API
 
 ## ⚡ Quick Start
 
 ### 1. Basic Active Learning Workflow
 
 ```python
-from alomancy.core import StandardActiveLearningWorkflow
-from pathlib import Path
+from alomancy.configs.config_dictionaries import load_dictionaries
+from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+
+# Load job configuration from YAML
+jobs_dict = load_dictionaries("standard_config.yaml")
 
 # Initialize workflow
-workflow = StandardActiveLearningWorkflow(
-    initial_train_file_path="train_set.xyz",
-    initial_test_file_path="test_set.xyz",
-    config_file_path="config.yaml",
+workflow = ActiveLearningStandardMACE(
+    initial_train_file_path="results/initialization/train_set.xyz",
+    initial_test_file_path="results/initialization/test_set.xyz",
+    jobs_dict=jobs_dict,
     number_of_al_loops=5,
-    verbose=1
+    verbose=1,
 )
-
-# Run the active learning workflow
 workflow.run()
 ```
 
 ### 2. Configuration File
 
-Create a `config.yaml` file to specify your computational setup:
+Create a `standard_config.yaml` file to specify your computational setup:
 
 ```yaml
+initialization:
+  name: "init"
+  max_time: "04:00:00"
+  hpc:
+    hpc_name: "local"
+    partitions: [""]
+    pre_cmds: []
+
 mlip_committee:
   name: "mace_training"
-  size_of_committee: 4
-  epochs: 1000
   max_time: "24:00:00"
   hpc:
     hpc_name: "gpu_cluster"
@@ -115,8 +124,6 @@ mlip_committee:
 
 structure_generation:
   name: "md_generation"
-  number_of_concurrent_jobs: 8
-  desired_number_of_structures: 100
   max_time: "12:00:00"
   hpc:
     hpc_name: "gpu_cluster"
@@ -130,16 +137,6 @@ high_accuracy_evaluation:
     hpc_name: "cpu_cluster"
     partitions: ["cpu"]
     pre_cmds: ["module load quantum-espresso"]
-    node_info:
-      ranks_per_system: 32
-      ranks_per_node: 32
-      threads_per_rank: 1
-      max_mem_per_node: "128GB"
-    pwx_path: "/path/to/pw.x"
-    pp_path: "/path/to/pseudopotentials"
-    pseudo_dict:
-      H: "H.pbe-rrkjus_psl.1.0.0.UPF"
-      O: "O.pbe-n-kjpaw_psl.1.0.0.UPF"
 ```
 
 ### 3. Custom Workflow Implementation
@@ -147,32 +144,32 @@ high_accuracy_evaluation:
 Extend the base class for specialized workflows:
 
 ```python
-from alomancy.core import BaseActiveLearningWorkflow
+from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from ase import Atoms
 import pandas as pd
 
-class CustomActiveLearningWorkflow(BaseActiveLearningWorkflow):
+class CustomWorkflow(BaseActiveLearningWorkflow):
 
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs):
-        """Custom MLIP training implementation"""
+    def initialize_training_set(self, base_name: str, **kwargs):
+        """Generate or load initial training data"""
+        # Your custom initialization logic here
+        return train_xyzs, test_xyzs
+
+    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> pd.DataFrame:
+        """Train committee and return MAE metrics"""
         # Your custom training logic here
-        return "path/to/trained/model.pt"
-
-    def evaluate_mlip(self, mlip_committee_job_dict: dict, **kwargs) -> pd.DataFrame:
-        """Custom model evaluation"""
-        # Your evaluation logic here
-        return pd.DataFrame({"rmse": [0.1], "mae": [0.05]})
+        return pd.DataFrame({"mae_e": [...], "mae_f": [...]})
 
     def generate_structures(self, base_name: str, job_dict: dict,
-                          train_data: list[Atoms], **kwargs) -> list[Atoms]:
-        """Custom structure generation"""
+                            train_data: list[Atoms], **kwargs) -> list[Atoms]:
+        """Run MD and select high-uncertainty structures"""
         # Your structure generation logic here
-        return generated_structures
+        return high_uncertainty_structures
 
     def high_accuracy_evaluation(self, base_name: str,
-                               high_accuracy_eval_job_dict: dict,
-                               structures: list[Atoms], **kwargs) -> list[Atoms]:
-        """Custom high-accuracy evaluation"""
+                                  high_accuracy_eval_job_dict: dict,
+                                  structures: list[Atoms], **kwargs) -> list[Atoms]:
+        """Run DFT on selected structures"""
         # Your high-accuracy calculation logic here
         return evaluated_structures
 ```
@@ -193,6 +190,7 @@ alomancy/
 ├── configs/           # Configuration management
 ├── core/              # Core active learning framework
 ├── high_accuracy_evaluation/  # DFT calculation modules
+├── initialize/        # Initialization structure generation
 ├── mlip/              # Machine learning potential training
 ├── structure_generation/      # MD and structure generation
 └── utils/             # Utility functions and helpers
@@ -202,7 +200,9 @@ alomancy/
 
 ### Core Framework
 - **BaseActiveLearningWorkflow**: Abstract base class for AL workflows
-- **StandardActiveLearningWorkflow**: Ready-to-use implementation
+- **ActiveLearningStandardMACE**: Ready-to-use implementation with MACE committee and Quantum Espresso DFT
+- **GlobalDatabase**: Persistent HDF5+SQLite store for all DFT-evaluated structures; deduplication by (config_type, formula)
+- **Structured Logging**: All output routed through Python logging; verbose=0/1/2 controls console level; file always captures DEBUG
 
 ### MLIP Training
 - **MACE Integration**: Committee training with uncertainty quantification
@@ -238,8 +238,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ALomnacy.git
-cd ALomnacy
+git clone https://github.com/julianholland/ALomancy.git
+cd ALomancy
 
 # Install in development mode
 pip install -e ".[dev]"
@@ -269,14 +269,14 @@ pytest --cov=alomancy
 
 ## 📝 Citation
 
-If you use ALomnacy in your research, please cite:
+If you use ALomancy in your research, please cite:
 
 ```bibtex
 @software{alomancy2025,
-  title={ALomnacy: Modular Active Learning Workflows for Modern Computational Chemistry},
+  title={ALomancy: Modular Active Learning Workflows for Modern Computational Chemistry},
   author={Julian Holland},
   year={2025},
-  url={https://github.com/yourusername/ALomnacy},
+  url={https://github.com/julianholland/ALomancy},
   version={0.1.0}
 }
 ```
@@ -292,8 +292,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - 📖 **Documentation**: [https://alomancy.readthedocs.io](https://alomancy.readthedocs.io)
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/ALomnacy/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/ALomnacy/discussions)
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/julianholland/ALomancy/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/julianholland/ALomancy/discussions)
 - 📧 **Email**: holland@fhi.mpg.de
 
 ---

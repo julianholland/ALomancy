@@ -58,15 +58,10 @@ class TestRemoteJobExecutor:
     """Test remote job execution utilities."""
 
     @pytest.mark.unit
-    @patch("wfl.autoparallelize.remoteinfo.RemoteInfo")
-    def test_remote_job_executor_initialization(self, mock_remote_info_class):
+    def test_remote_job_executor_initialization(self):
         """Test RemoteJobExecutor initialization."""
-        # This would test the RemoteJobExecutor class if it exists
-        # For now, we'll test that we can mock the dependencies
-        mock_remote_info = MagicMock()
-        mock_remote_info_class.return_value = mock_remote_info
-
         # Test that we can create a mock remote info
+        mock_remote_info = MagicMock()
         assert mock_remote_info is not None
 
     @pytest.mark.unit
@@ -360,3 +355,200 @@ class TestUnitUtilities:
         atoms_list = [atoms]
         assert isinstance(atoms_list, list)
         assert all(isinstance(item, Atoms) for item in atoms_list)
+
+
+class TestSplitAtomsListIntoTestAndTrain:
+    """Test split_atoms_list_into_test_and_train function."""
+
+    def _make_atoms_list(self, n):
+        """Create a simple list of Atoms objects."""
+        return [
+            Atoms(symbols=["H"], positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+            for _ in range(n)
+        ]
+
+    @pytest.mark.unit
+    def test_correct_split_size(self):
+        """Test that split produces correct train and test sizes."""
+        from alomancy.utils.test_train_manager import (
+            split_atoms_list_into_test_and_train,
+        )
+
+        atoms = self._make_atoms_list(100)
+        train, test = split_atoms_list_into_test_and_train(atoms, test_fraction=0.2, seed=42)
+        assert len(train) + len(test) == 100
+        assert len(test) == 20  # 100 * 0.2
+
+    @pytest.mark.unit
+    def test_seeded_reproducibility(self):
+        """Test that same seed produces same split."""
+        from alomancy.utils.test_train_manager import (
+            split_atoms_list_into_test_and_train,
+        )
+
+        atoms = self._make_atoms_list(50)
+        train1, test1 = split_atoms_list_into_test_and_train(atoms, 0.2, seed=42)
+        train2, test2 = split_atoms_list_into_test_and_train(atoms, 0.2, seed=42)
+        # Same seed → same split (verify by checking ids, not values)
+        assert [id(a) for a in train1] == [id(a) for a in train2]
+        assert [id(a) for a in test1] == [id(a) for a in test2]
+
+    @pytest.mark.unit
+    def test_different_seeds_different_splits(self):
+        """Test that different seeds produce different splits."""
+        from alomancy.utils.test_train_manager import (
+            split_atoms_list_into_test_and_train,
+        )
+
+        atoms = self._make_atoms_list(50)
+        train1, _ = split_atoms_list_into_test_and_train(atoms, 0.2, seed=1)
+        train2, _ = split_atoms_list_into_test_and_train(atoms, 0.2, seed=2)
+        # With high probability different seeds give different orders
+        assert [id(a) for a in train1] != [id(a) for a in train2]
+
+    @pytest.mark.unit
+    def test_empty_list(self):
+        """Test split with empty list."""
+        from alomancy.utils.test_train_manager import (
+            split_atoms_list_into_test_and_train,
+        )
+
+        train, test = split_atoms_list_into_test_and_train([], 0.2, seed=42)
+        assert train == []
+        assert test == []
+
+    @pytest.mark.unit
+    def test_zero_test_fraction(self):
+        """Test split with zero test fraction."""
+        from alomancy.utils.test_train_manager import (
+            split_atoms_list_into_test_and_train,
+        )
+
+        atoms = self._make_atoms_list(10)
+        train, test = split_atoms_list_into_test_and_train(atoms, 0.0, seed=42)
+        assert len(train) == 10
+        assert len(test) == 0
+
+
+class TestCleanStructures:
+    """Test clean_structures function."""
+
+    def _make_structure_with_ref(self, config_type=None):
+        """Create a test structure with REF_energy and REF_forces."""
+        atoms = Atoms(
+            symbols=["O", "H", "H"],
+            positions=[[0, 0, 0], [0.757, 0.586, 0], [-0.757, 0.586, 0]],
+            cell=[10, 10, 10],
+            pbc=True,
+        )
+        if config_type:
+            atoms.info["config_type"] = config_type
+        atoms.info["REF_energy"] = -76.0
+        atoms.arrays["REF_forces"] = np.zeros((3, 3))
+        return atoms
+
+    @pytest.mark.unit
+    def test_config_type_set_when_missing(self):
+        """Test that config_type is set when missing."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref()  # no config_type
+        result = clean_structures([s], config_type="al_loop_0")
+        assert result[0].info["config_type"] == "al_loop_0"
+
+    @pytest.mark.unit
+    def test_config_type_preserved_when_not_overriding(self):
+        """Test that config_type is preserved when not overriding."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref(config_type="original_type")
+        result = clean_structures(
+            [s], config_type="new_type", override_config_type=False
+        )
+        assert result[0].info["config_type"] == "original_type"
+
+    @pytest.mark.unit
+    def test_config_type_overridden(self):
+        """Test that config_type is overridden when requested."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref(config_type="old_type")
+        result = clean_structures(
+            [s], config_type="new_type", override_config_type=True
+        )
+        assert result[0].info["config_type"] == "new_type"
+
+    @pytest.mark.unit
+    def test_ref_energy_preserved(self):
+        """Test that REF_energy is preserved."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref()
+        result = clean_structures([s], config_type="test")
+        assert result[0].info["REF_energy"] == pytest.approx(-76.0)
+
+    @pytest.mark.unit
+    def test_ref_forces_preserved(self):
+        """Test that REF_forces are preserved."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref()
+        result = clean_structures([s], config_type="test")
+        np.testing.assert_allclose(result[0].arrays["REF_forces"], np.zeros((3, 3)))
+
+    @pytest.mark.unit
+    def test_multiple_structures(self):
+        """Test cleaning multiple structures."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        structures = [self._make_structure_with_ref() for _ in range(3)]
+        result = clean_structures(structures, config_type="batch")
+        assert len(result) == 3
+
+
+class TestLoadDictionaries:
+    """Test load_dictionaries function."""
+
+    @pytest.mark.unit
+    def test_load_real_yaml(self, tmp_path):
+        """Test loading a real YAML configuration."""
+        from alomancy.configs.config_dictionaries import load_dictionaries
+
+        # Write a minimal valid config YAML
+        yaml_content = """
+initialization:
+  name: init
+  max_time: 1H
+  hpc:
+    hpc_name: test
+    partitions: [test]
+    pre_cmds: []
+mlip_committee:
+  name: mlip
+  max_time: 2H
+  hpc:
+    hpc_name: test
+    partitions: [test]
+    pre_cmds: []
+structure_generation:
+  name: struc_gen
+  max_time: 30m
+  hpc:
+    hpc_name: test
+    partitions: [test]
+    pre_cmds: []
+high_accuracy_evaluation:
+  name: dft
+  max_time: 10m
+  hpc:
+    hpc_name: test
+    partitions: [test]
+    pre_cmds: []
+"""
+        config_path = tmp_path / "test_config.yaml"
+        config_path.write_text(yaml_content)
+        result = load_dictionaries(config_path)
+        assert "initialization" in result
+        assert "mlip_committee" in result
+        assert "structure_generation" in result
+        assert "high_accuracy_evaluation" in result

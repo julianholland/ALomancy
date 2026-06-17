@@ -17,10 +17,12 @@ pip install -e ".[dev]"
 ## Dependencies
 
 - Python 3.9+
-- [ASE](https://wiki.fysik.dtu.dk/ase/) - Atomic Simulation Environment
-- [WFL](https://github.com/libAtoms/workflow) - Workflow for atomistic simulations
-- [Expyre](https://github.com/libAtoms/ExPyRe) - Remote job execution
-- [MACE](https://github.com/ACEsuit/mace) - Machine Learning Accelerated Computational Engine
+- [ASE](https://wiki.fysik.dtu.dk/ase/) — Atomic Simulation Environment
+- [expyre-wfl](https://github.com/libAtoms/ExPyRe) — Remote HPC job execution (pip package: expyre-wfl)
+- [MACE](https://github.com/ACEsuit/mace) — Machine Learning Accelerated Computational Engine (pip package: mace-torch)
+- [sage-lib](https://github.com/sage-lib/sage-lib) — Hybrid HDF5+SQLite structure database (GlobalDatabase backend)
+- [mp-api](https://github.com/materialsproject/api) — Materials Project API for fetching reference structures
+- numpy, pandas, polars, scipy, matplotlib, seaborn, tqdm, pyyaml
 
 ## Development Installation
 

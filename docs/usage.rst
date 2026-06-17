@@ -1,16 +1,6 @@
 Usage
 =====
 
-.. _installation:
+See :doc:`quickstart` for a step-by-step guide to running your first active learning workflow.
 
-Installation
-------------
-
-To use ALomancy, first install it using pip:
-
-.. code-block:: console
-
-   (.venv) $ pip install alomancy
-
-Creating recipes
-----------------
+For configuration reference, see :doc:`examples`.

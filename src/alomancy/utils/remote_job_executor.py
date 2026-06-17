@@ -1,10 +1,13 @@
+import logging
+import os
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from expyre.func import ExPyRe
-from wfl.autoparallelize.remoteinfo import RemoteInfo
 
+from alomancy.configs.remote_info import RemoteInfo
 
+logger = logging.getLogger(__name__)
 class RemoteJobExecutor:
     """
     General-purpose remote job submission utility.
@@ -140,7 +143,7 @@ class RemoteJobExecutor:
             job_output_files = config.get("output_files", [])
             if common_output_pattern:
                 job_output_files.append(common_output_pattern.format(job_id=i))
-
+            logger.debug("Job %d output files: %s", i, job_output_files)
             # Prepare job name
             job_name = config.get("job_name")
             if not job_name and job_name_pattern:
@@ -176,14 +179,9 @@ class RemoteJobExecutor:
                 **start_kwargs,
             )
 
-    def wait_for_all_jobs(self, verbose: bool = True) -> list[Any]:
+    def wait_for_all_jobs(self) -> list[Any]:
         """
         Wait for all jobs to complete and gather results.
-
-        Parameters
-        ----------
-        verbose : bool
-            Whether to print job completion status
 
         Returns
         -------
@@ -193,9 +191,9 @@ class RemoteJobExecutor:
         results = []
 
         for i, job in enumerate(self.jobs):
-            if verbose:
-                job_name = getattr(job, "name", f"job_{i}")
-                print(f"Waiting for job {i + 1}/{len(self.jobs)}: {job_name}")
+            stdout, stderr = None, None
+            job_name = getattr(job, "name", f"job_{i}")
+            logger.debug("Waiting for job %d/%d: %s", i + 1, len(self.jobs), job_name)
 
             try:
                 result, stdout, stderr = job.get_results(
@@ -203,17 +201,12 @@ class RemoteJobExecutor:
                     check_interval=getattr(self.remote_info, "check_interval", 10),
                 )
                 results.append(result)
-
-                if verbose:
-                    print(f"Job {i + 1} completed successfully")
+                logger.info("Job %d completed successfully.", i + 1)
 
             except Exception as exc:
-                if verbose:
-                    print(f"Job {i + 1} failed with error: {exc}")
-                    print("stdout", "-" * 30)
-                    print(stdout)
-                    print("stderr", "-" * 30)
-                    print(stderr)
+                logger.warning("Job %d failed: %s", i + 1, exc)
+                logger.debug("Job %d stdout:\n%s", i + 1, stdout)
+                logger.debug("Job %d stderr:\n%s", i + 1, stderr)
                 results.append(None)
 
         return results
@@ -227,7 +220,6 @@ class RemoteJobExecutor:
         self,
         function: Callable,
         job_configs: list[dict[str, Any]],
-        verbose: bool = True,
         **kwargs,
     ) -> list[Any]:
         """
@@ -239,8 +231,6 @@ class RemoteJobExecutor:
             The function to execute remotely
         job_configs : List[Dict[str, Any]]
             List of job configurations
-        verbose : bool
-            Whether to print progress
         **kwargs
             Additional arguments for submit_multiple_jobs
 
@@ -249,9 +239,13 @@ class RemoteJobExecutor:
         List[Any]
             Results from all jobs
         """
+        logger.debug("run_and_wait working directory: %s", os.getcwd())
         self.submit_multiple_jobs(function, job_configs, **kwargs)
         self.start_all_jobs()
-        results = self.wait_for_all_jobs(verbose=verbose)
+        self.wait_for_all_jobs()
+
+        # final run of this essential to get results to sync locally
+        results = self.wait_for_all_jobs()
         self.cleanup_jobs()
         return results
 

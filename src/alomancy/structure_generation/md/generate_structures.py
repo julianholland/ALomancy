@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +13,8 @@ from wfl.autoparallelize import AutoparaInfo, RemoteInfo
 from wfl.autoparallelize.base import autoparallelize
 from wfl.configset import OutputSpec
 
+logger = logging.getLogger(__name__)
+
 # calc=MACECalculator(model_paths=[f'MACE_model/fit_{i}/test_stagetwo_compiled.model' for i in range(2)],device='cpu')
 
 
@@ -22,7 +25,6 @@ def get_structures_for_dft(
     base_mace: str,
     remote_info: RemoteInfo,
     number_of_structures: int = 50,
-    verbose: int = 0,
     save_xyz: bool = True,
     read_sd_csv: bool = True,
     temperature: float = 300.0,
@@ -68,7 +70,6 @@ def get_structures_for_dft(
             "temperature": temperature,
             "number_of_structures": number_of_structures,
             "timestep_fs": timestep_fs,
-            "verbose": verbose,
         }
 
         remote_info.input_files = ["md_wfl.py", "al_wfl.py", base_mace]
@@ -93,8 +94,7 @@ def get_structures_for_dft(
         )
         structure_list.extend(structures)
 
-    if verbose > 0:
-        print(len(structure_list), "structures found from trajectory files.")
+    logger.info("%d structures found from trajectory files.", len(structure_list))
 
     if read_sd_csv and Path.exists(Path(md_dir, "std_dev_forces.csv")):
         std_dev_df = pd.read_csv(Path(md_dir, "std_dev_forces.csv"), index_col=0)
@@ -124,12 +124,12 @@ def get_structures_for_dft(
 
     high_sd_structures = [structure_list[i] for i in index_list]
 
-    if verbose > 0:
-        print(
-            f"Selected {len(high_sd_structures)} structures for DFT calculations based on standard deviation of forces."
-        )
-        print(std_dev_df[:number_of_structures])
-        print(f"total mean: {std_dev_df['mean_std_dev'].mean()}")
+    logger.info(
+        "Selected %d structures for DFT calculations based on standard deviation of forces.",
+        len(high_sd_structures),
+    )
+    logger.debug("Std dev top structures:\n%s", std_dev_df[:number_of_structures])
+    logger.debug("Total mean std dev: %s", std_dev_df["mean_std_dev"].mean())
 
     if save_xyz:
         for structure in high_sd_structures:

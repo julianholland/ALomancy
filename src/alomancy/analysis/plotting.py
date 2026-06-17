@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class Plot:
@@ -30,8 +33,8 @@ class Plot:
             return self.data[data_name]
 
     def create(self):
-        print(
-            "Creating plot with data columns:",
+        logger.debug(
+            "Creating plot with data columns: %s",
             self.data.columns if hasattr(self.data, "columns") else self.data,
         )
         plt.figure(figsize=(10, 6))
@@ -61,11 +64,11 @@ class Plot:
         plt.show()
 
     def save(self):
-        print(f"Saving plot to {self.filename}")
+        logger.debug("Saving plot to %s", self.filename)
         plt.savefig(self.filename)
 
     def clear(self):
-        print("Clearing plot data")
+        logger.debug("Clearing plot data")
         if isinstance(self.data, pd.DataFrame):
             self.data = self.data.iloc[0:0]
         elif isinstance(self.data, dict):
@@ -74,7 +77,7 @@ class Plot:
             self.data = []
 
     def update(self, new_data):
-        print("Updating plot with new data")
+        logger.debug("Updating plot with new data")
         if isinstance(self.data, pd.DataFrame) and isinstance(new_data, pd.DataFrame):
             self.data = pd.concat([self.data, new_data], ignore_index=True)
         elif isinstance(self.data, dict) and isinstance(new_data, dict):
@@ -82,7 +85,7 @@ class Plot:
                 self.data.setdefault(k, []).extend(v)
         elif isinstance(self.data, list):
             self.data.extend(new_data)
-        print("Updated data:", self.data)
+        logger.debug("Updated data: %s", self.data)
 
 
 def mae_al_loop_plot(

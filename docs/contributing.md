@@ -1,6 +1,6 @@
 # Contributing
 
-We welcome contributions to ALomnacy! Here's how to get started.
+We welcome contributions to ALomancy! Here's how to get started.
 
 ## Development Setup
 

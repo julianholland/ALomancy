@@ -1,7 +1,6 @@
-holland/repos/ALomnacy/docs/index.md -->
-# ALomnacy Documentation
+# ALomancy Documentation
 
-Welcome to ALomnacy - Modular Active Learning Workflows for Modern Computational Chemistry.
+Welcome to ALomancy - Modular Active Learning Workflows for Modern Computational Chemistry.
 
 ```{toctree}
 :maxdepth: 2
@@ -16,7 +15,7 @@ contributing
 
 ## Overview
 
-ALomnacy is a Python framework for running active learning (AL) workflows for training machine-learned inter-atomic potentials (MLIPs). This package focuses on customization and reproducibility to build robust training datasets and train MLIPs.
+ALomancy is a Python framework for running active learning (AL) workflows for training machine-learned inter-atomic potentials (MLIPs). This package focuses on customization and reproducibility to build robust training datasets and train MLIPs.
 
 ## Key Features
 

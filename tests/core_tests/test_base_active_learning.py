@@ -4,395 +4,402 @@ Tests for the base active learning workflow.
 This module tests the BaseActiveLearningWorkflow abstract class and its core functionality.
 """
 
-import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-import numpy as np
 import pandas as pd
 import pytest
-from ase import Atoms
-from ase.calculators.emt import EMT
 from ase.io import write
 
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
+from alomancy.database.global_database import GlobalDatabase
 
+# =============================================================================
+# ConcreteWorkflow: Stub implementation for testing
+# =============================================================================
 
-class ConcreteActiveLearningWorkflow(BaseActiveLearningWorkflow):
-    """Concrete implementation for testing."""
+class ConcreteWorkflow(BaseActiveLearningWorkflow):
+    """Concrete implementation of BaseActiveLearningWorkflow for testing."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.train_mlip_calls = []
-        self.generate_structures_calls = []
-        self.high_accuracy_evaluation_calls = []
+    def initialize_training_set(self, base_name, **kwargs):
+        """Return empty lists for testing."""
+        return [], []
 
     def train_mlip(self, base_name, mlip_committee_job_dict, **kwargs):
-        self.train_mlip_calls.append((base_name, mlip_committee_job_dict, kwargs))
-        return pd.DataFrame({"mae_e": [0.1, 0.2, 0.3], "mae_f": [0.9, 0.8, 0.7]})
+        """Return empty DataFrame for testing."""
+        return pd.DataFrame()
 
     def generate_structures(self, base_name, job_dict, train_data, **kwargs):
-        self.generate_structures_calls.append((base_name, job_dict, train_data, kwargs))
-        # Return some mock structures
-        mock_structures = []
-        for i in range(2):
-            atoms = Atoms(symbols=["H"], positions=[[0, 0, i]])
-            atoms.info["job_id"] = i
-            mock_structures.append(atoms)
-        return mock_structures
+        """Return empty list for testing."""
+        return []
 
     def high_accuracy_evaluation(
         self, base_name, high_accuracy_eval_job_dict, structures, **kwargs
     ):
-        self.high_accuracy_evaluation_calls.append(
-            (base_name, high_accuracy_eval_job_dict, structures, kwargs)
+        """Return empty list for testing."""
+        return []
+
+
+# =============================================================================
+# Test Classes
+# =============================================================================
+
+class TestConstructor:
+    """Tests for BaseActiveLearningWorkflow constructor."""
+
+    @pytest.mark.unit
+    def test_default_params(self, tmp_path, minimal_jobs_dict):
+        """Test that default parameters are set correctly."""
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
         )
-        # Add energy and forces to structures
-        for atoms in structures:
-            atoms.info["energy"] = -1.0
-            atoms.arrays["forces"] = np.array([[0, 0, 0]])
-            # Mock the get_potential_energy method
-            atoms.get_potential_energy = Mock(return_value=-1.0)
-            atoms.get_forces = Mock(return_value=np.array([[0, 0, 0]]))
-        return structures
+        assert wf.number_of_al_loops == 5
+        assert wf.verbose == 0
+        assert wf.start_loop == 0
+        assert wf.seed == 803
+        assert isinstance(wf.db, GlobalDatabase)
 
-
-@pytest.fixture
-def sample_atoms_h2o():
-    """Create a sample H2O molecule."""
-    return Atoms(
-        symbols=["O", "H", "H"],
-        positions=[[0.0, 0.0, 0.0], [0.757, 0.586, 0.0], [-0.757, 0.586, 0.0]],
-        cell=[10.0, 10.0, 10.0],
-        pbc=True,
-    )
-
-
-@pytest.fixture
-def sample_training_data(sample_atoms_h2o):
-    """Create sample training data."""
-    atoms_list = []
-    for i in range(5):
-        atoms = sample_atoms_h2o.copy()
-        atoms.positions += np.random.random((3, 3)) * 0.1
-        atoms.info["energy"] = -10.0 + i * 0.1
-        atoms.calc = EMT()
-        atoms.arrays["forces"] = np.random.random((3, 3)) * 0.1
-        atoms_list.append(atoms)
-    return atoms_list
-
-
-@pytest.fixture
-def temp_files(sample_training_data):
-    """Create temporary training and test files."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        train_file = Path(tmpdir) / "train.xyz"
-        test_file = Path(tmpdir) / "test.xyz"
-
-        # Write training data
-        write(str(train_file), sample_training_data[:3], format="extxyz")
-        # Write test data
-        write(str(test_file), sample_training_data[3:], format="extxyz")
-
-        config_dict = {
-            "mlip_committee": {
-                "name": "test_mlip",
-                "size_of_committee": 3,
-                "max_time": "1H",
-                "hpc": {
-                    "hpc_name": "test-hpc",
-                    "pre_cmds": ["echo 'test'"],
-                    "partitions": ["test"],
-                },
-            },
-            "structure_generation": {
-                "name": "test_md",
-                "number_of_concurrent_jobs": 2,
-                "max_time": "30m",
-                "hpc": {
-                    "hpc_name": "test-hpc",
-                    "pre_cmds": ["echo 'test'"],
-                    "partitions": ["test"],
-                },
-            },
-            "high_accuracy_evaluation": {
-                "name": "test_qe",
-                "pwx_path": "/path/to/pwx",
-                "pp_path": "/path/to/pp",
-                "pseudo_dict": {"O": "/path/to/O.pseudo", "H": "/path/to/H.pseudo"},
-                "node_info": {
-                    "ranks_per_system": 16,
-                    "ranks_per_node": 4,
-                    "threads_per_rank": 1,
-                    "max_mem_per_node": "8GB",
-                },
-            },
-        }
-
-        yield str(train_file), str(test_file), config_dict
-
-
-class TestBaseActiveLearningWorkflow:
-    """Test the BaseActiveLearningWorkflow class."""
-
-    def test_initialization(self, temp_files):
-        """Test workflow initialization."""
-        train_file, test_file, config_dict = temp_files
-
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            jobs_dict=config_dict,
+    @pytest.mark.unit
+    def test_custom_params(self, tmp_path, minimal_jobs_dict):
+        """Test that custom parameters override defaults."""
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
             number_of_al_loops=3,
             verbose=1,
             start_loop=1,
-        )
-
-        assert workflow.initial_train_file == Path(train_file)
-        assert workflow.initial_test_file == Path(test_file)
-        assert workflow.jobs_dict == config_dict
-        assert workflow.number_of_al_loops == 3
-        assert workflow.verbose == 1
-        assert workflow.start_loop == 1
-
-    def test_initialization_defaults(self, temp_files):
-        """Test workflow initialization with defaults."""
-        train_file, test_file, config_dict = temp_files
-        config_dict = {"test": "dict"}  # Minimal config for testing
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            jobs_dict=config_dict,
-        )
-
-        assert workflow.number_of_al_loops == 5
-        assert workflow.verbose == 0
-        assert workflow.start_loop == 0
-
-        assert workflow.jobs_dict == {"test": "dict"}
-
-    @patch("alomancy.utils.clean_structures.clean_structures")
-    def test_run_workflow_structure(self, mock_clean_structures, temp_files):
-        """Test the overall structure of running the AL workflow."""
-        train_file, test_file, config_dict = temp_files
-        config_dict = {
-            "mlip_committee": {"name": "test_mlip"},
-            "structure_generation": {"name": "test_md"},
-            "high_accuracy_evaluation": {"name": "test_qe"},
-        }
-
-        # Mock clean_structures to return the input structures
-        mock_clean_structures.side_effect = lambda structures, *args: structures
-
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            jobs_dict=config_dict,
-            number_of_al_loops=2,
-            start_loop=0,
             plots=False,
+            seed=42,
+            db_path=str(tmp_path / "custom_db"),
         )
+        assert wf.number_of_al_loops == 3
+        assert wf.verbose == 1
+        assert wf.start_loop == 1
+        assert wf.plots is False
+        assert wf.seed == 42
 
-        # Mock the results directory creation and file operations
-        with (
-            patch("pathlib.Path.mkdir"),
-            patch("alomancy.core.base_active_learning.write"),  # Add this patch
-        ):
-            workflow.run()
-
-        # Check that all abstract methods were called the expected number of times
-        assert len(workflow.train_mlip_calls) == 2  # 2 loops
-        assert len(workflow.generate_structures_calls) == 2  # 2 loops
-        assert len(workflow.high_accuracy_evaluation_calls) == 2  # 2 loops
-
-        # Check that base_name is correct for each loop
-        assert workflow.train_mlip_calls[0][0] == "al_loop_0"
-        assert workflow.train_mlip_calls[1][0] == "al_loop_1"
-
-    # @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    # @patch("alomancy.utils.clean_structures.clean_structures")  # Add this patch
-    # def test_run_workflow_structure(
-    #     self, mock_clean_structures, mock_load_dict, temp_files
-    # ):
-    #     """Test the overall structure of running the AL workflow."""
-    #     train_file, test_file, config_file = temp_files
-    #     mock_load_dict.return_value = {
-    #         "mlip_committee": {"name": "test_mlip"},
-    #         "structure_generation": {"name": "test_md"},
-    #         "high_accuracy_evaluation": {"name": "test_qe"},
-    #     }
-
-    #     # Mock clean_structures to return the input structures
-    #     mock_clean_structures.side_effect = lambda structures, *args: structures
-
-    #     workflow = ConcreteActiveLearningWorkflow(
-    #         initial_train_file_path=train_file,
-    #         initial_test_file_path=test_file,
-    #         config_file_path=config_file,
-    #         number_of_al_loops=2,
-    #         start_loop=0,
-    #     )
-
-    #     # Mock the results directory creation and file operations
-    #     with (
-    #         patch("pathlib.Path.mkdir"),
-    #     ):
-    #         workflow.run()
-
-    #     # Check that all abstract methods were called the expected number of times
-    #     assert len(workflow.train_mlip_calls) == 2  # 2 loops
-    #     assert len(workflow.evaluate_mlip_calls) == 2  # 2 loops
-    #     assert len(workflow.generate_structures_calls) == 2  # 2 loops
-    #     assert len(workflow.high_accuracy_evaluation_calls) == 2  # 2 loops
-
-    #     # Check that base_name is correct for each loop
-    #     assert workflow.train_mlip_calls[0][0] == "al_loop_0"
-    #     assert workflow.train_mlip_calls[1][0] == "al_loop_1"
-
-    def test_run_with_start_loop(self, temp_files):
-        """Test running with a non-zero start loop."""
-        train_file, test_file, config_dict = temp_files
-        config_dict = {
-            "mlip_committee": {"name": "test_mlip"},
-            "structure_generation": {"name": "test_md"},
-            "high_accuracy_evaluation": {"name": "test_qe"},
-        }
-
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            jobs_dict=config_dict,
-            number_of_al_loops=3,
-            start_loop=1,
-            plots=False,
+    @pytest.mark.unit
+    def test_custom_db_path(self, tmp_path, minimal_jobs_dict):
+        """Test that custom db_path is used."""
+        custom_db = str(tmp_path / "custom_db")
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=custom_db,
         )
+        assert isinstance(wf.db, GlobalDatabase)
 
-        with (
-            patch("pathlib.Path.mkdir"),
-            patch("alomancy.core.base_active_learning.write"),
-        ):
-            workflow.run()
-
-        # Should only run loops 1 and 2 (3-1=2 loops)
-        assert len(workflow.train_mlip_calls) == 2
-        assert workflow.train_mlip_calls[0][0] == "al_loop_1"
-        assert workflow.train_mlip_calls[1][0] == "al_loop_2"
-
-    def test_abstract_methods_must_be_implemented(self, temp_files):
-        """Test that abstract methods must be implemented."""
-        train_file, test_file, config_dict = temp_files
-
-        # Should not be able to instantiate the abstract base class
+    @pytest.mark.unit
+    def test_abstract_methods_required(self, tmp_path, minimal_jobs_dict):
+        """Test that abstract class cannot be instantiated directly."""
         with pytest.raises(TypeError):
             BaseActiveLearningWorkflow(
-                initial_train_file_path=train_file,
-                initial_test_file_path=test_file,
-                jobs_dict=config_dict,
-            )  # ignore: para
+                initial_train_file_path=str(tmp_path / "train.xyz"),
+                initial_test_file_path=str(tmp_path / "test.xyz"),
+                jobs_dict=minimal_jobs_dict,
+            )
 
-    def test_verbos_output(self, temp_files, capsys):
-        """Test verbose output during workflow execution."""
-        train_file, test_file, config_dict = temp_files
-        config_dict = {
-            "mlip_committee": {"name": "test_mlip"},
-            "structure_generation": {"name": "test_md"},
-            "high_accuracy_evaluation": {"name": "test_qe"},
-        }
+    @pytest.mark.unit
+    def test_paths_stored_as_path_objects(self, tmp_path, minimal_jobs_dict):
+        """Test that file paths are converted to Path objects."""
+        train_path = str(tmp_path / "train.xyz")
+        test_path = str(tmp_path / "test.xyz")
+        wf = ConcreteWorkflow(
+            initial_train_file_path=train_path,
+            initial_test_file_path=test_path,
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+        assert isinstance(wf.initial_train_file_path, Path)
+        assert isinstance(wf.initial_test_file_path, Path)
 
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            jobs_dict=config_dict,
-            number_of_al_loops=1,
-            verbose=1,
-            plots=False,
+
+class TestSeedDbFromExtraDataset:
+    """Tests for _seed_db_from_extra_dataset method."""
+
+    @pytest.mark.unit
+    def test_seeds_structures_into_db(self, tmp_path, minimal_jobs_dict, h_atom, h2o_mol):
+        """Test that extra dataset structures are added to the database."""
+        xyz_path = tmp_path / "extra.xyz"
+        write(str(xyz_path), [h_atom, h2o_mol], format="extxyz")
+
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+        wf._seed_db_from_extra_dataset(str(xyz_path))
+        assert wf.db.size == 2
+
+    @pytest.mark.unit
+    def test_dedup_on_seed_isolated_atom(self, tmp_path, minimal_jobs_dict, h_atom):
+        """Test that duplicate IsolatedAtoms are deduplicated on seed."""
+        # Two H IsolatedAtoms in same file — only 1 should be added
+        xyz_path = tmp_path / "extra.xyz"
+        write(str(xyz_path), [h_atom, h_atom.copy()], format="extxyz")
+
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+        wf._seed_db_from_extra_dataset(str(xyz_path))
+        assert wf.db.size == 1
+
+    @pytest.mark.unit
+    def test_seed_logs_message(self, tmp_path, minimal_jobs_dict, h_atom):
+        """Test that seeding emits a log record at INFO level."""
+        import logging
+
+        xyz_path = tmp_path / "extra.xyz"
+        write(str(xyz_path), [h_atom], format="extxyz")
+
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+            log_file=None,
+        )
+        # setup_logging sets propagate=False on the "alomancy" logger, so we
+        # capture records by attaching a handler directly to it for this test.
+        al_logger = logging.getLogger("alomancy")
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        al_logger.addHandler(handler)
+        try:
+            wf._seed_db_from_extra_dataset(str(xyz_path))
+        finally:
+            al_logger.removeHandler(handler)
+
+        messages = " ".join(r.getMessage() for r in records)
+        assert "Seeded DB from" in messages
+        assert str(xyz_path) in messages
+
+    @pytest.mark.unit
+    def test_seed_with_single_atom_file(self, tmp_path, minimal_jobs_dict, h_atom):
+        """Test seeding with a single-atom file."""
+        xyz_path = tmp_path / "single.xyz"
+        write(str(xyz_path), h_atom, format="extxyz")
+
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+        wf._seed_db_from_extra_dataset(str(xyz_path))
+        assert wf.db.size == 1
+
+
+class TestRunWorkflowStructure:
+    """Tests for run() method structure and execution flow."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, **kwargs):
+        """Helper to create a ConcreteWorkflow with standard parameters."""
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=2,
+            db_path=str(tmp_path / "db"),
+            **kwargs,
         )
 
+    @pytest.mark.unit
+    def test_extra_datasets_seeded_before_initialize(
+        self, tmp_path, minimal_jobs_dict, h_atom
+    ):
+        """Test that extra datasets are seeded before initialize_training_set."""
+        # Setup: one extra_dataset file
+        extra = tmp_path / "extra.xyz"
+        write(str(extra), [h_atom], format="extxyz")
+        minimal_jobs_dict["initialization"]["extra_datasets"] = [str(extra)]
+
+        call_order = []
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf.plots = False  # Disable plotting
+
+        original_seed = wf._seed_db_from_extra_dataset
+        def tracking_seed(path):
+            call_order.append(("seed", path))
+            return original_seed(path)
+
+        def tracking_init(base_name, **kwargs):
+            call_order.append(("init", base_name))
+            return [], []
+
+        wf._seed_db_from_extra_dataset = tracking_seed
+        wf.initialize_training_set = tracking_init
+
         with (
-            patch("pathlib.Path.mkdir"),
+            patch("alomancy.core.base_active_learning.write"),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        # Check that seed was called before init
+        assert call_order[0][0] == "seed"
+        assert call_order[1][0] == "init"
+
+    @pytest.mark.unit
+    def test_loop_count(self, tmp_path, minimal_jobs_dict):
+        """Test that run() executes the correct number of AL loops."""
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf.plots = False  # Disable plotting
+        train_call_count = []
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=lambda *a, **kw: train_call_count.append(1) or pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
             patch("alomancy.core.base_active_learning.write"),
         ):
-            workflow.run()
+            wf.run()
 
-        captured = capsys.readouterr()
-        assert "Starting AL loop 0" in captured.out
-        assert "Training set size:" in captured.out
-        assert "Test set size:" in captured.out
-        assert "AL Loop 0 evaluation results:" in captured.out
-        assert "Completed AL loop 0" in captured.out
+        assert len(train_call_count) == 2  # number_of_al_loops=2
 
-    def test_file_not_found_error(self):
-        """Test error handling for missing files."""
-        with pytest.raises(FileNotFoundError):
-            workflow = ConcreteActiveLearningWorkflow(
-                initial_train_file_path="nonexistent_train.xyz",
-                initial_test_file_path="nonexistent_test.xyz",
-                jobs_dict={"test": "dict"},
-            )
-            workflow.run()
-
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    def test_insufficient_training_data(self, mock_load_dict, temp_files):
-        """Test error when insufficient training data is provided."""
-        train_file, test_file, config_dict = temp_files
-        mock_load_dict.return_value = {
-            "mlip_committee": {"name": "test_mlip"},
-            "structure_generation": {"name": "test_md"},
-            "high_accuracy_evaluation": {"name": "test_qe"},
-        }
-
-        # Create a file with only one structure (should fail assertion)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            single_train_file = Path(tmpdir) / "single_train.xyz"
-            single_atoms = Atoms(symbols=["H"], positions=[[0, 0, 0]])
-            write(str(single_train_file), [single_atoms], format="extxyz")
-
-            workflow = ConcreteActiveLearningWorkflow(
-                initial_train_file_path=str(single_train_file),
-                initial_test_file_path=test_file,
-                jobs_dict=config_dict,
-            )
-
-            with pytest.raises(
-                AssertionError, match="More than one training structure required"
-            ):
-                workflow.run()
-
-
-@pytest.mark.integration
-class TestActiveLearningIntegration:
-    """Integration tests for the active learning workflow."""
-
-    @patch("alomancy.configs.config_dictionaries.load_dictionaries")
-    def test_full_workflow_integration(self, mock_load_dict, temp_files):
-        """Test a complete workflow execution."""
-        train_file, test_file, config_dict = temp_files
-        mock_load_dict.return_value = {
-            "mlip_committee": {"name": "test_mlip"},
-            "structure_generation": {"name": "test_md"},
-            "high_accuracy_evaluation": {"name": "test_qe"},
-        }
-
-        workflow = ConcreteActiveLearningWorkflow(
-            initial_train_file_path=train_file,
-            initial_test_file_path=test_file,
-            jobs_dict=config_dict,
-            number_of_al_loops=2,
-            verbose=0,
+    @pytest.mark.unit
+    def test_start_loop_respected(self, tmp_path, minimal_jobs_dict):
+        """Test that start_loop parameter is respected."""
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=4,
+            start_loop=2,
             plots=False,
+            db_path=str(tmp_path / "db"),
         )
+        train_calls = []
 
         with (
-            patch("pathlib.Path.mkdir"),
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=lambda *a, **kw: train_calls.append(1) or pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        assert len(train_calls) == 2  # loops 2 and 3 only
+
+    @pytest.mark.unit
+    def test_base_names_correct_for_loops(self, tmp_path, minimal_jobs_dict):
+        """Test that base_name is correct for each loop."""
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf.plots = False  # Disable plotting
+        train_calls = []
+
+        def track_train(base_name, *args, **kwargs):
+            train_calls.append(base_name)
+            return pd.DataFrame()
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=track_train),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        assert train_calls[0] == "al_loop_0"
+        assert train_calls[1] == "al_loop_1"
+
+    @pytest.mark.unit
+    def test_abstract_methods_called_in_sequence(self, tmp_path, minimal_jobs_dict):
+        """Test that abstract methods are called in the correct sequence."""
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=1,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+        )
+        call_sequence = []
+
+        def track_init(base_name, **kwargs):
+            call_sequence.append("init")
+            return [], []
+
+        def track_train(base_name, *args, **kwargs):
+            call_sequence.append("train")
+            return pd.DataFrame()
+
+        def track_gen(base_name, *args, **kwargs):
+            call_sequence.append("gen")
+            return []
+
+        def track_eval(base_name, *args, **kwargs):
+            call_sequence.append("eval")
+            return []
+
+        with (
+            patch.object(wf, "initialize_training_set", side_effect=track_init),
+            patch.object(wf, "train_mlip", side_effect=track_train),
+            patch.object(wf, "generate_structures", side_effect=track_gen),
+            patch.object(wf, "high_accuracy_evaluation", side_effect=track_eval),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        # Check sequence: init first, then train, gen, eval for each loop
+        assert call_sequence[0] == "init"
+        assert call_sequence[1] == "train"
+        assert call_sequence[2] == "gen"
+        assert call_sequence[3] == "eval"
+
+    @pytest.mark.unit
+    def test_workdir_created_for_each_loop(self, tmp_path, minimal_jobs_dict):
+        """Test that work directories are created for each loop."""
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf.plots = False  # Disable plotting
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        # Verify that the expected directories exist
+        assert Path("results/al_loop_0").exists()
+        assert Path("results/al_loop_1").exists()
+
+    @pytest.mark.unit
+    def test_train_test_files_written(self, tmp_path, minimal_jobs_dict):
+        """Test that train and test set files are written for each loop."""
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf.plots = False  # Disable plotting
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
             patch("alomancy.core.base_active_learning.write") as mock_write,
         ):
-            workflow.run()
+            wf.run()
 
-        # Verify the workflow completed all steps
-        assert len(workflow.train_mlip_calls) == 2
-        assert len(workflow.generate_structures_calls) == 2
-        assert len(workflow.high_accuracy_evaluation_calls) == 2
-
-        # Verify files were written for each loop
-        # Should write train_set.xyz and test_set.xyz for each loop
-        assert mock_write.call_count >= 4  # At least 2 loops * 2 files per loop
+        # Check that write was called for train and test files
+        # At minimum: 2 loops * 2 files (train + test) = 4 calls
+        assert mock_write.call_count >= 4
