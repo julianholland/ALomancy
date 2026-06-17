@@ -206,7 +206,7 @@ def get_forces_for_all_maces(
 
         for atoms in tqdm(structure_list):
             atoms.calc = calc
-        
+
         structure_forces_dict[f"fit_{i}"] = {
             f"structure_{i}": {
                 "forces": flatten_array_of_forces(structure_list[i].get_forces()),

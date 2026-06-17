@@ -4,17 +4,15 @@ Tests for the base active learning workflow.
 This module tests the BaseActiveLearningWorkflow abstract class and its core functionality.
 """
 
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import numpy as np
+from unittest.mock import patch
+
 import pandas as pd
-from ase import Atoms
+import pytest
 from ase.io import write
 
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.database.global_database import GlobalDatabase
-
 
 # =============================================================================
 # ConcreteWorkflow: Stub implementation for testing
@@ -239,7 +237,6 @@ class TestRunWorkflowStructure:
             call_order.append(("seed", path))
             return original_seed(path)
 
-        original_init = wf.initialize_training_set
         def tracking_init(base_name, **kwargs):
             call_order.append(("init", base_name))
             return [], []
@@ -247,11 +244,13 @@ class TestRunWorkflowStructure:
         wf._seed_db_from_extra_dataset = tracking_seed
         wf.initialize_training_set = tracking_init
 
-        with patch("alomancy.core.base_active_learning.write"):
-            with patch.object(wf, "train_mlip", return_value=pd.DataFrame()):
-                with patch.object(wf, "generate_structures", return_value=[]):
-                    with patch.object(wf, "high_accuracy_evaluation", return_value=[]):
-                        wf.run()
+        with (
+            patch("alomancy.core.base_active_learning.write"),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
 
         # Check that seed was called before init
         assert call_order[0][0] == "seed"
@@ -264,15 +263,14 @@ class TestRunWorkflowStructure:
         wf.plots = False  # Disable plotting
         train_call_count = []
 
-        with patch.object(wf, "initialize_training_set", return_value=([], [])):
-            with patch.object(
-                wf, "train_mlip",
-                side_effect=lambda *a, **kw: train_call_count.append(1) or pd.DataFrame()
-            ):
-                with patch.object(wf, "generate_structures", return_value=[]):
-                    with patch.object(wf, "high_accuracy_evaluation", return_value=[]):
-                        with patch("alomancy.core.base_active_learning.write"):
-                            wf.run()
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=lambda *a, **kw: train_call_count.append(1) or pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
 
         assert len(train_call_count) == 2  # number_of_al_loops=2
 
@@ -290,15 +288,14 @@ class TestRunWorkflowStructure:
         )
         train_calls = []
 
-        with patch.object(wf, "initialize_training_set", return_value=([], [])):
-            with patch.object(
-                wf, "train_mlip",
-                side_effect=lambda *a, **kw: train_calls.append(1) or pd.DataFrame()
-            ):
-                with patch.object(wf, "generate_structures", return_value=[]):
-                    with patch.object(wf, "high_accuracy_evaluation", return_value=[]):
-                        with patch("alomancy.core.base_active_learning.write"):
-                            wf.run()
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=lambda *a, **kw: train_calls.append(1) or pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
 
         assert len(train_calls) == 2  # loops 2 and 3 only
 
@@ -313,12 +310,14 @@ class TestRunWorkflowStructure:
             train_calls.append(base_name)
             return pd.DataFrame()
 
-        with patch.object(wf, "initialize_training_set", return_value=([], [])):
-            with patch.object(wf, "train_mlip", side_effect=track_train):
-                with patch.object(wf, "generate_structures", return_value=[]):
-                    with patch.object(wf, "high_accuracy_evaluation", return_value=[]):
-                        with patch("alomancy.core.base_active_learning.write"):
-                            wf.run()
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=track_train),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
 
         assert train_calls[0] == "al_loop_0"
         assert train_calls[1] == "al_loop_1"
@@ -352,12 +351,14 @@ class TestRunWorkflowStructure:
             call_sequence.append("eval")
             return []
 
-        with patch.object(wf, "initialize_training_set", side_effect=track_init):
-            with patch.object(wf, "train_mlip", side_effect=track_train):
-                with patch.object(wf, "generate_structures", side_effect=track_gen):
-                    with patch.object(wf, "high_accuracy_evaluation", side_effect=track_eval):
-                        with patch("alomancy.core.base_active_learning.write"):
-                            wf.run()
+        with (
+            patch.object(wf, "initialize_training_set", side_effect=track_init),
+            patch.object(wf, "train_mlip", side_effect=track_train),
+            patch.object(wf, "generate_structures", side_effect=track_gen),
+            patch.object(wf, "high_accuracy_evaluation", side_effect=track_eval),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
 
         # Check sequence: init first, then train, gen, eval for each loop
         assert call_sequence[0] == "init"
@@ -371,12 +372,14 @@ class TestRunWorkflowStructure:
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
         wf.plots = False  # Disable plotting
 
-        with patch.object(wf, "initialize_training_set", return_value=([], [])):
-            with patch.object(wf, "train_mlip", return_value=pd.DataFrame()):
-                with patch.object(wf, "generate_structures", return_value=[]):
-                    with patch.object(wf, "high_accuracy_evaluation", return_value=[]):
-                        with patch("alomancy.core.base_active_learning.write"):
-                            wf.run()
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
 
         # Verify that the expected directories exist
         assert Path("results/al_loop_0").exists()
@@ -388,12 +391,14 @@ class TestRunWorkflowStructure:
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
         wf.plots = False  # Disable plotting
 
-        with patch.object(wf, "initialize_training_set", return_value=([], [])):
-            with patch.object(wf, "train_mlip", return_value=pd.DataFrame()):
-                with patch.object(wf, "generate_structures", return_value=[]):
-                    with patch.object(wf, "high_accuracy_evaluation", return_value=[]):
-                        with patch("alomancy.core.base_active_learning.write") as mock_write:
-                            wf.run()
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+            patch("alomancy.core.base_active_learning.write") as mock_write,
+        ):
+            wf.run()
 
         # Check that write was called for train and test files
         # At minimum: 2 loops * 2 files (train + test) = 4 calls

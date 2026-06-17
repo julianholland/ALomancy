@@ -1,9 +1,9 @@
 """Tests for GlobalDatabase class."""
-import pytest
 import numpy as np
+import pytest
 from ase import Atoms
-from alomancy.database.global_database import GlobalDatabase
 
+from alomancy.database.global_database import GlobalDatabase
 
 # ---------------------------------------------------------------------------
 # Helper function (copied from conftest for use in this test module)

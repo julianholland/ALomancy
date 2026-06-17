@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ase import Atoms
-from alomancy.configs.remote_info import RemoteInfo
 
+from alomancy.configs.remote_info import RemoteInfo
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
 
 logger = logging.getLogger(__name__)

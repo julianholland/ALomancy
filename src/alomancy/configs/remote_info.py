@@ -1,14 +1,12 @@
 import copy
 import logging
+import pathlib  # wizadry to solve pickle problem
 import sys
 
-
-
 from expyre.resources import Resources
-import pathlib # wizadry to solve pickle problem 
+
 sys.modules["pathlib._local"]=pathlib
 
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +52,25 @@ class RemoteInfo:
     hash_ignore: list(str), default []
         list of arguments to ignore when doing hash of remote function arguments to determine if it's already been done
     """
-    def __init__(self, sys_name, job_name, resources, num_inputs_per_queued_job=-100, pre_cmds=[], post_cmds=[],
-                 env_vars=[], input_files=[], output_files=[], header_extra=[],
+    def __init__(self, sys_name, job_name, resources, num_inputs_per_queued_job=-100, pre_cmds=None, post_cmds=None,
+                 env_vars=None, input_files=None, output_files=None, header_extra=None,
                  exact_fit=True, partial_node=False, timeout=3600, check_interval=30,
-                 ignore_failed_jobs=False, resubmit_killed_jobs=False, hash_ignore=[]):
+                 ignore_failed_jobs=False, resubmit_killed_jobs=False, hash_ignore=None):
 
+        if hash_ignore is None:
+            hash_ignore = []
+        if header_extra is None:
+            header_extra = []
+        if output_files is None:
+            output_files = []
+        if input_files is None:
+            input_files = []
+        if env_vars is None:
+            env_vars = []
+        if post_cmds is None:
+            post_cmds = []
+        if pre_cmds is None:
+            pre_cmds = []
         self.sys_name = sys_name
         self.job_name = job_name
         self.resources = copy.deepcopy(resources)

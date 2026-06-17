@@ -73,7 +73,7 @@ def select_initial_structures(
         ]
     else:
         filtered_structures = train_atoms_list
-    
+
     if selectable_configs is not None:
         filtered_structures = [
             s for s in filtered_structures if s.info.get("config_type") in selectable_configs
@@ -94,10 +94,10 @@ def select_initial_structures(
         ]
         mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["name"])
         return initial_atoms
-    
+
     # Ensure chemical diversity by selecting unique chemical formulas
     # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
-    
+
     unique_chemical_formulas = {
         s.get_chemical_formula() for s in filtered_structures
     }

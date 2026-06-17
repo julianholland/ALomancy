@@ -7,8 +7,6 @@ from ase.calculators.espresso import Espresso, EspressoProfile
 from ase.io import write
 from ase.optimize import BFGS
 
-from math import isqrt
-
 logger = logging.getLogger(__name__)
 
 

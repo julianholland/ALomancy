@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def committee_remote_submitter(
     remote_info: RemoteInfo,
     base_name: str,
-    target_file: str,
+    _target_file: str,
     function: Callable,
     seed: int = 803,
     size_of_committee: int = 5,
@@ -68,11 +68,11 @@ def committee_remote_submitter(
     def _noop(**_kwargs: Any) -> None:
         logger.warning("No function provided for remote execution. This is a no-op.")
         return None
-    
+
     executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
         common_output_pattern=str(Path(mace_dir, "mlip_committee", "fit_{job_id}")),
     )
 
-    
+

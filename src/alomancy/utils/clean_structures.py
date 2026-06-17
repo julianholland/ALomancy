@@ -31,7 +31,7 @@ def clean_structures(structures: list[Atoms], config_type: str, override_config_
             else:
                 energy = structure.info["REF_energy"]
                 forces = structure.arrays["REF_forces"]
-            
+
             structure_copy.info["REF_energy"] = energy
             structure_copy.arrays["REF_forces"] = forces
 

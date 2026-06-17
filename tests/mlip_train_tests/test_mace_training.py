@@ -1,6 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 from ase import Atoms
+
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 

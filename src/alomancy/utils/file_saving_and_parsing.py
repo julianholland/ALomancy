@@ -1,6 +1,8 @@
 from pathlib import Path
+
 from ase import Atoms
 from ase.io import read
+
 
 def read_atoms_file_if_enabled(read_file: bool, file_path: str|Path) -> list[Atoms] | None:
     """Return file contents only when reading is enabled and the file exists."""
@@ -13,7 +15,7 @@ def read_atoms_file_if_enabled(read_file: bool, file_path: str|Path) -> list[Ato
 
     if path.stat().st_size == 0:
         return []
-    
+
     atoms_list = [
                 atoms
                 for atoms in read(path, ":")

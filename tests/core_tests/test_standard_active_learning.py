@@ -15,17 +15,19 @@ sys.modules.setdefault("mace.calculators.mace", MagicMock())
 sys.modules.setdefault("mace.cli", MagicMock())
 sys.modules.setdefault("mace.cli.run_train", MagicMock())
 
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock, patch
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+from unittest.mock import Mock, patch  # noqa: E402
 
-import numpy as np
-import pandas as pd
-import pytest
-from ase import Atoms
-from ase.io import write, read
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
+from ase import Atoms  # noqa: E402
+from ase.io import write  # noqa: E402
 
-from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+from alomancy.core.standard_active_learning import (  # noqa: E402
+    ActiveLearningStandardMACE,
+)
 
 
 @pytest.fixture
@@ -181,9 +183,8 @@ class TestInitializeTrainingSetFastPath:
         # Mock compute_initialization_needs to ensure it's never called
         with patch(
             "alomancy.core.standard_active_learning.compute_initialization_needs"
-        ) as mock_needs:
-            with patch("alomancy.core.standard_active_learning.write"):
-                wf.initialize_training_set("initialization")
+        ) as mock_needs, patch("alomancy.core.standard_active_learning.write"):
+            wf.initialize_training_set("initialization")
 
         # Fast path should skip DB entirely
         mock_needs.assert_not_called()
@@ -206,7 +207,7 @@ class TestInitializeTrainingSetFastPath:
         )
 
         with patch("alomancy.core.standard_active_learning.write") as mock_write:
-            train, test = wf.initialize_training_set("initialization")
+            _train, _test = wf.initialize_training_set("initialization")
 
         # Verify write was called to copy files to work_dir
         # (It should be called at least once to write the results to work_dir)
@@ -281,41 +282,36 @@ class TestInitializeTrainingSetDBPath:
         # Mock all the downstream functions to avoid expensive operations
         with patch(
             "alomancy.core.standard_active_learning.compute_initialization_needs"
-        ) as mock_needs:
-            with patch(
-                "alomancy.core.standard_active_learning.create_initialization_atoms_list"
-            ):
-                with patch(
-                    "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
-                ):
-                    with patch.object(wf, "high_accuracy_evaluation") as mock_hae:
-                        with patch(
-                            "alomancy.core.standard_active_learning.clean_structures"
-                        ):
-                            with patch(
-                                "alomancy.core.standard_active_learning.write"
-                            ):
-                                # Mock compute_needs to return no requirements
-                                mock_needs.return_value = {
-                                    "isolated_atoms": [],
-                                    "dimer_override": {},
-                                    "trimer_override": {},
-                                    "amorphous_override": 0,
-                                    "mp_structures": [],
-                                }
+        ) as mock_needs, patch(
+            "alomancy.core.standard_active_learning.create_initialization_atoms_list"
+        ), patch(
+            "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
+        ), patch.object(wf, "high_accuracy_evaluation") as mock_hae, patch(
+            "alomancy.core.standard_active_learning.clean_structures"
+        ), patch(
+            "alomancy.core.standard_active_learning.write"
+        ):
+            # Mock compute_needs to return no requirements
+            mock_needs.return_value = {
+                "isolated_atoms": [],
+                "dimer_override": {},
+                "trimer_override": {},
+                "amorphous_override": 0,
+                "mp_structures": [],
+            }
 
-                                # Mock high_accuracy_evaluation to return empty
-                                mock_hae.return_value = []
+            # Mock high_accuracy_evaluation to return empty
+            mock_hae.return_value = []
 
-                                # Mock db.get_all_as_atoms to return test structures
-                                test_struct = Atoms("H")
-                                test_struct.info["config_type"] = "IsolatedAtom"
-                                test_struct.info["REF_energy"] = -1.0
-                                test_struct.arrays["REF_forces"] = np.array([[0, 0, 0]])
+            # Mock db.get_all_as_atoms to return test structures
+            test_struct = Atoms("H")
+            test_struct.info["config_type"] = "IsolatedAtom"
+            test_struct.info["REF_energy"] = -1.0
+            test_struct.arrays["REF_forces"] = np.array([[0, 0, 0]])
 
-                                wf.db.get_all_as_atoms = Mock(return_value=[test_struct])
+            wf.db.get_all_as_atoms = Mock(return_value=[test_struct])
 
-                                train, test = wf.initialize_training_set("initialization")
+            _train, _test = wf.initialize_training_set("initialization")
 
         mock_needs.assert_called_once()
 
@@ -354,24 +350,21 @@ class TestInitializeTrainingSetDBPath:
 
                 with patch(
                     "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
+                ), patch.object(wf, "high_accuracy_evaluation") as mock_hae, patch(
+                    "alomancy.core.standard_active_learning.clean_structures"
+                ) as mock_clean, patch(
+                    "alomancy.core.standard_active_learning.write"
                 ):
-                    with patch.object(wf, "high_accuracy_evaluation") as mock_hae:
-                        with patch(
-                            "alomancy.core.standard_active_learning.clean_structures"
-                        ) as mock_clean:
-                            with patch(
-                                "alomancy.core.standard_active_learning.write"
-                            ):
-                                # Return the generated atoms from clean_structures
-                                mock_hae.return_value = [generated_atoms]
-                                mock_clean.return_value = [generated_atoms]
+                    # Return the generated atoms from clean_structures
+                    mock_hae.return_value = [generated_atoms]
+                    mock_clean.return_value = [generated_atoms]
 
-                                # Mock db operations
-                                wf.db.add_structures = Mock(return_value=1)
-                                test_struct = generated_atoms.copy()
-                                wf.db.get_all_as_atoms = Mock(return_value=[test_struct])
+                    # Mock db operations
+                    wf.db.add_structures = Mock(return_value=1)
+                    test_struct = generated_atoms.copy()
+                    wf.db.get_all_as_atoms = Mock(return_value=[test_struct])
 
-                                train, test = wf.initialize_training_set("initialization")
+                    _train, _test = wf.initialize_training_set("initialization")
 
         # Verify create_initialization_atoms_list was called
         mock_create.assert_called_once()
@@ -401,21 +394,19 @@ class TestInitializeTrainingSetDBPath:
         ) as mock_needs:
             mock_needs.return_value = needs_dict
 
-            with patch(
-                "alomancy.core.standard_active_learning.create_initialization_atoms_list"
-            ) as mock_create:
-                with patch(
-                    "alomancy.core.standard_active_learning.write"
-                ):
-                    # Set up DB to return an existing structure
-                    existing_struct = Atoms("H")
-                    existing_struct.info["config_type"] = "IsolatedAtom"
-                    existing_struct.info["REF_energy"] = -1.0
-                    existing_struct.arrays["REF_forces"] = np.array([[0, 0, 0]])
+            with (
+                patch("alomancy.core.standard_active_learning.create_initialization_atoms_list") as mock_create,
+                patch("alomancy.core.standard_active_learning.write"),
+            ):
+                # Set up DB to return an existing structure
+                existing_struct = Atoms("H")
+                existing_struct.info["config_type"] = "IsolatedAtom"
+                existing_struct.info["REF_energy"] = -1.0
+                existing_struct.arrays["REF_forces"] = np.array([[0, 0, 0]])
 
-                    wf.db.get_all_as_atoms = Mock(return_value=[existing_struct])
+                wf.db.get_all_as_atoms = Mock(return_value=[existing_struct])
 
-                    train, test = wf.initialize_training_set("initialization")
+                _train, _test = wf.initialize_training_set("initialization")
 
         # When all targets are met, generation should be skipped
         mock_create.assert_not_called()
@@ -456,25 +447,24 @@ class TestInitializeTrainingSetDBPath:
 
                 with patch(
                     "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
-                ):
-                    with patch.object(wf, "high_accuracy_evaluation") as mock_hae:
-                        mock_hae.return_value = [evaluated_atoms]
+                ), patch.object(wf, "high_accuracy_evaluation") as mock_hae:
+                    mock_hae.return_value = [evaluated_atoms]
+
+                    with patch(
+                        "alomancy.core.standard_active_learning.clean_structures"
+                    ) as mock_clean:
+                        mock_clean.return_value = [evaluated_atoms]
 
                         with patch(
-                            "alomancy.core.standard_active_learning.clean_structures"
-                        ) as mock_clean:
-                            mock_clean.return_value = [evaluated_atoms]
+                            "alomancy.core.standard_active_learning.write"
+                        ):
+                            # Mock db.add_structures
+                            wf.db.add_structures = Mock(return_value=1)
+                            wf.db.get_all_as_atoms = Mock(
+                                return_value=[evaluated_atoms]
+                            )
 
-                            with patch(
-                                "alomancy.core.standard_active_learning.write"
-                            ):
-                                # Mock db.add_structures
-                                wf.db.add_structures = Mock(return_value=1)
-                                wf.db.get_all_as_atoms = Mock(
-                                    return_value=[evaluated_atoms]
-                                )
-
-                                train, test = wf.initialize_training_set("initialization")
+                            _train, _test = wf.initialize_training_set("initialization")
 
         # Verify add_structures was called with the evaluated structures
         wf.db.add_structures.assert_called_once()
@@ -603,22 +593,18 @@ class TestInitializeTrainingSetDBPath:
                 # Return pre-generated structures
                 mock_read_file.return_value = sample_atoms_list
 
-                with patch(
-                    "alomancy.core.standard_active_learning.create_initialization_atoms_list"
-                ) as mock_create:
-                    with patch.object(wf, "high_accuracy_evaluation") as mock_hae:
-                        with patch(
-                            "alomancy.core.standard_active_learning.clean_structures"
-                        ) as mock_clean:
-                            with patch(
-                                "alomancy.core.standard_active_learning.write"
-                            ):
-                                mock_hae.return_value = sample_atoms_list
-                                mock_clean.return_value = sample_atoms_list
-                                wf.db.add_structures = Mock(return_value=len(sample_atoms_list))
-                                wf.db.get_all_as_atoms = Mock(return_value=sample_atoms_list)
+                with (
+                    patch("alomancy.core.standard_active_learning.create_initialization_atoms_list") as mock_create,
+                    patch.object(wf, "high_accuracy_evaluation") as mock_hae,
+                    patch("alomancy.core.standard_active_learning.clean_structures") as mock_clean,
+                    patch("alomancy.core.standard_active_learning.write"),
+                ):
+                    mock_hae.return_value = sample_atoms_list
+                    mock_clean.return_value = sample_atoms_list
+                    wf.db.add_structures = Mock(return_value=len(sample_atoms_list))
+                    wf.db.get_all_as_atoms = Mock(return_value=sample_atoms_list)
 
-                                train, test = wf.initialize_training_set("initialization")
+                    _train, _test = wf.initialize_training_set("initialization")
 
         # If pre-generated file exists, create_initialization_atoms_list should not be called
         mock_create.assert_not_called()
@@ -663,12 +649,12 @@ class TestInitializeTrainingSetErrorHandling:
                 # Return empty list (no structures generated)
                 mock_create.return_value = []
 
-                with patch(
-                    "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
+                with (
+                    patch("alomancy.core.standard_active_learning.read_atoms_file_if_enabled"),
+                    patch("alomancy.core.standard_active_learning.write"),
+                    pytest.raises(ValueError, match="No structures were generated"),
                 ):
-                    with patch("alomancy.core.standard_active_learning.write"):
-                        with pytest.raises(ValueError, match="No structures were generated"):
-                            wf.initialize_training_set("initialization")
+                    wf.initialize_training_set("initialization")
 
     def test_raises_error_when_no_high_accuracy_structures(
         self, tmp_path, minimal_jobs_dict
@@ -703,19 +689,17 @@ class TestInitializeTrainingSetErrorHandling:
 
                 with patch(
                     "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
-                ):
-                    with patch.object(wf, "high_accuracy_evaluation") as mock_hae:
-                        # Return empty list (no DFT results)
-                        mock_hae.return_value = []
+                ), patch.object(wf, "high_accuracy_evaluation") as mock_hae:
+                    # Return empty list (no DFT results)
+                    mock_hae.return_value = []
 
-                        with patch(
-                            "alomancy.core.standard_active_learning.write"
-                        ):
-                            with pytest.raises(
-                                ValueError,
-                                match="No high-accuracy structures returned"
-                            ):
-                                wf.initialize_training_set("initialization")
+                    with patch(
+                        "alomancy.core.standard_active_learning.write"
+                    ), pytest.raises(
+                        ValueError,
+                        match="No high-accuracy structures returned"
+                    ):
+                        wf.initialize_training_set("initialization")
 
 
 # ============================================================================
@@ -924,7 +908,7 @@ class TestActiveLearningStandardMACEIntegration:
                     mock_ha.return_value = [sample_atoms_co2.copy() for _ in range(3)]
                     for atoms in mock_ha.return_value:
                         atoms.get_potential_energy = Mock(return_value=-1.0)
-                        atoms.get_forces = Mock(return_value=np.array([[0, 0, 0]]))
+                        atoms.get_forces = Mock(return_value=np.zeros((3, 3)))
 
                     workflow = ActiveLearningStandardMACE(
                         initial_train_file_path=train_file,

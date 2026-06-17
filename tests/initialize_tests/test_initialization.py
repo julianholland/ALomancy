@@ -1,6 +1,10 @@
-import pytest
 from unittest.mock import MagicMock
-from alomancy.initialize.initialization_structure_list import compute_initialization_needs
+
+import pytest
+
+from alomancy.initialize.initialization_structure_list import (
+    compute_initialization_needs,
+)
 
 
 def make_mock_db(all_counts):

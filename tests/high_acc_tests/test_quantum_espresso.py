@@ -5,10 +5,14 @@ This module tests pure utility functions (find_optimal_npool, generate_kpts, get
 that require no external dependencies or QE installation.
 """
 
-import pytest
 import numpy as np
+import pytest
+
 from alomancy.high_accuracy_evaluation.dft.run_qe import (
-    find_optimal_npool, generate_kpts, get_qe_input_data)
+    find_optimal_npool,
+    generate_kpts,
+    get_qe_input_data,
+)
 
 
 class TestFindOptimalNpool:

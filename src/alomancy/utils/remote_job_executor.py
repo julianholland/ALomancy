@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from expyre.func import ExPyRe
+
 from alomancy.configs.remote_info import RemoteInfo
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ class RemoteJobExecutor:
             kwargs=function_kwargs,
             **expyre_kwargs,
         )
-        
+
         self.jobs.append(job)
         return job
 

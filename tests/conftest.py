@@ -1,13 +1,10 @@
 """Test Configuration and Fixtures for ALomancy test suite."""
 import os
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 from ase import Atoms
 from ase.io import write
-
 
 # ---------------------------------------------------------------------------
 # Utility: build test Atoms objects

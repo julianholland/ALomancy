@@ -1,6 +1,7 @@
-from ase import Atoms
-import numpy as np
 import logging
+
+import numpy as np
+from ase import Atoms
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,10 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
     Example:
     atoms = Atoms("H2O", positions=[(0, 0, 0), (0.76, 0.58, 0), (-0.76, 0.58, 0)], cell=[3,3,3])
     deformed_atoms_list = stretch_compress_atoms(atoms, deform_xyz=[True, False, False], max_deformation=0.1, steps=5)
-    
+
     """
     deformed_atoms_list = []
-    if num_structures > 0: 
+    if num_structures > 0:
         for i in np.linspace(1-max_deformation, 1+max_deformation, num_structures):
             deformed_atoms = atoms.copy()
             if isinstance(deform_xyz, list) and len(deform_xyz) == 3:
@@ -43,7 +44,7 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
             deformed_atoms_list.append(deformed_atoms)
 
     return deformed_atoms_list
-    
+
 if __name__ == "__main__":
     atoms = Atoms("H2O", positions=[(0, 0, 0), (0.76, 0.58, 0), (-0.76, 0.58, 0)], cell =[3,3,3])
     deformed_atoms_list = create_stretch_compress_atoms_list(atoms, deform_xyz=[True, False, False], max_deformation=0.4, num_structures=5)

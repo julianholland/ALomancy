@@ -1,17 +1,18 @@
+import itertools
 import logging
+
 import numpy as np
 from ase.atoms import Atoms
-from ase.data import atomic_numbers, atomic_masses
 from ase.calculators.lj import LennardJones
+from ase.data import atomic_masses, atomic_numbers
 from ase.optimize import BFGS
-import itertools
 
 logger = logging.getLogger(__name__)
 
 def create_amorphous_atoms_list(elements: list[str], atom_number: int, density:float, num_structures: int, seed: int, composition_list: None | list[list[str]] = None) -> list[Atoms]:
     """
     Create a list of amorphous atoms objects with given elements, atom number, and density.
-    This is done by randomly placing atoms in a box and then relaxing the structure using a 
+    This is done by randomly placing atoms in a box and then relaxing the structure using a
     Lennard-Jones potential to ensure no atoms are too close.
 
     Parameters:
@@ -40,7 +41,7 @@ def create_amorphous_atoms_list(elements: list[str], atom_number: int, density:f
     if num_structures > 0:
         rng= np.random.default_rng(seed)
         if composition_list is None:
-            
+
             composition_tuple_list = list(itertools.combinations_with_replacement(elements, atom_number))
             composition_list = [list(comp) for comp in composition_tuple_list]
 

@@ -1,22 +1,22 @@
+import logging
+import os
 import sys
 from pathlib import Path
-import logging
 
 import numpy as np
 from expyre import ExPyRe
-
-from alomancy.configs.remote_info import RemoteInfo, get_remote_info
-from argparse import Namespace
 from mace import tools
 from mace.cli.run_train import run
 
+from alomancy.configs.remote_info import RemoteInfo
+
 logger = logging.getLogger(__name__)
 
-# def mace_fit(seed: int, 
-#              mlip_committee_job_dict: dict, 
-#              workdir_str: str, 
+# def mace_fit(seed: int,
+#              mlip_committee_job_dict: dict,
+#              workdir_str: str,
 #              fit_idx: int = 0):
-    
+
 #     workdir = Path(workdir_str)
 #     mlip_dir = Path(workdir, mlip_committee_job_dict["name"])
 #     print(f"Creating MLIP directory: {mlip_dir}")
@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 #     print("MACE fit parameters:")
 #     for key, value in mace_fit_params.items():
 #         print(f"  {key}: {value}")
-    
+
 #     parser = tools.build_default_arg_parser()
 #     args = parser.parse_args(["--name", mace_fit_params["name"]])  # seed defaults
 #     for key, value in mace_fit_params.items():
@@ -95,13 +95,9 @@ logger = logging.getLogger(__name__)
 #     #     run_dir=Path(mlip_dir, f"fit_{fit_idx}")
 #     # )
 
-import os
-import subprocess
-import shutil
-from pathlib import Path
 
 
-def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx: int = 0, mace_fit_cmd: str = 'mace_run_train'):
+def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx: int = 0, _mace_fit_cmd: str = 'mace_run_train'):
     """
     Minimal MACE model fitting function.
 
@@ -169,7 +165,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
         "swa": None,
         "batch_size": 16,
         "valid_batch_size": 16,
-        "distributed": None,    
+        "distributed": None,
         **mlip_committee_job_dict["mace_fit_kwargs"],
     }
 
@@ -179,7 +175,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     for key, value in mace_fit_params.items():
         logger.debug("  %s: %s", key, value)
 
-    
+
     # Resolve the fitting command
     # if mace_fit_cmd is None:
     #     mace_fit_cmd = os.environ.get("WFL_MACE_FIT_COMMAND") or shutil.which("mace_run_train")

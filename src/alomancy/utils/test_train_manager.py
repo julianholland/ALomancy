@@ -1,10 +1,10 @@
-from pathlib import Path
-from warnings import warn
 import logging
+from pathlib import Path
 
+import numpy as np
 from ase import Atoms
 from ase.io import read
-import numpy as np
+
 from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 
@@ -25,7 +25,7 @@ def split_atoms_list_into_test_and_train(
     Returns:
         tuple[list[Atoms], list[Atoms]]: A tuple containing the training and test sets.
     """
-    
+
     rng = np.random.default_rng(seed=seed)
     shuffled_indices = rng.permutation(len(atoms_list))
     split_index = int(len(atoms_list) * (1 - test_fraction))
@@ -43,10 +43,12 @@ def extend_test_and_train_sets_with_extra_dataset(
     test_xyzs: list[Atoms],
     test_fraction: float,
     seed: int,
-    filter_out_config_types: list[str] | None = ["IsolatedAtom"],
+    filter_out_config_types: list[str] | None = None,
     fall_back_config_type: None | str = None,
 ) -> tuple[list[Atoms], list[Atoms]]:
 
+    if filter_out_config_types is None:
+        filter_out_config_types = ["IsolatedAtom"]
     extra_dataset_atoms = [
         a
         for a in read_atoms_file_if_enabled(True, extra_dataset)
@@ -56,7 +58,7 @@ def extend_test_and_train_sets_with_extra_dataset(
 
     if fall_back_config_type is None:
         fall_back_config_type = f"undefined_from_{Path(extra_dataset).name}"
-    
+
     if extra_dataset_atoms is not None:
         extra_dataset_atoms = clean_structures(
             extra_dataset_atoms,
@@ -64,7 +66,7 @@ def extend_test_and_train_sets_with_extra_dataset(
             override_config_type=False,
             already_computed=True,
         )
-        
+
         inelegible_configs= ["IsolatedAtom"]
         elegible_extra_dataset_atoms = [
             a for a in extra_dataset_atoms if a.info.get("config_type") not in inelegible_configs

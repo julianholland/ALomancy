@@ -1,6 +1,5 @@
 import itertools
 import logging
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 def compute_initialization_needs(
     db: "GlobalDatabase",
     elements: list[str],
-    single_atoms: bool,
+    _single_atoms: bool,
     mp_structures: bool,
     num_dimers_per_combo: int,
     num_trimers_per_combo: int,
@@ -171,7 +170,7 @@ def create_initialization_atoms_list(
             for combo in all_dimer_combos
         }
     else:
-        combos_to_generate = {combo: num_dimers_per_combo for combo in all_dimer_combos}
+        combos_to_generate = dict.fromkeys(all_dimer_combos, num_dimers_per_combo)
 
     for combo, count in combos_to_generate.items():
         if count > 0:
@@ -196,9 +195,7 @@ def create_initialization_atoms_list(
             for combo in all_trimer_combos
         }
     else:
-        trimer_combos_to_generate = {
-            combo: num_trimers_per_combo for combo in all_trimer_combos
-        }
+        trimer_combos_to_generate = dict.fromkeys(all_trimer_combos, num_trimers_per_combo)
 
     for combo, count in trimer_combos_to_generate.items():
         if count > 0:

@@ -7,7 +7,6 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from sage_lib.partition.Partition import Partition
 from sage_lib.single_run.SingleRun import SingleRun
 
-
 _DEFAULT_DEDUP_CONFIG_TYPES = ["IsolatedAtom", "init_MP"]
 
 logger = logging.getLogger(__name__)
@@ -52,7 +51,7 @@ class GlobalDatabase:
           always added; use compute_initialization_needs() for count-based
           checking before generating new structures.
 
-        REF_forces (N×3 array) are serialised into atoms.info before adding
+        REF_forces (Nx3 array) are serialised into atoms.info before adding
         because sage_lib only persists atoms.info, not atoms.arrays.
 
         Returns the number of structures actually added.
@@ -190,13 +189,15 @@ class GlobalDatabase:
                 )
 
         a = SingleRun()
-        a.AtomPositionManager.configure(
-            atomPositions=atoms.positions,
-            atomLabels=atoms.symbols,
-            latticeVectors=atoms.cell,
-            E=energy,
-            total_force=forces,
-        )
+        configure_kwargs: dict = {
+            "atomPositions": atoms.positions,
+            "atomLabels": atoms.symbols,
+            "latticeVectors": atoms.cell,
+            "E": energy,
+        }
+        if forces is not None:
+            configure_kwargs["total_force"] = forces
+        a.AtomPositionManager.configure(**configure_kwargs)
         a.atoms.metadata = {
             k: v
             for k, v in atoms.info.items()
@@ -217,9 +218,12 @@ class GlobalDatabase:
             pbc=[bool(p) for p in apm.pbc],
         )
         meta = dict(apm.metadata)
-        atoms.calc = SinglePointCalculator(atoms, energy=apm.energy, forces=apm.forces)
+        energy = apm.energy
+        forces = apm.forces
+        atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)
         atoms.info.update(meta)
-        atoms.arrays["REF_forces"] = atoms.get_forces()
-        atoms.info["REF_energy"] = atoms.get_potential_energy()
+        atoms.info["REF_energy"] = energy
+        if forces is not None:
+            atoms.arrays["REF_forces"] = forces
 
         return atoms

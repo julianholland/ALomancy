@@ -1,9 +1,9 @@
+import itertools
 import logging
 import os
 
 from mp_api.client import MPRester
 from pymatgen.io.ase import AseAtomsAdaptor
-import itertools
 
 # from pymatgen.
 logger = logging.getLogger(__name__)
@@ -12,18 +12,18 @@ if not mp_api_key:
     raise ValueError("MP_API_KEY environment variable not set. Please set it to your Materials Project API key.")
 
 def retrieve_mp_material_docs(
-    elements: list, max_energy_above_hull: float, max_num_atoms: int, 
+    elements: list, max_energy_above_hull: float, max_num_atoms: int,
 ) -> list:
     element_permutations = []
     for i in range(len(elements)):
         n_elements = list(itertools.combinations(elements, i + 1))
         element_permutations.extend(n_elements)
 
-    
+
     docs_list = []
     for el in element_permutations:
         logger.info("Retrieving structures from Materials Project: elements=%s, hull_cutoff=%.2f eV, max_atoms=%d", el, max_energy_above_hull, max_num_atoms)
-        
+
         with MPRester(mp_api_key) as mpr:
             docs = mpr.materials.summary.search(
                 elements=el,

@@ -1,7 +1,8 @@
-from ase import Atoms
 import numpy as np
-from ase.io import write
+from ase import Atoms
 from ase.data import atomic_numbers, vdw_radii
+from ase.io import write
+
 
 def create_single_atoms_list(element: str) -> list:
     """Create a single atoms object in a list."""
@@ -48,7 +49,7 @@ def create_trimer_atoms_list(element_a: str, element_b: str, element_c: str, num
                 trimer.info['deformation'] = f'{dx:.3f}_{dy:.3f}'
                 trimer.info['needs_relaxation'] = False
                 trimer_atoms.append(trimer)
-        
+
         # add some linear trimers if we don't have enough
         for dx in np.linspace(distance_range[0], distance_range[1], num_trimers - len(trimer_atoms)):
                 a1 = Atoms(element_a, positions=[(0, 0, 0)])

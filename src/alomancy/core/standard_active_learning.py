@@ -1,14 +1,12 @@
+import copy
+import logging
+import os
 from pathlib import Path
 
-import logging
 import numpy as np
-import os
 import pandas as pd
-import copy
 from ase import Atoms
 from ase.io import read, write
-from mace.calculators import MACECalculator
-
 
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
@@ -37,11 +35,11 @@ from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, ru
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
+from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import (
     read_atoms_file_if_enabled,
 )
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
-from alomancy.utils.clean_structures import clean_structures
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +53,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
 
     def initialize_training_set(
-        self, base_name: str, **kwargs
+        self, base_name: str, **_kwargs
     ) -> tuple[list[Atoms], list[Atoms]]:
         """
         Build the initial train/test sets.
@@ -492,10 +490,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     "Skipping remote submission and reusing these structures.",
                     len(found_structures)
                 )
-                
+
                 atoms_list=[read(p, format="extxyz") for p in found_structures]
                 return atoms_list
-                    
+
             elif len(found_structures) > 0:
                 logger.info(
                     "Found %d structures from previous high accuracy evaluation. "
@@ -534,7 +532,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 len(structures),
             )
             logger.info(
-                "Submitting batch %d/%d (structures %d–%d)",
+                "Submitting batch %d/%d (structures %d-%d)",
                 batch_num,
                 total_batches,
                 batch_start,

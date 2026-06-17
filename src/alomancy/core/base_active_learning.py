@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 import pandas as pd
@@ -72,7 +72,7 @@ class BaseActiveLearningWorkflow(ABC):
             self._seed_db_from_extra_dataset(ed)
 
         train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
-        
+
 
         logger.info("Initialized training set with %d structures.", len(train_xyzs))
 
