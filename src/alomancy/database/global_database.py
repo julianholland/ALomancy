@@ -1,12 +1,16 @@
+import logging
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
 from ase import Atoms
+from ase.calculators.singlepoint import SinglePointCalculator
 from sage_lib.partition.Partition import Partition
+from sage_lib.single_run.SingleRun import SingleRun
 
 
 _DEFAULT_DEDUP_CONFIG_TYPES = ["IsolatedAtom", "init_MP"]
+
+logger = logging.getLogger(__name__)
 
 
 class GlobalDatabase:
@@ -58,10 +62,11 @@ class GlobalDatabase:
 
         existing = self._get_config_type_formula_set() if skip_duplicates else set()
         added = 0
-
+        sr_list = []
         for atoms in atoms_list:
             config_type = atoms.info.get("config_type", "")
             formula = atoms.get_chemical_formula()
+
             key = (config_type, formula)
 
             if (
@@ -70,11 +75,14 @@ class GlobalDatabase:
                 and key in existing
             ):
                 continue
+            storage_ready_apm = self._prepare_for_storage(atoms)
 
-            self.partition.add_ase(self._prepare_for_storage(atoms))
-            existing.add(key)
-            added += 1
+            if storage_ready_apm is not None:
+                sr_list.append(storage_ready_apm)
+                existing.add(key)
+                added += 1
 
+        self.partition.add(sr_list)
         return added
 
     # ------------------------------------------------------------------
@@ -147,21 +155,61 @@ class GlobalDatabase:
         }
 
     @staticmethod
-    def _prepare_for_storage(atoms: Atoms) -> Atoms:
+    def _prepare_for_storage(atoms: Atoms) -> SingleRun | None:
         """
-        Copy an Atoms object and serialise REF_forces into info so it
-        survives sage_lib's metadata-only persistence.
+        Return a copy of atoms ready for sage_lib storage, or None to skip.
+
+        Normalises REF_energy / REF_forces from either atoms.info/arrays or a
+        calculator.  REF_forces are serialised into info["_REF_forces"] because
+        sage_lib only persists atoms.info, not atoms.arrays.  Returns None (and
+        logs a warning) if no energy source can be found.
         """
-        a = atoms.copy()
-        if "REF_forces" in a.arrays:
-            a.info["_REF_forces"] = a.arrays["REF_forces"].tolist()
-            del a.arrays["REF_forces"]
+        formula = atoms.get_chemical_formula()
+        config_type = atoms.info.get("config_type", "unknown")
+        energy = atoms.info.get("REF_energy")
+        if energy is None:
+            try:
+                energy = atoms.get_potential_energy()
+            except Exception:
+                logger.warning(
+                    "No REF_energy and no calculator energy for %s (config_type=%s) — skipping.",
+                    formula,
+                    config_type,
+                )
+                return None
+
+        forces = atoms.arrays.get("REF_forces")
+        if forces is None:
+            try:
+                forces = atoms.get_forces()
+            except Exception:
+                logger.warning(
+                    "No REF_forces and no calculator forces for %s (config_type=%s) — storing energy only.",
+                    formula,
+                    config_type,
+                )
+
+        a = SingleRun()
+        a.AtomPositionManager.configure(
+            atomPositions=atoms.positions,
+            atomLabels=atoms.symbols,
+            latticeVectors=atoms.cell,
+            E=energy,
+            total_force=forces,
+        )
+        a.atoms.metadata = {
+            k: v
+            for k, v in atoms.info.items()
+            if isinstance(v, (str, int, float, bool, list, dict))
+        }
+
         return a
 
     @staticmethod
     def _atoms_from_container(container) -> Atoms:
         """Reconstruct an ASE Atoms object from a sage_lib SingleRun container."""
         apm = container.AtomPositionManager
+
         atoms = Atoms(
             symbols=list(apm.atomLabelsList),
             positions=apm.atomPositions,
@@ -169,7 +217,9 @@ class GlobalDatabase:
             pbc=[bool(p) for p in apm.pbc],
         )
         meta = dict(apm.metadata)
-        if "_REF_forces" in meta:
-            atoms.arrays["REF_forces"] = np.array(meta.pop("_REF_forces"))
+        atoms.calc = SinglePointCalculator(atoms, energy=apm.energy, forces=apm.forces)
         atoms.info.update(meta)
+        atoms.arrays["REF_forces"] = atoms.get_forces()
+        atoms.info["REF_energy"] = atoms.get_potential_energy()
+
         return atoms

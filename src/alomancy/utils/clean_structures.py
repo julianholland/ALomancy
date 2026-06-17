@@ -1,4 +1,8 @@
+import logging
+
 from ase import Atoms
+
+logger = logging.getLogger(__name__)
 
 def clean_structures(structures: list[Atoms], config_type: str, override_config_type: bool = False, already_computed: bool = True) -> list[Atoms]:
     """
@@ -32,7 +36,7 @@ def clean_structures(structures: list[Atoms], config_type: str, override_config_
             structure_copy.arrays["REF_forces"] = forces
 
         if override_config_type or "config_type" not in structure.info:
-            print('override_config_type is set to True or config_type not in structure.info, setting config_type to', config_type)
+            logger.debug("Setting config_type to '%s'.", config_type)
             structure_copy.info[
                 "config_type"
             ] = config_type

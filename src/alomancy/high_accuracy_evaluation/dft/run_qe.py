@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,8 @@ from ase.io import write
 from ase.optimize import BFGS
 
 from math import isqrt
+
+logger = logging.getLogger(__name__)
 
 
 def find_optimal_npool(
@@ -206,8 +209,8 @@ def run_sp_qe(
     #     print('needs relaxation is not present, not relaxing structure with QE')
 
     input_structure.get_potential_energy()
-    print(input_structure)
-    print(f'writing structures to {out_dir} as {high_accuracy_eval_job_dict["name"]}.xyz')
+    logger.debug("Input structure: %s", input_structure)
+    logger.debug("Writing structures to %s as %s.xyz", out_dir, high_accuracy_eval_job_dict["name"])
     write(
         Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
         input_structure,
@@ -234,5 +237,5 @@ def run_go_qe(
         input_structure,
         format="extxyz",
     )
-    print(f'writing structures to {out_dir} as {high_accuracy_eval_job_dict["name"]}.xyz')
+    logger.debug("Writing structures to %s as %s.xyz", out_dir, high_accuracy_eval_job_dict["name"])
     return input_structure

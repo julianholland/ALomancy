@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
@@ -5,6 +6,8 @@ from ase import Atoms
 
 from alomancy.configs.remote_info import RemoteInfo
 from alomancy.utils.remote_job_executor import RemoteJobExecutor
+
+logger = logging.getLogger(__name__)
 
 
 def qe_remote_submitter(
@@ -34,7 +37,7 @@ def qe_remote_submitter(
 
     # run_and_wait expects a callable; provide a no-op if None was passed
     def _noop(**_kwargs: Any) -> None:
-        print("No function provided for remote execution. This is a no-op.")
+        logger.warning("No function provided for remote execution. This is a no-op.")
         return None
 
     executor.run_and_wait(

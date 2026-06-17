@@ -1,5 +1,8 @@
 from ase import Atoms
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[bool], max_deformation: float, num_structures: int) -> list[Atoms]:
     """
@@ -44,4 +47,4 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
 if __name__ == "__main__":
     atoms = Atoms("H2O", positions=[(0, 0, 0), (0.76, 0.58, 0), (-0.76, 0.58, 0)], cell =[3,3,3])
     deformed_atoms_list = create_stretch_compress_atoms_list(atoms, deform_xyz=[True, False, False], max_deformation=0.4, num_structures=5)
-    print([deformed_atoms.positions for deformed_atoms in deformed_atoms_list])
+    logger.debug("Stretch/compress positions: %s", [deformed_atoms.positions.tolist() for deformed_atoms in deformed_atoms_list])

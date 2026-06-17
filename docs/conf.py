@@ -1,4 +1,4 @@
-"""Sphinx configuration for ALomnacy documentation."""
+"""Sphinx configuration for ALomancy documentation."""
 
 # import os
 import sys
@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Project information
-project = "ALomnacy"
+project = "ALomancy"
 copyright = "2025, Julian Holland"
 author = "Julian Holland"
 release = "0.1.0"

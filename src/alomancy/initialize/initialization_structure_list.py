@@ -1,4 +1,5 @@
 import itertools
+import logging
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +19,8 @@ from alomancy.initialize.stretch_and_compress import create_stretch_compress_ato
 
 if TYPE_CHECKING:
     from alomancy.database.global_database import GlobalDatabase
+
+logger = logging.getLogger(__name__)
 
 
 def compute_initialization_needs(
@@ -146,7 +149,7 @@ def create_initialization_atoms_list(
             max_num_atoms=max_atom_number,
             relax_structures=True,
         )
-        print(f"Retrieved {len(mp_atoms_list)} structures from Materials Project.")
+        logger.info("Retrieved %d structures from Materials Project.", len(mp_atoms_list))
 
     # --- Single / isolated atoms ---------------------------------------
     elements_for_singles = (
@@ -177,9 +180,10 @@ def create_initialization_atoms_list(
                     element_a=combo[0], element_b=combo[1], num_dimers=count
                 )
             )
-    print(
-        f"Created {len(dimer_atoms_list)} dimer structures "
-        f"across {sum(c > 0 for c in combos_to_generate.values())} combos."
+    logger.info(
+        "Created %d dimer structures across %d combos.",
+        len(dimer_atoms_list),
+        sum(c > 0 for c in combos_to_generate.values()),
     )
 
     # --- Trimers -------------------------------------------------------
@@ -206,9 +210,10 @@ def create_initialization_atoms_list(
                     num_trimers=count,
                 )
             )
-    print(
-        f"Created {len(trimer_atoms_list)} trimer structures "
-        f"across {sum(1 for c in trimer_combos_to_generate.values() if c > 0)} combos."
+    logger.info(
+        "Created %d trimer structures across %d combos.",
+        len(trimer_atoms_list),
+        sum(1 for c in trimer_combos_to_generate.values() if c > 0),
     )
 
     # --- Amorphous -----------------------------------------------------
@@ -219,7 +224,7 @@ def create_initialization_atoms_list(
     if densities_list is None:
         densities_list = [1.0]
     for density in densities_list:
-        print(f"Creating amorphous structures with density {density} g/cm^3.")
+        logger.debug("Creating amorphous structures with density %.2f g/cm^3.", density)
         per_density = int(np.floor(amorphous_target / len(densities_list)) or 1)
         amorphous_atoms_list.extend(
             create_amorphous_atoms_list(
@@ -231,7 +236,7 @@ def create_initialization_atoms_list(
                 composition_list=composition_list,
             )
         )
-    print(f"Created {len(amorphous_atoms_list)} amorphous structures.")
+    logger.info("Created %d amorphous structures.", len(amorphous_atoms_list))
 
     # --- Stretch / compress MP structures ------------------------------
     stretch_compress_atoms_list: list[Atoms] = []
@@ -245,9 +250,10 @@ def create_initialization_atoms_list(
                     num_structures=num_stretch_compress_per_mp,
                 )
             )
-    print(
-        f"Created {len(stretch_compress_atoms_list)} stretch/compress structures "
-        f"from {len(mp_atoms_list)} MP structures."
+    logger.info(
+        "Created %d stretch/compress structures from %d MP structures.",
+        len(stretch_compress_atoms_list),
+        len(mp_atoms_list),
     )
 
     # --- Assemble ------------------------------------------------------
@@ -261,8 +267,8 @@ def create_initialization_atoms_list(
     total_atoms_list.extend(amorphous_atoms_list)
     total_atoms_list.extend(stretch_compress_atoms_list)
 
-    print(f"Created {len(total_atoms_list)} total structures for initialization.")
+    logger.info("Created %d total structures for initialization.", len(total_atoms_list))
     out_path = Path(work_dir, "initialization_structures_generated.xyz")
     write(out_path, total_atoms_list)
-    print(f"Saved initialization structures to {out_path}.")
+    logger.info("Saved initialization structures to %s.", out_path)
     return total_atoms_list

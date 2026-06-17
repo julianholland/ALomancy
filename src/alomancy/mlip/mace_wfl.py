@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import logging
 
 import numpy as np
 from expyre import ExPyRe
@@ -8,6 +9,8 @@ from alomancy.configs.remote_info import RemoteInfo, get_remote_info
 from argparse import Namespace
 from mace import tools
 from mace.cli.run_train import run
+
+logger = logging.getLogger(__name__)
 
 # def mace_fit(seed: int, 
 #              mlip_committee_job_dict: dict, 
@@ -117,7 +120,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     """
     workdir = Path(workdir_str)
     mlip_dir = Path(workdir, mlip_committee_job_dict["name"], f"fit_{fit_idx}")
-    print(f"Creating MLIP directory: {mlip_dir}")
+    logger.info("Creating MLIP directory: %s", mlip_dir)
     mlip_dir.mkdir(exist_ok=True, parents=True)
 
     assert "seed" not in mlip_committee_job_dict["mace_fit_kwargs"], (
@@ -172,9 +175,9 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
 
     mace_fit_params["seed"] = seed + fit_idx
     # mace_fit_params["results_dir"] = str(mlip_dir)
-    print("MACE fit parameters:")
+    logger.debug("MACE fit parameters:")
     for key, value in mace_fit_params.items():
-        print(f"  {key}: {value}")
+        logger.debug("  %s: %s", key, value)
 
     
     # Resolve the fitting command

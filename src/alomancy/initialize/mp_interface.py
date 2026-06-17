@@ -1,3 +1,4 @@
+import logging
 import os
 
 from mp_api.client import MPRester
@@ -5,6 +6,7 @@ from pymatgen.io.ase import AseAtomsAdaptor
 import itertools
 
 # from pymatgen.
+logger = logging.getLogger(__name__)
 mp_api_key = os.getenv("MP_API_KEY")
 if not mp_api_key:
     raise ValueError("MP_API_KEY environment variable not set. Please set it to your Materials Project API key.")
@@ -20,7 +22,7 @@ def retrieve_mp_material_docs(
     
     docs_list = []
     for el in element_permutations:
-        print(f"Retrieving structures from Materials Project with elements {el}, energy above hull < {max_energy_above_hull} eV, and number of atoms <= {max_num_atoms}.")
+        logger.info("Retrieving structures from Materials Project: elements=%s, hull_cutoff=%.2f eV, max_atoms=%d", el, max_energy_above_hull, max_num_atoms)
         
         with MPRester(mp_api_key) as mpr:
             docs = mpr.materials.summary.search(
@@ -56,5 +58,5 @@ if __name__ == "__main__":
     max_energy_above_hull = 0.1
     max_num_atoms = 20
     atoms_list = atoms_list_from_mp(elements, max_energy_above_hull, max_num_atoms)
-    print(f"Retrieved {len(atoms_list)} documents from Materials Project.")
+    logger.info("Retrieved %d structures from Materials Project.", len(atoms_list))
 

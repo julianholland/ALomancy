@@ -1,4 +1,4 @@
-.. filepath: /home/holland/repos/ALomnacy/docs/api/core.rst
+.. filepath: /home/holland/repos/ALomancy/docs/api/core.rst
 
 Core Module
 ===========

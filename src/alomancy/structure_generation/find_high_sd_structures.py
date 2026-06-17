@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -6,13 +7,14 @@ from ase import Atoms
 from ase.io import read, write
 from tqdm import tqdm
 
+logger = logging.getLogger(__name__)
+
 
 def find_high_sd_structures(
     structure_list: list[Atoms],
     base_name: str,
     job_dict: dict[str, dict[str, str]],
     structure_forces_dict: dict,
-    verbose: int = 0,
     read_xyz: bool = True,
 ) -> list[Atoms]:
     desired_structures = job_dict["structure_generation"][
@@ -51,7 +53,6 @@ def find_high_sd_structures(
             structure_generation_dir=Path(
                 "results", base_name, job_dict["structure_generation"]["name"]
             ),
-            verbose=verbose,
         )
         index_list = std_dev_df["structure_index"][:desired_structures].to_list()
         high_sd_structures = [structure_list[i] for i in index_list]
@@ -70,12 +71,12 @@ def find_high_sd_structures(
                 append=True,
             )
 
-    if verbose > 0:
-        print(
-            f"Selected {len(high_sd_structures)} structures for DFT calculations based on standard deviation of forces."
-        )
-        print(std_dev_df[:desired_structures])
-        print(f"total mean: {std_dev_df['mean_std_dev'].mean()}")
+    logger.info(
+        "Selected %d structures for DFT calculations based on force std dev.",
+        len(high_sd_structures),
+    )
+    logger.debug("Std dev top structures:\n%s", std_dev_df[:desired_structures])
+    logger.debug("Total mean std dev: %s", std_dev_df["mean_std_dev"].mean())
 
     return high_sd_structures
 
@@ -87,7 +88,6 @@ def find_sd_of_all_structures(
     list_of_other_calculators: list,
     forces_name: str = "REF_forces",
     energy_name: str = "REF_energy",
-    verbose: int = 0,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     structure_forces_dict = {
         "base_mlip": {
@@ -119,7 +119,6 @@ def find_sd_of_all_structures(
         structure_generation_dir=Path(
             "results", base_name, job_dict["structure_generation"]["name"]
         ),
-        verbose=verbose,
     )
 
 
@@ -202,12 +201,11 @@ def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
 def std_deviation_of_forces(
     structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
     structure_generation_dir: Path,
-    verbose: int = 0,
 ) -> pl.DataFrame:
     """
     Calculate the standard deviation of forces for each structure in the dictionary.
     """
-    print(structure_forces_dict.keys())
+    logger.debug("Calculators in forces dict: %s", list(structure_forces_dict.keys()))
     number_of_structures = len(structure_forces_dict["base_mlip"])
     rows = []
 
@@ -229,12 +227,13 @@ def std_deviation_of_forces(
         )
         std_dev_per_energy = np.std(energy_array)
 
-        if verbose > 0:
-            print(
-                f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, "
-                f"mean std dev: {np.mean(std_dev_per_force_fragment)}, "
-                f"std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
-            )
+        logger.debug(
+            "Structure %d: max_std_dev=%.4f, mean_std_dev=%.4f, std_dev_energy=%.4f",
+            structure,
+            float(np.max(std_dev_per_force_fragment)),
+            float(np.mean(std_dev_per_force_fragment)),
+            float(std_dev_per_energy),
+        )
 
         rows.append(
             {
@@ -247,6 +246,6 @@ def std_deviation_of_forces(
 
     df = pl.DataFrame(rows).sort("max_std_dev", descending=True)
     df.write_csv(Path(structure_generation_dir) / "std_dev_forces.csv")
-    print(df)
+    logger.debug("Std dev DataFrame:\n%s", df)
 
     return df

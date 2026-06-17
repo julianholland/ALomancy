@@ -1,4 +1,5 @@
 import copy
+import logging
 import sys
 
 
@@ -8,6 +9,9 @@ import pathlib # wizadry to solve pickle problem
 sys.modules["pathlib._local"]=pathlib
 
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 class RemoteInfo:
     """Create a RemoteInfo object
 
@@ -87,7 +91,7 @@ def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInf
     if input_files is None:
         input_files = []
 
-    print(f"HPC: {job_dict['hpc']['hpc_name']}, Job: {job_dict['name']}")
+    logger.debug("HPC: %s, Job: %s", job_dict['hpc']['hpc_name'], job_dict['name'])
     return RemoteInfo(
         sys_name=job_dict["hpc"]["hpc_name"],
         job_name=job_dict["name"],

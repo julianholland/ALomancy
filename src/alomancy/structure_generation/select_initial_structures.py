@@ -1,7 +1,10 @@
+import logging
 import warnings
 
 import numpy as np
 from ase import Atoms
+
+logger = logging.getLogger(__name__)
 
 
 def select_initial_structures(
@@ -13,7 +16,6 @@ def select_initial_structures(
     selectable_configs: list[str] | None = None,
     atom_number_range: tuple[int, int] = (0, 0),
     enforce_chemical_diversity: bool = False,
-    verbose: int = 0,
 ):
     """randomly selects structures from a train set based on a chemical formula or
     max number of atoms and number of mds to run.
@@ -135,10 +137,7 @@ def select_initial_structures(
 
     mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["name"])
 
-    if verbose > 0:
-        print(
-            f"The following structures were selected for MD: {[a.get_chemical_formula() for a in initial_atoms]}"
-        )
+    logger.debug("Structures selected for MD: %s", [a.get_chemical_formula() for a in initial_atoms])
 
     return initial_atoms
 

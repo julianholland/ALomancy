@@ -1,4 +1,4 @@
-.. filepath: /home/holland/repos/ALomnacy/docs/api/index.rst
+.. filepath: /home/holland/repos/ALomancy/docs/api/index.rst
 
 API Reference
 =============
@@ -7,6 +7,7 @@ API Reference
    :maxdepth: 2
 
    core
+   database
    mlip
    structure_generation
    high_accuracy_evaluation

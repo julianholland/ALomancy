@@ -1,5 +1,6 @@
 from pathlib import Path
 from warnings import warn
+import logging
 
 from ase import Atoms
 from ase.io import read
@@ -7,7 +8,7 @@ import numpy as np
 from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 
-from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+logger = logging.getLogger(__name__)
 
 
 def split_atoms_list_into_test_and_train(
@@ -74,16 +75,10 @@ def extend_test_and_train_sets_with_extra_dataset(
 
         train_xyzs.extend(extra_dataset_train + [a for a in extra_dataset_atoms if a.info.get("config_type") in inelegible_configs])
         test_xyzs.extend(extra_dataset_test)
-        print(
-            f"Added {len(extra_dataset_train)} structures from {extra_dataset} to training set and {len(extra_dataset_test)} structures to test set."
-        )
-        print(
-            f"Please remove {extra_dataset} from the extra_datasets list if you want to avoid duplicates upon restart."
-        )
+        logger.info("Added %d structures from %s to training set and %d to test set.", len(extra_dataset_train), extra_dataset, len(extra_dataset_test))
+        logger.warning("Remove %s from extra_datasets to avoid duplicates upon restart.", extra_dataset)
     else:
-        print(
-            f"WARNING: Could not read dataset from {extra_dataset}. Please check the file path and format. No structures were added from this dataset."
-        )
+        logger.warning("Could not read dataset from %s. Check path and format.", extra_dataset)
 
     return train_xyzs, test_xyzs
 

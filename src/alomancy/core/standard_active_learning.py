@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import logging
 import numpy as np
 import os
 import pandas as pd
@@ -42,6 +43,8 @@ from alomancy.utils.file_saving_and_parsing import (
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 from alomancy.utils.clean_structures import clean_structures
 
+logger = logging.getLogger(__name__)
+
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
@@ -75,8 +78,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             self.initial_test_file_path
         ).exists():
             train_xyzs, test_xyzs = self.load_initial_train_test_sets()
-            print(
-                "Initial train and test sets loaded from files:",
+            logger.info(
+                "Initial train and test sets loaded from files: %s, %s",
                 self.initial_train_file_path,
                 self.initial_test_file_path,
             )
@@ -122,13 +125,18 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
 
         if anything_needed:
-            print(
-                f"DB check: {self.db.size} structure(s) already evaluated. "
-                f"Generating missing structures: "
-                f"{len(needs['isolated_atoms'])} isolated atoms, "
-                f"{sum(needs['dimer_override'].values())} dimers, "
-                f"{sum(needs['trimer_override'].values())} trimers, "
-                f"{needs['amorphous_override']} amorphous."
+            logger.info(
+                "DB check: %d structure(s) already evaluated. "
+                "Generating missing structures: "
+                "%d isolated atoms, "
+                "%d dimers, "
+                "%d trimers, "
+                "%d amorphous.",
+                self.db.size,
+                len(needs['isolated_atoms']),
+                sum(needs['dimer_override'].values()),
+                sum(needs['trimer_override'].values()),
+                needs['amorphous_override']
             )
 
             # Check if structures were already generated but not yet DFT-evaluated
@@ -139,9 +147,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     Path(work_dir, init_job_dict["read_generated_file"]),
                 )
                 if generated_atoms_list:
-                    print(
-                        f"Read {len(generated_atoms_list)} pre-generated structures "
-                        f"from file: {init_job_dict['read_generated_file']}"
+                    logger.info(
+                        "Read %d pre-generated structures from file: %s",
+                        len(generated_atoms_list),
+                        init_job_dict['read_generated_file']
                     )
 
             if not generated_atoms_list:
@@ -185,9 +194,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     "and make sure remote jobs are running correctly."
                 )
 
-            print(
-                f"config_type of first evaluated structure: "
-                f"{high_accuracy_structures[0].info.get('config_type')}"
+            logger.info(
+                "config_type of first evaluated structure: %s",
+                high_accuracy_structures[0].info.get('config_type')
             )
 
             high_accuracy_structures = clean_structures(
@@ -203,11 +212,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 skip_duplicates=True,
                 config_types_to_dedup=_DEFAULT_DEDUP_CONFIG_TYPES,
             )
-            print(f"Added {added} new structure(s) to the global database.")
+            logger.info("Added %d new structure(s) to the global database.", added)
         else:
-            print(
-                f"All initialization targets already met in global DB "
-                f"({self.db.size} structures). Skipping generation and DFT."
+            logger.info(
+                "All initialization targets already met in global DB "
+                "(%d structures). Skipping generation and DFT.",
+                self.db.size
             )
 
         # --- Build train/test from DB contents -----------------------
@@ -224,16 +234,18 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
 
         if test_structure_count > len(eligible_test_structures):
-            print(
-                f"WARNING: Not enough eligible structures for the test set. "
-                f"Found {len(eligible_test_structures)}, needed {test_structure_count}. "
-                f"All eligible structures will go to the test set."
+            logger.warning(
+                "Not enough eligible structures for the test set. "
+                "Found %d, needed %d. "
+                "All eligible structures will go to the test set.",
+                len(eligible_test_structures),
+                test_structure_count
             )
             test_structure_count = len(eligible_test_structures)
 
         if not eligible_test_structures:
-            print(
-                "WARNING: No eligible test structures found for the specified "
+            logger.warning(
+                "No eligible test structures found for the specified "
                 "test_config_types. All structures will be used for training."
             )
             train_xyzs = all_evaluated
@@ -261,7 +273,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             for atoms in train_xyzs
             if "config_type" in atoms.info
         }
-        print(f"Config types in training set: {config_types_in_train}")
+        logger.info("Config types in training set: %s", config_types_in_train)
 
         return train_xyzs, test_xyzs
 
@@ -270,7 +282,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         if "mace_fit_kwargs" not in mlip_committee_job_dict:
             mlip_committee_job_dict["mace_fit_kwargs"] = {}
-        print("here when reading fit dirs:", os.getcwd())
+        logger.debug("Working directory: %s", os.getcwd())
         if (
             len(
                 list(
@@ -324,8 +336,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             if isinstance(high_sd_structures, Atoms):
                 high_sd_structures = [high_sd_structures]
 
-            print(
-                f"{len(high_sd_structures)} High SD structures loaded from file: {Path(operating_dir, 'high_sd_structures.xyz')}"
+            logger.info(
+                "%d High SD structures loaded from file: %s",
+                len(high_sd_structures),
+                Path(operating_dir, 'high_sd_structures.xyz')
             )
 
             return high_sd_structures
@@ -341,8 +355,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 ),
                 format="extxyz",
             )
-            print(
-                "Input structures for structure generation step loaded from file:", {Path(operating_dir, f"{job_dict['structure_generation']['name']}_input_structures.xyz")}
+            logger.info(
+                "Input structures for structure generation step loaded from file: %s",
+                Path(operating_dir, f"{job_dict['structure_generation']['name']}_input_structures.xyz")
             )
 
         else:
@@ -350,15 +365,15 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 base_name=base_name,
                 structure_generation_job_dict=job_dict["structure_generation"],
                 train_atoms_list=train_atoms_list,  # type: ignore
-                verbose=self.verbose,
                 **job_dict["structure_generation"]["structure_selection_kwargs"],
             )
 
         if isinstance(input_structures, Atoms):
             input_structures = [input_structures]
 
-        print(
-            f"{len(input_structures)} structures selected for structure generation step."
+        logger.info(
+            "%d structures selected for structure generation step.",
+            len(input_structures)
         )
         Path.mkdir(
             Path(operating_dir),
@@ -392,7 +407,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             "model_path": [
                 base_mace_model_path
             ],  # need to pass model path to preserve consistent dtype
-            "verbose": self.verbose,
             **job_dict["structure_generation"]["run_md_kwargs"],
         }
 
@@ -412,8 +426,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             structures = read(md_trajectory_path, ":", format="extxyz")
             structure_list.extend(structures)
 
-        if self.verbose > 0:
-            print(len(structure_list), "structures found from trajectory files.")
+        logger.debug("%d structures found from trajectory files.", len(structure_list))
 
         model_paths_list = list(
             Path.glob(
@@ -444,7 +457,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             base_name=base_name,
             job_dict=job_dict,
             structure_forces_dict=structure_forces_dict,
-            verbose=self.verbose,
         )
 
         # Assign job IDs to high SD structures
@@ -462,8 +474,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         start_index: int = 0,
     ) -> list[Atoms]:
 
-        if self.verbose > 0:
-            print(f"Starting high accuracy evaluation with {len(structures)} structures.")
+        logger.debug("Starting high accuracy evaluation with %d structures.", len(structures))
 
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
@@ -476,39 +487,42 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 )
             )
             if len(found_structures) >= len(structures) + start_index:
-                print(
-                    f"Found {len(found_structures)} structures from previous high accuracy evaluation. "
-                    f"Skipping remote submission and reusing these structures."
+                logger.info(
+                    "Found %d structures from previous high accuracy evaluation. "
+                    "Skipping remote submission and reusing these structures.",
+                    len(found_structures)
                 )
                 
                 atoms_list=[read(p, format="extxyz") for p in found_structures]
                 return atoms_list
                     
             elif len(found_structures) > 0:
-                print(
-                    f"Found {len(found_structures)} structures from previous high accuracy evaluation. "
-                    f"These will be reused; the rest will be submitted as new remote jobs."
+                logger.info(
+                    "Found %d structures from previous high accuracy evaluation. "
+                    "These will be reused; the rest will be submitted as new remote jobs.",
+                    len(found_structures)
                 )
                 structures = structures[len(found_structures) + start_index:]
             else:
-                print(
-                    f"No previous results found. Submitting all {len(structures)} structures."
+                logger.info(
+                    "No previous results found. Submitting all %d structures.",
+                    len(structures)
                 )
 
         total_batches = int(
             np.ceil(len(structures) / high_accuracy_eval_job_dict["max_batch_size"])
         )
 
-        print(
-            f"Total structures: {len(structures)}, "
-            f"max batch size: {high_accuracy_eval_job_dict['max_batch_size']}, "
-            f"total batches: {total_batches}"
+        logger.info(
+            "Total structures: %d, max batch size: %d, total batches: %d",
+            len(structures),
+            high_accuracy_eval_job_dict['max_batch_size'],
+            total_batches
         )
         current_batches = len(
             list(Path("results", base_name, "high_accuracy_evaluation").glob("batch_*"))
         )
-        if self.verbose > 0:
-            print(f"Found {current_batches} existing batch directories.")
+        logger.debug("Found %d existing batch directories.", current_batches)
 
         # GO batches use indices [current_batches, total_batches).
         # SP batches (when allow_relaxation=True) use [total_batches, ...) to avoid collision.
@@ -519,9 +533,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 (batch_num + 1) * high_accuracy_eval_job_dict["max_batch_size"],
                 len(structures),
             )
-            print(
-                f"Submitting batch {batch_num}/{total_batches} "
-                f"(structures {batch_start}–{batch_end - 1})"
+            logger.info(
+                "Submitting batch %d/%d (structures %d–%d)",
+                batch_num,
+                total_batches,
+                batch_start,
+                batch_end - 1
             )
             batch_structures: list[Atoms] = structures[batch_start:batch_end]
 
@@ -534,11 +551,11 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     atom for atom in batch_structures
                     if atom.info.get("needs_relaxation") is not True
                 ]
-                if self.verbose > 0:
-                    print(
-                        f"  {len(batch_structures_to_relax)} GO structures, "
-                        f"{len(single_point_batch_structures)} SP structures."
-                    )
+                logger.debug(
+                    "%d GO structures, %d SP structures.",
+                    len(batch_structures_to_relax),
+                    len(single_point_batch_structures)
+                )
 
                 go_max_time = high_accuracy_eval_job_dict.get(
                     "go_max_time", high_accuracy_eval_job_dict["max_time"]
@@ -589,12 +606,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
         for directory in directory_list:
             completed_file = Path(directory, f"{output_name}.xyz")
-            incomplete_file = Path(directory, "qe_opt.traj")
             structure = None
             if completed_file.exists():
                 structure = read(completed_file, format="extxyz")
-            elif incomplete_file.exists():
-                structure = read(incomplete_file, ":", format="traj")[-1]
             if structure is not None:
                 high_accuracy_structures.append(structure)
 

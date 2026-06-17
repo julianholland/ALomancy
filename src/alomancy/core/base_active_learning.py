@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -6,13 +7,13 @@ from ase import Atoms
 from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
-from alomancy.database.global_database import GlobalDatabase, _DEFAULT_DEDUP_CONFIG_TYPES
-from alomancy.initialize.initialization_structure_list import (
-    create_initialization_atoms_list,
-)
+from alomancy.database.global_database import GlobalDatabase
 from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+from alomancy.utils.logging_config import setup_logging
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
+
+logger = logging.getLogger(__name__)
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -37,6 +38,7 @@ class BaseActiveLearningWorkflow(ABC):
         jobs_dict: dict,
         number_of_al_loops: int = 5,
         verbose: int = 0,
+        log_file: str | None = "results/alomancy.log",
         start_loop: int = 0,
         plots: bool = True,
         seed: int = 803,
@@ -51,6 +53,7 @@ class BaseActiveLearningWorkflow(ABC):
         self.plots = plots
         self.seed = seed
         self.db = GlobalDatabase(db_path)
+        setup_logging(verbose=verbose, log_file=log_file)
 
     def run(self, **kwargs) -> None:
         """
@@ -59,17 +62,19 @@ class BaseActiveLearningWorkflow(ABC):
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
-        train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
-
+        # Seed the DB with extra datasets BEFORE initialize_training_set so that
+        # compute_initialization_needs accounts for already-provided structures
+        # and skips generating any that are covered.  The DB path in
+        # initialize_training_set builds train/test from get_all_as_atoms(),
+        # which automatically includes these seeded structures.
         extra_datasets = self.jobs_dict["initialization"].get("extra_datasets") or []
-        for extra_dataset in extra_datasets:
-            train_xyzs, test_xyzs = self._add_extra_dataset(
-                extra_dataset=extra_dataset,
-                train_xyzs=train_xyzs,
-                test_xyzs=test_xyzs,
-            )
+        for ed in extra_datasets:
+            self._seed_db_from_extra_dataset(ed)
 
-        print(f"Initialized training set with {len(train_xyzs)} structures.")
+        train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
+        
+
+        logger.info("Initialized training set with %d structures.", len(train_xyzs))
 
         for loop in range(self.start_loop, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
@@ -78,7 +83,7 @@ class BaseActiveLearningWorkflow(ABC):
             try:
                 workdir.mkdir(exist_ok=True, parents=True)
             except OSError as e:
-                print(f"Warning: Could not create directory {workdir}: {e}")
+                logger.warning("Could not create directory %s: %s", workdir, e)
 
             train_file = Path(workdir, "train_set.xyz")
             test_file = Path(workdir, "test_set.xyz")
@@ -89,19 +94,17 @@ class BaseActiveLearningWorkflow(ABC):
             except OSError as e:
                 if "test" not in str(e).lower():
                     raise
-                print(f"Warning: Could not write files (test environment): {e}")
+                logger.warning("Could not write files (test environment): %s", e)
 
-            if self.verbose > 0:
-                print(f"Starting AL loop {loop}")
-                print(f"  Training set size: {len(train_xyzs)}")
-                print(f"  Test set size: {len(test_xyzs)}")
+            logger.debug("Starting AL loop %d", loop)
+            logger.debug("  Training set size: %d", len(train_xyzs))
+            logger.debug("  Test set size: %d", len(test_xyzs))
 
             evaluation_results = self.train_mlip(
                 base_name, self.jobs_dict["mlip_committee"], **kwargs
             )
 
-            if self.verbose > 0:
-                print(f"AL Loop {loop} evaluation results: \n{evaluation_results}")
+            logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
 
             if self.plots:
                 mae_al_loop_plot(evaluation_results, self.jobs_dict["mlip_committee"])
@@ -116,9 +119,7 @@ class BaseActiveLearningWorkflow(ABC):
                 generated_structures,
                 **kwargs,
             )
-            print(
-                f"High-accuracy evaluation completed for {len(new_training_data)} structures."
-            )
+            logger.info("High-accuracy evaluation completed for %d structures.", len(new_training_data))
 
             new_training_data = clean_structures(
                 new_training_data,
@@ -139,85 +140,31 @@ class BaseActiveLearningWorkflow(ABC):
             train_xyzs += new_train_data
             test_xyzs += new_test_data
 
-            if self.verbose > 0:
-                print(
-                    f"Completed AL loop {loop}, retraining with {len(train_xyzs)} structures."
-                )
+            logger.debug("Completed AL loop %d, retraining with %d structures.", loop, len(train_xyzs))
 
-    def _add_extra_dataset(
-        self,
-        extra_dataset: str,
-        train_xyzs: list[Atoms],
-        test_xyzs: list[Atoms],
-    ) -> tuple[list[Atoms], list[Atoms]]:
+    def _seed_db_from_extra_dataset(self, extra_dataset: str) -> None:
         """
-        Load an extra dataset and add only structures not already in the DB.
+        Read an extra dataset file and add its structures to the global DB.
 
-        IsolatedAtom and init_MP structures are deduped by (config_type, formula);
-        all other config_types are always added.  After dedup, the new structures
-        are appended to the in-memory train/test lists via the existing helper.
+        Called before initialize_training_set so compute_initialization_needs
+        can account for already-provided structures when deciding what still
+        needs to be generated.
+
+        IsolatedAtom and init_MP are deduplicated by (config_type, formula).
+        All other config_types (dimers, trimers, amorphous, etc.) are added
+        without exact dedup — they are counted by compute_initialization_needs
+        and the existing count reduces the generation target accordingly.
         """
         all_atoms: list[Atoms] = read(extra_dataset, ":", format="extxyz")
         if isinstance(all_atoms, Atoms):
             all_atoms = [all_atoms]
 
-        existing_keys = self.db._get_config_type_formula_set()
-        dedup_config_types = _DEFAULT_DEDUP_CONFIG_TYPES
-
-        new_atoms: list[Atoms] = []
-        for atoms in all_atoms:
-            ct = atoms.info.get("config_type", "")
-            formula = atoms.get_chemical_formula()
-            key = (ct, formula)
-            if ct in dedup_config_types and key in existing_keys:
-                if self.verbose > 0:
-                    print(
-                        f"Skipping duplicate {ct} structure ({formula}) "
-                        f"already in global database."
-                    )
-                continue
-            new_atoms.append(atoms)
-            existing_keys.add(key)
-
-        if not new_atoms:
-            print(
-                f"Extra dataset {extra_dataset}: all structures already in global DB, skipping."
-            )
-            return train_xyzs, test_xyzs
-
-        skipped = len(all_atoms) - len(new_atoms)
+        added = self.db.add_structures(all_atoms, skip_duplicates=True)
+        skipped = len(all_atoms) - added
+        msg = f"Seeded DB from {extra_dataset}: {added} structure(s) added"
         if skipped:
-            print(
-                f"Extra dataset {extra_dataset}: skipped {skipped} duplicate structure(s); "
-                f"adding {len(new_atoms)} new structure(s)."
-            )
-
-        # Add the genuinely new structures to the DB
-        self.db.add_structures(new_atoms, skip_duplicates=False)
-
-        # Extend in-memory train/test sets directly from new_atoms — do NOT
-        # re-read the file, which would re-introduce the structures we just deduped.
-        fall_back_config_type = f"extra_dataset_{Path(extra_dataset).name}"
-        cleaned = clean_structures(
-            new_atoms,
-            fall_back_config_type,
-            override_config_type=False,
-            already_computed=True,
-        )
-        isolated = [a for a in cleaned if a.info.get("config_type") == "IsolatedAtom"]
-        eligible = [a for a in cleaned if a.info.get("config_type") != "IsolatedAtom"]
-        new_train, new_test = split_atoms_list_into_test_and_train(
-            eligible,
-            self.jobs_dict["initialization"]["test_to_train_ratio"],
-            self.seed,
-        )
-        train_xyzs.extend(new_train + isolated)
-        test_xyzs.extend(new_test)
-        print(
-            f"Added {len(new_train)} structures from {extra_dataset} to training set "
-            f"and {len(new_test)} to test set."
-        )
-        return train_xyzs, test_xyzs
+            msg += f", {skipped} duplicate(s) skipped"
+        logger.info("%s.", msg)
 
     def load_initial_train_test_sets(
         self,
@@ -232,16 +179,20 @@ class BaseActiveLearningWorkflow(ABC):
             )
 
         if len(train_xyzs) <= 1:
-            print(
-                f"WARNING: Only {len(train_xyzs)} structure(s) found in the training set. "
-                f"More than one structure is recommended to start active learning. "
-                f"Consider adding more structures to {self.initial_train_file_path}."
+            logger.warning(
+                "Only %d structure(s) found in the training set. "
+                "More than one structure is recommended to start active learning. "
+                "Consider adding more structures to %s.",
+                len(train_xyzs),
+                self.initial_train_file_path,
             )
         if len(test_xyzs) <= 1:
-            print(
-                f"WARNING: Only {len(test_xyzs)} structure(s) found in the test set. "
-                f"More than one structure is recommended to start active learning. "
-                f"Consider adding more structures to {self.initial_test_file_path}."
+            logger.warning(
+                "Only %d structure(s) found in the test set. "
+                "More than one structure is recommended to start active learning. "
+                "Consider adding more structures to %s.",
+                len(test_xyzs),
+                self.initial_test_file_path,
             )
 
         if dummy_run:

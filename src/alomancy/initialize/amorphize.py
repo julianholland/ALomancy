@@ -1,9 +1,12 @@
+import logging
 import numpy as np
 from ase.atoms import Atoms
 from ase.data import atomic_numbers, atomic_masses
 from ase.calculators.lj import LennardJones
 from ase.optimize import BFGS
 import itertools
+
+logger = logging.getLogger(__name__)
 
 def create_amorphous_atoms_list(elements: list[str], atom_number: int, density:float, num_structures: int, seed: int, composition_list: None | list[list[str]] = None) -> list[Atoms]:
     """
@@ -80,4 +83,4 @@ if __name__ == "__main__":
     density = 1.0  # g/cm^3
     num_structures = 50
     amorphous_atoms_list = create_amorphous_atoms_list(elements, atom_number, density, num_structures, composition_list=None, seed=803)
-    print([atoms.get_chemical_formula() for atoms in amorphous_atoms_list])
+    logger.debug("Amorphous structures generated: %s", [atoms.get_chemical_formula() for atoms in amorphous_atoms_list])
