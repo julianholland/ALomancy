@@ -1,9 +1,9 @@
 import copy
 import logging
+import math
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from ase import Atoms
 from ase.io import read, write
@@ -11,25 +11,23 @@ from ase.io import read, write
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.database.global_database import _DEFAULT_DEDUP_CONFIG_TYPES
-from alomancy.high_accuracy_evaluation.dft.qe_remote_submitter import (
-    qe_remote_submitter,
-)
 from alomancy.high_accuracy_evaluation.dft.run_qe import run_go_qe, run_sp_qe
 from alomancy.initialize.initialization_structure_list import (
     compute_initialization_needs,
     create_initialization_atoms_list,
 )
-from alomancy.mlip.committee_remote_submitter import committee_remote_submitter
 from alomancy.mlip.get_mace_eval_info import (
     get_mace_eval_info,
 )
 from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.remote_submission import (
+    all_maces_remote_submitter,
+    committee_remote_submitter,
+    md_remote_submitter,
+    qe_remote_submitter,
+)
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
-)
-from alomancy.structure_generation.md.md_remote_submitter import (
-    all_maces_remote_submitter,
-    md_remote_submitter,
 )
 from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, run_md
 from alomancy.structure_generation.select_initial_structures import (
@@ -42,6 +40,16 @@ from alomancy.utils.file_saving_and_parsing import (
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 logger = logging.getLogger(__name__)
+
+
+def _needs_anything(needs: dict) -> bool:
+    return bool(
+        needs["isolated_atoms"]
+        or needs["dimer_override"]
+        or needs["trimer_override"]
+        or needs["amorphous_override"] > 0
+        or needs["mp_structures"]
+    )
 
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
@@ -72,9 +80,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         init_job_dict = self.jobs_dict["initialization"]
 
         # --- Fast path: pre-existing xyz files -------------------------
-        if Path(self.initial_train_file_path).exists() and Path(
-            self.initial_test_file_path
-        ).exists():
+        if (
+            Path(self.initial_train_file_path).exists()
+            and Path(self.initial_test_file_path).exists()
+        ):
             train_xyzs, test_xyzs = self.load_initial_train_test_sets()
             logger.info(
                 "Initial train and test sets loaded from files: %s, %s",
@@ -101,26 +110,36 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         num_dimers_per_combo = creation_kwargs.get("num_dimers_per_combo", 10)
         num_trimers_per_combo = creation_kwargs.get("num_trimers_per_combo", 5)
         num_amorphous = creation_kwargs.get("num_amorphous", 100)
-        num_stretch_compress_per_mp = creation_kwargs.get("num_stretch_compress_per_mp", 5)
-
-        # Determine what still needs to be generated
-        needs = compute_initialization_needs(
-            db=self.db,
-            elements=creation_kwargs["elements"],
-            _single_atoms=creation_kwargs.get("single_atoms", True),
-            mp_structures=creation_kwargs.get("mp_structures", True),
-            num_dimers_per_combo=num_dimers_per_combo,
-            num_trimers_per_combo=num_trimers_per_combo,
-            num_amorphous=num_amorphous,
+        num_stretch_compress_per_mp = creation_kwargs.get(
+            "num_stretch_compress_per_mp", 5
         )
 
-        anything_needed = (
-            needs["isolated_atoms"]
-            or needs["dimer_override"]
-            or needs["trimer_override"]
-            or needs["amorphous_override"] > 0
-            or needs["mp_structures"]
-        )
+        # Check DB first — existing structures take priority over extra_datasets
+        if self.db.size > 0:
+            logger.info(
+                "Global DB has %d existing structures; reading those in first.",
+                self.db.size,
+            )
+
+        _needs_kwargs = {
+            "db": self.db,
+            "elements": creation_kwargs["elements"],
+            "_single_atoms": creation_kwargs.get("single_atoms", True),
+            "mp_structures": creation_kwargs.get("mp_structures", True),
+            "num_dimers_per_combo": num_dimers_per_combo,
+            "num_trimers_per_combo": num_trimers_per_combo,
+            "num_amorphous": num_amorphous,
+        }
+        needs = compute_initialization_needs(**_needs_kwargs)
+
+        # Seed extra_datasets only if DB is still missing some initialization targets
+        extra_datasets = init_job_dict.get("extra_datasets") or []
+        if extra_datasets and _needs_anything(needs):
+            for ed in extra_datasets:
+                self._seed_db_from_extra_dataset(ed)
+            needs = compute_initialization_needs(**_needs_kwargs)
+
+        anything_needed = _needs_anything(needs)
 
         if anything_needed:
             logger.info(
@@ -131,10 +150,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "%d trimers, "
                 "%d amorphous.",
                 self.db.size,
-                len(needs['isolated_atoms']),
-                sum(needs['dimer_override'].values()),
-                sum(needs['trimer_override'].values()),
-                needs['amorphous_override']
+                len(needs["isolated_atoms"]),
+                sum(needs["dimer_override"].values()),
+                sum(needs["trimer_override"].values()),
+                needs["amorphous_override"],
             )
 
             # Check if structures were already generated but not yet DFT-evaluated
@@ -148,7 +167,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     logger.info(
                         "Read %d pre-generated structures from file: %s",
                         len(generated_atoms_list),
-                        init_job_dict['read_generated_file']
+                        init_job_dict["read_generated_file"],
                     )
 
             if not generated_atoms_list:
@@ -194,7 +213,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
             logger.info(
                 "config_type of first evaluated structure: %s",
-                high_accuracy_structures[0].info.get('config_type')
+                high_accuracy_structures[0].info.get("config_type"),
             )
 
             high_accuracy_structures = clean_structures(
@@ -215,31 +234,26 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             logger.info(
                 "All initialization targets already met in global DB "
                 "(%d structures). Skipping generation and DFT.",
-                self.db.size
+                self.db.size,
             )
 
         # --- Build train/test from DB contents -----------------------
         all_evaluated = self.db.get_all_as_atoms()
 
-        eligible_test_structures = [
-            atoms
-            for atoms in all_evaluated
-            if atoms.info.get("config_type") in init_job_dict["test_config_types"]
-        ]
+        test_config_types = set(init_job_dict["test_config_types"])
+        eligible_test_structures: list[Atoms] = []
+        always_train_structures: list[Atoms] = []
+        for atoms in all_evaluated:
+            (
+                eligible_test_structures
+                if atoms.info.get("config_type") in test_config_types
+                else always_train_structures
+            ).append(atoms)
 
-        test_structure_count = int(
+        desired_test_count = int(
             len(all_evaluated) * init_job_dict["test_to_train_ratio"]
         )
-
-        if test_structure_count > len(eligible_test_structures):
-            logger.warning(
-                "Not enough eligible structures for the test set. "
-                "Found %d, needed %d. "
-                "All eligible structures will go to the test set.",
-                len(eligible_test_structures),
-                test_structure_count
-            )
-            test_structure_count = len(eligible_test_structures)
+        test_structure_count = min(desired_test_count, len(eligible_test_structures))
 
         if not eligible_test_structures:
             logger.warning(
@@ -249,11 +263,22 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             train_xyzs = all_evaluated
             test_xyzs = []
         else:
-            train_xyzs, test_xyzs = split_atoms_list_into_test_and_train(
-                all_evaluated,
+            if test_structure_count < desired_test_count:
+                logger.warning(
+                    "Not enough eligible structures for the test set. "
+                    "Found %d, needed %d. "
+                    "All eligible structures will go to the test set.",
+                    len(eligible_test_structures),
+                    desired_test_count,
+                )
+            eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
+                eligible_test_structures,
                 test_structure_count / len(eligible_test_structures),
                 self.seed,
             )
+            # IsolatedAtom and other ineligible types always go to training so
+            # MACE can read E0s for every element from the training file.
+            train_xyzs = always_train_structures + eligible_train
 
         write(
             Path(work_dir, Path(self.initial_train_file_path).name),
@@ -300,7 +325,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     ],
                 ),
                 base_name=base_name,
-                target_file=f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model",
                 seed=803,
                 size_of_committee=mlip_committee_job_dict["size_of_committee"],
                 function=mace_fit,
@@ -337,7 +361,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             logger.info(
                 "%d High SD structures loaded from file: %s",
                 len(high_sd_structures),
-                Path(operating_dir, 'high_sd_structures.xyz')
+                Path(operating_dir, "high_sd_structures.xyz"),
             )
 
             return high_sd_structures
@@ -355,7 +379,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
             logger.info(
                 "Input structures for structure generation step loaded from file: %s",
-                Path(operating_dir, f"{job_dict['structure_generation']['name']}_input_structures.xyz")
+                Path(
+                    operating_dir,
+                    f"{job_dict['structure_generation']['name']}_input_structures.xyz",
+                ),
             )
 
         else:
@@ -371,7 +398,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         logger.info(
             "%d structures selected for structure generation step.",
-            len(input_structures)
+            len(input_structures),
         )
         Path.mkdir(
             Path(operating_dir),
@@ -472,7 +499,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         start_index: int = 0,
     ) -> list[Atoms]:
 
-        logger.debug("Starting high accuracy evaluation with %d structures.", len(structures))
+        logger.debug(
+            "Starting high accuracy evaluation with %d structures.", len(structures)
+        )
 
         function_kwargs = {
             "high_accuracy_eval_job_dict": high_accuracy_eval_job_dict,
@@ -488,77 +517,86 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 logger.info(
                     "Found %d structures from previous high accuracy evaluation. "
                     "Skipping remote submission and reusing these structures.",
-                    len(found_structures)
+                    len(found_structures),
                 )
 
-                atoms_list=[read(p, format="extxyz") for p in found_structures]
+                atoms_list = [read(p, format="extxyz") for p in found_structures]
                 return atoms_list
 
             elif len(found_structures) > 0:
                 logger.info(
                     "Found %d structures from previous high accuracy evaluation. "
                     "These will be reused; the rest will be submitted as new remote jobs.",
-                    len(found_structures)
+                    len(found_structures),
                 )
-                structures = structures[len(found_structures) + start_index:]
+                structures = structures[len(found_structures) + start_index :]
             else:
                 logger.info(
                     "No previous results found. Submitting all %d structures.",
-                    len(structures)
+                    len(structures),
                 )
 
-        total_batches = int(
-            np.ceil(len(structures) / high_accuracy_eval_job_dict["max_batch_size"])
+        n_new_batches = math.ceil(
+            len(structures) / high_accuracy_eval_job_dict["max_batch_size"]
+        )
+
+        current_batches = sum(
+            1
+            for _ in Path("results", base_name, "high_accuracy_evaluation").glob(
+                "batch_*"
+            )
         )
 
         logger.info(
-            "Total structures: %d, max batch size: %d, total batches: %d",
+            "Structures to process: %d, max batch size: %d, new batches to submit: %d "
+            "(existing batch dirs: %d)",
             len(structures),
-            high_accuracy_eval_job_dict['max_batch_size'],
-            total_batches
+            high_accuracy_eval_job_dict["max_batch_size"],
+            n_new_batches,
+            current_batches,
         )
-        current_batches = len(
-            list(Path("results", base_name, "high_accuracy_evaluation").glob("batch_*"))
-        )
-        logger.debug("Found %d existing batch directories.", current_batches)
 
-        # GO batches use indices [current_batches, total_batches).
-        # SP batches (when allow_relaxation=True) use [total_batches, ...) to avoid collision.
-        sp_batch_num = total_batches
-        for batch_num in range(current_batches, total_batches):
-            batch_start = batch_num * high_accuracy_eval_job_dict["max_batch_size"]
+        # New GO batches are numbered [current_batches, current_batches + n_new_batches).
+        # SP batches start at current_batches + n_new_batches to avoid directory collision.
+        # Loop variable i indexes into the trimmed structures list; batch_num is the dir name.
+        sp_batch_num = current_batches + n_new_batches
+        for i in range(n_new_batches):
+            batch_num = current_batches + i
+            batch_start = i * high_accuracy_eval_job_dict["max_batch_size"]
             batch_end = min(
-                (batch_num + 1) * high_accuracy_eval_job_dict["max_batch_size"],
+                (i + 1) * high_accuracy_eval_job_dict["max_batch_size"],
                 len(structures),
             )
             logger.info(
-                "Submitting batch %d/%d (structures %d-%d)",
+                "Submitting batch %d (structures %d-%d of %d remaining)",
                 batch_num,
-                total_batches,
                 batch_start,
-                batch_end - 1
+                batch_end - 1,
+                len(structures),
             )
             batch_structures: list[Atoms] = structures[batch_start:batch_end]
 
             if allow_relaxation:
-                batch_structures_to_relax = [
-                    atom for atom in batch_structures
-                    if atom.info.get("needs_relaxation") is True
-                ]
-                single_point_batch_structures = [
-                    atom for atom in batch_structures
-                    if atom.info.get("needs_relaxation") is not True
-                ]
+                batch_structures_to_relax: list[Atoms] = []
+                single_point_batch_structures: list[Atoms] = []
+                for atom in batch_structures:
+                    (
+                        batch_structures_to_relax
+                        if atom.info.get("needs_relaxation") is True
+                        else single_point_batch_structures
+                    ).append(atom)
                 logger.debug(
                     "%d GO structures, %d SP structures.",
                     len(batch_structures_to_relax),
-                    len(single_point_batch_structures)
+                    len(single_point_batch_structures),
                 )
 
                 go_max_time = high_accuracy_eval_job_dict.get(
-                    "go_max_time", high_accuracy_eval_job_dict["max_time"]
+                    "max_go_time", high_accuracy_eval_job_dict["max_time"]
                 )
-                go_high_accuracy_eval_job_dict = copy.deepcopy(high_accuracy_eval_job_dict)
+                go_high_accuracy_eval_job_dict = copy.deepcopy(
+                    high_accuracy_eval_job_dict
+                )
                 go_high_accuracy_eval_job_dict["max_time"] = go_max_time
 
                 if batch_structures_to_relax:

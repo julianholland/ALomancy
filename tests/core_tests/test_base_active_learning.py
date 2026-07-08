@@ -219,42 +219,36 @@ class TestRunWorkflowStructure:
         )
 
     @pytest.mark.unit
-    def test_extra_datasets_seeded_before_initialize(
+    def test_run_delegates_extra_dataset_seeding_to_initialize(
         self, tmp_path, minimal_jobs_dict, h_atom
     ):
-        """Test that extra datasets are seeded before initialize_training_set."""
-        # Setup: one extra_dataset file
+        """Test that run() does not pre-seed extra_datasets; seeding is initialize_training_set's responsibility."""
         extra = tmp_path / "extra.xyz"
         write(str(extra), [h_atom], format="extxyz")
         minimal_jobs_dict["initialization"]["extra_datasets"] = [str(extra)]
 
-        call_order = []
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
-        wf.plots = False  # Disable plotting
+        wf.plots = False
 
+        seed_calls_from_run = []
         original_seed = wf._seed_db_from_extra_dataset
         def tracking_seed(path):
-            call_order.append(("seed", path))
+            seed_calls_from_run.append(path)
             return original_seed(path)
 
-        def tracking_init(base_name, **kwargs):
-            call_order.append(("init", base_name))
-            return [], []
-
         wf._seed_db_from_extra_dataset = tracking_seed
-        wf.initialize_training_set = tracking_init
 
         with (
             patch("alomancy.core.base_active_learning.write"),
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
             patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
             patch.object(wf, "generate_structures", return_value=[]),
             patch.object(wf, "high_accuracy_evaluation", return_value=[]),
         ):
             wf.run()
 
-        # Check that seed was called before init
-        assert call_order[0][0] == "seed"
-        assert call_order[1][0] == "init"
+        # run() must not call _seed_db_from_extra_dataset directly
+        assert len(seed_calls_from_run) == 0
 
     @pytest.mark.unit
     def test_loop_count(self, tmp_path, minimal_jobs_dict):

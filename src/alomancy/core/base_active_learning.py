@@ -62,18 +62,7 @@ class BaseActiveLearningWorkflow(ABC):
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
-        # Seed the DB with extra datasets BEFORE initialize_training_set so that
-        # compute_initialization_needs accounts for already-provided structures
-        # and skips generating any that are covered.  The DB path in
-        # initialize_training_set builds train/test from get_all_as_atoms(),
-        # which automatically includes these seeded structures.
-        extra_datasets = self.jobs_dict["initialization"].get("extra_datasets") or []
-        for ed in extra_datasets:
-            self._seed_db_from_extra_dataset(ed)
-
         train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
-
-
         logger.info("Initialized training set with %d structures.", len(train_xyzs))
 
         for loop in range(self.start_loop, self.number_of_al_loops):
