@@ -30,12 +30,12 @@ def qe_remote_submitter(
     job_configs = [
         {
             "function_kwargs": {
-                "input_structure": input_atoms_list[i],
+                "input_structure": atoms,
                 "out_dir": str(Path(f"{qe_dir}/qe_output_{i}")),
                 **(function_kwargs or {}),
             }
         }
-        for i in range(len(input_atoms_list))
+        for i, atoms in enumerate(input_atoms_list)
     ]
 
     executor.run_and_wait(
@@ -60,30 +60,33 @@ def md_remote_submitter(
         return list(Path.glob(md_dir, f"md_output_*/{target_file}"))
 
     target_file_list = find_target_files()
+    n_existing = len(target_file_list)
 
-    if len(target_file_list) >= len(input_atoms_list):
+    if n_existing >= len(input_atoms_list):
         logger.info(
-            f"All {len(input_atoms_list)} structure generation runs finished. Skipping submission."
+            "All %d structure generation runs finished. Skipping submission.",
+            len(input_atoms_list),
         )
         return target_file_list
 
-    elif len(target_file_list) != 0:
+    elif target_file_list:
         logger.info(
-            f"Found {len(target_file_list)} existing structure generation runs. Reusing them."
+            "Found %d existing structure generation runs. Reusing them.",
+            n_existing,
         )
-        input_atoms_list = input_atoms_list[len(target_file_list):]
+        input_atoms_list = input_atoms_list[n_existing:]
 
     executor = RemoteJobExecutor(remote_info)
 
     job_configs = [
         {
             "function_kwargs": {
-                "initial_structure": input_atoms_list[i],
-                "out_dir": str(Path(f"{md_dir}/md_output_{i}")),
+                "initial_structure": atoms,
+                "out_dir": str(Path(f"{md_dir}/md_output_{n_existing + i}")),
                 **(function_kwargs or {}),
             }
         }
-        for i in range(len(input_atoms_list))
+        for i, atoms in enumerate(input_atoms_list)
     ]
 
     logger.debug(

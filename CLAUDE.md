@@ -114,9 +114,9 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 - The global DB lives at `results/global_database/` (configurable via `db_path` in `BaseActiveLearningWorkflow.__init__`). Only DFT-evaluated structures (with `REF_energy`/`REF_forces`) are stored in it.
 - Initialization config uses individual counts (`num_dimers_per_combo`, `num_trimers_per_combo`, `num_amorphous`, `num_stretch_compress_per_mp`) rather than the old `d_t_s_a_ratio` + `target_non_mp_structures_to_add`.
 - `IsolatedAtom` and `init_MP` config_types are deduplicated by `(config_type, formula)` in `GlobalDatabase.add_structures()`; other config_types (dimers, trimers, amorphous, AL loop structures) are always added without exact dedup.
-- In `run()`, `extra_datasets` are seeded into the DB **before** `initialize_training_set` is called, so `compute_initialization_needs` accounts for them and avoids regenerating already-provided structures.
+- In `initialize_training_set`, the DB is checked **first** (`compute_initialization_needs` against current DB state). `extra_datasets` are seeded only if the DB is still missing some initialization targets, then needs are re-checked before any structure generation. An already-populated DB is always honoured before consulting extra datasets.
 - `initialize_training_set` has two paths: (1) fast path — if `initial_train_file_path` and `initial_test_file_path` exist on disk, load them directly; (2) DB path — call `compute_initialization_needs`, generate only missing structures, run DFT, build train/test from `db.get_all_as_atoms()`.
-- GO (geometry-optimisation) and SP (single-point) QE batches use different numbering ranges to avoid directory collision: GO uses `[current_batches, total_batches)`, SP uses `[total_batches, ...)`.
+- GO (geometry-optimisation) and SP (single-point) QE batches use different numbering ranges to avoid directory collision. `current_batches` = count of existing batch dirs (the directory-name offset). `n_new_batches` = new GO batches needed. GO dirs are numbered `[current_batches, current_batches + n_new_batches)`; SP dirs start at `current_batches + n_new_batches`. The loop index `i` (0-based) is used to slice the trimmed structures list; `batch_num = current_batches + i` is used for the directory name only.
 
 ### sage_lib / GlobalDatabase internals
 
