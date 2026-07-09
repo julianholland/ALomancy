@@ -305,6 +305,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         return train_xyzs, test_xyzs
 
     def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
+        if self._phase_done(base_name, "train_mlip"):
+            logger.info("train_mlip already done for %s, reloading metrics.", base_name)
+            return get_mace_eval_info(mlip_committee_job_dict=mlip_committee_job_dict)
+
         workdir = Path("results", base_name)
 
         if "mace_fit_kwargs" not in mlip_committee_job_dict:
@@ -342,6 +346,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             mlip_committee_job_dict=mlip_committee_job_dict
         )
 
+        self._mark_phase_done(base_name, "train_mlip")
         return mae_avg_results
 
     def generate_structures(
@@ -368,6 +373,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 Path(operating_dir, "high_sd_structures.xyz"),
             )
 
+            self._mark_phase_done(base_name, "generate_structures")
             return high_sd_structures
 
         if Path(
@@ -492,6 +498,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         for i in range(len(high_sd_structures)):
             high_sd_structures[i].info["job_id"] = i
 
+        self._mark_phase_done(base_name, "generate_structures")
         return high_sd_structures
 
     def high_accuracy_evaluation(
@@ -502,6 +509,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         allow_relaxation: bool = False,
         start_index: int = 0,
     ) -> list[Atoms]:
+
+        sentinel_results = Path("results", base_name, "high_accuracy_eval_results.xyz")
+        if self._phase_done(base_name, "high_accuracy_eval"):
+            logger.info(
+                "high_accuracy_eval already done for %s, loading cached results.",
+                base_name,
+            )
+            return list(read(sentinel_results, ":"))
 
         calculator = high_accuracy_eval_job_dict.get("calculator", "qe")
         warn_mismatched_kwargs(calculator, high_accuracy_eval_job_dict)
@@ -660,4 +675,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             if structure is not None:
                 high_accuracy_structures.append(structure)
 
+        sentinel_results.parent.mkdir(parents=True, exist_ok=True)
+        write(sentinel_results, high_accuracy_structures, format="extxyz")
+        self._mark_phase_done(base_name, "high_accuracy_eval")
         return high_accuracy_structures

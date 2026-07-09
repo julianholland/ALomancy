@@ -607,3 +607,195 @@ class TestProcessStructure:
         atoms.calc = EMT()
         result = wf.process_structure(atoms)
         assert result is not atoms
+
+
+class TestSentinelHelpers:
+    """Tests for _phase_done, _mark_phase_done, _last_complete_loop."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=3,
+            db_path=str(tmp_path / "db"),
+        )
+
+    @pytest.mark.unit
+    def test_phase_done_returns_false_when_no_sentinel(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        assert wf._phase_done("al_loop_0", "train_mlip") is False
+
+    @pytest.mark.unit
+    def test_phase_done_returns_true_after_mark(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        (tmp_path / "results" / "al_loop_0").mkdir(parents=True)
+        wf._mark_phase_done("al_loop_0", "train_mlip")
+        assert wf._phase_done("al_loop_0", "train_mlip") is True
+
+    @pytest.mark.unit
+    def test_mark_phase_done_writes_nonempty_file(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        (tmp_path / "results" / "al_loop_0").mkdir(parents=True)
+        wf._mark_phase_done("al_loop_0", "high_accuracy_eval")
+        sentinel = tmp_path / "results" / "al_loop_0" / "high_accuracy_eval.done"
+        assert sentinel.exists()
+        assert len(sentinel.read_text().strip()) > 0
+
+    @pytest.mark.unit
+    def test_last_complete_loop_returns_minus_one_when_none(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        assert wf._last_complete_loop() == -1
+
+    @pytest.mark.unit
+    def test_last_complete_loop_consecutive(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        for loop in range(2):
+            loop_dir = tmp_path / "results" / f"al_loop_{loop}"
+            loop_dir.mkdir(parents=True)
+            (loop_dir / "loop.done").write_text("done")
+            (loop_dir / "accumulated_train_set.xyz").write_text("")
+            (loop_dir / "accumulated_test_set.xyz").write_text("")
+        assert wf._last_complete_loop() == 1
+
+    @pytest.mark.unit
+    def test_last_complete_loop_stops_at_gap(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        # loop 0 complete, loop 1 missing, loop 2 complete → should return 0
+        for loop in [0, 2]:
+            loop_dir = tmp_path / "results" / f"al_loop_{loop}"
+            loop_dir.mkdir(parents=True)
+            (loop_dir / "loop.done").write_text("done")
+            (loop_dir / "accumulated_train_set.xyz").write_text("")
+            (loop_dir / "accumulated_test_set.xyz").write_text("")
+        assert wf._last_complete_loop() == 0
+
+    @pytest.mark.unit
+    def test_last_complete_loop_requires_accumulated_files(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        # loop.done exists but accumulated files do not → not considered complete
+        loop_dir = tmp_path / "results" / "al_loop_0"
+        loop_dir.mkdir(parents=True)
+        (loop_dir / "loop.done").write_text("done")
+        assert wf._last_complete_loop() == -1
+
+
+class TestRunAutoRestart:
+    """Tests for run() sentinel-based auto-restart."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, **kwargs):
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=2,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+            **kwargs,
+        )
+
+    @pytest.mark.unit
+    def test_run_skips_init_when_loop0_complete(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+
+        loop0_dir = tmp_path / "results" / "al_loop_0"
+        loop0_dir.mkdir(parents=True)
+        (loop0_dir / "loop.done").write_text("done")
+        write(
+            str(loop0_dir / "accumulated_train_set.xyz"),
+            [Atoms("H", cell=[5, 5, 5], pbc=True)],
+            format="extxyz",
+        )
+        write(
+            str(loop0_dir / "accumulated_test_set.xyz"),
+            [Atoms("H", cell=[5, 5, 5], pbc=True)],
+            format="extxyz",
+        )
+
+        init_calls = []
+
+        def track_init(base_name, **kwargs):
+            init_calls.append(base_name)
+            return [], []
+
+        train_calls = []
+
+        with (
+            patch.object(wf, "initialize_training_set", side_effect=track_init),
+            patch.object(
+                wf,
+                "train_mlip",
+                side_effect=lambda *a, **kw: train_calls.append(a[0]) or pd.DataFrame(),
+            ),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert init_calls == [], "initialize_training_set must not be called on restart"
+        assert train_calls == ["al_loop_1"], "only loop 1 should run"
+
+    @pytest.mark.unit
+    def test_run_loads_accumulated_sets_on_restart(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+
+        marker = Atoms("He", cell=[5, 5, 5], pbc=True)
+        marker.info["marker"] = "from_loop0"
+
+        loop0_dir = tmp_path / "results" / "al_loop_0"
+        loop0_dir.mkdir(parents=True)
+        (loop0_dir / "loop.done").write_text("done")
+        write(
+            str(loop0_dir / "accumulated_train_set.xyz"),
+            [marker],
+            format="extxyz",
+        )
+        write(
+            str(loop0_dir / "accumulated_test_set.xyz"),
+            [marker],
+            format="extxyz",
+        )
+
+        received_train: list = []
+
+        def capture_gen(base_name, job_dict, train_data, **kwargs):
+            received_train.extend(train_data)
+            return []
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", side_effect=capture_gen),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert len(received_train) == 1
+        assert received_train[0].info.get("marker") == "from_loop0"

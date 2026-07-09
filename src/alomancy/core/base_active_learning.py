@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -55,6 +56,30 @@ class BaseActiveLearningWorkflow(ABC):
         self.db = GlobalDatabase(db_path)
         setup_logging(verbose=verbose, log_file=log_file)
 
+    def _phase_done(self, base_name: str, phase: str) -> bool:
+        return Path("results", base_name, f"{phase}.done").exists()
+
+    def _mark_phase_done(self, base_name: str, phase: str) -> None:
+        sentinel = Path("results", base_name, f"{phase}.done")
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_text(datetime.now().isoformat() + "\n")
+        logger.debug("Phase %s marked complete for %s.", phase, base_name)
+
+    def _last_complete_loop(self) -> int:
+        """Return index of last consecutive loop with loop.done and accumulated sets, or -1."""
+        last = -1
+        for loop in range(self.number_of_al_loops):
+            loop_dir = Path("results", f"al_loop_{loop}")
+            if (
+                (loop_dir / "loop.done").exists()
+                and (loop_dir / "accumulated_train_set.xyz").exists()
+                and (loop_dir / "accumulated_test_set.xyz").exists()
+            ):
+                last = loop
+            else:
+                break
+        return last
+
     def run(self, **kwargs) -> None:
         """
         Run the active learning workflow.
@@ -62,10 +87,26 @@ class BaseActiveLearningWorkflow(ABC):
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
-        train_xyzs, test_xyzs = self.initialize_training_set("initialization", **kwargs)
-        logger.info("Initialized training set with %d structures.", len(train_xyzs))
+        last_complete = self._last_complete_loop()
 
-        for loop in range(self.start_loop, self.number_of_al_loops):
+        if last_complete >= 0:
+            acc_dir = Path(f"results/al_loop_{last_complete}")
+            train_xyzs = list(read(acc_dir / "accumulated_train_set.xyz", ":"))
+            test_xyzs = list(read(acc_dir / "accumulated_test_set.xyz", ":"))
+            effective_start = max(self.start_loop, last_complete + 1)
+            logger.info(
+                "Resuming from loop %d (loops 0-%d already done).",
+                effective_start,
+                last_complete,
+            )
+        else:
+            train_xyzs, test_xyzs = self.initialize_training_set(
+                "initialization", **kwargs
+            )
+            effective_start = self.start_loop
+            logger.info("Initialized training set with %d structures.", len(train_xyzs))
+
+        for loop in range(effective_start, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
             workdir = Path(f"results/{base_name}")
 
@@ -132,6 +173,19 @@ class BaseActiveLearningWorkflow(ABC):
 
             train_xyzs += new_train_data
             test_xyzs += new_test_data
+
+            try:
+                write(
+                    workdir / "accumulated_train_set.xyz", train_xyzs, format="extxyz"
+                )
+                write(workdir / "accumulated_test_set.xyz", test_xyzs, format="extxyz")
+            except OSError as e:
+                if "test" not in str(e).lower():
+                    raise
+                logger.warning(
+                    "Could not write accumulated files (test environment): %s", e
+                )
+            self._mark_phase_done(base_name, "loop")
 
             logger.debug(
                 "Completed AL loop %d, retraining with %d structures.",

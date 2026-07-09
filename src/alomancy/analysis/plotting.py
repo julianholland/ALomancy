@@ -15,11 +15,13 @@ class Plot:
         xlabel: str,
         ylabel: str,
         directory: str = ".",
+        log_scale_y: bool = False,
     ):
         """
         data: pd.DataFrame or dict-like, where each column/field is a series to plot
         """
         self.data = data
+        self.log_scale_y = log_scale_y
         self.title = title
         self.xlabel = xlabel
         self.ylabel = ylabel
@@ -57,6 +59,8 @@ class Plot:
         plt.xlabel(self.xlabel)
         plt.ylabel(self.ylabel)
         plt.title(self.title)
+        if self.log_scale_y:
+            plt.yscale("log")
         plt.grid(True)
         plt.legend()
 
@@ -97,6 +101,7 @@ def mae_al_loop_plot(
         xlabel="AL Loop Iteration",
         ylabel="Mean Absolute Error",
         directory=directory,
+        log_scale_y=True,
     )
     plot_object.create()
     plot_object.save()
