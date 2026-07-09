@@ -1075,7 +1075,9 @@ class TestGenerateStructures:
         sg_dir = tmp_path / "results" / "test_base" / sg_name
         sg_dir.mkdir(parents=True)
 
-        input_atom = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        input_atom = Atoms(
+            "H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True
+        )
         from ase.io import write as ase_write
 
         ase_write(
@@ -1113,7 +1115,9 @@ class TestGenerateStructures:
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict.copy()
 
-        selected = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        selected = Atoms(
+            "H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True
+        )
         high_sd = selected.copy()
 
         wf = self._wf(tmp_path, minimal_jobs_dict)
@@ -1146,15 +1150,14 @@ class TestGenerateStructures:
         mock_find.assert_called_once()
         assert len(result) == 1
 
-    def test_assigns_sequential_job_ids(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
-    ):
+    def test_assigns_sequential_job_ids(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """Returned structures get job_id 0, 1, 2, ... assigned."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict.copy()
 
         structures = [
-            Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True) for _ in range(3)
+            Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+            for _ in range(3)
         ]
 
         wf = self._wf(tmp_path, minimal_jobs_dict)
@@ -1192,7 +1195,9 @@ class TestGenerateStructures:
         # minimal_jobs_dict intentionally has no run_md_kwargs in structure_generation
         assert "run_md_kwargs" not in job_dict["structure_generation"]
 
-        selected = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        selected = Atoms(
+            "H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True
+        )
 
         wf = self._wf(tmp_path, minimal_jobs_dict)
 
@@ -1413,9 +1418,7 @@ class TestHighAccuracyEvaluationCoverage:
 
         assert len(result) == 2
 
-    def test_multiple_batches_submitted(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
-    ):
+    def test_multiple_batches_submitted(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """When structures > max_batch_size, multiple ase_remote_submitter calls are made."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()

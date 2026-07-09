@@ -1,8 +1,7 @@
 """Tests for create_initialization_atoms_list."""
 
 from contextlib import ExitStack
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 import pytest
 from ase import Atoms
@@ -31,19 +30,35 @@ def _all_patches(
         ),
         (
             "alomancy.initialize.initialization_structure_list.create_single_atoms_list",
-            {"return_value": single_return if single_return is not None else [_make_atoms()]},
+            {
+                "return_value": single_return
+                if single_return is not None
+                else [_make_atoms()]
+            },
         ),
         (
             "alomancy.initialize.initialization_structure_list.create_dimer_atoms_list",
-            {"return_value": dimer_return if dimer_return is not None else [_make_atoms("H2")]},
+            {
+                "return_value": dimer_return
+                if dimer_return is not None
+                else [_make_atoms("H2")]
+            },
         ),
         (
             "alomancy.initialize.initialization_structure_list.create_trimer_atoms_list",
-            {"return_value": trimer_return if trimer_return is not None else [_make_atoms("H3")]},
+            {
+                "return_value": trimer_return
+                if trimer_return is not None
+                else [_make_atoms("H3")]
+            },
         ),
         (
             "alomancy.initialize.initialization_structure_list.create_amorphous_atoms_list",
-            {"return_value": amorphous_return if amorphous_return is not None else [_make_atoms()]},
+            {
+                "return_value": amorphous_return
+                if amorphous_return is not None
+                else [_make_atoms()]
+            },
         ),
         (
             "alomancy.initialize.initialization_structure_list.create_stretch_compress_atoms_list",
@@ -135,7 +150,9 @@ class TestCreateInitializationAtomsList:
         )
 
         with ExitStack() as stack:
-            mocks = _enter_patches(stack, _all_patches(single_return=[_make_atoms("O")]))
+            mocks = _enter_patches(
+                stack, _all_patches(single_return=[_make_atoms("O")])
+            )
             mock_single = mocks[1]
             create_initialization_atoms_list(
                 work_dir=str(tmp_path),
@@ -199,7 +216,9 @@ class TestCreateInitializationAtomsList:
         )
 
         with ExitStack() as stack:
-            mocks = _enter_patches(stack, _all_patches(dimer_return=[_make_atoms("H2")]))
+            mocks = _enter_patches(
+                stack, _all_patches(dimer_return=[_make_atoms("H2")])
+            )
             mock_dimer = mocks[2]
             create_initialization_atoms_list(
                 work_dir=str(tmp_path),
