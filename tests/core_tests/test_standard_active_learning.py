@@ -783,6 +783,14 @@ class TestActiveLearningStandardMACE:
         assert workflow.number_of_al_loops == 3
         assert workflow.verbose == 1
 
+    @patch(
+        "alomancy.core.base_active_learning.BaseActiveLearningWorkflow._phase_done",
+        new=lambda *a, **kw: False,
+    )
+    @patch(
+        "alomancy.core.base_active_learning.BaseActiveLearningWorkflow._mark_phase_done",
+        new=lambda *a, **kw: None,
+    )
     @patch("alomancy.core.standard_active_learning.committee_remote_submitter")
     @patch("alomancy.core.standard_active_learning.get_mace_eval_info")
     @patch("alomancy.configs.remote_info.get_remote_info")
@@ -828,6 +836,14 @@ class TestActiveLearningStandardMACE:
         assert isinstance(result, pd.DataFrame)
         pd.testing.assert_frame_equal(result, mock_results_df)
 
+    @patch(
+        "alomancy.core.base_active_learning.BaseActiveLearningWorkflow._phase_done",
+        new=lambda *a, **kw: False,
+    )
+    @patch(
+        "alomancy.core.base_active_learning.BaseActiveLearningWorkflow._mark_phase_done",
+        new=lambda *a, **kw: None,
+    )
     @patch("alomancy.core.standard_active_learning.ase_remote_submitter")
     @patch("alomancy.configs.remote_info.get_remote_info")
     @patch("alomancy.core.standard_active_learning.read")

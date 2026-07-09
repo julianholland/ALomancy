@@ -2,9 +2,6 @@ import itertools
 import logging
 import os
 
-from mp_api.client import MPRester
-from pymatgen.io.ase import AseAtomsAdaptor
-
 logger = logging.getLogger(__name__)
 
 
@@ -13,6 +10,8 @@ def retrieve_mp_material_docs(
     max_energy_above_hull: float,
     max_num_atoms: int,
 ) -> list:
+    from mp_api.client import MPRester
+
     mp_api_key = os.getenv("MP_API_KEY")
     if not mp_api_key:
         raise ValueError(
@@ -45,6 +44,8 @@ def retrieve_mp_material_docs(
 
 
 def docs_to_atoms(docs: list) -> list:
+    from pymatgen.io.ase import AseAtomsAdaptor
+
     toatoms = AseAtomsAdaptor()
     atoms_list = []
     for doc in docs:
