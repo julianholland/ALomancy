@@ -218,6 +218,8 @@ omit = [
     "*/tests/*",
     "*/test_*",
     "src/alomancy/version.py",
+    # Legacy file importing wfl (not installed); replaced by md_remote_submitter.py
+    "src/alomancy/structure_generation/md/generate_structures.py",
 ]
 
 [tool.coverage.report]

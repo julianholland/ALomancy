@@ -952,3 +952,484 @@ class TestActiveLearningStandardMACEExternal:
     def test_with_real_quantum_espresso(self, skip_if_no_external):
         """Test with real Quantum Espresso if available."""
         pass
+
+
+# ============================================================================
+# Tests for train_mlip: skip-submission branch
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestTrainMlipSkipSubmission:
+    """train_mlip skips committee_remote_submitter when compiled models already exist."""
+
+    @patch("alomancy.core.standard_active_learning.get_mace_eval_info")
+    @patch("alomancy.core.standard_active_learning.committee_remote_submitter")
+    def test_skips_submission_when_models_already_exist(
+        self,
+        mock_submitter,
+        mock_eval,
+        tmp_path,
+        minimal_jobs_dict,
+        monkeypatch,
+    ):
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["mlip_committee"]
+
+        # Create enough compiled model files to satisfy size_of_committee=3
+        for i in range(3):
+            model_dir = (
+                tmp_path / "results" / "test_loop" / job_dict["name"] / f"fit_{i}"
+            )
+            model_dir.mkdir(parents=True)
+            (model_dir / f"{job_dict['name']}_stagetwo_compiled.model").touch()
+
+        mock_eval.return_value = pd.DataFrame({"mae_f": [0.1], "mae_e": [0.05]})
+
+        wf = ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+        wf.train_mlip("test_loop", job_dict)
+
+        mock_submitter.assert_not_called()
+        mock_eval.assert_called_once()
+
+    @patch("alomancy.core.standard_active_learning.get_mace_eval_info")
+    @patch("alomancy.core.standard_active_learning.committee_remote_submitter")
+    def test_injects_mace_fit_kwargs_when_missing(
+        self,
+        mock_submitter,
+        mock_eval,
+        tmp_path,
+        minimal_jobs_dict,
+        monkeypatch,
+    ):
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["mlip_committee"].copy()
+        # Intentionally omit mace_fit_kwargs
+        assert "mace_fit_kwargs" not in job_dict
+
+        mock_eval.return_value = pd.DataFrame({"mae_f": [0.1], "mae_e": [0.05]})
+        mock_submitter.return_value = None
+
+        wf = ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+        wf.train_mlip("test_loop", job_dict)
+
+        # The method should inject mace_fit_kwargs into job_dict
+        assert "mace_fit_kwargs" in job_dict
+
+
+# ============================================================================
+# Tests for generate_structures
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestGenerateStructures:
+    """Tests for generate_structures covering the main branching paths."""
+
+    def _wf(self, tmp_path, minimal_jobs_dict):
+        return ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+    def test_returns_cached_high_sd_structures(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When high_sd_structures.xyz already exists, load and return it."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+        # Create the expected file
+        sg_name = job_dict["structure_generation"]["name"]
+        sd_dir = tmp_path / "results" / "test_base" / sg_name
+        sd_dir.mkdir(parents=True)
+        cached = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        from ase.io import write as ase_write
+
+        ase_write(str(sd_dir / "high_sd_structures.xyz"), cached, format="extxyz")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+        result = wf.generate_structures("test_base", job_dict, [])
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_loads_existing_input_structures_xyz(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When input structures xyz exists but high_sd doesn't, load input and run MD."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+        sg_name = job_dict["structure_generation"]["name"]
+        sg_dir = tmp_path / "results" / "test_base" / sg_name
+        sg_dir.mkdir(parents=True)
+
+        input_atom = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        from ase.io import write as ase_write
+
+        ase_write(
+            str(sg_dir / f"{sg_name}_input_structures.xyz"),
+            input_atom,
+            format="extxyz",
+        )
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.md_remote_submitter",
+                return_value=[],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.all_maces_remote_submitter",
+                return_value={},
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.find_high_sd_structures",
+                return_value=[input_atom.copy()],
+            ),
+            patch("alomancy.core.standard_active_learning.get_remote_info"),
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            result = wf.generate_structures("test_base", job_dict, [])
+
+        assert isinstance(result, list)
+
+    def test_full_pipeline_calls_select_and_remote_submitters(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When no cached files exist, the method selects structures then runs MD pipeline."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+
+        selected = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        high_sd = selected.copy()
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.select_initial_structures",
+                return_value=[selected],
+            ) as mock_select,
+            patch(
+                "alomancy.core.standard_active_learning.md_remote_submitter",
+                return_value=[],
+            ) as mock_md,
+            patch(
+                "alomancy.core.standard_active_learning.all_maces_remote_submitter",
+                return_value={},
+            ) as mock_all_maces,
+            patch(
+                "alomancy.core.standard_active_learning.find_high_sd_structures",
+                return_value=[high_sd],
+            ) as mock_find,
+            patch("alomancy.core.standard_active_learning.get_remote_info"),
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            result = wf.generate_structures("test_base", job_dict, [selected])
+
+        mock_select.assert_called_once()
+        mock_md.assert_called_once()
+        mock_all_maces.assert_called_once()
+        mock_find.assert_called_once()
+        assert len(result) == 1
+
+    def test_assigns_sequential_job_ids(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """Returned structures get job_id 0, 1, 2, ... assigned."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+
+        structures = [
+            Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True) for _ in range(3)
+        ]
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.select_initial_structures",
+                return_value=[structures[0]],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.md_remote_submitter",
+                return_value=[],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.all_maces_remote_submitter",
+                return_value={},
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.find_high_sd_structures",
+                return_value=structures,
+            ),
+            patch("alomancy.core.standard_active_learning.get_remote_info"),
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            result = wf.generate_structures("test_base", job_dict, structures)
+
+        assert [s.info["job_id"] for s in result] == [0, 1, 2]
+
+    def test_injects_run_md_kwargs_when_missing(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """generate_structures injects an empty run_md_kwargs if absent."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+        # minimal_jobs_dict intentionally has no run_md_kwargs in structure_generation
+        assert "run_md_kwargs" not in job_dict["structure_generation"]
+
+        selected = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.select_initial_structures",
+                return_value=[selected],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.md_remote_submitter",
+                return_value=[],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.all_maces_remote_submitter",
+                return_value={},
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.find_high_sd_structures",
+                return_value=[],
+            ),
+            patch("alomancy.core.standard_active_learning.get_remote_info"),
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            wf.generate_structures("test_base", job_dict, [selected])
+
+        assert "run_md_kwargs" in job_dict["structure_generation"]
+
+
+# ============================================================================
+# Tests for high_accuracy_evaluation: result-collection and batching paths
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestHighAccuracyEvaluationCoverage:
+    """Cover the batching, GO/SP split, and result-collection paths."""
+
+    def _wf(self, tmp_path, minimal_jobs_dict):
+        return ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+    def _atoms(self, symbol="H"):
+        a = Atoms(symbol, positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        a.info["REF_energy"] = -1.0
+        return a
+
+    def test_reuses_all_existing_results(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When found_structures >= structures + start_index, skip submission entirely."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"]
+        output_name = job_dict["name"]
+        from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
+
+        # Create two completed result files
+        for i in range(2):
+            d = (
+                tmp_path
+                / "results"
+                / "test_loop"
+                / output_name
+                / "batch_0"
+                / f"{ASE_OUTPUT_PREFIX}_{i}"
+            )
+            d.mkdir(parents=True)
+            from ase.io import write as ase_write
+
+            ase_write(str(d / f"{output_name}.xyz"), self._atoms(), format="extxyz")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with patch(
+            "alomancy.core.standard_active_learning.ase_remote_submitter"
+        ) as mock_sub:
+            result = wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                [self._atoms(), self._atoms()],  # same count as existing
+            )
+
+        mock_sub.assert_not_called()
+        assert len(result) == 2
+
+    def test_partial_existing_trims_structures_list(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When some results exist, only the remaining structures are submitted."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
+        job_dict["max_batch_size"] = 5
+        output_name = job_dict["name"]
+        from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
+
+        # 1 existing result
+        d = (
+            tmp_path
+            / "results"
+            / "test_loop"
+            / output_name
+            / "batch_0"
+            / f"{ASE_OUTPUT_PREFIX}_0"
+        )
+        d.mkdir(parents=True)
+        from ase.io import write as ase_write
+
+        ase_write(str(d / f"{output_name}.xyz"), self._atoms(), format="extxyz")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with patch(
+            "alomancy.core.standard_active_learning.ase_remote_submitter"
+        ) as mock_sub:
+            # 3 structures requested; 1 already done
+            wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                [self._atoms() for _ in range(3)],
+            )
+
+        # Submission should happen for the remaining 2
+        mock_sub.assert_called_once()
+        submitted = mock_sub.call_args.kwargs["input_atoms_list"]
+        assert len(submitted) == 2
+
+    def test_go_sp_split_submits_separately(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """With allow_relaxation=True, GO and SP structures go to separate submitter calls."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
+        job_dict["max_batch_size"] = 10
+
+        go_atom = self._atoms()
+        go_atom.info["needs_relaxation"] = True
+        sp_atom = self._atoms("O")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with patch(
+            "alomancy.core.standard_active_learning.ase_remote_submitter"
+        ) as mock_sub:
+            wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                [go_atom, sp_atom],
+                allow_relaxation=True,
+            )
+
+        # Two separate calls: one for GO, one for SP
+        assert mock_sub.call_count == 2
+        go_call_atoms = mock_sub.call_args_list[0].kwargs["input_atoms_list"]
+        sp_call_atoms = mock_sub.call_args_list[1].kwargs["input_atoms_list"]
+        assert go_call_atoms[0].info.get("needs_relaxation") is True
+        assert sp_call_atoms[0].info.get("needs_relaxation") is not True
+
+    def test_sp_only_batch_no_go(self, tmp_path, minimal_jobs_dict, monkeypatch):
+        """With allow_relaxation=True but no relaxation-flagged structures, only SP submitted."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
+        job_dict["max_batch_size"] = 10
+
+        sp_atoms = [self._atoms() for _ in range(2)]  # none have needs_relaxation
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with patch(
+            "alomancy.core.standard_active_learning.ase_remote_submitter"
+        ) as mock_sub:
+            wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                sp_atoms,
+                allow_relaxation=True,
+            )
+
+        assert mock_sub.call_count == 1
+
+    def test_result_collection_reads_completed_xyz_files(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """After submission, the method reads xyz files from ase_output_* dirs."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
+        job_dict["max_batch_size"] = 10
+        output_name = job_dict["name"]
+        from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
+
+        # Simulate completed output dirs (as if the remote job ran)
+        for i in range(2):
+            d = (
+                tmp_path
+                / "results"
+                / "test_loop"
+                / output_name
+                / "batch_0"
+                / f"{ASE_OUTPUT_PREFIX}_{i}"
+            )
+            d.mkdir(parents=True)
+            from ase.io import write as ase_write
+
+            ase_write(str(d / f"{output_name}.xyz"), self._atoms(), format="extxyz")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        # Submission mocked to do nothing; result collection reads from the dirs we made
+        with patch("alomancy.core.standard_active_learning.ase_remote_submitter"):
+            # Pass 3 structures so found (2) < requested (3), triggering submission
+            result = wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                [self._atoms() for _ in range(3)],
+            )
+
+        assert len(result) == 2
+
+    def test_multiple_batches_submitted(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When structures > max_batch_size, multiple ase_remote_submitter calls are made."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
+        job_dict["max_batch_size"] = 2  # forces 2 batches for 4 structures
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with patch(
+            "alomancy.core.standard_active_learning.ase_remote_submitter"
+        ) as mock_sub:
+            wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                [self._atoms() for _ in range(4)],
+            )
+
+        assert mock_sub.call_count == 2
