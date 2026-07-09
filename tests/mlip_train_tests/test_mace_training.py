@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 from ase import Atoms
@@ -109,3 +111,77 @@ class TestTrainTestSplit:
         train, test = split_atoms_list_into_test_and_train(atoms, 0.3, seed=42)
         assert len(test) == 3
         assert len(train) == 7
+
+
+class TestGetMaceEvalInfo:
+    """Tests for get_mace_eval_info reading MACE train.txt result files."""
+
+    def _write_train_txt(self, results_dir: Path, mae_f: float, mae_e: float) -> None:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        line = str([("mae_f", str(mae_f)), ("mae_e", str(mae_e))])
+        (results_dir / "results_train.txt").write_text(f"epoch step\n{line}\n")
+
+    @pytest.mark.unit
+    def test_returns_dataframe_with_mae_columns(self, tmp_path, monkeypatch):
+        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+
+        monkeypatch.chdir(tmp_path)
+        self._write_train_txt(
+            tmp_path / "results" / "al_loop_0" / "mlip_committee" / "fit_0" / "results",
+            mae_f=0.05,
+            mae_e=0.01,
+        )
+        df = get_mace_eval_info({"name": "mlip_committee"})
+        assert "mae_f" in df.columns
+        assert "mae_e" in df.columns
+
+    @pytest.mark.unit
+    def test_averages_multiple_fits(self, tmp_path, monkeypatch):
+        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+
+        monkeypatch.chdir(tmp_path)
+        for i in range(3):
+            self._write_train_txt(
+                tmp_path / "results" / "al_loop_0" / "mlip_committee" / f"fit_{i}" / "results",
+                mae_f=0.1 * (i + 1),
+                mae_e=0.01,
+            )
+        df = get_mace_eval_info({"name": "mlip_committee"})
+        assert df["mae_f"].iloc[0] == pytest.approx(np.mean([0.1, 0.2, 0.3]))
+
+    @pytest.mark.unit
+    def test_empty_dataframe_when_no_al_loop_dirs(self, tmp_path, monkeypatch):
+        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+
+        monkeypatch.chdir(tmp_path)
+        df = get_mace_eval_info({"name": "mlip_committee"})
+        assert len(df) == 0
+
+    @pytest.mark.unit
+    def test_one_row_per_al_loop(self, tmp_path, monkeypatch):
+        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+
+        monkeypatch.chdir(tmp_path)
+        for loop in range(3):
+            self._write_train_txt(
+                tmp_path / "results" / f"al_loop_{loop}" / "mlip_committee" / "fit_0" / "results",
+                mae_f=0.1 * (loop + 1),
+                mae_e=0.01,
+            )
+        df = get_mace_eval_info({"name": "mlip_committee"})
+        assert len(df) == 3
+
+    @pytest.mark.unit
+    def test_loop_with_no_results_files_skipped(self, tmp_path, monkeypatch):
+        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+
+        monkeypatch.chdir(tmp_path)
+        # Loop 0 has results; loop 1 directory exists but is empty
+        self._write_train_txt(
+            tmp_path / "results" / "al_loop_0" / "mlip_committee" / "fit_0" / "results",
+            mae_f=0.05,
+            mae_e=0.01,
+        )
+        (tmp_path / "results" / "al_loop_1" / "mlip_committee").mkdir(parents=True)
+        df = get_mace_eval_info({"name": "mlip_committee"})
+        assert len(df) == 1

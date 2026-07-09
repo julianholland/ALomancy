@@ -127,3 +127,71 @@ class TestGetQeInputData:
     def test_default_conv_thr(self):
         result = get_qe_input_data("scf", {})
         assert result["electrons"]["conv_thr"] == pytest.approx(1.0e-12)
+
+
+class TestCreateEspressoProfile:
+    def _para_info(self):
+        return {
+            "ranks_per_system": 72,
+            "ranks_per_node": 36,
+            "threads_per_rank": 2,
+            "max_mem_per_node": "90G",
+        }
+
+    @pytest.mark.unit
+    def test_returns_espresso_profile(self):
+        from ase.calculators.espresso import EspressoProfile
+
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp")
+        assert isinstance(profile, EspressoProfile)
+
+    @pytest.mark.unit
+    def test_nk_flag_in_command(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp")
+        assert "-nk 4" in profile.command
+
+    @pytest.mark.unit
+    def test_pp_path_stored(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/my/pp")
+        assert profile.pseudo_dir == "/my/pp"
+
+    @pytest.mark.unit
+    def test_ndiag_added_when_greater_than_1(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp", ndiag=16)
+        assert " -nd 16" in profile.command
+
+    @pytest.mark.unit
+    def test_ndiag_not_added_when_1(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp", ndiag=1)
+        assert " -nd " not in profile.command
+
+    @pytest.mark.unit
+    def test_ndiag_not_added_when_none(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp")
+        assert " -nd " not in profile.command
+
+    @pytest.mark.unit
+    def test_ntg_added_when_greater_than_1(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp", ntg=2)
+        assert " -nt 2" in profile.command
+
+    @pytest.mark.unit
+    def test_ntg_not_added_when_none(self):
+        from alomancy.high_accuracy_evaluation.dft.run_qe import create_espresso_profile
+
+        profile = create_espresso_profile(self._para_info(), 4, "pw.x", "/pp")
+        assert " -nt " not in profile.command

@@ -380,6 +380,86 @@ class TestFindHighSdStructures:
 
 
 # ============================================================================
+# Tests for find_sd_of_all_structures
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestFindSdOfAllStructures:
+    """Test find_sd_of_all_structures — builds the forces dict from real calculators."""
+
+    @staticmethod
+    def _make_structure_with_labels(i):
+        """Cu dimer with pre-computed REF_energy/REF_forces for fast testing."""
+        from ase.calculators.emt import EMT
+
+        a = Atoms("Cu2", positions=[[0, 0, 0], [i * 0.1 + 1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        a.calc = EMT()
+        a.info["REF_energy"] = a.get_potential_energy()
+        a.arrays["REF_forces"] = a.get_forces()
+        return a
+
+    def test_returns_polars_dataframe(self, tmp_path, monkeypatch):
+        import polars as pl
+        from ase.calculators.emt import EMT
+
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_sd_of_all_structures,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure_with_labels(i) for i in range(3)]
+        job_dict = {"structure_generation": {"name": "structure_generation"}}
+        (tmp_path / "results" / "al_loop_0" / "structure_generation").mkdir(parents=True)
+        result = find_sd_of_all_structures(
+            structure_list=structures,
+            base_name="al_loop_0",
+            job_dict=job_dict,
+            list_of_other_calculators=[EMT(), EMT()],
+        )
+        assert isinstance(result, pl.DataFrame)
+
+    def test_one_row_per_structure(self, tmp_path, monkeypatch):
+        from ase.calculators.emt import EMT
+
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_sd_of_all_structures,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure_with_labels(i) for i in range(4)]
+        job_dict = {"structure_generation": {"name": "structure_generation"}}
+        (tmp_path / "results" / "al_loop_0" / "structure_generation").mkdir(parents=True)
+        result = find_sd_of_all_structures(
+            structure_list=structures,
+            base_name="al_loop_0",
+            job_dict=job_dict,
+            list_of_other_calculators=[EMT()],
+        )
+        assert len(result) == 4
+
+    def test_csv_written(self, tmp_path, monkeypatch):
+        from ase.calculators.emt import EMT
+
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_sd_of_all_structures,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure_with_labels(0)]
+        job_dict = {"structure_generation": {"name": "structure_generation"}}
+        out_dir = tmp_path / "results" / "al_loop_0" / "structure_generation"
+        out_dir.mkdir(parents=True)
+        find_sd_of_all_structures(
+            structure_list=structures,
+            base_name="al_loop_0",
+            job_dict=job_dict,
+            list_of_other_calculators=[EMT()],
+        )
+        assert (out_dir / "std_dev_forces.csv").exists()
+
+
+# ============================================================================
 # Tests for select_initial_structures
 # ============================================================================
 

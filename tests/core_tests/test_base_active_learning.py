@@ -7,8 +7,10 @@ This module tests the BaseActiveLearningWorkflow abstract class and its core fun
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
+from ase import Atoms
 from ase.io import write
 
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
@@ -416,7 +418,6 @@ class TestRunWorkflowStructure:
     @pytest.mark.unit
     def test_al_loop_structures_tagged_as_high_sd(self, tmp_path, minimal_jobs_dict):
         """New structures from high_accuracy_evaluation get config_type='high_sd'."""
-        import numpy as np
         from ase import Atoms
 
         wf = ConcreteWorkflow(
@@ -459,7 +460,6 @@ class TestRunWorkflowStructure:
     @pytest.mark.unit
     def test_al_loop_metadata_stored_in_structures(self, tmp_path, minimal_jobs_dict):
         """Structures from loop N carry al_loop=N in their info dict."""
-        import numpy as np
         from ase import Atoms
 
         wf = ConcreteWorkflow(
@@ -499,3 +499,97 @@ class TestRunWorkflowStructure:
         all_db = wf.db.get_all_as_atoms()
         loop_values = {a.info["al_loop"] for a in all_db}
         assert loop_values == {0, 1}
+
+
+class TestLoadInitialTrainTestSets:
+    """Tests for load_initial_train_test_sets."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+    @pytest.mark.unit
+    def test_raises_file_not_found_when_missing(self, tmp_path, minimal_jobs_dict):
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        with pytest.raises(FileNotFoundError):
+            wf.load_initial_train_test_sets()
+
+    @pytest.mark.unit
+    def test_loads_structures_from_existing_files(self, tmp_path, minimal_jobs_dict, h_atom):
+        write(str(tmp_path / "train.xyz"), [h_atom, h_atom], format="extxyz")
+        write(str(tmp_path / "test.xyz"), [h_atom], format="extxyz")
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        train, test = wf.load_initial_train_test_sets()
+        assert len(train) == 2
+        assert len(test) == 1
+
+    @pytest.mark.unit
+    def test_dummy_run_caps_train_at_500(self, tmp_path, minimal_jobs_dict, h_atom):
+        write(str(tmp_path / "train.xyz"), [h_atom] * 600, format="extxyz")
+        write(str(tmp_path / "test.xyz"), [h_atom] * 300, format="extxyz")
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        train, test = wf.load_initial_train_test_sets(dummy_run=True)
+        assert len(train) == 500
+        assert len(test) == 200
+
+    @pytest.mark.unit
+    def test_raises_when_only_train_missing(self, tmp_path, minimal_jobs_dict, h_atom):
+        write(str(tmp_path / "test.xyz"), [h_atom], format="extxyz")
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        with pytest.raises(FileNotFoundError):
+            wf.load_initial_train_test_sets()
+
+    @pytest.mark.unit
+    def test_raises_when_only_test_missing(self, tmp_path, minimal_jobs_dict, h_atom):
+        write(str(tmp_path / "train.xyz"), [h_atom], format="extxyz")
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        with pytest.raises(FileNotFoundError):
+            wf.load_initial_train_test_sets()
+
+
+class TestProcessStructure:
+    """Tests for process_structure."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+    @pytest.mark.unit
+    def test_extracts_ref_energy(self, tmp_path, minimal_jobs_dict):
+        from ase.calculators.emt import EMT
+
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        atoms = Atoms("Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        atoms.calc = EMT()
+        result = wf.process_structure(atoms)
+        assert "REF_energy" in result.info
+        assert isinstance(result.info["REF_energy"], float)
+
+    @pytest.mark.unit
+    def test_extracts_ref_forces(self, tmp_path, minimal_jobs_dict):
+        from ase.calculators.emt import EMT
+
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        atoms = Atoms("Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        atoms.calc = EMT()
+        result = wf.process_structure(atoms)
+        assert "REF_forces" in result.arrays
+        assert result.arrays["REF_forces"].shape == (2, 3)
+
+    @pytest.mark.unit
+    def test_returns_copy_not_same_object(self, tmp_path, minimal_jobs_dict):
+        from ase.calculators.emt import EMT
+
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        atoms = Atoms("Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        atoms.calc = EMT()
+        result = wf.process_structure(atoms)
+        assert result is not atoms

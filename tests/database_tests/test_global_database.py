@@ -301,3 +301,68 @@ class TestRetrieval:
         assert db.size == 1
         db.add_structures([h2_dimer, h2o_mol], skip_duplicates=False)
         assert db.size == 3
+
+
+class TestCountByConfigTypeAndFormula:
+    """Tests for count_by_config_type_and_formula (single config_type lookup)."""
+
+    @pytest.mark.unit
+    def test_returns_per_formula_count(self, tmp_path):
+        h2 = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        o2 = make_atoms(
+            ["O", "O"],
+            config_type="init_dimer",
+            ref_energy=-50.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h2, h2.copy(), o2], skip_duplicates=False)
+        counts = db.count_by_config_type_and_formula("init_dimer")
+        assert counts["H2"] == 2
+        assert counts["O2"] == 1
+
+    @pytest.mark.unit
+    def test_empty_for_missing_config_type(self, tmp_path):
+        db = GlobalDatabase(str(tmp_path / "db"))
+        assert db.count_by_config_type_and_formula("nonexistent") == {}
+
+    @pytest.mark.unit
+    def test_ignores_other_config_types(self, tmp_path):
+        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6)
+        h2 = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h_atom, h2], skip_duplicates=False)
+        counts = db.count_by_config_type_and_formula("IsolatedAtom")
+        assert "H2" not in counts
+        assert counts.get("H") == 1
+
+
+class TestPrepareForStorageEdgeCases:
+    @pytest.mark.unit
+    def test_returns_none_when_no_energy_source(self, tmp_path):
+        """Atoms with no REF_energy and no calculator → _prepare_for_storage returns None."""
+        atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        atoms.info["config_type"] = "test"
+        assert GlobalDatabase._prepare_for_storage(atoms) is None
+
+    @pytest.mark.unit
+    def test_stored_without_forces(self, tmp_path):
+        """Atoms with energy but no forces are stored; no crash on retrieval."""
+        atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        atoms.info["config_type"] = "test"
+        atoms.info["REF_energy"] = -13.6
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([atoms])
+        assert db.size == 1
+        retrieved = db.get_all_as_atoms()
+        assert retrieved[0].info["REF_energy"] == pytest.approx(-13.6)
