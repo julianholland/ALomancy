@@ -430,7 +430,9 @@ class TestRunWorkflowStructure:
         )
 
         def make_evaluated_structure():
-            a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True)
+            a = Atoms(
+                "H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True
+            )
             a.info["REF_energy"] = -1.0
             a.arrays["REF_forces"] = np.zeros((2, 3))
             return a
@@ -472,7 +474,9 @@ class TestRunWorkflowStructure:
         )
 
         def make_structure():
-            a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True)
+            a = Atoms(
+                "H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True
+            )
             a.info["REF_energy"] = -1.0
             a.arrays["REF_forces"] = np.zeros((2, 3))
             return a
@@ -491,7 +495,9 @@ class TestRunWorkflowStructure:
             patch.object(wf, "initialize_training_set", return_value=([], [])),
             patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
             patch.object(wf, "generate_structures", return_value=[]),
-            patch.object(wf, "high_accuracy_evaluation", side_effect=evaluated_for_loop),
+            patch.object(
+                wf, "high_accuracy_evaluation", side_effect=evaluated_for_loop
+            ),
             patch("alomancy.core.base_active_learning.write"),
         ):
             wf.run()
@@ -519,7 +525,9 @@ class TestLoadInitialTrainTestSets:
             wf.load_initial_train_test_sets()
 
     @pytest.mark.unit
-    def test_loads_structures_from_existing_files(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_loads_structures_from_existing_files(
+        self, tmp_path, minimal_jobs_dict, h_atom
+    ):
         write(str(tmp_path / "train.xyz"), [h_atom, h_atom], format="extxyz")
         write(str(tmp_path / "test.xyz"), [h_atom], format="extxyz")
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
@@ -567,7 +575,9 @@ class TestProcessStructure:
         from ase.calculators.emt import EMT
 
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
-        atoms = Atoms("Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        atoms = Atoms(
+            "Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True
+        )
         atoms.calc = EMT()
         result = wf.process_structure(atoms)
         assert "REF_energy" in result.info
@@ -578,7 +588,9 @@ class TestProcessStructure:
         from ase.calculators.emt import EMT
 
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
-        atoms = Atoms("Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        atoms = Atoms(
+            "Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True
+        )
         atoms.calc = EMT()
         result = wf.process_structure(atoms)
         assert "REF_forces" in result.arrays
@@ -589,7 +601,9 @@ class TestProcessStructure:
         from ase.calculators.emt import EMT
 
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
-        atoms = Atoms("Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        atoms = Atoms(
+            "Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True
+        )
         atoms.calc = EMT()
         result = wf.process_structure(atoms)
         assert result is not atoms

@@ -48,7 +48,10 @@ def select_initial_structures(
     )
     if selectable_configs is not None:
         selectable_configs = [*selectable_configs, "high_sd"]
-    logger.debug("available config_types: %s", {s.info.get("config_type") for s in train_atoms_list})
+    logger.debug(
+        "available config_types: %s",
+        {s.info.get("config_type") for s in train_atoms_list},
+    )
     logger.info(
         "Selecting initial structures from %d available structures.",
         len(train_atoms_list),
@@ -56,7 +59,13 @@ def select_initial_structures(
     if selectable_configs is not None:
         logger.info(
             "Structures available with correct config_type: %d",
-            len([s for s in train_atoms_list if s.info.get("config_type") in selectable_configs]),
+            len(
+                [
+                    s
+                    for s in train_atoms_list
+                    if s.info.get("config_type") in selectable_configs
+                ]
+            ),
         )
     atom_number_range = tuple(atom_number_range)
     if atom_number_range != (0, 0):

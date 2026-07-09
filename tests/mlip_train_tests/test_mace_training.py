@@ -142,7 +142,12 @@ class TestGetMaceEvalInfo:
         monkeypatch.chdir(tmp_path)
         for i in range(3):
             self._write_train_txt(
-                tmp_path / "results" / "al_loop_0" / "mlip_committee" / f"fit_{i}" / "results",
+                tmp_path
+                / "results"
+                / "al_loop_0"
+                / "mlip_committee"
+                / f"fit_{i}"
+                / "results",
                 mae_f=0.1 * (i + 1),
                 mae_e=0.01,
             )
@@ -164,7 +169,12 @@ class TestGetMaceEvalInfo:
         monkeypatch.chdir(tmp_path)
         for loop in range(3):
             self._write_train_txt(
-                tmp_path / "results" / f"al_loop_{loop}" / "mlip_committee" / "fit_0" / "results",
+                tmp_path
+                / "results"
+                / f"al_loop_{loop}"
+                / "mlip_committee"
+                / "fit_0"
+                / "results",
                 mae_f=0.1 * (loop + 1),
                 mae_e=0.01,
             )

@@ -106,7 +106,9 @@ class TestCreateVaspCalcObject:
             create_vasp_calc_object,
         )
 
-        calc = create_vasp_calc_object(_cu_atoms(), _job_dict(), "/tmp/out", is_relaxation=True)
+        calc = create_vasp_calc_object(
+            _cu_atoms(), _job_dict(), "/tmp/out", is_relaxation=True
+        )
         assert calc.int_params["ibrion"] == 2
         assert calc.int_params["nsw"] == 200
 

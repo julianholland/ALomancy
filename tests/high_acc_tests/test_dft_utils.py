@@ -81,7 +81,9 @@ class TestRunSp:
 
     def test_returns_same_object(self, tmp_path):
         atoms = _cu_dimer()
-        result = _run_sp(atoms, str(tmp_path / "out"), {"name": "x"}, lambda a, j, d: EMT())
+        result = _run_sp(
+            atoms, str(tmp_path / "out"), {"name": "x"}, lambda a, j, d: EMT()
+        )
         assert result is atoms
 
     def test_output_xyz_written(self, tmp_path):
@@ -132,12 +134,20 @@ class TestRunGo:
 
     def test_custom_opt_prefix_log_written(self, tmp_path):
         out = str(tmp_path / "out")
-        _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT(), opt_prefix="vasp_opt")
+        _run_go(
+            _cu_dimer(),
+            out,
+            {"name": "x"},
+            lambda a, j, d: EMT(),
+            opt_prefix="vasp_opt",
+        )
         assert (Path(out) / "vasp_opt.log").exists()
 
     def test_custom_opt_prefix_traj_written(self, tmp_path):
         out = str(tmp_path / "out")
-        _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT(), opt_prefix="qe_opt")
+        _run_go(
+            _cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT(), opt_prefix="qe_opt"
+        )
         assert (Path(out) / "qe_opt.traj").exists()
 
     def test_creates_nested_directory(self, tmp_path):

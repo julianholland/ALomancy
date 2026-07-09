@@ -28,7 +28,9 @@ def clean_structures(
             structure.info.copy()
         )  # start with a copy of the original info dictionary
 
-        structure_copy.info.update(extra_metadata or {})  # add any extra metadata if provided
+        structure_copy.info.update(
+            extra_metadata or {}
+        )  # add any extra metadata if provided
 
         if already_computed:
             if (

@@ -393,7 +393,12 @@ class TestFindSdOfAllStructures:
         """Cu dimer with pre-computed REF_energy/REF_forces for fast testing."""
         from ase.calculators.emt import EMT
 
-        a = Atoms("Cu2", positions=[[0, 0, 0], [i * 0.1 + 1.8, 0, 0]], cell=[10, 10, 10], pbc=True)
+        a = Atoms(
+            "Cu2",
+            positions=[[0, 0, 0], [i * 0.1 + 1.8, 0, 0]],
+            cell=[10, 10, 10],
+            pbc=True,
+        )
         a.calc = EMT()
         a.info["REF_energy"] = a.get_potential_energy()
         a.arrays["REF_forces"] = a.get_forces()
@@ -410,7 +415,9 @@ class TestFindSdOfAllStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure_with_labels(i) for i in range(3)]
         job_dict = {"structure_generation": {"name": "structure_generation"}}
-        (tmp_path / "results" / "al_loop_0" / "structure_generation").mkdir(parents=True)
+        (tmp_path / "results" / "al_loop_0" / "structure_generation").mkdir(
+            parents=True
+        )
         result = find_sd_of_all_structures(
             structure_list=structures,
             base_name="al_loop_0",
@@ -429,7 +436,9 @@ class TestFindSdOfAllStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure_with_labels(i) for i in range(4)]
         job_dict = {"structure_generation": {"name": "structure_generation"}}
-        (tmp_path / "results" / "al_loop_0" / "structure_generation").mkdir(parents=True)
+        (tmp_path / "results" / "al_loop_0" / "structure_generation").mkdir(
+            parents=True
+        )
         result = find_sd_of_all_structures(
             structure_list=structures,
             base_name="al_loop_0",
@@ -570,7 +579,9 @@ class TestSelectInitialStructures:
         )
         # high_sd structures are eligible even though selectable_configs only lists init_amorphous
         assert len(result) == 3
-        original_config_types = {a.info.get("config_type") for a in init_structures + high_sd_structures}
+        original_config_types = {
+            a.info.get("config_type") for a in init_structures + high_sd_structures
+        }
         # originals are untouched
         assert original_config_types == {"init_amorphous", "high_sd"}
 
@@ -604,7 +615,8 @@ class TestSelectInitialStructures:
 
         np.random.seed(42)
         structures = [
-            self._make_atoms(["H", "H"], config_type="init_amorphous") for _ in range(10)
+            self._make_atoms(["H", "H"], config_type="init_amorphous")
+            for _ in range(10)
         ]
         job_dict = {"name": "md"}
         caller_list = ["init_amorphous"]
@@ -626,7 +638,8 @@ class TestSelectInitialStructures:
 
         np.random.seed(42)
         structures = [
-            self._make_atoms(["H", "H"], config_type="init_amorphous") for _ in range(10)
+            self._make_atoms(["H", "H"], config_type="init_amorphous")
+            for _ in range(10)
         ]
         job_dict = {"name": "structure_generation"}
         kwargs = {
