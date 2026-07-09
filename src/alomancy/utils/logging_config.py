@@ -3,7 +3,9 @@ import sys
 from pathlib import Path
 
 
-def setup_logging(verbose: int = 0, log_file: str | None = "results/alomancy.log") -> None:
+def setup_logging(
+    verbose: int = 0, log_file: str | None = "results/alomancy.log"
+) -> None:
     """Configure the alomancy logger hierarchy.
 
     verbose=0 → console shows WARNING+  (silent during normal runs)
@@ -18,7 +20,11 @@ def setup_logging(verbose: int = 0, log_file: str | None = "results/alomancy.log
     root.handlers.clear()
 
     console_level = (
-        logging.WARNING if verbose == 0 else logging.INFO if verbose == 1 else logging.DEBUG
+        logging.WARNING
+        if verbose == 0
+        else logging.INFO
+        if verbose == 1
+        else logging.DEBUG
     )
     fmt = logging.Formatter(
         "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",

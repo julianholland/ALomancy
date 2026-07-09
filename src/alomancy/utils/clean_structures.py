@@ -4,7 +4,14 @@ from ase import Atoms
 
 logger = logging.getLogger(__name__)
 
-def clean_structures(structures: list[Atoms], config_type: str, override_config_type: bool = False, already_computed: bool = True) -> list[Atoms]:
+
+def clean_structures(
+    structures: list[Atoms],
+    config_type: str,
+    override_config_type: bool = False,
+    already_computed: bool = True,
+    extra_metadata: dict | None = None,
+) -> list[Atoms]:
     """
     adds DFT results to copy of structures info dictionary.
     """
@@ -17,16 +24,24 @@ def clean_structures(structures: list[Atoms], config_type: str, override_config_
             cell=structure.get_cell(),
             pbc=structure.get_pbc(),
         )
-        structure_copy.info = structure.info.copy()  # start with a copy of the original info dictionary
+        structure_copy.info = (
+            structure.info.copy()
+        )  # start with a copy of the original info dictionary
+
+        structure_copy.info.update(extra_metadata or {})  # add any extra metadata if provided
 
         if already_computed:
-            if "REF_energy" not in structure.info or "REF_forces" not in structure.arrays:
+            if (
+                "REF_energy" not in structure.info
+                or "REF_forces" not in structure.arrays
+            ):
                 try:
                     energy = structure.get_potential_energy()
                     forces = structure.get_forces()
                 except Exception as e:
                     raise ValueError(
-                        "Structure is marked as already_computed but is missing REF_energy or REF_forces, and they could not be computed. Original error: " + str(e)
+                        "Structure is marked as already_computed but is missing REF_energy or REF_forces, and they could not be computed. Original error: "
+                        + str(e)
                     ) from e
             else:
                 energy = structure.info["REF_energy"]
@@ -37,9 +52,7 @@ def clean_structures(structures: list[Atoms], config_type: str, override_config_
 
         if override_config_type or "config_type" not in structure.info:
             logger.debug("Setting config_type to '%s'.", config_type)
-            structure_copy.info[
-                "config_type"
-            ] = config_type
+            structure_copy.info["config_type"] = config_type
 
         cleaned_structures.append(structure_copy)
 

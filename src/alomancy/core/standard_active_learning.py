@@ -11,7 +11,10 @@ from ase.io import read, write
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from alomancy.database.global_database import _DEFAULT_DEDUP_CONFIG_TYPES
-from alomancy.high_accuracy_evaluation.dft.run_qe import run_go_qe, run_sp_qe
+from alomancy.high_accuracy_evaluation.dft import (
+    get_dft_functions,
+    warn_mismatched_kwargs,
+)
 from alomancy.initialize.initialization_structure_list import (
     compute_initialization_needs,
     create_initialization_atoms_list,
@@ -22,10 +25,11 @@ from alomancy.mlip.get_mace_eval_info import (
 from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.remote_submission import (
     all_maces_remote_submitter,
+    ase_remote_submitter,
     committee_remote_submitter,
     md_remote_submitter,
-    qe_remote_submitter,
 )
+from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
@@ -499,8 +503,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         start_index: int = 0,
     ) -> list[Atoms]:
 
+        calculator = high_accuracy_eval_job_dict.get("calculator", "qe")
+        warn_mismatched_kwargs(calculator, high_accuracy_eval_job_dict)
+        run_sp, run_go = get_dft_functions(calculator)
+
         logger.debug(
-            "Starting high accuracy evaluation with %d structures.", len(structures)
+            "Starting high accuracy evaluation with %d structures (calculator=%s).",
+            len(structures),
+            calculator,
         )
 
         function_kwargs = {
@@ -510,7 +520,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         if Path("results", base_name, "high_accuracy_evaluation").exists():
             found_structures = list(
                 Path("results", base_name, "high_accuracy_evaluation").glob(
-                    f"batch_*/qe_output_*/{high_accuracy_eval_job_dict['name']}.xyz"
+                    f"batch_*/{ASE_OUTPUT_PREFIX}_*/{high_accuracy_eval_job_dict['name']}.xyz"
                 )
             )
             if len(found_structures) >= len(structures) + start_index:
@@ -559,6 +569,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         # New GO batches are numbered [current_batches, current_batches + n_new_batches).
         # SP batches start at current_batches + n_new_batches to avoid directory collision.
         # Loop variable i indexes into the trimmed structures list; batch_num is the dir name.
+        go_high_accuracy_eval_job_dict = None
+        if allow_relaxation:
+            go_max_time = high_accuracy_eval_job_dict.get(
+                "max_go_time", high_accuracy_eval_job_dict["max_time"]
+            )
+            go_high_accuracy_eval_job_dict = copy.deepcopy(high_accuracy_eval_job_dict)
+            go_high_accuracy_eval_job_dict["max_time"] = go_max_time
+
         sp_batch_num = current_batches + n_new_batches
         for i in range(n_new_batches):
             batch_num = current_batches + i
@@ -591,46 +609,38 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     len(single_point_batch_structures),
                 )
 
-                go_max_time = high_accuracy_eval_job_dict.get(
-                    "max_go_time", high_accuracy_eval_job_dict["max_time"]
-                )
-                go_high_accuracy_eval_job_dict = copy.deepcopy(
-                    high_accuracy_eval_job_dict
-                )
-                go_high_accuracy_eval_job_dict["max_time"] = go_max_time
-
                 if batch_structures_to_relax:
-                    qe_remote_submitter(
+                    ase_remote_submitter(
                         remote_info=get_remote_info(
                             go_high_accuracy_eval_job_dict, input_files=[]
                         ),
                         base_name=base_name,
                         input_atoms_list=batch_structures_to_relax,
-                        function=run_go_qe,
+                        function=run_go,
                         batch=batch_num,
                         function_kwargs=function_kwargs,
                     )
 
                 if single_point_batch_structures:
-                    qe_remote_submitter(
+                    ase_remote_submitter(
                         remote_info=get_remote_info(
                             high_accuracy_eval_job_dict, input_files=[]
                         ),
                         base_name=base_name,
                         input_atoms_list=single_point_batch_structures,
-                        function=run_sp_qe,
+                        function=run_sp,
                         batch=sp_batch_num,
                         function_kwargs=function_kwargs,
                     )
                     sp_batch_num += 1
             else:
-                qe_remote_submitter(
+                ase_remote_submitter(
                     remote_info=get_remote_info(
                         high_accuracy_eval_job_dict, input_files=[]
                     ),
                     base_name=base_name,
                     input_atoms_list=batch_structures,
-                    function=run_sp_qe,
+                    function=run_sp,
                     batch=batch_num,
                     function_kwargs=function_kwargs,
                 )
@@ -638,7 +648,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         high_accuracy_structures = []
         output_name = self.jobs_dict["high_accuracy_evaluation"]["name"]
         directory_list = list(
-            Path("results", base_name).glob(f"{output_name}/batch_*/qe_output_*")
+            Path("results", base_name).glob(
+                f"{output_name}/batch_*/{ASE_OUTPUT_PREFIX}_*"
+            )
         )
         for directory in directory_list:
             completed_file = Path(directory, f"{output_name}.xyz")

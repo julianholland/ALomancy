@@ -148,7 +148,9 @@ def create_initialization_atoms_list(
             max_num_atoms=max_atom_number,
             relax_structures=True,
         )
-        logger.info("Retrieved %d structures from Materials Project.", len(mp_atoms_list))
+        logger.info(
+            "Retrieved %d structures from Materials Project.", len(mp_atoms_list)
+        )
 
     # --- Single / isolated atoms ---------------------------------------
     elements_for_singles = (
@@ -195,7 +197,9 @@ def create_initialization_atoms_list(
             for combo in all_trimer_combos
         }
     else:
-        trimer_combos_to_generate = dict.fromkeys(all_trimer_combos, num_trimers_per_combo)
+        trimer_combos_to_generate = dict.fromkeys(
+            all_trimer_combos, num_trimers_per_combo
+        )
 
     for combo, count in trimer_combos_to_generate.items():
         if count > 0:
@@ -264,7 +268,9 @@ def create_initialization_atoms_list(
     total_atoms_list.extend(amorphous_atoms_list)
     total_atoms_list.extend(stretch_compress_atoms_list)
 
-    logger.info("Created %d total structures for initialization.", len(total_atoms_list))
+    logger.info(
+        "Created %d total structures for initialization.", len(total_atoms_list)
+    )
     out_path = Path(work_dir, "initialization_structures_generated.xyz")
     write(out_path, total_atoms_list)
     logger.info("Saved initialization structures to %s.", out_path)

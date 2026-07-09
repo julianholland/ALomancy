@@ -34,11 +34,35 @@ def select_initial_structures(
         list[Atoms]: Selected Atoms objects for structure generation.
     """
     # Handle None default for mutable argument
+    logger.debug(
+        "Selecting initial structures with parameters: base_name=%s, structure_generation_job_dict=%s, "
+        "max_number_of_concurrent_jobs=%d, chem_formula_list=%s, selectable_configs=%s, "
+        "atom_number_range=%s, enforce_chemical_diversity=%s",
+        base_name,
+        structure_generation_job_dict,
+        max_number_of_concurrent_jobs,
+        chem_formula_list,
+        selectable_configs,
+        atom_number_range,
+        enforce_chemical_diversity,
+    )
+    if selectable_configs is not None:
+        selectable_configs = [*selectable_configs, "high_sd"]
+    logger.debug("available config_types: %s", {s.info.get("config_type") for s in train_atoms_list})
+    logger.info(
+        "Selecting initial structures from %d available structures.",
+        len(train_atoms_list),
+    )
+    if selectable_configs is not None:
+        logger.info(
+            "Structures available with correct config_type: %d",
+            len([s for s in train_atoms_list if s.info.get("config_type") in selectable_configs]),
+        )
     atom_number_range = tuple(atom_number_range)
     if atom_number_range != (0, 0):
-        assert (
-            atom_number_range[0] <= atom_number_range[1]
-        ), "atom_number_range must be a tuple of two integers where the first is less than or equal to the second"
+        assert atom_number_range[0] <= atom_number_range[1], (
+            "atom_number_range must be a tuple of two integers where the first is less than or equal to the second"
+        )
         if atom_number_range[0] < 2:
             warnings.warn(
                 f"atom_number_range minimum value is {atom_number_range[0]}, which allows single-atom structures. "
@@ -76,31 +100,33 @@ def select_initial_structures(
 
     if selectable_configs is not None:
         filtered_structures = [
-            s for s in filtered_structures if s.info.get("config_type") in selectable_configs
+            s
+            for s in filtered_structures
+            if s.info.get("config_type") in selectable_configs
         ]
 
-    assert (
-        len(filtered_structures) >= max_number_of_concurrent_jobs
-    ), f"Not enough structures to select {max_number_of_concurrent_jobs} from. Available: {len(filtered_structures)}"
+    assert len(filtered_structures) >= max_number_of_concurrent_jobs, (
+        f"Not enough structures to select {max_number_of_concurrent_jobs} from. Available: {len(filtered_structures)}"
+    )
 
     if not enforce_chemical_diversity:
         initial_atoms = [
-            filtered_structures[x]
+            filtered_structures[x].copy()
             for x in np.random.choice(
                 np.array(range(len(filtered_structures))),
                 max_number_of_concurrent_jobs,
                 replace=False,
             )
         ]
-        mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["name"])
+        mark_structures_for_dft(
+            initial_atoms, base_name, structure_generation_job_dict["name"]
+        )
         return initial_atoms
 
     # Ensure chemical diversity by selecting unique chemical formulas
     # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
 
-    unique_chemical_formulas = {
-        s.get_chemical_formula() for s in filtered_structures
-    }
+    unique_chemical_formulas = {s.get_chemical_formula() for s in filtered_structures}
     if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
         list_of_formulas = list(unique_chemical_formulas)
         extra_formulas = [
@@ -109,17 +135,24 @@ def select_initial_structures(
         ]
         list_of_formulas.extend(extra_formulas)
 
-
     else:
         # select formulas with probability inversely proportional to their frequency in the dataset to promote diversity
         all_chemical_formulas = [s.get_chemical_formula() for s in filtered_structures]
-        formula_counts = {formula: all_chemical_formulas.count(formula) for formula in set(all_chemical_formulas)}
-        formula_probabilities = {formula: 1/count for formula, count in formula_counts.items()}
+        formula_counts = {
+            formula: all_chemical_formulas.count(formula)
+            for formula in set(all_chemical_formulas)
+        }
+        formula_probabilities = {
+            formula: 1 / count for formula, count in formula_counts.items()
+        }
         list_of_formulas = np.random.choice(
             list(unique_chemical_formulas),
             max_number_of_concurrent_jobs,
             replace=False,
-            p=[formula_probabilities[formula]/sum(formula_probabilities.values()) for formula in unique_chemical_formulas]
+            p=[
+                formula_probabilities[formula] / sum(formula_probabilities.values())
+                for formula in unique_chemical_formulas
+            ],
         )
 
     initial_atoms = []
@@ -129,19 +162,24 @@ def select_initial_structures(
             for s in filtered_structures
             if s.get_chemical_formula() == chemical_formula
         ]
-        selected_structure = np.random.choice(
-            np.array(range(len(formula_structures)))
-        )
-        initial_atoms.append(formula_structures[selected_structure])
+        selected_structure = np.random.choice(np.array(range(len(formula_structures))))
+        initial_atoms.append(formula_structures[selected_structure].copy())
 
+    mark_structures_for_dft(
+        initial_atoms, base_name, structure_generation_job_dict["name"]
+    )
 
-    mark_structures_for_dft(initial_atoms, base_name, structure_generation_job_dict["name"])
-
-    logger.debug("Structures selected for MD: %s", [a.get_chemical_formula() for a in initial_atoms])
+    logger.debug(
+        "Structures selected for MD: %s",
+        [a.get_chemical_formula() for a in initial_atoms],
+    )
 
     return initial_atoms
 
-def mark_structures_for_dft(atoms_list: list[Atoms], base_name: str, job_name: str) -> None:
+
+def mark_structures_for_dft(
+    atoms_list: list[Atoms], base_name: str, job_name: str
+) -> None:
     for atoms in atoms_list:
         atoms.info["job_id"] = atoms.info.get("job_id", -1)
         atoms.info["config_type"] = f"{base_name}_{job_name}"

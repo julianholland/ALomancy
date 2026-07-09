@@ -37,6 +37,7 @@ def split_atoms_list_into_test_and_train(
 
     return train_set, test_set
 
+
 def extend_test_and_train_sets_with_extra_dataset(
     extra_dataset: str | Path,
     train_xyzs: list[Atoms],
@@ -67,20 +68,39 @@ def extend_test_and_train_sets_with_extra_dataset(
             already_computed=True,
         )
 
-        inelegible_configs= ["IsolatedAtom"]
+        inelegible_configs = ["IsolatedAtom"]
         elegible_extra_dataset_atoms = [
-            a for a in extra_dataset_atoms if a.info.get("config_type") not in inelegible_configs
+            a
+            for a in extra_dataset_atoms
+            if a.info.get("config_type") not in inelegible_configs
         ]
         extra_dataset_train, extra_dataset_test = split_atoms_list_into_test_and_train(
             elegible_extra_dataset_atoms, test_fraction, seed
         )
 
-        train_xyzs.extend(extra_dataset_train + [a for a in extra_dataset_atoms if a.info.get("config_type") in inelegible_configs])
+        train_xyzs.extend(
+            extra_dataset_train
+            + [
+                a
+                for a in extra_dataset_atoms
+                if a.info.get("config_type") in inelegible_configs
+            ]
+        )
         test_xyzs.extend(extra_dataset_test)
-        logger.info("Added %d structures from %s to training set and %d to test set.", len(extra_dataset_train), extra_dataset, len(extra_dataset_test))
-        logger.warning("Remove %s from extra_datasets to avoid duplicates upon restart.", extra_dataset)
+        logger.info(
+            "Added %d structures from %s to training set and %d to test set.",
+            len(extra_dataset_train),
+            extra_dataset,
+            len(extra_dataset_test),
+        )
+        logger.warning(
+            "Remove %s from extra_datasets to avoid duplicates upon restart.",
+            extra_dataset,
+        )
     else:
-        logger.warning("Could not read dataset from %s. Check path and format.", extra_dataset)
+        logger.warning(
+            "Could not read dataset from %s. Check path and format.", extra_dataset
+        )
 
     return train_xyzs, test_xyzs
 

@@ -108,13 +108,17 @@ class BaseActiveLearningWorkflow(ABC):
                 generated_structures,
                 **kwargs,
             )
-            logger.info("High-accuracy evaluation completed for %d structures.", len(new_training_data))
+            logger.info(
+                "High-accuracy evaluation completed for %d structures.",
+                len(new_training_data),
+            )
 
             new_training_data = clean_structures(
                 new_training_data,
-                config_type=f"al_loop_{loop}",
+                config_type="high_sd",
                 override_config_type=True,
                 already_computed=True,
+                extra_metadata={"al_loop": loop},
             )
 
             # Add evaluated AL loop structures to the global DB
@@ -129,7 +133,11 @@ class BaseActiveLearningWorkflow(ABC):
             train_xyzs += new_train_data
             test_xyzs += new_test_data
 
-            logger.debug("Completed AL loop %d, retraining with %d structures.", loop, len(train_xyzs))
+            logger.debug(
+                "Completed AL loop %d, retraining with %d structures.",
+                loop,
+                len(train_xyzs),
+            )
 
     def _seed_db_from_extra_dataset(self, extra_dataset: str) -> None:
         """

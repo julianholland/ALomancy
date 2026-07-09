@@ -96,8 +96,13 @@ logger = logging.getLogger(__name__)
 #     # )
 
 
-
-def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx: int = 0, _mace_fit_cmd: str = 'mace_run_train'):
+def mace_fit(
+    mlip_committee_job_dict: dict,
+    seed: int,
+    workdir_str: str,
+    fit_idx: int = 0,
+    _mace_fit_cmd: str = "mace_run_train",
+):
     """
     Minimal MACE model fitting function.
 
@@ -175,13 +180,11 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     for key, value in mace_fit_params.items():
         logger.debug("  %s: %s", key, value)
 
-
     # Resolve the fitting command
     # if mace_fit_cmd is None:
     #     mace_fit_cmd = os.environ.get("WFL_MACE_FIT_COMMAND") or shutil.which("mace_run_train")
     #     if mace_fit_cmd is None:
     #         raise RuntimeError("mace_run_train not found. Set WFL_MACE_FIT_COMMAND or add it to PATH.")
-
 
     parser = tools.build_default_arg_parser()
     args = parser.parse_args(["--name", mace_fit_params["name"]])  # seed defaults
@@ -211,6 +214,7 @@ def mace_fit(mlip_committee_job_dict: dict, seed: int, workdir_str: str, fit_idx
     #     raise RuntimeError(f"MACE fitting failed with exit code {e.returncode}") from e
     # finally:
     #     os.chdir(orig_dir)
+
 
 def _mace_fit_expyre_call(
     train_atoms_path: str,

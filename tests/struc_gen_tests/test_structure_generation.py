@@ -184,7 +184,10 @@ class TestStdDeviationOfForces:
             },
             "fit_0": {
                 "structure_0": {"forces": np.array([[0.1, 0.1, 0.1]]), "energy": -1.0},
-                "structure_1": {"forces": np.array([[10.0, 10.0, 10.0]]), "energy": -3.0},
+                "structure_1": {
+                    "forces": np.array([[10.0, 10.0, 10.0]]),
+                    "energy": -3.0,
+                },
             },
         }
         df = std_deviation_of_forces(d, tmp_path)
@@ -253,7 +256,9 @@ class TestFindHighSdStructures:
         for key in keys:
             d[key] = {}
             for i, s in enumerate(structures):
-                forces = self._flatten(s.arrays["REF_forces"] + rng.random((3, 3)) * 0.1)
+                forces = self._flatten(
+                    s.arrays["REF_forces"] + rng.random((3, 3)) * 0.1
+                )
                 d[key][f"structure_{i}"] = {
                     "forces": forces,
                     "energy": s.info["REF_energy"] + float(rng.random() * 0.1),
@@ -264,6 +269,7 @@ class TestFindHighSdStructures:
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
         )
+
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
@@ -282,6 +288,7 @@ class TestFindHighSdStructures:
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
         )
+
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
@@ -300,6 +307,7 @@ class TestFindHighSdStructures:
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
         )
+
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
@@ -322,6 +330,7 @@ class TestFindHighSdStructures:
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
         )
+
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
@@ -331,12 +340,15 @@ class TestFindHighSdStructures:
         # Write cache manually
         write(str(out_dir / "high_sd_structures.xyz"), structures[:2], format="extxyz")
         import polars as pl
-        df = pl.DataFrame({
-            "structure_index": [0, 1],
-            "max_std_dev": [0.9, 0.5],
-            "mean_std_dev": [0.5, 0.3],
-            "std_dev_energy": [0.1, 0.05],
-        })
+
+        df = pl.DataFrame(
+            {
+                "structure_index": [0, 1],
+                "max_std_dev": [0.9, 0.5],
+                "mean_std_dev": [0.5, 0.3],
+                "std_dev_energy": [0.1, 0.05],
+            }
+        )
         df.write_csv(str(out_dir / "std_dev_forces.csv"))
         result = find_high_sd_structures(
             structure_list=structures,
@@ -351,6 +363,7 @@ class TestFindHighSdStructures:
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
         )
+
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(2)]
         forces_dict = self._build_forces_dict(structures)
@@ -436,9 +449,9 @@ class TestSelectInitialStructures:
         )
 
         np.random.seed(42)
-        structures = [self._make_atoms(["H", "H"], config_type="al_loop_0") for _ in range(10)] + [
-            self._make_atoms(["H", "H"], config_type="init_dimer") for _ in range(5)
-        ]
+        structures = [
+            self._make_atoms(["H", "H"], config_type="al_loop_0") for _ in range(10)
+        ] + [self._make_atoms(["H", "H"], config_type="init_dimer") for _ in range(5)]
         job_dict = {"name": "test_md"}
         result = select_initial_structures(
             base_name="test",
@@ -448,9 +461,107 @@ class TestSelectInitialStructures:
             selectable_configs=["al_loop_0"],
         )
         # The returned atoms should have config_type set to {base_name}_{job_name}
-        assert all(
-            a.info.get("config_type") == "test_test_md" for a in result
+        assert all(a.info.get("config_type") == "test_test_md" for a in result)
+        # Originals in train_atoms_list must NOT be mutated — the same selectable_configs
+        # must still work on a second call (simulating the next AL loop).
+        assert all(a.info.get("config_type") == "al_loop_0" for a in structures[:10])
+
+    @pytest.mark.unit
+    def test_high_sd_auto_included_when_selectable_configs_set(self):
+        """high_sd structures are always selectable even when selectable_configs is explicit."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
         )
+
+        np.random.seed(42)
+        init_structures = [
+            self._make_atoms(["H", "H"], config_type="init_amorphous") for _ in range(5)
+        ]
+        high_sd_structures = [
+            self._make_atoms(["H", "H"], config_type="high_sd") for _ in range(5)
+        ]
+        job_dict = {"name": "md"}
+        result = select_initial_structures(
+            base_name="al_loop_1",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=init_structures + high_sd_structures,
+            max_number_of_concurrent_jobs=3,
+            selectable_configs=["init_amorphous"],
+        )
+        # high_sd structures are eligible even though selectable_configs only lists init_amorphous
+        assert len(result) == 3
+        original_config_types = {a.info.get("config_type") for a in init_structures + high_sd_structures}
+        # originals are untouched
+        assert original_config_types == {"init_amorphous", "high_sd"}
+
+    @pytest.mark.unit
+    def test_high_sd_selectable_when_no_config_filter(self):
+        """When selectable_configs is None, high_sd structures are selectable (no regression)."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [
+            self._make_atoms(["H", "H"], config_type="high_sd") for _ in range(10)
+        ]
+        job_dict = {"name": "md"}
+        result = select_initial_structures(
+            base_name="al_loop_1",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=5,
+            selectable_configs=None,
+        )
+        assert len(result) == 5
+
+    @pytest.mark.unit
+    def test_caller_selectable_configs_list_not_mutated(self):
+        """The list passed as selectable_configs must not be modified in-place."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [
+            self._make_atoms(["H", "H"], config_type="init_amorphous") for _ in range(10)
+        ]
+        job_dict = {"name": "md"}
+        caller_list = ["init_amorphous"]
+        select_initial_structures(
+            base_name="al_loop_0",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=3,
+            selectable_configs=caller_list,
+        )
+        assert caller_list == ["init_amorphous"]
+
+    @pytest.mark.unit
+    def test_selectable_configs_survive_multiple_loops(self):
+        """Selecting structures in loop N must not break selection in loop N+1."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [
+            self._make_atoms(["H", "H"], config_type="init_amorphous") for _ in range(10)
+        ]
+        job_dict = {"name": "structure_generation"}
+        kwargs = {
+            "structure_generation_job_dict": job_dict,
+            "train_atoms_list": structures,
+            "max_number_of_concurrent_jobs": 5,
+            "selectable_configs": ["init_amorphous"],
+        }
+        # Loop 0 selection
+        select_initial_structures(base_name="al_loop_0", **kwargs)
+        # Original config_types must be intact so loop 1 can select again
+        assert all(a.info.get("config_type") == "init_amorphous" for a in structures)
+        # Loop 1 selection must succeed (would raise AssertionError before the fix)
+        result1 = select_initial_structures(base_name="al_loop_1", **kwargs)
+        assert len(result1) == 5
 
     def test_less_than_two_atoms_warning(self):
         """Test warning is raised for atom_number_range starting below 2."""
@@ -479,10 +590,9 @@ class TestSelectInitialStructures:
 
         np.random.seed(42)
         # Only 2 unique formulas but need 4 jobs
-        structures = (
-            [self._make_atoms(["H", "H"]) for _ in range(5)]
-            + [self._make_atoms(["O", "O"]) for _ in range(5)]
-        )
+        structures = [self._make_atoms(["H", "H"]) for _ in range(5)] + [
+            self._make_atoms(["O", "O"]) for _ in range(5)
+        ]
         job_dict = {"name": "test_md"}
         result = select_initial_structures(
             base_name="test",

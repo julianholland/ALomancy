@@ -24,13 +24,15 @@ def run_md(
     timestep_fs: float = 0.5,
     friction: float = 0.002,
 ):
-    assert (
-        structure_generation_job_dict["desired_number_of_structures"] > 0
-    ), "Number of structures must be greater than 0"
+    assert structure_generation_job_dict["desired_number_of_structures"] > 0, (
+        "Number of structures must be greater than 0"
+    )
     assert (
         steps
         > structure_generation_job_dict["desired_number_of_structures"] / total_md_runs
-    ), "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
+    ), (
+        "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
+    )
     # further asserting needed here to avoid:
     # for i in range(steps // snapshot_interval):
     #                ~~~~~~^^~~~~~~~~~~~~~~~~~~

@@ -18,6 +18,7 @@ from alomancy.database.global_database import GlobalDatabase
 # ConcreteWorkflow: Stub implementation for testing
 # =============================================================================
 
+
 class ConcreteWorkflow(BaseActiveLearningWorkflow):
     """Concrete implementation of BaseActiveLearningWorkflow for testing."""
 
@@ -43,6 +44,7 @@ class ConcreteWorkflow(BaseActiveLearningWorkflow):
 # =============================================================================
 # Test Classes
 # =============================================================================
+
 
 class TestConstructor:
     """Tests for BaseActiveLearningWorkflow constructor."""
@@ -123,7 +125,9 @@ class TestSeedDbFromExtraDataset:
     """Tests for _seed_db_from_extra_dataset method."""
 
     @pytest.mark.unit
-    def test_seeds_structures_into_db(self, tmp_path, minimal_jobs_dict, h_atom, h2o_mol):
+    def test_seeds_structures_into_db(
+        self, tmp_path, minimal_jobs_dict, h_atom, h2o_mol
+    ):
         """Test that extra dataset structures are added to the database."""
         xyz_path = tmp_path / "extra.xyz"
         write(str(xyz_path), [h_atom, h2o_mol], format="extxyz")
@@ -232,6 +236,7 @@ class TestRunWorkflowStructure:
 
         seed_calls_from_run = []
         original_seed = wf._seed_db_from_extra_dataset
+
         def tracking_seed(path):
             seed_calls_from_run.append(path)
             return original_seed(path)
@@ -259,7 +264,13 @@ class TestRunWorkflowStructure:
 
         with (
             patch.object(wf, "initialize_training_set", return_value=([], [])),
-            patch.object(wf, "train_mlip", side_effect=lambda *a, **kw: train_call_count.append(1) or pd.DataFrame()),
+            patch.object(
+                wf,
+                "train_mlip",
+                side_effect=lambda *a, **kw: (
+                    train_call_count.append(1) or pd.DataFrame()
+                ),
+            ),
             patch.object(wf, "generate_structures", return_value=[]),
             patch.object(wf, "high_accuracy_evaluation", return_value=[]),
             patch("alomancy.core.base_active_learning.write"),
@@ -284,7 +295,11 @@ class TestRunWorkflowStructure:
 
         with (
             patch.object(wf, "initialize_training_set", return_value=([], [])),
-            patch.object(wf, "train_mlip", side_effect=lambda *a, **kw: train_calls.append(1) or pd.DataFrame()),
+            patch.object(
+                wf,
+                "train_mlip",
+                side_effect=lambda *a, **kw: train_calls.append(1) or pd.DataFrame(),
+            ),
             patch.object(wf, "generate_structures", return_value=[]),
             patch.object(wf, "high_accuracy_evaluation", return_value=[]),
             patch("alomancy.core.base_active_learning.write"),
@@ -397,3 +412,90 @@ class TestRunWorkflowStructure:
         # Check that write was called for train and test files
         # At minimum: 2 loops * 2 files (train + test) = 4 calls
         assert mock_write.call_count >= 4
+
+    @pytest.mark.unit
+    def test_al_loop_structures_tagged_as_high_sd(self, tmp_path, minimal_jobs_dict):
+        """New structures from high_accuracy_evaluation get config_type='high_sd'."""
+        import numpy as np
+        from ase import Atoms
+
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=1,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+        )
+
+        def make_evaluated_structure():
+            a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True)
+            a.info["REF_energy"] = -1.0
+            a.arrays["REF_forces"] = np.zeros((2, 3))
+            return a
+
+        evaluated = [make_evaluated_structure() for _ in range(3)]
+        captured_train: list = []
+
+        def track_train(base_name, *a, **kw):
+            captured_train.extend(a[0] if a else kw.get("train_data", []))
+            return pd.DataFrame()
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", side_effect=track_train),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=evaluated),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        # After the loop, structures added to train_xyzs must carry config_type="high_sd"
+        # (verified by re-running; the next train call would see them — but here we check
+        # via the DB which clean_structures feeds into)
+        all_db = wf.db.get_all_as_atoms()
+        assert all(a.info.get("config_type") == "high_sd" for a in all_db)
+
+    @pytest.mark.unit
+    def test_al_loop_metadata_stored_in_structures(self, tmp_path, minimal_jobs_dict):
+        """Structures from loop N carry al_loop=N in their info dict."""
+        import numpy as np
+        from ase import Atoms
+
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=2,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+        )
+
+        def make_structure():
+            a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True)
+            a.info["REF_energy"] = -1.0
+            a.arrays["REF_forces"] = np.zeros((2, 3))
+            return a
+
+        call_count = [0]
+
+        def evaluated_for_loop(*a, **kw):
+            loop_idx = call_count[0]
+            call_count[0] += 1
+            structs = [make_structure() for _ in range(2)]
+            for s in structs:
+                s.info["_loop"] = loop_idx
+            return structs
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", side_effect=evaluated_for_loop),
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        all_db = wf.db.get_all_as_atoms()
+        loop_values = {a.info["al_loop"] for a in all_db}
+        assert loop_values == {0, 1}

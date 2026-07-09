@@ -22,9 +22,9 @@ def find_high_sd_structures(
     ]
 
     assert desired_structures > 0, "Number of structures must be greater than 0"
-    assert (
-        len(structure_list) >= desired_structures
-    ), f"Not enough structures to select {desired_structures} from. Available: {len(structure_list)}"
+    assert len(structure_list) >= desired_structures, (
+        f"Not enough structures to select {desired_structures} from. Available: {len(structure_list)}"
+    )
 
     std_dev_csv_name = Path(
         "results",
@@ -195,7 +195,6 @@ def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
 #     df.to_csv(str(Path(structure_generation_dir, "std_dev_forces.csv")), index=True)
 
 #     return df
-
 
 
 def std_deviation_of_forces(

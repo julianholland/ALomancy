@@ -41,7 +41,9 @@ class RemoteJobExecutor:
         output_files = [str(f) for f in (output_files or [])]
 
         final_input_files = input_files or self.remote_info.input_files
-        final_output_files = output_files or getattr(self.remote_info, "output_files", [])
+        final_output_files = output_files or getattr(
+            self.remote_info, "output_files", []
+        )
 
         job = ExPyRe(
             name=job_name or self.remote_info.job_name,

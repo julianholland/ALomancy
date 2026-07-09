@@ -375,7 +375,9 @@ class TestSplitAtomsListIntoTestAndTrain:
         )
 
         atoms = self._make_atoms_list(100)
-        train, test = split_atoms_list_into_test_and_train(atoms, test_fraction=0.2, seed=42)
+        train, test = split_atoms_list_into_test_and_train(
+            atoms, test_fraction=0.2, seed=42
+        )
         assert len(train) + len(test) == 100
         assert len(test) == 20  # 100 * 0.2
 
@@ -532,16 +534,23 @@ class TestReadAtomsFileIfEnabled:
 
     def test_returns_none_when_disabled(self, tmp_path):
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
-        result = read_atoms_file_if_enabled(read_file=False, file_path=tmp_path / "dummy.xyz")
+
+        result = read_atoms_file_if_enabled(
+            read_file=False, file_path=tmp_path / "dummy.xyz"
+        )
         assert result is None
 
     def test_returns_none_when_file_missing(self, tmp_path):
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
-        result = read_atoms_file_if_enabled(read_file=True, file_path=tmp_path / "nonexistent.xyz")
+
+        result = read_atoms_file_if_enabled(
+            read_file=True, file_path=tmp_path / "nonexistent.xyz"
+        )
         assert result is None
 
     def test_returns_empty_list_for_empty_file(self, tmp_path):
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+
         empty_file = tmp_path / "empty.xyz"
         empty_file.write_text("")
         result = read_atoms_file_if_enabled(read_file=True, file_path=empty_file)
@@ -551,6 +560,7 @@ class TestReadAtomsFileIfEnabled:
         from ase.io import write
 
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+
         xyz_path = tmp_path / "structs.xyz"
         write(str(xyz_path), [h2o_mol], format="extxyz")
         result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)
@@ -561,6 +571,7 @@ class TestReadAtomsFileIfEnabled:
         from ase.io import write
 
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+
         xyz_path = tmp_path / "multi.xyz"
         write(str(xyz_path), [h2o_mol, h_atom], format="extxyz")
         result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)
@@ -570,6 +581,7 @@ class TestReadAtomsFileIfEnabled:
         from ase.io import write
 
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+
         xyz_path = tmp_path / "test.xyz"
         write(str(xyz_path), [h2o_mol], format="extxyz")
         result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)

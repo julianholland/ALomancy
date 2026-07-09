@@ -5,7 +5,13 @@ from ase import Atoms
 
 logger = logging.getLogger(__name__)
 
-def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[bool], max_deformation: float, num_structures: int) -> list[Atoms]:
+
+def create_stretch_compress_atoms_list(
+    atoms: Atoms,
+    deform_xyz: bool | list[bool],
+    max_deformation: float,
+    num_structures: int,
+) -> list[Atoms]:
     """
     Apply a stretch/compression deformation to the cell of an atoms object.
 
@@ -25,7 +31,7 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
     """
     deformed_atoms_list = []
     if num_structures > 0:
-        for i in np.linspace(1-max_deformation, 1+max_deformation, num_structures):
+        for i in np.linspace(1 - max_deformation, 1 + max_deformation, num_structures):
             deformed_atoms = atoms.copy()
             if isinstance(deform_xyz, list) and len(deform_xyz) == 3:
                 cell_multiplier = np.diag([i if deform else 1 for deform in deform_xyz])
@@ -38,14 +44,22 @@ def create_stretch_compress_atoms_list(atoms: Atoms, deform_xyz: bool | list[boo
 
             new_cell = deformed_atoms.cell * cell_multiplier
             deformed_atoms.set_cell(new_cell, scale_atoms=True)
-            deformed_atoms.info['config_type'] = 'init_stretch_compress'
-            deformed_atoms.info['deformation'] = f'{i:.3f}'
-            deformed_atoms.info['needs_relaxation'] = False
+            deformed_atoms.info["config_type"] = "init_stretch_compress"
+            deformed_atoms.info["deformation"] = f"{i:.3f}"
+            deformed_atoms.info["needs_relaxation"] = False
             deformed_atoms_list.append(deformed_atoms)
 
     return deformed_atoms_list
 
+
 if __name__ == "__main__":
-    atoms = Atoms("H2O", positions=[(0, 0, 0), (0.76, 0.58, 0), (-0.76, 0.58, 0)], cell =[3,3,3])
-    deformed_atoms_list = create_stretch_compress_atoms_list(atoms, deform_xyz=[True, False, False], max_deformation=0.4, num_structures=5)
-    logger.debug("Stretch/compress positions: %s", [deformed_atoms.positions.tolist() for deformed_atoms in deformed_atoms_list])
+    atoms = Atoms(
+        "H2O", positions=[(0, 0, 0), (0.76, 0.58, 0), (-0.76, 0.58, 0)], cell=[3, 3, 3]
+    )
+    deformed_atoms_list = create_stretch_compress_atoms_list(
+        atoms, deform_xyz=[True, False, False], max_deformation=0.4, num_structures=5
+    )
+    logger.debug(
+        "Stretch/compress positions: %s",
+        [deformed_atoms.positions.tolist() for deformed_atoms in deformed_atoms_list],
+    )

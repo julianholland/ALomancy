@@ -68,11 +68,13 @@ class TestCommitteePredictionVariance:
     @pytest.mark.unit
     def test_max_std_exceeds_mean_std_with_outlier(self):
         # One force component has high variance, others near-zero
-        forces = np.array([
-            [10.0, 0.0, 0.0],
-            [0.0,  0.0, 0.0],
-            [0.0,  0.1, 0.0],
-        ])
+        forces = np.array(
+            [
+                [10.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+            ]
+        )
         std_dev = np.std(forces, axis=0)
         assert np.max(std_dev) > np.mean(std_dev)
 
@@ -81,7 +83,10 @@ class TestTrainTestSplit:
     """Test split_atoms_list_into_test_and_train with real data."""
 
     def _atoms_list(self, n):
-        return [Atoms(["H"], positions=[[i, 0, 0]], cell=[5, 5, 5], pbc=True) for i in range(n)]
+        return [
+            Atoms(["H"], positions=[[i, 0, 0]], cell=[5, 5, 5], pbc=True)
+            for i in range(n)
+        ]
 
     @pytest.mark.unit
     def test_no_overlap_between_train_and_test(self):

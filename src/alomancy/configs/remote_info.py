@@ -5,10 +5,11 @@ import sys
 
 from expyre.resources import Resources
 
-sys.modules["pathlib._local"]=pathlib
+sys.modules["pathlib._local"] = pathlib
 
 
 logger = logging.getLogger(__name__)
+
 
 class RemoteInfo:
     """Create a RemoteInfo object
@@ -52,10 +53,27 @@ class RemoteInfo:
     hash_ignore: list(str), default []
         list of arguments to ignore when doing hash of remote function arguments to determine if it's already been done
     """
-    def __init__(self, sys_name, job_name, resources, num_inputs_per_queued_job=-100, pre_cmds=None, post_cmds=None,
-                 env_vars=None, input_files=None, output_files=None, header_extra=None,
-                 exact_fit=True, partial_node=False, timeout=3600, check_interval=30,
-                 ignore_failed_jobs=False, resubmit_killed_jobs=False, hash_ignore=None):
+
+    def __init__(
+        self,
+        sys_name,
+        job_name,
+        resources,
+        num_inputs_per_queued_job=-100,
+        pre_cmds=None,
+        post_cmds=None,
+        env_vars=None,
+        input_files=None,
+        output_files=None,
+        header_extra=None,
+        exact_fit=True,
+        partial_node=False,
+        timeout=3600,
+        check_interval=30,
+        ignore_failed_jobs=False,
+        resubmit_killed_jobs=False,
+        hash_ignore=None,
+    ):
 
         if hash_ignore is None:
             hash_ignore = []
@@ -90,10 +108,11 @@ class RemoteInfo:
         self.resubmit_killed_jobs = resubmit_killed_jobs
         self.hash_ignore = hash_ignore.copy()
 
-
     def __str__(self):
-        return (f'{self.sys_name} {self.job_name} {self.resources} {self.num_inputs_per_queued_job} {self.exact_fit} '
-                f'{self.partial_node} {self.timeout} {self.check_interval}')
+        return (
+            f"{self.sys_name} {self.job_name} {self.resources} {self.num_inputs_per_queued_job} {self.exact_fit} "
+            f"{self.partial_node} {self.timeout} {self.check_interval}"
+        )
 
 
 def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInfo:
@@ -103,7 +122,7 @@ def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInf
     if input_files is None:
         input_files = []
 
-    logger.debug("HPC: %s, Job: %s", job_dict['hpc']['hpc_name'], job_dict['name'])
+    logger.debug("HPC: %s, Job: %s", job_dict["hpc"]["hpc_name"], job_dict["name"])
     return RemoteInfo(
         sys_name=job_dict["hpc"]["hpc_name"],
         job_name=job_dict["name"],

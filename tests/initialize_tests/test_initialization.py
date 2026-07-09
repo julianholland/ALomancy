@@ -50,7 +50,7 @@ class TestComputeInitializationNeeds:
         # H2 has 7 already, HO has 0, O2 has 10
         db = make_mock_db({"init_dimer": {"H2": 7, "O2": 10}})
         needs = compute_initialization_needs(db, ["H", "O"], True, True, 10, 5, 100)
-        assert needs["dimer_override"]["H2"] == 3   # 10 - 7
+        assert needs["dimer_override"]["H2"] == 3  # 10 - 7
         assert needs["dimer_override"]["HO"] == 10  # 10 - 0
         assert "O2" not in needs["dimer_override"]  # already at target
 
@@ -152,8 +152,10 @@ class TestComputeInitializationNeeds:
         """Test a complex scenario with mixed present and absent structures."""
         all_counts = {
             "IsolatedAtom": {"H": 1},  # H present, O missing
-            "init_dimer": {"H2": 8},   # H2 needs 2 more, HO needs 10, O2 needs 10
-            "init_trimer": {"H3": 5},  # H3 complete, H2O needs 5, HO2 needs 5, O3 needs 5
+            "init_dimer": {"H2": 8},  # H2 needs 2 more, HO needs 10, O2 needs 10
+            "init_trimer": {
+                "H3": 5
+            },  # H3 complete, H2O needs 5, HO2 needs 5, O3 needs 5
             "init_amorphous": {"HO": 75},  # 25 more needed out of 100
             # init_MP not present, so MP needed
         }
@@ -175,7 +177,9 @@ class TestComputeInitializationNeeds:
     def test_three_element_system(self):
         """Test with three elements to verify combo generation scales correctly."""
         db = make_mock_db({})
-        needs = compute_initialization_needs(db, ["H", "C", "N"], True, True, 10, 5, 100)
+        needs = compute_initialization_needs(
+            db, ["H", "C", "N"], True, True, 10, 5, 100
+        )
 
         # Dimers: HC, H2, HN, C2, CN, N2 (6 total from combinations_with_replacement)
         assert len(needs["dimer_override"]) == 6
@@ -207,7 +211,9 @@ class TestComputeInitializationNeeds:
     def test_isolated_atoms_multiple_missing(self):
         """Test isolated atoms with multiple elements missing."""
         db = make_mock_db({"IsolatedAtom": {"C": 1}})
-        needs = compute_initialization_needs(db, ["H", "C", "O"], True, True, 10, 5, 100)
+        needs = compute_initialization_needs(
+            db, ["H", "C", "O"], True, True, 10, 5, 100
+        )
         assert set(needs["isolated_atoms"]) == {"H", "O"}
 
     @pytest.mark.unit

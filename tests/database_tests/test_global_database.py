@@ -1,4 +1,5 @@
 """Tests for GlobalDatabase class."""
+
 import numpy as np
 import pytest
 from ase import Atoms
@@ -8,6 +9,7 @@ from alomancy.database.global_database import GlobalDatabase
 # ---------------------------------------------------------------------------
 # Helper function (copied from conftest for use in this test module)
 # ---------------------------------------------------------------------------
+
 
 def make_atoms(
     symbols: list,
@@ -36,14 +38,19 @@ def make_atoms(
 # Test Classes
 # ---------------------------------------------------------------------------
 
+
 class TestAddStructures:
     """Tests for add_structures method with deduplication logic."""
 
     @pytest.mark.unit
     def test_dedup_isolated_atom(self, tmp_path):
         """Add same IsolatedAtom H twice, assert db.size == 1."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h_atom, h_atom.copy()])
         assert db.size == 1
@@ -60,8 +67,12 @@ class TestAddStructures:
     @pytest.mark.unit
     def test_no_dedup_init_dimer(self, tmp_path):
         """Two dimers with same formula are both added (count-based, not exact dedup)."""
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h2_dimer, h2_dimer.copy()])
         assert db.size == 2
@@ -86,8 +97,12 @@ class TestAddStructures:
     @pytest.mark.unit
     def test_skip_duplicates_false_adds_all(self, tmp_path):
         """Even IsolatedAtom added twice when skip_duplicates=False."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h_atom, h_atom.copy()], skip_duplicates=False)
         assert db.size == 2
@@ -95,10 +110,18 @@ class TestAddStructures:
     @pytest.mark.unit
     def test_returns_added_count(self, tmp_path):
         """3 structures, 1 IsolatedAtom duplicate -> should add 2."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        o_atom = make_atoms(["O"], config_type="IsolatedAtom", ref_energy=-432.0,
-                           ref_forces=[[0.0, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        o_atom = make_atoms(
+            ["O"],
+            config_type="IsolatedAtom",
+            ref_energy=-432.0,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         count = db.add_structures([h_atom, o_atom, h_atom.copy()])
         assert count == 2
@@ -106,24 +129,34 @@ class TestAddStructures:
     @pytest.mark.unit
     def test_ref_forces_round_trip(self, tmp_path):
         """REF_forces survive storage and retrieval."""
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h2_dimer])
         retrieved = db.get_all_as_atoms()
         assert len(retrieved) == 1
         assert "REF_forces" in retrieved[0].arrays
-        np.testing.assert_allclose(retrieved[0].arrays["REF_forces"],
-                                   h2_dimer.arrays["REF_forces"], atol=1e-6)
+        np.testing.assert_allclose(
+            retrieved[0].arrays["REF_forces"], h2_dimer.arrays["REF_forces"], atol=1e-6
+        )
 
     @pytest.mark.unit
     def test_custom_dedup_list(self, tmp_path):
         """When config_types_to_dedup=["init_dimer"], dimers are deduped."""
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
-        db.add_structures([h2_dimer, h2_dimer.copy()],
-                           config_types_to_dedup=["init_dimer"])
+        db.add_structures(
+            [h2_dimer, h2_dimer.copy()], config_types_to_dedup=["init_dimer"]
+        )
         assert db.size == 1
 
 
@@ -133,10 +166,18 @@ class TestCounting:
     @pytest.mark.unit
     def test_count_all_by_config_type_and_formula(self, tmp_path):
         """Test detailed counting by config_type and formula."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h_atom, h2_dimer, h2_dimer.copy()], skip_duplicates=False)
         counts = db.count_all_by_config_type_and_formula()
@@ -146,12 +187,24 @@ class TestCounting:
     @pytest.mark.unit
     def test_count_by_config_type(self, tmp_path):
         """Test counting aggregated by config_type only."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        o_atom = make_atoms(["O"], config_type="IsolatedAtom", ref_energy=-432.0,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        o_atom = make_atoms(
+            ["O"],
+            config_type="IsolatedAtom",
+            ref_energy=-432.0,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h_atom, o_atom, h2_dimer], skip_duplicates=False)
         counts = db.count_by_config_type()
@@ -172,12 +225,24 @@ class TestRetrieval:
     @pytest.mark.unit
     def test_get_structures_by_config_type(self, tmp_path):
         """Test filtering structures by config_type."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        o_atom = make_atoms(["O"], config_type="IsolatedAtom", ref_energy=-432.0,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        o_atom = make_atoms(
+            ["O"],
+            config_type="IsolatedAtom",
+            ref_energy=-432.0,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h_atom, o_atom, h2_dimer], skip_duplicates=False)
         isolated = db.get_structures_by_config_type(["IsolatedAtom"])
@@ -187,10 +252,18 @@ class TestRetrieval:
     @pytest.mark.unit
     def test_get_all_as_atoms(self, tmp_path):
         """Test retrieving all structures as Atoms objects."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         db = GlobalDatabase(str(tmp_path / "db"))
         db.add_structures([h_atom, h2_dimer], skip_duplicates=False)
         all_atoms = db.get_all_as_atoms()
@@ -200,10 +273,18 @@ class TestRetrieval:
     @pytest.mark.unit
     def test_size_property(self, tmp_path):
         """Test the size property increases correctly."""
-        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                           ref_forces=[[0.0, 0.0, 0.0]])
-        h2_dimer = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                             ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        h_atom = make_atoms(
+            ["H"],
+            config_type="IsolatedAtom",
+            ref_energy=-13.6,
+            ref_forces=[[0.0, 0.0, 0.0]],
+        )
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
         h2o_mol = Atoms(
             symbols=["O", "H", "H"],
             positions=[[0.0, 0.0, 0.0], [0.757, 0.586, 0.0], [-0.757, 0.586, 0.0]],

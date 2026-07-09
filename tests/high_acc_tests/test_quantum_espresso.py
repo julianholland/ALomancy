@@ -19,7 +19,9 @@ class TestFindOptimalNpool:
     @pytest.mark.unit
     def test_returns_1_when_no_valid_candidate(self):
         # With min_ranks_per_pool=4 and ranks_per_system=2, no valid npool
-        result = find_optimal_npool(ranks_per_system=2, total_kpoints=10, min_ranks_per_pool=4)
+        result = find_optimal_npool(
+            ranks_per_system=2, total_kpoints=10, min_ranks_per_pool=4
+        )
         assert result == 1
 
     @pytest.mark.unit
@@ -42,13 +44,17 @@ class TestFindOptimalNpool:
     @pytest.mark.unit
     def test_ranks_per_node_aligns_pools(self):
         # With ranks_per_node matching, pools_per_node is integer -> score +2
-        result = find_optimal_npool(ranks_per_system=16, total_kpoints=8, ranks_per_node=16)
+        result = find_optimal_npool(
+            ranks_per_system=16, total_kpoints=8, ranks_per_node=16
+        )
         assert isinstance(result, int)
         assert result >= 1
 
     @pytest.mark.unit
     def test_min_ranks_per_pool_respected(self):
-        result = find_optimal_npool(ranks_per_system=8, total_kpoints=8, min_ranks_per_pool=4)
+        result = find_optimal_npool(
+            ranks_per_system=8, total_kpoints=8, min_ranks_per_pool=4
+        )
         # ranks_per_pool = ranks_per_system / npool >= min_ranks_per_pool
         assert 8 // result >= 4
 

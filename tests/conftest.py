@@ -1,4 +1,5 @@
 """Test Configuration and Fixtures for ALomancy test suite."""
+
 import os
 
 import numpy as np
@@ -9,6 +10,7 @@ from ase.io import write
 # ---------------------------------------------------------------------------
 # Utility: build test Atoms objects
 # ---------------------------------------------------------------------------
+
 
 def make_atoms(
     symbols: list,
@@ -36,20 +38,36 @@ def make_atoms(
 # Common Atoms fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def h_atom():
-    return make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
-                      ref_forces=[[0.0, 0.0, 0.0]])
+    return make_atoms(
+        ["H"],
+        config_type="IsolatedAtom",
+        ref_energy=-13.6,
+        ref_forces=[[0.0, 0.0, 0.0]],
+    )
+
 
 @pytest.fixture
 def o_atom():
-    return make_atoms(["O"], config_type="IsolatedAtom", ref_energy=-432.0,
-                      ref_forces=[[0.0, 0.0, 0.0]])
+    return make_atoms(
+        ["O"],
+        config_type="IsolatedAtom",
+        ref_energy=-432.0,
+        ref_forces=[[0.0, 0.0, 0.0]],
+    )
+
 
 @pytest.fixture
 def h2_dimer():
-    return make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
-                      ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+    return make_atoms(
+        ["H", "H"],
+        config_type="init_dimer",
+        ref_energy=-31.0,
+        ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+    )
+
 
 @pytest.fixture
 def h2o_mol():
@@ -64,9 +82,11 @@ def h2o_mol():
     atoms.arrays["REF_forces"] = np.zeros((3, 3))
     return atoms
 
+
 @pytest.fixture
 def sample_atoms(h2o_mol):
     return h2o_mol
+
 
 @pytest.fixture
 def sample_atoms_list(h2o_mol):
@@ -82,9 +102,11 @@ def sample_atoms_list(h2o_mol):
 # File fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def temp_dir(tmp_path):
     return tmp_path
+
 
 @pytest.fixture
 def sample_xyz_file(tmp_path, h2o_mol, h_atom):
@@ -96,6 +118,7 @@ def sample_xyz_file(tmp_path, h2o_mol, h_atom):
 # ---------------------------------------------------------------------------
 # Minimal jobs_dict
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def minimal_jobs_dict():
@@ -129,6 +152,7 @@ def minimal_jobs_dict():
         },
     }
 
+
 @pytest.fixture
 def mock_job_dict(minimal_jobs_dict):
     return minimal_jobs_dict
@@ -137,6 +161,7 @@ def mock_job_dict(minimal_jobs_dict):
 # ---------------------------------------------------------------------------
 # Environment setup (autouse)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def setup_test_environment(monkeypatch, tmp_path):
@@ -149,15 +174,18 @@ def setup_test_environment(monkeypatch, tmp_path):
 # Skip helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def skip_if_no_external():
     if os.getenv("ALOMANCY_MOCK_EXTERNAL", "1") == "1":
         pytest.skip("External dependencies not available in test environment")
 
+
 @pytest.fixture
 def skip_if_no_gpu():
     try:
         import torch
+
         if not torch.cuda.is_available():
             pytest.skip("GPU not available")
     except ImportError:

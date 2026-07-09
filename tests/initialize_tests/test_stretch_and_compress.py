@@ -20,6 +20,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.1, 5)
         assert len(result) == 5
@@ -28,6 +29,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.1, 0)
         assert result == []
@@ -36,6 +38,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.2, 4)
         assert all(a.info["config_type"] == "init_stretch_compress" for a in result)
@@ -44,6 +47,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.2, 4)
         assert all(a.info["needs_relaxation"] is False for a in result)
@@ -52,6 +56,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.2, 4)
         assert all("deformation" in a.info for a in result)
@@ -61,6 +66,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.3, 5)
         volumes = [a.get_volume() for a in result]
@@ -71,6 +77,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         orig_vol = atoms.get_volume()
         result = create_stretch_compress_atoms_list(atoms, False, 0.3, 5)
@@ -82,8 +89,11 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
-        result_list = create_stretch_compress_atoms_list(atoms, [True, False, False], 0.2, 5)
+        result_list = create_stretch_compress_atoms_list(
+            atoms, [True, False, False], 0.2, 5
+        )
         result_true = create_stretch_compress_atoms_list(atoms, True, 0.2, 5)
         # Both should produce the same cells because bool([...]) is True
         for a_l, a_t in zip(result_list, result_true):
@@ -94,6 +104,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         orig_cell = atoms.cell.array.copy()
         create_stretch_compress_atoms_list(atoms, True, 0.5, 5)
@@ -104,6 +115,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.1, 3)
         # The middle structure (index 1) should have scale ~1.0 (no deformation)
@@ -117,6 +129,7 @@ class TestCreateStretchCompressAtomsList:
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
+
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, True, 0.2, 1)
         assert len(result) == 1

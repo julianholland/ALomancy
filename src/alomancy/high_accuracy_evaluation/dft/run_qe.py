@@ -1,11 +1,15 @@
 import logging
-from pathlib import Path
 
 import numpy as np
 from ase import Atoms
 from ase.calculators.espresso import Espresso, EspressoProfile
-from ase.io import write
-from ase.optimize import BFGS
+
+from alomancy.utils.dft_utils import (
+    _build_srun_command,
+    _run_go,
+    _run_sp,
+    generate_kpts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,20 +68,13 @@ def create_espresso_profile(
 
     flag_str = " ".join(flags)
 
-    command = (
-        f"srun --ntasks={para_info_dict['ranks_per_system']} "
-        f"--tasks-per-node={para_info_dict['ranks_per_node']} "
-        f"--cpus-per-task={para_info_dict['threads_per_rank']} "
-        f"--distribution=block:block "
-        f"--hint=nomultithread "
-        f"--mem={para_info_dict['max_mem_per_node']} "
-        f"{pwx_path} {flag_str}"
-    )
+    command = _build_srun_command(para_info_dict, f"{pwx_path} {flag_str}")
 
     return EspressoProfile(
         command=command,
         pseudo_dir=pp_path,
     )
+
 
 def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
     return {
@@ -114,49 +111,13 @@ def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
         },
         "ions": {"ion_dynamics": "bfgs", "upscale": 1e8, "bfgs_ndim": 6},
         "cell": {"press_conv_thr": 0.1, "cell_dofree": "all"},
-        **qe_input_kwargs,  # Allow additional parameters to be passed
+        **qe_input_kwargs,
     }
 
 
-# def create_espresso_profile(
-#     para_info_dict: dict, npool: int, pwx_path: str, pp_path: str
-# ) -> EspressoProfile:
-#     command = f"srun --ntasks={para_info_dict['ranks_per_system']} --tasks-per-node={para_info_dict['ranks_per_node']} --cpus-per-task={para_info_dict['threads_per_rank']} --distribution=block:block --hint=nomultithread --mem={para_info_dict['max_mem_per_node']} {pwx_path} -nk {npool}"
-
-#     print(command)
-#     return EspressoProfile(
-#         command=command,
-#         pseudo_dir=pp_path,
-#     )
-
-
-def generate_kpts(
-    cell: np.ndarray, periodic_3d: bool = True, kspacing: float = 0.1
-) -> np.ndarray:
-    cell_lengths = np.linalg.norm(cell, axis=1)
-    kpts = np.ceil(2 * np.pi / (cell_lengths * kspacing)).astype(int)
-    return kpts if periodic_3d else np.array([kpts[0], kpts[1], 1])
-
-
-
-# def find_optimal_npool(
-#     ranks_per_system: int, total_kpoints: int, min_ranks_per_pool: int = 8
-# ) -> int:
-#     # Get all possible values that divide total_cores evenly
-#     possible_npools = [
-#         i
-#         for i in range(1, ranks_per_system + 1)
-#         if ranks_per_system % i == 0
-#         and ranks_per_system / i >= min_ranks_per_pool
-#         and i <= total_kpoints
-#     ]
-#     target = ranks_per_system**0.5
-#     npool = min(possible_npools, key=lambda x: abs(x - target))
-
-#     return int(npool)
-
-
-def create_qe_calc_object(atoms: Atoms, high_accuracy_eval_job_dict: dict, out_dir: str) -> Espresso:
+def create_qe_calc_object(
+    atoms: Atoms, high_accuracy_eval_job_dict: dict, out_dir: str
+) -> Espresso:
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
@@ -165,9 +126,6 @@ def create_qe_calc_object(atoms: Atoms, high_accuracy_eval_job_dict: dict, out_d
         ],
         min_ranks_per_pool=8,
     )
-    if "qe_input_kwargs" not in high_accuracy_eval_job_dict:
-        high_accuracy_eval_job_dict["qe_input_kwargs"] = {}
-
     return Espresso(
         profile=create_espresso_profile(
             para_info_dict=high_accuracy_eval_job_dict["hpc"]["node_info"],
@@ -176,7 +134,7 @@ def create_qe_calc_object(atoms: Atoms, high_accuracy_eval_job_dict: dict, out_d
             pp_path=high_accuracy_eval_job_dict["hpc"]["pp_path"],
         ),
         input_data=get_qe_input_data(
-            "scf", high_accuracy_eval_job_dict["qe_input_kwargs"]
+            "scf", high_accuracy_eval_job_dict.get("qe_input_kwargs", {})
         ),
         kpts=list(kpt_arr),
         pseudopotentials=high_accuracy_eval_job_dict["hpc"]["pseudo_dict"],
@@ -189,51 +147,20 @@ def run_sp_qe(
     out_dir: str,
     high_accuracy_eval_job_dict: dict,
 ) -> Atoms:
-    Path(out_dir).mkdir(exist_ok=True, parents=True)
-
-    calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
-
-    input_structure.calc = calc
-    # if 'needs_relaxation' not in input_structure.info:
-    #     if input_structure.info['needs_relaxation'] is True:
-    #         print("Relaxing structure with QE")
-    #         opt = BFGS(input_structure, logfile=str(Path(out_dir, "qe_opt.log")), trajectory=str(Path(out_dir, "qe_opt.traj")))
-    #         opt.run(fmax=0.05, steps=200)
-    #         # input_structure.info['needs_relaxation'] = False
-    #     else:
-    #         print('needs relaxation is False, not relaxing structure with QE')
-    # else:
-    #     input_structure.info['needs_relaxation'] = False
-    #     print('needs relaxation is not present, not relaxing structure with QE')
-
-    input_structure.get_potential_energy()
-    logger.debug("Input structure: %s", input_structure)
-    logger.debug("Writing structures to %s as %s.xyz", out_dir, high_accuracy_eval_job_dict["name"])
-    write(
-        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
-        input_structure,
-        format="extxyz",
+    return _run_sp(
+        input_structure, out_dir, high_accuracy_eval_job_dict, create_qe_calc_object
     )
 
-    return input_structure
 
 def run_go_qe(
     input_structure: Atoms,
     out_dir: str,
     high_accuracy_eval_job_dict: dict,
 ) -> Atoms:
-    Path(out_dir).mkdir(exist_ok=True, parents=True)
-
-    calc = create_qe_calc_object(input_structure, high_accuracy_eval_job_dict, out_dir)
-
-    input_structure.calc = calc
-    opt = BFGS(input_structure, logfile=str(Path(out_dir, "qe_opt.log")), trajectory=str(Path(out_dir, "qe_opt.traj")))
-    opt.run(fmax=0.05, steps=200)
-
-    write(
-        Path(out_dir, f"{high_accuracy_eval_job_dict['name']}.xyz"),
+    return _run_go(
         input_structure,
-        format="extxyz",
+        out_dir,
+        high_accuracy_eval_job_dict,
+        create_qe_calc_object,
+        opt_prefix="qe_opt",
     )
-    logger.debug("Writing structures to %s as %s.xyz", out_dir, high_accuracy_eval_job_dict["name"])
-    return input_structure

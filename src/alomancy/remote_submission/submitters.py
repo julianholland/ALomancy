@@ -9,13 +9,15 @@ from alomancy.remote_submission.executor import RemoteJobExecutor
 
 logger = logging.getLogger(__name__)
 
+ASE_OUTPUT_PREFIX = "ase_output"
+
 
 def _noop(**_kwargs: Any) -> None:
     logger.warning("No function provided for remote execution. This is a no-op.")
     return None
 
 
-def qe_remote_submitter(
+def ase_remote_submitter(
     remote_info: RemoteInfo,
     base_name: str,
     input_atoms_list: list[Atoms],
@@ -23,15 +25,15 @@ def qe_remote_submitter(
     batch: int = 0,
     function_kwargs: dict[str, Any] | None = None,
 ) -> None:
-    qe_dir = Path("results", base_name, "high_accuracy_evaluation", f"batch_{batch}")
-    qe_dir.mkdir(exist_ok=True, parents=True)
+    ase_dir = Path("results", base_name, "high_accuracy_evaluation", f"batch_{batch}")
+    ase_dir.mkdir(exist_ok=True, parents=True)
     executor = RemoteJobExecutor(remote_info)
 
     job_configs = [
         {
             "function_kwargs": {
                 "input_structure": atoms,
-                "out_dir": str(Path(f"{qe_dir}/qe_output_{i}")),
+                "out_dir": str(Path(f"{ase_dir}/{ASE_OUTPUT_PREFIX}_{i}")),
                 **(function_kwargs or {}),
             }
         }
@@ -41,7 +43,7 @@ def qe_remote_submitter(
     executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
-        common_output_pattern=str(Path(qe_dir, "qe_output_{job_id}")),
+        common_output_pattern=str(Path(ase_dir, ASE_OUTPUT_PREFIX + "_{job_id}")),
     )
 
 

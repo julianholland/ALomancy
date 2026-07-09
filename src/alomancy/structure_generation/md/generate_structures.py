@@ -49,9 +49,9 @@ def get_structures_for_dft(
         List of structures selected for DFT calculations.
     """
 
-    assert (
-        number_of_structures < steps * len(initial_atoms)
-    ), "Number of structures must be less than the number of steps times the number of initial atoms"
+    assert number_of_structures < steps * len(initial_atoms), (
+        "Number of structures must be less than the number of steps times the number of initial atoms"
+    )
 
     md_dir = Path("results", base_name, "MD/md_trajs")
     md_dir.mkdir(exist_ok=True, parents=True)

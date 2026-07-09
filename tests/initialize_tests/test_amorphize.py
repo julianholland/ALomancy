@@ -8,6 +8,7 @@ import pytest
 class TestCreateAmorphousAtomsList:
     def test_returns_correct_count(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H"], atom_number=2, density=1.0, num_structures=3, seed=42
         )
@@ -15,6 +16,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_zero_structures_returns_empty(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H"], atom_number=2, density=1.0, num_structures=0, seed=42
         )
@@ -22,6 +24,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_config_type(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H"], atom_number=2, density=1.0, num_structures=2, seed=42
         )
@@ -29,6 +32,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_needs_relaxation_true(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H"], atom_number=2, density=1.0, num_structures=2, seed=42
         )
@@ -36,6 +40,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_correct_atom_count_per_structure(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H", "O"], atom_number=3, density=1.0, num_structures=2, seed=42
         )
@@ -43,6 +48,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_reproducibility_with_same_seed(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         r1 = create_amorphous_atoms_list(
             elements=["H"], atom_number=2, density=1.0, num_structures=2, seed=99
         )
@@ -54,6 +60,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_custom_composition_list(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H", "O"],
             atom_number=2,
@@ -67,6 +74,7 @@ class TestCreateAmorphousAtomsList:
 
     def test_pbc_set(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H"], atom_number=2, density=1.0, num_structures=1, seed=42
         )
@@ -75,6 +83,7 @@ class TestCreateAmorphousAtomsList:
     def test_fewer_compositions_than_structures_fills_by_sampling(self):
         """When compositions < num_structures, extras are sampled from existing."""
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
         result = create_amorphous_atoms_list(
             elements=["H"],
             atom_number=2,
