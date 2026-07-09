@@ -132,6 +132,7 @@ structure_generation:
 
 high_accuracy_evaluation:
   name: "dft_evaluation"
+  calculator: "qe"   # "qe" (default) or "vasp"
   max_time: "48:00:00"
   hpc:
     hpc_name: "cpu_cluster"
@@ -213,8 +214,8 @@ alomancy/
 - **Uncertainty Sampling**: Intelligent structure selection based on model disagreement
 
 ### High-Accuracy Evaluation
-- **Quantum Espresso**: Automated DFT calculations for reference data
-- **Job Management**: Parallel submission and monitoring of DFT jobs
+- **Pluggable DFT backend**: Quantum Espresso (`calculator: "qe"`, default) or VASP (`calculator: "vasp"`) selected via config key; lazy imports keep optional dependencies isolated
+- **Job Management**: Parallel submission and monitoring of DFT jobs; output directories use `ase_output_` prefix
 
 <!-- ## 📊 Monitoring and Analysis -->
 

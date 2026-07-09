@@ -16,3 +16,7 @@ Utilities
 .. automodule:: alomancy.utils.logging_config
    :members:
    :undoc-members:
+
+.. automodule:: alomancy.utils.dft_utils
+   :members:
+   :undoc-members:

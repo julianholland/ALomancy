@@ -62,6 +62,7 @@ structure_generation:
 
 high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
+  calculator: "qe"   # "qe" (default) or "vasp"
   max_time: "30m"
   max_batch_size: 20
   hpc: 'my_cpu_hpc'
@@ -75,7 +76,37 @@ high_accuracy_evaluation:
 
 - **structure_generation**: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation (via Quantum Espresso) on selected structures. The `max_batch_size` controls how many structures are included in each QE batch submission.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `calculator` key selects the backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. The `max_batch_size` controls how many structures are included in each batch submission. If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
+
+## Using VASP as the DFT Backend
+
+To switch from Quantum Espresso to VASP, set `calculator: vasp` in the `high_accuracy_evaluation` block and replace the QE-specific HPC keys:
+
+```yaml
+high_accuracy_evaluation:
+  name: "high_accuracy_evaluation"
+  calculator: "vasp"
+  max_time: "30m"
+  max_batch_size: 20
+  vasp_input_kwargs:          # INCAR overrides (optional)
+    encut: 600
+    ediff: 1.0e-7
+  hpc:
+    hpc_name: "raven"
+    vasp_path: "/path/to/vasp_std"
+    pseudo_dict:              # element → POTCAR suffix
+      H: ""
+      O: "_GW"
+    node_info:
+      ranks_per_system: 72
+      ranks_per_node: 36
+      threads_per_rank: 1
+      max_mem_per_node: "90G"
+    partitions: ["cpu"]
+    pre_cmds: ["module load vasp"]
+```
+
+QE configs work unchanged — `calculator: qe` is the default and can be omitted.
 
 ## Custom Workflows
 

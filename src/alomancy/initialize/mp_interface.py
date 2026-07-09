@@ -5,13 +5,7 @@ import os
 from mp_api.client import MPRester
 from pymatgen.io.ase import AseAtomsAdaptor
 
-# from pymatgen.
 logger = logging.getLogger(__name__)
-mp_api_key = os.getenv("MP_API_KEY")
-if not mp_api_key:
-    raise ValueError(
-        "MP_API_KEY environment variable not set. Please set it to your Materials Project API key."
-    )
 
 
 def retrieve_mp_material_docs(
@@ -19,6 +13,11 @@ def retrieve_mp_material_docs(
     max_energy_above_hull: float,
     max_num_atoms: int,
 ) -> list:
+    mp_api_key = os.getenv("MP_API_KEY")
+    if not mp_api_key:
+        raise ValueError(
+            "MP_API_KEY environment variable not set. Please set it to your Materials Project API key."
+        )
     element_permutations = []
     for i in range(len(elements)):
         n_elements = list(itertools.combinations(elements, i + 1))

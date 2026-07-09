@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pluggable DFT backend**: `high_accuracy_evaluation` now supports multiple calculators via a `calculator` config key (default `"qe"`). The registry in `high_accuracy_evaluation/dft/__init__.py` resolves `(run_sp_fn, run_go_fn)` at runtime with lazy imports, so installing only one calculator does not break the other.
+- **VASP backend** (`high_accuracy_evaluation/dft/run_vasp.py`): `run_sp_vasp` / `run_go_vasp` mirror the QE interface exactly. `create_vasp_calc_object` builds a `Vasp` calculator with sensible INCAR defaults (PBE, ENCUT=500, non-self-consistent geometry relaxation via BFGS). Monkhorst-Pack k-points derived from the cell via the shared `generate_kpts` utility.
+- **Shared DFT utilities** (`utils/dft_utils.py`): `generate_kpts`, `_build_srun_command`, `_run_sp`, and `_run_go` extracted from `run_qe.py` and shared by both backends. Neither backend duplicates this logic.
+- **Mismatched-kwargs warning**: `warn_mismatched_kwargs(calculator, job_dict)` logs a WARNING when config keys belonging to a different calculator (e.g. `vasp_input_kwargs` in a QE run) are present, so misconfigured YAMLs are caught early.
+- **`high_sd` config_type for AL loop structures**: Structures returned by `high_accuracy_evaluation` are now tagged `config_type="high_sd"` with `atoms.info["al_loop"] = <loop>` metadata, replacing the previous `al_loop_N` per-loop types. This gives a stable, queryable label across all loops.
 - **GlobalDatabase**: Persistent sage_lib Partition (hybrid HDF5+SQLite) storing all DFT-evaluated structures across AL loops. Deduplication by (config_type, formula) prevents double-adding IsolatedAtom and init_MP entries from multiple datasets. REF_forces arrays serialised into atoms.info for round-trip storage.
 - **DB-aware initialization**: `compute_initialization_needs()` queries the GlobalDatabase to determine what structures still need to be generated before starting DFT. Replaces the old `d_t_s_a_ratio` + `target_non_mp_structures_to_add` API with explicit per-type counts: `num_dimers_per_combo`, `num_trimers_per_combo`, `num_amorphous`, `num_stretch_compress_per_mp`.
 - **Structured logging**: All 108 `print()` calls replaced with Python `logging` module. `setup_logging(verbose, log_file)` called once at workflow construction. verbose=0 silences console; verbose=1 shows INFO progress; verbose=2 shows DEBUG per-job detail. File handler always captures DEBUG regardless of verbose level. ExPyRe job stdout/stderr captured at DEBUG.
@@ -15,14 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `log_file` parameter on `BaseActiveLearningWorkflow` (default: `"results/alomancy.log"`)
 - `db_path` parameter on `BaseActiveLearningWorkflow` (default: `"results/global_database"`)
 - Warning if structure generation could contain single-atom structures
+- `"high_sd"` is automatically appended to `selectable_configs` in `select_initial_structures` so that structures from previous AL loops are always eligible for seeding MD, even when `selectable_configs` is explicitly set.
 
 ### Changed
-- Initialization configuration now uses per-type counts instead of ratio-based approach
-- `initialize_training_set` now has a DB-aware path that only generates missing structures
-- Logging replaces all bare print() calls; no external API change
+- `ase_remote_submitter` replaces `qe_remote_submitter`; output directories use `ase_output_` prefix instead of `qe_output_`. The interface is otherwise unchanged.
+- `run_qe.py` imports `generate_kpts` and shared runner helpers from `utils/dft_utils.py` instead of defining them locally.
+- AL loop structures now carry `config_type="high_sd"` (stable across loops) rather than `config_type="al_loop_N"` (loop-specific). The originating loop is preserved in `atoms.info["al_loop"]`.
+- Initialization configuration now uses per-type counts instead of ratio-based approach.
+- `initialize_training_set` now has a DB-aware path that only generates missing structures.
+- Logging replaces all bare print() calls; no external API change.
 
 ### Fixed
-- Batch numbering collision between GO (geometry-optimisation) and SP (single-point) QE jobs
+- `select_initial_structures` no longer mutates `Atoms` objects in `train_atoms_list`; selected structures are `.copy()`-d before `mark_structures_for_dft` writes to them. Previously, marking corrupted `config_type` on shared references, causing the `selectable_configs` filter to find zero matches on subsequent AL loops.
+- Batch numbering collision between GO (geometry-optimisation) and SP (single-point) DFT jobs.
 
 ### Dependencies
 - Added: sage-lib (HDF5+SQLite storage backend for GlobalDatabase)

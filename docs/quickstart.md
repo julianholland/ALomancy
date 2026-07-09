@@ -55,6 +55,7 @@ structure_generation:
 
 high_accuracy_evaluation:
   name: "dft_evaluation"
+  calculator: "qe"    # "qe" (default) or "vasp"
   max_time: "24:00:00"
   hpc:
     hpc_name: "local"
