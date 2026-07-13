@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-fit validation set carving**: `mace_fit` now carves a per-committee-member held-out validation set from the training data before calling MACE. Eligible structures are those with `config_type` in `mlip_committee.valid_config_types` (defaults to `initialization.test_config_types`) or `"high_sd"`. Fraction is controlled by `mlip_committee.valid_fraction` (default 0.05). When no eligible structures exist or the fraction rounds to zero, MACE is pointed directly at the shared `train_set.xyz` without writing a redundant copy. Each member uses seed `seed + fit_idx` for reproducible but distinct splits. The helper `_select_validation_split` is module-level for testability.
+- **Log-scale MAE plots**: `mae_al_loop_plot` now renders the y-axis on a log scale, making error improvements across orders of magnitude visible across many AL loops.
 - **Pluggable DFT backend**: `high_accuracy_evaluation` now supports multiple calculators via a `calculator` config key (default `"qe"`). The registry in `high_accuracy_evaluation/dft/__init__.py` resolves `(run_sp_fn, run_go_fn)` at runtime with lazy imports, so installing only one calculator does not break the other.
 - **VASP backend** (`high_accuracy_evaluation/dft/run_vasp.py`): `run_sp_vasp` / `run_go_vasp` mirror the QE interface exactly. `create_vasp_calc_object` builds a `Vasp` calculator with sensible INCAR defaults (PBE, ENCUT=500, non-self-consistent geometry relaxation via BFGS). Monkhorst-Pack k-points derived from the cell via the shared `generate_kpts` utility.
 - **Shared DFT utilities** (`utils/dft_utils.py`): `generate_kpts`, `_build_srun_command`, `_run_sp`, and `_run_go` extracted from `run_qe.py` and shared by both backends. Neither backend duplicates this logic.
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `"high_sd"` is automatically appended to `selectable_configs` in `select_initial_structures` so that structures from previous AL loops are always eligible for seeding MD, even when `selectable_configs` is explicitly set.
 
 ### Changed
+- `train_mlip` abstract method and `ActiveLearningStandardMACE` implementation now receive the full `job_dict` (all four top-level keys) instead of `mlip_committee_job_dict`. `mace_fit` likewise takes `job_dict` so it can read `initialization.test_config_types` as the default validation config types.
 - `ase_remote_submitter` replaces `qe_remote_submitter`; output directories use `ase_output_` prefix instead of `qe_output_`. The interface is otherwise unchanged.
 - `run_qe.py` imports `generate_kpts` and shared runner helpers from `utils/dft_utils.py` instead of defining them locally.
 - AL loop structures now carry `config_type="high_sd"` (stable across loops) rather than `config_type="al_loop_N"` (loop-specific). The originating loop is preserved in `atoms.info["al_loop"]`.

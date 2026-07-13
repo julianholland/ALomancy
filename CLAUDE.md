@@ -85,6 +85,8 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 
 `RemoteJobExecutor` wraps Expyre's `ExPyRe`. Call pattern: `submit_multiple_jobs → start_all_jobs → wait_for_all_jobs → cleanup_jobs`. The convenience method `run_and_wait` does all four steps. **Note**: `wait_for_all_jobs` is intentionally called twice in `run_and_wait` to ensure results sync locally from the remote.
 
+**Remote deployment**: ExPyRe serializes functions **by reference** (module path + function name). The remote machine imports the module to resolve the function at run time. When changing the signature or body of any function submitted remotely (e.g. `mace_fit`), you must reinstall the updated package on the remote machine (`pip install -e .` there) before restarting, or jobs will import the old code and fail with a `TypeError` at the call site — typically hours after submission.
+
 ### Module responsibilities
 
 | Module | Purpose |
@@ -108,7 +110,7 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 - All file I/O uses `extxyz` format via ASE's `read`/`write`.
 - Energy and force labels stored in `atoms.info["REF_energy"]` and `atoms.arrays["REF_forces"]`. **Never use bare `"energy"` as an info key** — ASE moves it to the calculator on extxyz read, losing it from `atoms.info`.
 - Structures that need geometry optimisation carry `atoms.info["needs_relaxation"] = True`.
-- `config_type` in `atoms.info` tracks provenance (e.g. `"al_loop_0"`, `"initialization"`).
+- `config_type` in `atoms.info` tracks provenance (e.g. `"initialization"`, `"init_dimer"`, `"high_sd"`). Structures selected by the AL loop uncertainty criterion get `config_type="high_sd"` (set by `clean_structures` in `base_active_learning.run()`); the per-loop index is stored separately in `atoms.info["al_loop"]` via `extra_metadata`. Do not use `"al_loop_N"` as a config_type — the loop number is not embedded in the type string.
 - The `seed` parameter (default `803`) is used everywhere randomness appears for reproducibility.
 - `verbose` is an int: `0` = silent, `>0` = progress prints.
 - The global DB lives at `results/global_database/` (configurable via `db_path` in `BaseActiveLearningWorkflow.__init__`). Only DFT-evaluated structures (with `REF_energy`/`REF_forces`) are stored in it.
@@ -116,6 +118,8 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 - `IsolatedAtom` and `init_MP` config_types are deduplicated by `(config_type, formula)` in `GlobalDatabase.add_structures()`; other config_types (dimers, trimers, amorphous, AL loop structures) are always added without exact dedup.
 - In `initialize_training_set`, the DB is checked **first** (`compute_initialization_needs` against current DB state). `extra_datasets` are seeded only if the DB is still missing some initialization targets, then needs are re-checked before any structure generation. An already-populated DB is always honoured before consulting extra datasets.
 - `initialize_training_set` has two paths: (1) fast path — if `initial_train_file_path` and `initial_test_file_path` exist on disk, load them directly; (2) DB path — call `compute_initialization_needs`, generate only missing structures, run DFT, build train/test from `db.get_all_as_atoms()`.
+- `jobs_dict["high_accuracy_evaluation"]["name"]` must equal `"high_accuracy_evaluation"`. `ase_remote_submitter` always writes output to the hardcoded path `results/<base>/high_accuracy_evaluation/batch_N/`; the result-collection glob in `standard_active_learning.high_accuracy_evaluation` uses `output_name` (i.e. the `name` field) as the subdirectory. If they diverge the glob finds nothing, an empty sentinel is written, and the phase is permanently marked done with zero structures.
+- Guard user config errors in functions that run remotely with `if`/`raise ValueError(...)`, not `assert`. Python's `-O` flag (common in HPC module environments) strips all asserts silently, deferring config failures to the remote job hours after submission.
 - GO (geometry-optimisation) and SP (single-point) QE batches use different numbering ranges to avoid directory collision. `current_batches` = count of existing batch dirs (the directory-name offset). `n_new_batches` = new GO batches needed. GO dirs are numbered `[current_batches, current_batches + n_new_batches)`; SP dirs start at `current_batches + n_new_batches`. The loop index `i` (0-based) is used to slice the trimmed structures list; `batch_num = current_batches + i` is used for the directory name only.
 
 ### sage_lib / GlobalDatabase internals
@@ -130,7 +134,7 @@ Tests live in `tests/` with subdirectories mirroring the source layout. New dire
 - `tests/database_tests/` — GlobalDatabase dedup and round-trip tests
 - `tests/initialize_tests/` — `compute_initialization_needs` delta logic
 
-All tests are marked `@pytest.mark.unit` (run without any external services). The suite tests real code paths — no "mock-testing" (asserting that a mock returns what you told it to return).
+All tests are marked `@pytest.mark.unit` **on each individual test method** (run without any external services). Do not apply the mark only at the class level — pytest's mark inheritance is configuration-dependent and `pytest -m unit` may miss class-level-only marks. The suite tests real code paths — no "mock-testing" (asserting that a mock returns what you told it to return).
 
 Key test patterns:
 - `GlobalDatabase` tests use real sage_lib via `GlobalDatabase(str(tmp_path / "db"))` for genuine round-trip verification.
