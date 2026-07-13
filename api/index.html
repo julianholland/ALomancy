@@ -1,0 +1,174 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Core Module" href="core.html" />
+    <link rel="prev" title="Quick Start" href="../quickstart.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html">MLIP Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html">Structure Generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="high_accuracy_evaluation.html">High-Accuracy Evaluation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html">Utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configs.html">Configuration</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-reference">
+<h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="core.html">Core Module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="core.html#base-active-learning">Base Active Learning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#standard-active-learning">Standard Active Learning</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="database.html">Database</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="database.html#alomancy.database.global_database.GlobalDatabase"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="mlip.html">MLIP Training</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.mace_wfl.mace_fit"><code class="docutils literal notranslate"><span class="pre">mace_fit()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.get_mace_eval_info.get_mace_eval_info"><code class="docutils literal notranslate"><span class="pre">get_mace_eval_info()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="structure_generation.html">Structure Generation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.find_high_sd_structures.find_high_sd_structures"><code class="docutils literal notranslate"><span class="pre">find_high_sd_structures()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.find_high_sd_structures.find_sd_of_all_structures"><code class="docutils literal notranslate"><span class="pre">find_sd_of_all_structures()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.find_high_sd_structures.flatten_array_of_forces"><code class="docutils literal notranslate"><span class="pre">flatten_array_of_forces()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.find_high_sd_structures.std_deviation_of_forces"><code class="docutils literal notranslate"><span class="pre">std_deviation_of_forces()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.select_initial_structures.mark_structures_for_dft"><code class="docutils literal notranslate"><span class="pre">mark_structures_for_dft()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.select_initial_structures.select_initial_structures"><code class="docutils literal notranslate"><span class="pre">select_initial_structures()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.flatten_array_of_forces"><code class="docutils literal notranslate"><span class="pre">flatten_array_of_forces()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.get_forces_for_all_maces"><code class="docutils literal notranslate"><span class="pre">get_forces_for_all_maces()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.run_md"><code class="docutils literal notranslate"><span class="pre">run_md()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.std_deviation_of_forces"><code class="docutils literal notranslate"><span class="pre">std_deviation_of_forces()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="high_accuracy_evaluation.html">High-Accuracy Evaluation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft">Calculator Registry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft.run_qe">Quantum Espresso Backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft.run_vasp">VASP Backend</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="utils.html">Utilities</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.clean_structures.clean_structures"><code class="docutils literal notranslate"><span class="pre">clean_structures()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.test_train_manager.add_new_training_data"><code class="docutils literal notranslate"><span class="pre">add_new_training_data()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.test_train_manager.extend_test_and_train_sets_with_extra_dataset"><code class="docutils literal notranslate"><span class="pre">extend_test_and_train_sets_with_extra_dataset()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.test_train_manager.split_atoms_list_into_test_and_train"><code class="docutils literal notranslate"><span class="pre">split_atoms_list_into_test_and_train()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.logging_config.setup_logging"><code class="docutils literal notranslate"><span class="pre">setup_logging()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.dft_utils.generate_kpts"><code class="docutils literal notranslate"><span class="pre">generate_kpts()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configs.html">Configuration</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="configs.html#alomancy.configs.config_dictionaries.load_dictionaries"><code class="docutils literal notranslate"><span class="pre">load_dictionaries()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="configs.html#alomancy.configs.remote_info.RemoteInfo"><code class="docutils literal notranslate"><span class="pre">RemoteInfo</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="configs.html#alomancy.configs.remote_info.get_remote_info"><code class="docutils literal notranslate"><span class="pre">get_remote_info()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../quickstart.html" class="btn btn-neutral float-left" title="Quick Start" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="core.html" class="btn btn-neutral float-right" title="Core Module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

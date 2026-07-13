@@ -1,0 +1,355 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.database.global_database &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.database.global_database</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.database.global_database</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.singlepoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">SinglePointCalculator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sage_lib.partition.Partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sage_lib.single_run.SingleRun</span><span class="w"> </span><span class="kn">import</span> <span class="n">SingleRun</span>
+
+<span class="n">_DEFAULT_DEDUP_CONFIG_TYPES</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;IsolatedAtom&quot;</span><span class="p">,</span> <span class="s2">&quot;init_MP&quot;</span><span class="p">]</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="GlobalDatabase">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GlobalDatabase</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Persistent store for all DFT-evaluated structures across the AL workflow.</span>
+
+<span class="sd">    Wraps sage_lib&#39;s Partition (hybrid storage: HDF5 + SQLite) and adds</span>
+<span class="sd">    domain-specific helpers for counting by config_type, per-element-combo</span>
+<span class="sd">    deduplication, and round-tripping ASE Atoms objects (including REF_forces).</span>
+
+<span class="sd">    Only post-DFT structures (with REF_energy / REF_forces) should be added.</span>
+<span class="sd">    The DB is the authoritative source for what has been evaluated; individual</span>
+<span class="sd">    modules still work with xyz files and are unaware of the DB.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;results/global_database&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">Path</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span> <span class="o">=</span> <span class="n">Partition</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">db_path</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Writing</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="GlobalDatabase.add_structures">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.add_structures">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_structures</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
+        <span class="n">skip_duplicates</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">config_types_to_dedup</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add post-DFT structures to the database.</span>
+
+<span class="sd">        Deduplication strategy:</span>
+<span class="sd">        - For config_types in config_types_to_dedup (default: IsolatedAtom,</span>
+<span class="sd">          init_MP): exact dedup by (config_type, formula) — prevents adding</span>
+<span class="sd">          the same element&#39;s isolated atom twice if two external datasets</span>
+<span class="sd">          provide it.</span>
+<span class="sd">        - All other config_types (dimers, trimers, amorphous, al_loop_N):</span>
+<span class="sd">          always added; use compute_initialization_needs() for count-based</span>
+<span class="sd">          checking before generating new structures.</span>
+
+<span class="sd">        REF_forces (Nx3 array) are serialised into atoms.info before adding</span>
+<span class="sd">        because sage_lib only persists atoms.info, not atoms.arrays.</span>
+
+<span class="sd">        Returns the number of structures actually added.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">config_types_to_dedup</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">config_types_to_dedup</span> <span class="o">=</span> <span class="n">_DEFAULT_DEDUP_CONFIG_TYPES</span>
+
+        <span class="n">existing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_config_type_formula_set</span><span class="p">()</span> <span class="k">if</span> <span class="n">skip_duplicates</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">added</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">sr_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
+            <span class="n">config_type</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">formula</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()</span>
+
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">config_type</span><span class="p">,</span> <span class="n">formula</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">skip_duplicates</span>
+                <span class="ow">and</span> <span class="n">config_type</span> <span class="ow">in</span> <span class="n">config_types_to_dedup</span>
+                <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">existing</span>
+            <span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">storage_ready_apm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_for_storage</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">storage_ready_apm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">sr_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">storage_ready_apm</span><span class="p">)</span>
+                <span class="n">existing</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="n">added</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">sr_list</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">added</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Querying / counting</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="GlobalDatabase.count_by_config_type">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.count_by_config_type">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count_by_config_type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return {config_type: count} for all structures in the DB.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">ct</span><span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="k">for</span> <span class="n">ct</span><span class="p">,</span> <span class="n">counts</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">count_all_by_config_type_and_formula</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.count_by_config_type_and_formula">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count_by_config_type_and_formula</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return {formula: count} for all structures with the given config_type.</span>
+<span class="sd">        Used by compute_initialization_needs for per-element-combo checking.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">counts</span><span class="p">:</span> <span class="n">Counter</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
+            <span class="n">apm</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span>
+            <span class="k">if</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">config_type</span><span class="p">:</span>
+                <span class="n">counts</span><span class="p">[</span><span class="n">apm</span><span class="o">.</span><span class="n">formula</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.count_all_by_config_type_and_formula">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count_all_by_config_type_and_formula</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Single-pass scan returning {config_type: {formula: count}} for all structures.</span>
+
+<span class="sd">        Use this in preference to multiple count_by_config_type_and_formula calls</span>
+<span class="sd">        when several config_types need to be queried at once.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Counter</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
+            <span class="n">apm</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span>
+            <span class="n">ct</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ct</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">result</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">ct</span><span class="p">]</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">()</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">ct</span><span class="p">][</span><span class="n">apm</span><span class="o">.</span><span class="n">formula</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">ct</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span> <span class="k">for</span> <span class="n">ct</span><span class="p">,</span> <span class="n">counts</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.get_structures_by_config_type">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_structures_by_config_type">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_structures_by_config_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_types</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all structures whose config_type is in config_types.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">config_types</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.get_all_as_atoms">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_all_as_atoms">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_all_as_atoms</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all structures in the DB as ASE Atoms objects.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()]</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_config_type_formula_set</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return set of (config_type, formula) pairs already in the DB.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="p">(</span><span class="n">ct</span><span class="p">,</span> <span class="n">formula</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ct</span><span class="p">,</span> <span class="n">formulas</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">count_all_by_config_type_and_formula</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">formula</span> <span class="ow">in</span> <span class="n">formulas</span>
+        <span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_for_storage</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SingleRun</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a copy of atoms ready for sage_lib storage, or None to skip.</span>
+
+<span class="sd">        Normalises REF_energy / REF_forces from either atoms.info/arrays or a</span>
+<span class="sd">        calculator.  REF_forces are serialised into info[&quot;_REF_forces&quot;] because</span>
+<span class="sd">        sage_lib only persists atoms.info, not atoms.arrays.  Returns None (and</span>
+<span class="sd">        logs a warning) if no energy source can be found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">formula</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()</span>
+        <span class="n">config_type</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;unknown&quot;</span><span class="p">)</span>
+        <span class="n">energy</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;REF_energy&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">energy</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">energy</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;No REF_energy and no calculator energy for </span><span class="si">%s</span><span class="s2"> (config_type=</span><span class="si">%s</span><span class="s2">) — skipping.&quot;</span><span class="p">,</span>
+                    <span class="n">formula</span><span class="p">,</span>
+                    <span class="n">config_type</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">forces</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;REF_forces&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">forces</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;No REF_forces and no calculator forces for </span><span class="si">%s</span><span class="s2"> (config_type=</span><span class="si">%s</span><span class="s2">) — storing energy only.&quot;</span><span class="p">,</span>
+                    <span class="n">formula</span><span class="p">,</span>
+                    <span class="n">config_type</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="n">a</span> <span class="o">=</span> <span class="n">SingleRun</span><span class="p">()</span>
+        <span class="n">configure_kwargs</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;atomPositions&quot;</span><span class="p">:</span> <span class="n">atoms</span><span class="o">.</span><span class="n">positions</span><span class="p">,</span>
+            <span class="s2">&quot;atomLabels&quot;</span><span class="p">:</span> <span class="n">atoms</span><span class="o">.</span><span class="n">symbols</span><span class="p">,</span>
+            <span class="s2">&quot;latticeVectors&quot;</span><span class="p">:</span> <span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span>
+            <span class="s2">&quot;E&quot;</span><span class="p">:</span> <span class="n">energy</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">configure_kwargs</span><span class="p">[</span><span class="s2">&quot;total_force&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
+        <span class="n">a</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">configure</span><span class="p">(</span><span class="o">**</span><span class="n">configure_kwargs</span><span class="p">)</span>
+        <span class="n">a</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">bool</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">dict</span><span class="p">))</span>
+        <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">a</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_atoms_from_container</span><span class="p">(</span><span class="n">container</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reconstruct an ASE Atoms object from a sage_lib SingleRun container.&quot;&quot;&quot;</span>
+        <span class="n">apm</span> <span class="o">=</span> <span class="n">container</span><span class="o">.</span><span class="n">AtomPositionManager</span>
+
+        <span class="n">atoms</span> <span class="o">=</span> <span class="n">Atoms</span><span class="p">(</span>
+            <span class="n">symbols</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span><span class="p">),</span>
+            <span class="n">positions</span><span class="o">=</span><span class="n">apm</span><span class="o">.</span><span class="n">atomPositions</span><span class="p">,</span>
+            <span class="n">cell</span><span class="o">=</span><span class="n">apm</span><span class="o">.</span><span class="n">latticeVectors</span><span class="p">,</span>
+            <span class="n">pbc</span><span class="o">=</span><span class="p">[</span><span class="nb">bool</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">pbc</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
+        <span class="n">energy</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">energy</span>
+        <span class="n">forces</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">SinglePointCalculator</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">energy</span><span class="o">=</span><span class="n">energy</span><span class="p">,</span> <span class="n">forces</span><span class="o">=</span><span class="n">forces</span><span class="p">)</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;REF_energy&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
+        <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">&quot;REF_forces&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
+
+        <span class="k">return</span> <span class="n">atoms</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

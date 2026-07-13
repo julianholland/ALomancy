@@ -1,0 +1,214 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configuration &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Examples" href="../examples.html" />
+    <link rel="prev" title="Utilities" href="utils.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html">MLIP Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html">Structure Generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="high_accuracy_evaluation.html">High-Accuracy Evaluation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html">Utilities</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Configuration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.configs.config_dictionaries.load_dictionaries"><code class="docutils literal notranslate"><span class="pre">load_dictionaries()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.configs.remote_info.RemoteInfo"><code class="docutils literal notranslate"><span class="pre">RemoteInfo</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.configs.remote_info.get_remote_info"><code class="docutils literal notranslate"><span class="pre">get_remote_info()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Configuration</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/configs.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-alomancy.configs.config_dictionaries">
+<span id="configuration"></span><h1>Configuration<a class="headerlink" href="#module-alomancy.configs.config_dictionaries" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.configs.config_dictionaries.load_dictionaries">
+<span class="sig-prename descclassname"><span class="pre">alomancy.configs.config_dictionaries.</span></span><span class="sig-name descname"><span class="pre">load_dictionaries</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.14)"><span class="pre">Path</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/configs/config_dictionaries.html#load_dictionaries"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.configs.config_dictionaries.load_dictionaries" title="Link to this definition"></a></dt>
+<dd><p>Set the information for the HPCs and jobs used in the active learning workflow.</p>
+<p>three jobs are required
+mlip_committee: advised to use a GPU based HPC
+structure_generation: advised to use a GPU based HPC
+high_accuracy_evaluation: advised to use a CPU based HPC</p>
+<p>for each job, the following information is required:
+- name: the name of the job, used to identify the job in the workflow
+- max_time: the maximum time allowed for the job to run
+- hpc: a dictionary containing information about the HPCs available for the job</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>pre_cmds: commands to run before starting the job, e.g. activating a virtual environment</p></li>
+<li><p>partitions: the partition used for the job on the HPC</p></li>
+</ul>
+</div></blockquote>
+<p>for the mlip_committee job, the following information is required:
+- size_of_committee: the number of models in the committee
+- epochs: the number of epochs to train the models for</p>
+<p>for the structure_generation job, the following information is required:
+- number_of_concurrent_jobs: the number of concurrent jobs to run</p>
+<p>for the high_accuracy_evaluation job, the following information is required in the hpc dictionary:
+- node_info: a dictionary containing information about the nodes available for the job</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>ranks_per_system: the number of ranks per system</p></li>
+<li><p>ranks_per_node: the number of ranks per node</p></li>
+<li><p>threads_per_rank: the number of threads per rank</p></li>
+<li><p>max_mem_per_node: the maximum memory per node</p></li>
+</ul>
+</div></blockquote>
+<ul class="simple">
+<li><p>pwx_path: the path to the Quantum Espresso pw.x executable</p></li>
+<li><p>pp_path: the path to the pseudopotentials directory</p></li>
+<li><p>pseudo_dict: a dictionary containing the pseudopotentials used for each element</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the HPC and job information.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class" id="module-alomancy.configs.remote_info">
+<dt class="sig sig-object py" id="alomancy.configs.remote_info.RemoteInfo">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">alomancy.configs.remote_info.</span></span><span class="sig-name descname"><span class="pre">RemoteInfo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sys_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resources</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_inputs_per_queued_job</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pre_cmds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">post_cmds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env_vars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_files</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_files</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">header_extra</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exact_fit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partial_node</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3600</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ignore_failed_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resubmit_killed_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hash_ignore</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/alomancy/configs/remote_info.html#RemoteInfo"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.configs.remote_info.RemoteInfo" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Create a RemoteInfo object</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sys_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – name of system to run on</p></li>
+<li><p><strong>job_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – name for job (unique within this project)</p></li>
+<li><p><strong>resources</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>Resources</em>) – expyre.resources.Resources or kwargs for its constructor</p></li>
+<li><p><strong>num_inputs_per_queued_job</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>default -100</em>) – num_inputs_per_python_subprocess for each job. If negative will be multiplied by iterable_autopara_wrappable
+num_inputs_per_python_subprocess</p></li>
+<li><p><strong>pre_cmds</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em>) – commands to run before starting job</p></li>
+<li><p><strong>post_cmds</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em>) – commands to run after finishing job</p></li>
+<li><p><strong>env_vars</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em>) – environment variables to set before starting job</p></li>
+<li><p><strong>input_files</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em>) – input_files to stage in starting job</p></li>
+<li><p><strong>output_files</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em>) – output_files to stage out when job is done</p></li>
+<li><p><strong>header_extra</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em><em>, </em><em>optional</em>) – extra lines to add to queuing system header</p></li>
+<li><p><strong>exact_fit</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default True</em>) – require exact fit to node size</p></li>
+<li><p><strong>partial_node</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default True</em>) – allow jobs that take less than a whole node, overrides exact_fit</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – time to wait in get_results before giving up</p></li>
+<li><p><strong>check_interval</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – check_interval arg to pass to get_results</p></li>
+<li><p><strong>ignore_failed_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default False</em>) – skip failures in remote jobs</p></li>
+<li><p><strong>resubmit_killed_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default False</em>) – resubmit jobs that were killed without an exit status (out of walltime or crashed),
+hoping that other parameters such as walltime or memory have been changed to make run complete this time</p></li>
+<li><p><strong>hash_ignore</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>(</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>)</em><em>, </em><em>default</em><em> [</em><em>]</em>) – list of arguments to ignore when doing hash of remote function arguments to determine if it’s already been done</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.configs.remote_info.get_remote_info">
+<span class="sig-prename descclassname"><span class="pre">alomancy.configs.remote_info.</span></span><span class="sig-name descname"><span class="pre">get_remote_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_files</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#alomancy.configs.remote_info.RemoteInfo" title="alomancy.configs.remote_info.RemoteInfo"><span class="pre">RemoteInfo</span></a></span></span><a class="reference internal" href="../_modules/alomancy/configs/remote_info.html#get_remote_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.configs.remote_info.get_remote_info" title="Link to this definition"></a></dt>
+<dd><p>Returns a RemoteInfo object for running MACE fits on a GPU cluster.</p>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="utils.html" class="btn btn-neutral float-left" title="Utilities" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../examples.html" class="btn btn-neutral float-right" title="Examples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

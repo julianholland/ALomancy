@@ -1,0 +1,802 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.core.standard_active_learning &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.core.standard_active_learning</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.core.standard_active_learning</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.remote_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_remote_info</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.base_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseActiveLearningWorkflow</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.database.global_database</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DEFAULT_DEDUP_CONFIG_TYPES</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.high_accuracy_evaluation.dft</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_dft_functions</span><span class="p">,</span>
+    <span class="n">warn_mismatched_kwargs</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.initialize.initialization_structure_list</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">compute_initialization_needs</span><span class="p">,</span>
+    <span class="n">create_initialization_atoms_list</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.get_mace_eval_info</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_mace_eval_info</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.mace_wfl</span><span class="w"> </span><span class="kn">import</span> <span class="n">mace_fit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">all_maces_remote_submitter</span><span class="p">,</span>
+    <span class="n">ase_remote_submitter</span><span class="p">,</span>
+    <span class="n">committee_remote_submitter</span><span class="p">,</span>
+    <span class="n">md_remote_submitter</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.submitters</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASE_OUTPUT_PREFIX</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.structure_generation.find_high_sd_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">find_high_sd_structures</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.structure_generation.md.md_wfl</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_forces_for_all_maces</span><span class="p">,</span> <span class="n">run_md</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.structure_generation.select_initial_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">select_initial_structures</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">clean_structures</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.file_saving_and_parsing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">read_atoms_file_if_enabled</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.test_train_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">split_atoms_list_into_test_and_train</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_needs_anything</span><span class="p">(</span><span class="n">needs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span>
+        <span class="n">needs</span><span class="p">[</span><span class="s2">&quot;isolated_atoms&quot;</span><span class="p">]</span>
+        <span class="ow">or</span> <span class="n">needs</span><span class="p">[</span><span class="s2">&quot;dimer_override&quot;</span><span class="p">]</span>
+        <span class="ow">or</span> <span class="n">needs</span><span class="p">[</span><span class="s2">&quot;trimer_override&quot;</span><span class="p">]</span>
+        <span class="ow">or</span> <span class="n">needs</span><span class="p">[</span><span class="s2">&quot;amorphous_override&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="ow">or</span> <span class="n">needs</span><span class="p">[</span><span class="s2">&quot;mp_structures&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="ActiveLearningStandardMACE">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ActiveLearningStandardMACE</span><span class="p">(</span><span class="n">BaseActiveLearningWorkflow</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    AL Technique: Committee</span>
+<span class="sd">    MLIP: MACE</span>
+<span class="sd">    Structure Generation: MD</span>
+<span class="sd">    High-Accuracy Evaluation: Quantum Espresso (DFT)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ActiveLearningStandardMACE.initialize_training_set">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.initialize_training_set">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">_kwargs</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build the initial train/test sets.</span>
+
+<span class="sd">        Priority order:</span>
+<span class="sd">        1. If initial_train_file_path and initial_test_file_path already exist</span>
+<span class="sd">           on disk, load them directly (backward-compat fast path).</span>
+<span class="sd">        2. Otherwise, consult the global DB to determine what still needs to</span>
+<span class="sd">           be generated (compute_initialization_needs), generate only the</span>
+<span class="sd">           missing structures, run DFT, and add results to the DB.</span>
+<span class="sd">        3. Build train/test sets from the DB contents.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">work_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
+        <span class="n">Path</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">init_job_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">]</span>
+
+        <span class="c1"># --- Fast path: pre-existing xyz files -------------------------</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+            <span class="ow">and</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_initial_train_test_sets</span><span class="p">()</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Initial train and test sets loaded from files: </span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">write</span><span class="p">(</span>
+                <span class="n">Path</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                <span class="n">train_xyzs</span><span class="p">,</span>
+                <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">write</span><span class="p">(</span>
+                <span class="n">Path</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                <span class="n">test_xyzs</span><span class="p">,</span>
+                <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span>
+
+        <span class="c1"># --- DB-aware path --------------------------------------------</span>
+        <span class="n">creation_kwargs</span> <span class="o">=</span> <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;creation_kwargs&quot;</span><span class="p">]</span>
+
+        <span class="c1"># Extract defaults once — used by both compute_initialization_needs</span>
+        <span class="c1"># and create_initialization_atoms_list to avoid silent default skew.</span>
+        <span class="n">num_dimers_per_combo</span> <span class="o">=</span> <span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;num_dimers_per_combo&quot;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+        <span class="n">num_trimers_per_combo</span> <span class="o">=</span> <span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;num_trimers_per_combo&quot;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+        <span class="n">num_amorphous</span> <span class="o">=</span> <span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;num_amorphous&quot;</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+        <span class="n">num_stretch_compress_per_mp</span> <span class="o">=</span> <span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">&quot;num_stretch_compress_per_mp&quot;</span><span class="p">,</span> <span class="mi">5</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Check DB first — existing structures take priority over extra_datasets</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Global DB has </span><span class="si">%d</span><span class="s2"> existing structures; reading those in first.&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">_needs_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;db&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+            <span class="s2">&quot;elements&quot;</span><span class="p">:</span> <span class="n">creation_kwargs</span><span class="p">[</span><span class="s2">&quot;elements&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;_single_atoms&quot;</span><span class="p">:</span> <span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;single_atoms&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+            <span class="s2">&quot;mp_structures&quot;</span><span class="p">:</span> <span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mp_structures&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+            <span class="s2">&quot;num_dimers_per_combo&quot;</span><span class="p">:</span> <span class="n">num_dimers_per_combo</span><span class="p">,</span>
+            <span class="s2">&quot;num_trimers_per_combo&quot;</span><span class="p">:</span> <span class="n">num_trimers_per_combo</span><span class="p">,</span>
+            <span class="s2">&quot;num_amorphous&quot;</span><span class="p">:</span> <span class="n">num_amorphous</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">needs</span> <span class="o">=</span> <span class="n">compute_initialization_needs</span><span class="p">(</span><span class="o">**</span><span class="n">_needs_kwargs</span><span class="p">)</span>
+
+        <span class="c1"># Seed extra_datasets only if DB is still missing some initialization targets</span>
+        <span class="n">extra_datasets</span> <span class="o">=</span> <span class="n">init_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;extra_datasets&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">extra_datasets</span> <span class="ow">and</span> <span class="n">_needs_anything</span><span class="p">(</span><span class="n">needs</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">ed</span> <span class="ow">in</span> <span class="n">extra_datasets</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_seed_db_from_extra_dataset</span><span class="p">(</span><span class="n">ed</span><span class="p">)</span>
+            <span class="n">needs</span> <span class="o">=</span> <span class="n">compute_initialization_needs</span><span class="p">(</span><span class="o">**</span><span class="n">_needs_kwargs</span><span class="p">)</span>
+
+        <span class="n">anything_needed</span> <span class="o">=</span> <span class="n">_needs_anything</span><span class="p">(</span><span class="n">needs</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">anything_needed</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;DB check: </span><span class="si">%d</span><span class="s2"> structure(s) already evaluated. &quot;</span>
+                <span class="s2">&quot;Generating missing structures: &quot;</span>
+                <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> isolated atoms, &quot;</span>
+                <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> dimers, &quot;</span>
+                <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> trimers, &quot;</span>
+                <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> amorphous.&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;isolated_atoms&quot;</span><span class="p">]),</span>
+                <span class="nb">sum</span><span class="p">(</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;dimer_override&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span>
+                <span class="nb">sum</span><span class="p">(</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;trimer_override&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span>
+                <span class="n">needs</span><span class="p">[</span><span class="s2">&quot;amorphous_override&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Check if structures were already generated but not yet DFT-evaluated</span>
+            <span class="n">generated_atoms_list</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">init_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;read_generated_file&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">generated_atoms_list</span> <span class="o">=</span> <span class="n">read_atoms_file_if_enabled</span><span class="p">(</span>
+                    <span class="kc">True</span><span class="p">,</span>
+                    <span class="n">Path</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;read_generated_file&quot;</span><span class="p">]),</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">generated_atoms_list</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                        <span class="s2">&quot;Read </span><span class="si">%d</span><span class="s2"> pre-generated structures from file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                        <span class="nb">len</span><span class="p">(</span><span class="n">generated_atoms_list</span><span class="p">),</span>
+                        <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;read_generated_file&quot;</span><span class="p">],</span>
+                    <span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">generated_atoms_list</span><span class="p">:</span>
+                <span class="n">generated_atoms_list</span> <span class="o">=</span> <span class="n">create_initialization_atoms_list</span><span class="p">(</span>
+                    <span class="n">work_dir</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">work_dir</span><span class="p">),</span>
+                    <span class="n">elements</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="p">[</span><span class="s2">&quot;elements&quot;</span><span class="p">],</span>
+                    <span class="n">mp_structures</span><span class="o">=</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;mp_structures&quot;</span><span class="p">],</span>
+                    <span class="n">single_atoms</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;isolated_atoms&quot;</span><span class="p">]),</span>
+                    <span class="n">num_dimers_per_combo</span><span class="o">=</span><span class="n">num_dimers_per_combo</span><span class="p">,</span>
+                    <span class="n">num_trimers_per_combo</span><span class="o">=</span><span class="n">num_trimers_per_combo</span><span class="p">,</span>
+                    <span class="n">num_amorphous</span><span class="o">=</span><span class="n">num_amorphous</span><span class="p">,</span>
+                    <span class="n">num_stretch_compress_per_mp</span><span class="o">=</span><span class="n">num_stretch_compress_per_mp</span><span class="p">,</span>
+                    <span class="n">densities_list</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;densities_list&quot;</span><span class="p">),</span>
+                    <span class="n">deform_xyz</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deform_xyz&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                    <span class="n">max_deformation</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_deformation&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">),</span>
+                    <span class="n">max_atom_number</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_atom_number&quot;</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+                    <span class="n">composition_list</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;composition_list&quot;</span><span class="p">),</span>
+                    <span class="n">seed</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;seed&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">),</span>
+                    <span class="n">isolated_atoms_override</span><span class="o">=</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;isolated_atoms&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="n">dimer_override</span><span class="o">=</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;dimer_override&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="n">trimer_override</span><span class="o">=</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;trimer_override&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="n">amorphous_override</span><span class="o">=</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;amorphous_override&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">generated_atoms_list</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;No structures were generated. Check initialization configuration.&quot;</span>
+                <span class="p">)</span>
+
+            <span class="n">high_accuracy_structures</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_accuracy_evaluation</span><span class="p">(</span>
+                <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                <span class="n">high_accuracy_eval_job_dict</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">],</span>
+                <span class="n">structures</span><span class="o">=</span><span class="n">generated_atoms_list</span><span class="p">,</span>
+                <span class="n">allow_relaxation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">start_index</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">high_accuracy_structures</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;No high-accuracy structures returned. Check HPC configuration &quot;</span>
+                    <span class="s2">&quot;and make sure remote jobs are running correctly.&quot;</span>
+                <span class="p">)</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;config_type of first evaluated structure: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">high_accuracy_structures</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">),</span>
+            <span class="p">)</span>
+
+            <span class="n">high_accuracy_structures</span> <span class="o">=</span> <span class="n">clean_structures</span><span class="p">(</span>
+                <span class="n">high_accuracy_structures</span><span class="p">,</span>
+                <span class="n">base_name</span><span class="p">,</span>
+                <span class="n">override_config_type</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">already_computed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Add newly evaluated structures to the global DB</span>
+            <span class="n">added</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span>
+                <span class="n">high_accuracy_structures</span><span class="p">,</span>
+                <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">config_types_to_dedup</span><span class="o">=</span><span class="n">_DEFAULT_DEDUP_CONFIG_TYPES</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Added </span><span class="si">%d</span><span class="s2"> new structure(s) to the global database.&quot;</span><span class="p">,</span> <span class="n">added</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;All initialization targets already met in global DB &quot;</span>
+                <span class="s2">&quot;(</span><span class="si">%d</span><span class="s2"> structures). Skipping generation and DFT.&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># --- Build train/test from DB contents -----------------------</span>
+        <span class="n">all_evaluated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_all_as_atoms</span><span class="p">()</span>
+
+        <span class="n">test_config_types</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">])</span>
+        <span class="n">eligible_test_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">always_train_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">all_evaluated</span><span class="p">:</span>
+            <span class="p">(</span>
+                <span class="n">eligible_test_structures</span>
+                <span class="k">if</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">test_config_types</span>
+                <span class="k">else</span> <span class="n">always_train_structures</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+
+        <span class="n">desired_test_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">all_evaluated</span><span class="p">)</span> <span class="o">*</span> <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;test_to_train_ratio&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">test_structure_count</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">desired_test_count</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">eligible_test_structures</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible_test_structures</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;No eligible test structures found for the specified &quot;</span>
+                <span class="s2">&quot;test_config_types. All structures will be used for training.&quot;</span>
+            <span class="p">)</span>
+            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">all_evaluated</span>
+            <span class="n">test_xyzs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">test_structure_count</span> <span class="o">&lt;</span> <span class="n">desired_test_count</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Not enough eligible structures for the test set. &quot;</span>
+                    <span class="s2">&quot;Found </span><span class="si">%d</span><span class="s2">, needed </span><span class="si">%d</span><span class="s2">. &quot;</span>
+                    <span class="s2">&quot;All eligible structures will go to the test set.&quot;</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">eligible_test_structures</span><span class="p">),</span>
+                    <span class="n">desired_test_count</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="n">eligible_train</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="n">split_atoms_list_into_test_and_train</span><span class="p">(</span>
+                <span class="n">eligible_test_structures</span><span class="p">,</span>
+                <span class="n">test_structure_count</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">eligible_test_structures</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="c1"># IsolatedAtom and other ineligible types always go to training so</span>
+            <span class="c1"># MACE can read E0s for every element from the training file.</span>
+            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">always_train_structures</span> <span class="o">+</span> <span class="n">eligible_train</span>
+
+        <span class="n">write</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+            <span class="n">train_xyzs</span><span class="p">,</span>
+            <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+            <span class="n">test_xyzs</span><span class="p">,</span>
+            <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">config_types_in_train</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;config_type&quot;</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">train_xyzs</span>
+            <span class="k">if</span> <span class="s2">&quot;config_type&quot;</span> <span class="ow">in</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span>
+        <span class="p">}</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Config types in training set: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">config_types_in_train</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span></div>
+
+
+<div class="viewcode-block" id="ActiveLearningStandardMACE.train_mlip">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.train_mlip">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">train_mlip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">mlip_committee_job_dict</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;train_mlip&quot;</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;train_mlip already done for </span><span class="si">%s</span><span class="s2">, reloading metrics.&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">get_mace_eval_info</span><span class="p">(</span><span class="n">mlip_committee_job_dict</span><span class="o">=</span><span class="n">mlip_committee_job_dict</span><span class="p">)</span>
+
+        <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;mace_fit_kwargs&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">:</span>
+            <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Working directory: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">())</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span>
+                <span class="nb">list</span><span class="p">(</span>
+                    <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="o">&lt;</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]</span>
+        <span class="p">):</span>
+            <span class="n">committee_remote_submitter</span><span class="p">(</span>
+                <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                    <span class="n">mlip_committee_job_dict</span><span class="p">,</span>
+                    <span class="n">input_files</span><span class="o">=</span><span class="p">[</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;train_set.xyz&quot;</span><span class="p">)),</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;test_set.xyz&quot;</span><span class="p">)),</span>
+                    <span class="p">],</span>
+                <span class="p">),</span>
+                <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                <span class="n">seed</span><span class="o">=</span><span class="mi">803</span><span class="p">,</span>
+                <span class="n">size_of_committee</span><span class="o">=</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">],</span>
+                <span class="n">function</span><span class="o">=</span><span class="n">mace_fit</span><span class="p">,</span>
+                <span class="n">function_kwargs</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">&quot;job_dict&quot;</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">,</span>
+                    <span class="s2">&quot;workdir_str&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">workdir</span><span class="p">),</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+
+        <span class="n">mae_avg_results</span> <span class="o">=</span> <span class="n">get_mace_eval_info</span><span class="p">(</span>
+            <span class="n">mlip_committee_job_dict</span><span class="o">=</span><span class="n">mlip_committee_job_dict</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;train_mlip&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mae_avg_results</span></div>
+
+
+<div class="viewcode-block" id="ActiveLearningStandardMACE.generate_structures">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.generate_structures">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_structures</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">train_atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="s2">&quot;structure_selection_kwargs&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">]:</span>
+            <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;structure_selection_kwargs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">operating_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span>
+            <span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># skip step if high SD structures already exist from a previous run</span>
+        <span class="k">if</span> <span class="n">Path</span><span class="p">(</span><span class="n">operating_dir</span><span class="p">,</span> <span class="s2">&quot;high_sd_structures.xyz&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span>
+                <span class="n">Path</span><span class="p">(</span><span class="n">operating_dir</span><span class="p">,</span> <span class="s2">&quot;high_sd_structures.xyz&quot;</span><span class="p">),</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">,</span> <span class="n">Atoms</span><span class="p">):</span>
+                <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">high_sd_structures</span><span class="p">]</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> High SD structures loaded from file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">),</span>
+                <span class="n">Path</span><span class="p">(</span><span class="n">operating_dir</span><span class="p">,</span> <span class="s2">&quot;high_sd_structures.xyz&quot;</span><span class="p">),</span>
+            <span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;generate_structures&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">high_sd_structures</span>
+
+        <span class="k">if</span> <span class="n">Path</span><span class="p">(</span>
+            <span class="n">operating_dir</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">input_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span>
+                <span class="n">Path</span><span class="p">(</span>
+                    <span class="n">operating_dir</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Input structures for structure generation step loaded from file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">Path</span><span class="p">(</span>
+                    <span class="n">operating_dir</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">input_structures</span> <span class="o">=</span> <span class="n">select_initial_structures</span><span class="p">(</span>
+                <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                <span class="n">structure_generation_job_dict</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">],</span>
+                <span class="n">train_atoms_list</span><span class="o">=</span><span class="n">train_atoms_list</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+                <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;structure_selection_kwargs&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">input_structures</span><span class="p">,</span> <span class="n">Atoms</span><span class="p">):</span>
+            <span class="n">input_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">input_structures</span><span class="p">]</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> structures selected for structure generation step.&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">Path</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span><span class="n">operating_dir</span><span class="p">),</span>
+            <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span>
+                <span class="n">operating_dir</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">input_structures</span><span class="p">,</span>
+            <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">base_mace_model_path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span>
+                <span class="s2">&quot;results&quot;</span><span class="p">,</span>
+                <span class="n">base_name</span><span class="p">,</span>
+                <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;fit_0&quot;</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;mlip_committee&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo.model&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;run_md_kwargs&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">]:</span>
+            <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;run_md_kwargs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">function_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;structure_generation_job_dict&quot;</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;total_md_runs&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+            <span class="s2">&quot;model_path&quot;</span><span class="p">:</span> <span class="p">[</span>
+                <span class="n">base_mace_model_path</span>
+            <span class="p">],</span>  <span class="c1"># need to pass model path to preserve consistent dtype</span>
+            <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;run_md_kwargs&quot;</span><span class="p">],</span>
+        <span class="p">}</span>
+
+        <span class="n">md_trajectory_paths</span> <span class="o">=</span> <span class="n">md_remote_submitter</span><span class="p">(</span>
+            <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">],</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="n">base_mace_model_path</span><span class="p">]</span>
+            <span class="p">),</span>
+            <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+            <span class="n">target_file</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.xyz&quot;</span><span class="p">,</span>
+            <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">input_structures</span><span class="p">,</span>
+            <span class="n">function</span><span class="o">=</span><span class="n">run_md</span><span class="p">,</span>
+            <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">structure_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">md_trajectory_path</span> <span class="ow">in</span> <span class="n">md_trajectory_paths</span><span class="p">:</span>
+            <span class="n">structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">md_trajectory_path</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+            <span class="n">structure_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> structures found from trajectory files.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
+
+        <span class="n">model_paths_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+            <span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]),</span>
+                <span class="sa">f</span><span class="s2">&quot;fit_*/</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;mlip_committee&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo.model&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">structure_forces_dict</span> <span class="o">=</span> <span class="n">all_maces_remote_submitter</span><span class="p">(</span>
+            <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">],</span>
+                <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">model_paths_list</span><span class="p">],</span>
+            <span class="p">),</span>
+            <span class="n">function</span><span class="o">=</span><span class="n">get_forces_for_all_maces</span><span class="p">,</span>
+            <span class="n">function_kwargs</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">&quot;structure_list&quot;</span><span class="p">:</span> <span class="n">structure_list</span><span class="p">,</span>
+                <span class="s2">&quot;base_name&quot;</span><span class="p">:</span> <span class="n">base_name</span><span class="p">,</span>
+                <span class="s2">&quot;job_dict&quot;</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">,</span>
+                <span class="s2">&quot;base_mlip&quot;</span><span class="p">:</span> <span class="n">base_mace_model_path</span><span class="p">,</span>
+                <span class="s2">&quot;fits_to_use&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span>
+                    <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">])</span>
+                <span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
+
+        <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">find_high_sd_structures</span><span class="p">(</span>
+            <span class="n">structure_list</span><span class="o">=</span><span class="n">structure_list</span><span class="p">,</span>
+            <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+            <span class="n">job_dict</span><span class="o">=</span><span class="n">job_dict</span><span class="p">,</span>
+            <span class="n">structure_forces_dict</span><span class="o">=</span><span class="n">structure_forces_dict</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Assign job IDs to high SD structures</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">)):</span>
+            <span class="n">high_sd_structures</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;job_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;generate_structures&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">high_sd_structures</span></div>
+
+
+<div class="viewcode-block" id="ActiveLearningStandardMACE.high_accuracy_evaluation">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.high_accuracy_evaluation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">high_accuracy_evaluation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">high_accuracy_eval_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
+        <span class="n">allow_relaxation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">start_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+
+        <span class="n">sentinel_results</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_eval_results.xyz&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_eval&quot;</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;high_accuracy_eval already done for </span><span class="si">%s</span><span class="s2">, loading cached results.&quot;</span><span class="p">,</span>
+                <span class="n">base_name</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">sentinel_results</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">))</span>
+
+        <span class="n">calculator</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;calculator&quot;</span><span class="p">,</span> <span class="s2">&quot;qe&quot;</span><span class="p">)</span>
+        <span class="n">warn_mismatched_kwargs</span><span class="p">(</span><span class="n">calculator</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">)</span>
+        <span class="n">run_sp</span><span class="p">,</span> <span class="n">run_go</span> <span class="o">=</span> <span class="n">get_dft_functions</span><span class="p">(</span><span class="n">calculator</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">&quot;Starting high accuracy evaluation with </span><span class="si">%d</span><span class="s2"> structures (calculator=</span><span class="si">%s</span><span class="s2">).&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+            <span class="n">calculator</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">function_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;high_accuracy_eval_job_dict&quot;</span><span class="p">:</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">found_structures</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+                <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;batch_*/</span><span class="si">{</span><span class="n">ASE_OUTPUT_PREFIX</span><span class="si">}</span><span class="s2">_*/</span><span class="si">{</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.xyz&quot;</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span> <span class="o">+</span> <span class="n">start_index</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;Found </span><span class="si">%d</span><span class="s2"> structures from previous high accuracy evaluation. &quot;</span>
+                    <span class="s2">&quot;Skipping remote submission and reusing these structures.&quot;</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">),</span>
+                <span class="p">)</span>
+
+                <span class="n">atoms_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">read</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">found_structures</span><span class="p">]</span>
+                <span class="k">return</span> <span class="n">atoms_list</span>
+
+            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;Found </span><span class="si">%d</span><span class="s2"> structures from previous high accuracy evaluation. &quot;</span>
+                    <span class="s2">&quot;These will be reused; the rest will be submitted as new remote jobs.&quot;</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">),</span>
+                <span class="p">)</span>
+                <span class="n">structures</span> <span class="o">=</span> <span class="n">structures</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">)</span> <span class="o">+</span> <span class="n">start_index</span> <span class="p">:]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;No previous results found. Submitting all </span><span class="si">%d</span><span class="s2"> structures.&quot;</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+                <span class="p">)</span>
+
+        <span class="n">n_new_batches</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span> <span class="o">/</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">current_batches</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="mi">1</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                <span class="s2">&quot;batch_*&quot;</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Structures to process: </span><span class="si">%d</span><span class="s2">, max batch size: </span><span class="si">%d</span><span class="s2">, new batches to submit: </span><span class="si">%d</span><span class="s2"> &quot;</span>
+            <span class="s2">&quot;(existing batch dirs: </span><span class="si">%d</span><span class="s2">)&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+            <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">],</span>
+            <span class="n">n_new_batches</span><span class="p">,</span>
+            <span class="n">current_batches</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># New GO batches are numbered [current_batches, current_batches + n_new_batches).</span>
+        <span class="c1"># SP batches start at current_batches + n_new_batches to avoid directory collision.</span>
+        <span class="c1"># Loop variable i indexes into the trimmed structures list; batch_num is the dir name.</span>
+        <span class="n">go_high_accuracy_eval_job_dict</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">allow_relaxation</span><span class="p">:</span>
+            <span class="n">go_max_time</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">&quot;max_go_time&quot;</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">go_high_accuracy_eval_job_dict</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">)</span>
+            <span class="n">go_high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">go_max_time</span>
+
+        <span class="n">sp_batch_num</span> <span class="o">=</span> <span class="n">current_batches</span> <span class="o">+</span> <span class="n">n_new_batches</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_new_batches</span><span class="p">):</span>
+            <span class="n">batch_num</span> <span class="o">=</span> <span class="n">current_batches</span> <span class="o">+</span> <span class="n">i</span>
+            <span class="n">batch_start</span> <span class="o">=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">]</span>
+            <span class="n">batch_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">],</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Submitting batch </span><span class="si">%d</span><span class="s2"> (structures </span><span class="si">%d</span><span class="s2">-</span><span class="si">%d</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> remaining)&quot;</span><span class="p">,</span>
+                <span class="n">batch_num</span><span class="p">,</span>
+                <span class="n">batch_start</span><span class="p">,</span>
+                <span class="n">batch_end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">batch_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">structures</span><span class="p">[</span><span class="n">batch_start</span><span class="p">:</span><span class="n">batch_end</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">allow_relaxation</span><span class="p">:</span>
+                <span class="n">batch_structures_to_relax</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="n">single_point_batch_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">batch_structures</span><span class="p">:</span>
+                    <span class="p">(</span>
+                        <span class="n">batch_structures_to_relax</span>
+                        <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;needs_relaxation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+                        <span class="k">else</span> <span class="n">single_point_batch_structures</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> GO structures, </span><span class="si">%d</span><span class="s2"> SP structures.&quot;</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">batch_structures_to_relax</span><span class="p">),</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">single_point_batch_structures</span><span class="p">),</span>
+                <span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">batch_structures_to_relax</span><span class="p">:</span>
+                    <span class="n">ase_remote_submitter</span><span class="p">(</span>
+                        <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                            <span class="n">go_high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]</span>
+                        <span class="p">),</span>
+                        <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                        <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">batch_structures_to_relax</span><span class="p">,</span>
+                        <span class="n">function</span><span class="o">=</span><span class="n">run_go</span><span class="p">,</span>
+                        <span class="n">batch</span><span class="o">=</span><span class="n">batch_num</span><span class="p">,</span>
+                        <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+                    <span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">single_point_batch_structures</span><span class="p">:</span>
+                    <span class="n">ase_remote_submitter</span><span class="p">(</span>
+                        <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                            <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]</span>
+                        <span class="p">),</span>
+                        <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                        <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">single_point_batch_structures</span><span class="p">,</span>
+                        <span class="n">function</span><span class="o">=</span><span class="n">run_sp</span><span class="p">,</span>
+                        <span class="n">batch</span><span class="o">=</span><span class="n">sp_batch_num</span><span class="p">,</span>
+                        <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">sp_batch_num</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ase_remote_submitter</span><span class="p">(</span>
+                    <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                        <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]</span>
+                    <span class="p">),</span>
+                    <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                    <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">batch_structures</span><span class="p">,</span>
+                    <span class="n">function</span><span class="o">=</span><span class="n">run_sp</span><span class="p">,</span>
+                    <span class="n">batch</span><span class="o">=</span><span class="n">batch_num</span><span class="p">,</span>
+                    <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="n">high_accuracy_structures</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">output_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+        <span class="n">directory_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">output_name</span><span class="si">}</span><span class="s2">/batch_*/</span><span class="si">{</span><span class="n">ASE_OUTPUT_PREFIX</span><span class="si">}</span><span class="s2">_*&quot;</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">directory</span> <span class="ow">in</span> <span class="n">directory_list</span><span class="p">:</span>
+            <span class="n">completed_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">directory</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">output_name</span><span class="si">}</span><span class="s2">.xyz&quot;</span><span class="p">)</span>
+            <span class="n">structure</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">completed_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">structure</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">completed_file</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">structure</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">high_accuracy_structures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span>
+
+        <span class="n">sentinel_results</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">sentinel_results</span><span class="p">,</span> <span class="n">high_accuracy_structures</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_eval&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">high_accuracy_structures</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

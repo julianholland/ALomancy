@@ -1,0 +1,390 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.mlip.mace_wfl &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.mlip.mace_wfl</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.mlip.mace_wfl</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">expyre</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExPyRe</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mace</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mace.cli.run_train</span><span class="w"> </span><span class="kn">import</span> <span class="n">run</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.remote_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">RemoteInfo</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_select_validation_split</span><span class="p">(</span>
+    <span class="n">all_training</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
+    <span class="n">acceptable_configs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">valid_fraction</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Carve a per-fit validation set from all_training.</span>
+
+<span class="sd">    Only structures with config_type in acceptable_configs are eligible;</span>
+<span class="sd">    the rest always stay in training. Returns (new_train_set, valid_set).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">eligible</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">all_training</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">acceptable_configs</span>
+    <span class="p">]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">&quot;No structures with config_type in </span><span class="si">%s</span><span class="s2"> found; skipping validation split.&quot;</span><span class="p">,</span>
+            <span class="n">acceptable_configs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">all_training</span><span class="p">,</span> <span class="p">[]</span>
+
+    <span class="n">n_valid</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">valid_fraction</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">eligible</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">n_valid</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">%.0f%%</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> eligible structure(s) rounds to 0; skipping validation split.&quot;</span><span class="p">,</span>
+            <span class="n">valid_fraction</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">eligible</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">all_training</span><span class="p">,</span> <span class="p">[]</span>
+
+    <span class="n">chosen</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">eligible</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="n">n_valid</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">valid_set</span> <span class="o">=</span> <span class="p">[</span><span class="n">eligible</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">chosen</span><span class="p">]</span>
+    <span class="n">valid_ids</span> <span class="o">=</span> <span class="p">{</span><span class="nb">id</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">valid_set</span><span class="p">}</span>
+    <span class="n">new_train_set</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">all_training</span> <span class="k">if</span> <span class="nb">id</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_ids</span><span class="p">]</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;Validation split: </span><span class="si">%d</span><span class="s2"> valid, </span><span class="si">%d</span><span class="s2"> train (from </span><span class="si">%d</span><span class="s2"> total, </span><span class="si">%d</span><span class="s2"> eligible).&quot;</span><span class="p">,</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">valid_set</span><span class="p">),</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">new_train_set</span><span class="p">),</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">all_training</span><span class="p">),</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">eligible</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">new_train_set</span><span class="p">,</span> <span class="n">valid_set</span>
+
+
+<div class="viewcode-block" id="mace_fit">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.mace_wfl.mace_fit">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">mace_fit</span><span class="p">(</span>
+    <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">workdir_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">fit_idx</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">_mace_fit_cmd</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;mace_run_train&quot;</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Minimal MACE model fitting function.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    job_dict : dict</span>
+<span class="sd">        Full jobs dictionary (mlip_committee and initialization sub-dicts are used).</span>
+<span class="sd">    seed : int</span>
+<span class="sd">        Base random seed; each committee member uses seed + fit_idx.</span>
+<span class="sd">    workdir_str : str</span>
+<span class="sd">        Path to the AL loop working directory (contains train_set.xyz / test_set.xyz).</span>
+<span class="sd">    fit_idx : int, optional</span>
+<span class="sd">        Committee member index (default 0).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">mlip_committee_job_dict</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">]</span>
+    <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir_str</span><span class="p">)</span>
+    <span class="n">mlip_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="sa">f</span><span class="s2">&quot;fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Creating MLIP directory: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">mlip_dir</span><span class="p">)</span>
+    <span class="n">mlip_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="s2">&quot;seed&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span> <span class="p">(</span>
+        <span class="s2">&quot;Seed should not be in mace_fit_kwargs, it is passed separately.&quot;</span>
+    <span class="p">)</span>
+    <span class="k">assert</span> <span class="s2">&quot;energy_key&quot;</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span> <span class="p">(</span>
+        <span class="s2">&quot;energy_key must be specified in mace_fit_kwargs. This corresponds to the energy key in the training set. using &#39;energy&#39; is not recommended.&quot;</span>
+    <span class="p">)</span>
+    <span class="k">assert</span> <span class="s2">&quot;forces_key&quot;</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span> <span class="p">(</span>
+        <span class="s2">&quot;forces_key must be specified in mace_fit_kwargs. This corresponds to the forces key in the training set. using &#39;forces&#39; is not recommended.&quot;</span>
+    <span class="p">)</span>
+
+    <span class="n">epochs</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="mi">80</span>
+        <span class="k">if</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;max_num_epochs&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="k">else</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;max_num_epochs&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Read training data and carve per-fit validation set before chdir</span>
+    <span class="n">training_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;train_set.xyz&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">training_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Training file not found: </span><span class="si">{</span><span class="n">training_file</span><span class="si">}</span><span class="s2">. &quot;</span>
+            <span class="s2">&quot;Ensure train_set.xyz has been written to the working directory before fitting.&quot;</span>
+        <span class="p">)</span>
+    <span class="n">all_training</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">training_file</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">))</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;Read </span><span class="si">%d</span><span class="s2"> training structures from </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_training</span><span class="p">),</span> <span class="n">training_file</span>
+    <span class="p">)</span>
+
+    <span class="c1"># valid_config_types can be overridden in mlip_committee config; defaults to</span>
+    <span class="c1"># initialization test_config_types so validation covers the same structure classes</span>
+    <span class="n">valid_config_types</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s2">&quot;valid_config_types&quot;</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">acceptable_configs</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">valid_config_types</span><span class="p">,</span> <span class="s2">&quot;high_sd&quot;</span><span class="p">]</span>
+    <span class="n">valid_fraction</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;valid_fraction&quot;</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
+    <span class="n">fit_seed</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">fit_idx</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fit_seed</span><span class="p">)</span>
+    <span class="n">new_train_set</span><span class="p">,</span> <span class="n">valid_set</span> <span class="o">=</span> <span class="n">_select_validation_split</span><span class="p">(</span>
+        <span class="n">all_training</span><span class="p">,</span> <span class="n">acceptable_configs</span><span class="p">,</span> <span class="n">valid_fraction</span><span class="o">=</span><span class="n">valid_fraction</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span>
+    <span class="p">)</span>
+
+    <span class="c1"># When a split occurred, write per-fit train/valid files into mlip_dir (accessible</span>
+    <span class="c1"># after chdir). When no split, point directly at the original train_set.xyz.</span>
+    <span class="n">valid_filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;valid_set_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">.xyz&quot;</span>
+    <span class="k">if</span> <span class="n">valid_set</span><span class="p">:</span>
+        <span class="n">train_filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;train_set_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">.xyz&quot;</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">mlip_dir</span> <span class="o">/</span> <span class="n">train_filename</span><span class="p">,</span> <span class="n">new_train_set</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">mlip_dir</span> <span class="o">/</span> <span class="n">valid_filename</span><span class="p">,</span> <span class="n">valid_set</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">&quot;Wrote split: </span><span class="si">%d</span><span class="s2"> train to </span><span class="si">%s</span><span class="s2">, </span><span class="si">%d</span><span class="s2"> valid to </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">new_train_set</span><span class="p">),</span>
+            <span class="n">train_filename</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">valid_set</span><span class="p">),</span>
+            <span class="n">valid_filename</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">train_filename</span> <span class="o">=</span> <span class="s2">&quot;../../train_set.xyz&quot;</span>
+
+    <span class="c1"># default MACE fit parameters</span>
+    <span class="c1"># These can be overridden by the job_dict passed to the function</span>
+    <span class="n">mace_fit_params</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="c1"># Relative paths — MACE runs from inside mlip_dir after os.chdir below</span>
+        <span class="s2">&quot;train_file&quot;</span><span class="p">:</span> <span class="n">train_filename</span><span class="p">,</span>
+        <span class="s2">&quot;test_file&quot;</span><span class="p">:</span> <span class="s2">&quot;../../test_set.xyz&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;MACE&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;correlation&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;ema&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;energy_weight&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">&quot;forces_weight&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="s2">&quot;error_table&quot;</span><span class="p">:</span> <span class="s2">&quot;PerAtomMAE&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;eval_interval&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">&quot;max_L&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">&quot;max_num_epochs&quot;</span><span class="p">:</span> <span class="n">epochs</span><span class="p">,</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;num_channels&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
+        <span class="s2">&quot;num_interactions&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">&quot;patience&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="s2">&quot;r_max&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
+        <span class="s2">&quot;restart_latest&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;save_cpu&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;scheduler_patience&quot;</span><span class="p">:</span> <span class="mi">15</span><span class="p">,</span>
+        <span class="s2">&quot;start_swa&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">epochs</span> <span class="o">*</span> <span class="mf">0.8</span><span class="p">)),</span>
+        <span class="s2">&quot;swa&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+        <span class="s2">&quot;valid_batch_size&quot;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+        <span class="s2">&quot;distributed&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;seed&quot;</span><span class="p">:</span> <span class="n">fit_seed</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">valid_set</span><span class="p">:</span>
+        <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;valid_file&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">valid_filename</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;MACE fit parameters:&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;  </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">build_default_arg_parser</span><span class="p">()</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s2">&quot;--name&quot;</span><span class="p">,</span> <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]])</span>  <span class="c1"># seed defaults</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="n">orig_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">mlip_dir</span><span class="p">)</span>
+        <span class="n">run</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">orig_dir</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_mace_fit_expyre_call</span><span class="p">(</span>
+    <span class="n">train_atoms_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">test_atoms_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">remote_info</span><span class="p">:</span> <span class="n">RemoteInfo</span><span class="p">,</span>
+    <span class="n">mace_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">mace_fit_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">mace_fit_cmd</span><span class="o">=</span><span class="s2">&quot;mace_run_train&quot;</span><span class="p">,</span>
+    <span class="n">run_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;mace_fit&quot;</span><span class="p">),</span>
+<span class="p">):</span>
+
+    <span class="c1"># fill in some params from standard function arguments</span>
+    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">mace_name</span>
+    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;energy_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;REF_energy&quot;</span>
+    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;forces_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;REF_forces&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;compute_stress&quot;</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="p">:</span>
+        <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;stress_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;REF_stress&quot;</span>
+
+    <span class="n">input_files</span> <span class="o">=</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">input_files</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">output_files</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">remote_info</span><span class="o">.</span><span class="n">output_files</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">run_dir</span><span class="p">)]</span>
+
+    <span class="c1"># set number of threads in queued job, only if user hasn&#39;t set them</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;WFL_MACE_FIT_OMP_NUM_THREADS&quot;</span>
+        <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span>
+    <span class="p">):</span>
+        <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">&quot;WFL_MACE_FIT_OMP_NUM_THREADS=$EXPYRE_NUM_CORES_PER_NODE&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;WFL_NUM_PYTHON_SUBPROCESSES&quot;</span>
+        <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span>
+    <span class="p">):</span>
+        <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">&quot;WFL_NUM_PYTHON_SUBPROCESSES=$EXPYRE_NUM_CORES_PER_NODE&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">remote_func_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;train_atoms_path&quot;</span><span class="p">:</span> <span class="n">train_atoms_path</span><span class="p">,</span>
+        <span class="s2">&quot;test_atoms_path&quot;</span><span class="p">:</span> <span class="n">test_atoms_path</span><span class="p">,</span>
+        <span class="s2">&quot;remote_info&quot;</span><span class="p">:</span> <span class="n">remote_info</span><span class="p">,</span>
+        <span class="s2">&quot;mace_name&quot;</span><span class="p">:</span> <span class="n">mace_name</span><span class="p">,</span>
+        <span class="s2">&quot;mace_fit_params&quot;</span><span class="p">:</span> <span class="n">mace_fit_params</span><span class="p">,</span>
+        <span class="s2">&quot;mace_fit_cmd&quot;</span><span class="p">:</span> <span class="n">mace_fit_cmd</span><span class="p">,</span>
+        <span class="s2">&quot;run_dir&quot;</span><span class="p">:</span> <span class="n">run_dir</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">xpr</span> <span class="o">=</span> <span class="n">ExPyRe</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">job_name</span><span class="p">,</span>
+        <span class="n">pre_run_commands</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">pre_cmds</span><span class="p">,</span>
+        <span class="n">post_run_commands</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">post_cmds</span><span class="p">,</span>
+        <span class="n">env_vars</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span><span class="p">,</span>
+        <span class="n">input_files</span><span class="o">=</span><span class="n">input_files</span><span class="p">,</span>
+        <span class="n">output_files</span><span class="o">=</span><span class="n">output_files</span><span class="p">,</span>
+        <span class="n">function</span><span class="o">=</span><span class="n">_mace_fit_expyre_call</span><span class="p">,</span>
+        <span class="n">kwargs</span><span class="o">=</span><span class="n">remote_func_kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">xpr</span><span class="o">.</span><span class="n">start</span><span class="p">(</span>
+        <span class="n">resources</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">resources</span><span class="p">,</span>
+        <span class="n">system_name</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">sys_name</span><span class="p">,</span>
+        <span class="n">header_extra</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">header_extra</span><span class="p">,</span>
+        <span class="n">exact_fit</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">exact_fit</span><span class="p">,</span>
+        <span class="n">partial_node</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">partial_node</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">results</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span> <span class="o">=</span> <span class="n">xpr</span><span class="o">.</span><span class="n">get_results</span><span class="p">(</span>
+        <span class="n">timeout</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="n">check_interval</span><span class="o">=</span><span class="n">remote_info</span><span class="o">.</span><span class="n">check_interval</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">stderr</span><span class="p">)</span>
+
+    <span class="c1"># no outputs to rename since everything should be in run_dir</span>
+    <span class="n">xpr</span><span class="o">.</span><span class="n">mark_processed</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">results</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">ignore_failed_jobs</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Remote job failed with stdout: </span><span class="si">{</span><span class="n">stdout</span><span class="si">}</span><span class="s2"> and stderr: </span><span class="si">{</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">results</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

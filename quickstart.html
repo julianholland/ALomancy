@@ -1,0 +1,206 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick Start &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api/index.html" />
+    <link rel="prev" title="Installation" href="installation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick Start</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-active-learning-workflow">Basic Active Learning Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#initialization-behavior">Initialization Behavior</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#verbosity-levels">Verbosity Levels</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Quick Start</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/quickstart.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="quick-start">
+<h1>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h1>
+<section id="basic-active-learning-workflow">
+<h2>Basic Active Learning Workflow<a class="headerlink" href="#basic-active-learning-workflow" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.config_dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_dictionaries</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.standard_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActiveLearningStandardMACE</span>
+
+<span class="c1"># Load configuration from YAML file</span>
+<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">&quot;standard_config.yaml&quot;</span><span class="p">)</span>
+
+<span class="c1"># Initialize the active learning workflow</span>
+<span class="n">workflow</span> <span class="o">=</span> <span class="n">ActiveLearningStandardMACE</span><span class="p">(</span>
+    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/train_set.xyz&quot;</span><span class="p">,</span>
+    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/test_set.xyz&quot;</span><span class="p">,</span>
+    <span class="n">jobs_dict</span><span class="o">=</span><span class="n">jobs_dict</span><span class="p">,</span>
+    <span class="n">number_of_al_loops</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>                        <span class="c1"># 0=silent, 1=INFO, 2=DEBUG</span>
+    <span class="n">log_file</span><span class="o">=</span><span class="s2">&quot;results/alomancy.log&quot;</span><span class="p">,</span>  <span class="c1"># debug logs always written here</span>
+    <span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Run the active learning workflow</span>
+<span class="n">workflow</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading"></a></h2>
+<p>Create a <code class="docutils literal notranslate"><span class="pre">standard_config.yaml</span></code> file with the required top-level keys:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4:00:00&quot;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+
+<span class="nt">mlip_committee</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mace_training&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;12:00:00&quot;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;md_generation&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8:00:00&quot;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+
+<span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;dft_evaluation&quot;</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">    </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;24:00:00&quot;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+</pre></div>
+</div>
+<p>See the <a class="reference internal" href="examples.html"><span class="std std-doc">examples</span></a> for more detailed configurations.</p>
+</section>
+<section id="initialization-behavior">
+<h2>Initialization Behavior<a class="headerlink" href="#initialization-behavior" title="Link to this heading"></a></h2>
+<p>The workflow handles initialization in two ways:</p>
+<ul class="simple">
+<li><p><strong>Fast path</strong>: If <code class="docutils literal notranslate"><span class="pre">initial_train_file_path</span></code> and <code class="docutils literal notranslate"><span class="pre">initial_test_file_path</span></code> already exist, the workflow loads them directly and begins the AL loops.</p></li>
+<li><p><strong>Full path</strong>: If either file is missing, the workflow automatically:</p>
+<ol class="arabic simple">
+<li><p>Checks the global database for existing structures</p></li>
+<li><p>Generates missing structures via ASE MD (dimers, trimers, amorphous, Materials Project)</p></li>
+<li><p>Evaluates them with DFT (Quantum Espresso)</p></li>
+<li><p>Builds train/test splits from the database</p></li>
+</ol>
+</li>
+</ul>
+</section>
+<section id="verbosity-levels">
+<h2>Verbosity Levels<a class="headerlink" href="#verbosity-levels" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">verbose=0</span></code>: Silent mode (no progress output)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">verbose=1</span></code>: INFO level (progress and high-level updates)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">verbose=2</span></code>: DEBUG level (detailed progress and intermediate steps)</p></li>
+</ul>
+<p>All debug-level logs are always written to <code class="docutils literal notranslate"><span class="pre">log_file</span></code> regardless of <code class="docutils literal notranslate"><span class="pre">verbose</span></code> setting.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

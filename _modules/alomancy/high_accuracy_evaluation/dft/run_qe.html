@@ -1,0 +1,290 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.high_accuracy_evaluation.dft.run_qe &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../dft.html">alomancy.high_accuracy_evaluation.dft</a></li>
+      <li class="breadcrumb-item active">alomancy.high_accuracy_evaluation.dft.run_qe</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.high_accuracy_evaluation.dft.run_qe</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.espresso</span><span class="w"> </span><span class="kn">import</span> <span class="n">Espresso</span><span class="p">,</span> <span class="n">EspressoProfile</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dft_utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_build_srun_command</span><span class="p">,</span>
+    <span class="n">_run_go</span><span class="p">,</span>
+    <span class="n">_run_sp</span><span class="p">,</span>
+    <span class="n">generate_kpts</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="find_optimal_npool">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.find_optimal_npool">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_optimal_npool</span><span class="p">(</span>
+    <span class="n">ranks_per_system</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">total_kpoints</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">ranks_per_node</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">min_ranks_per_pool</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="n">candidates</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">npool</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">ranks_per_system</span><span class="p">,</span> <span class="n">total_kpoints</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ranks_per_system</span> <span class="o">%</span> <span class="n">npool</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">ranks_per_pool</span> <span class="o">=</span> <span class="n">ranks_per_system</span> <span class="o">//</span> <span class="n">npool</span>
+        <span class="k">if</span> <span class="n">ranks_per_pool</span> <span class="o">&lt;</span> <span class="n">min_ranks_per_pool</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">score</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">if</span> <span class="n">total_kpoints</span> <span class="o">%</span> <span class="n">npool</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mi">3</span>
+
+        <span class="k">if</span> <span class="n">ranks_per_node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pools_per_node</span> <span class="o">=</span> <span class="n">ranks_per_node</span> <span class="o">/</span> <span class="n">ranks_per_pool</span>
+            <span class="k">if</span> <span class="n">pools_per_node</span><span class="o">.</span><span class="n">is_integer</span><span class="p">():</span>
+                <span class="n">score</span> <span class="o">+=</span> <span class="mi">2</span>
+
+        <span class="n">score</span> <span class="o">-=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">ranks_per_pool</span> <span class="o">-</span> <span class="mi">8</span><span class="p">)</span> <span class="o">/</span> <span class="mi">8</span>
+
+        <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">score</span><span class="p">,</span> <span class="n">npool</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">1</span>
+
+    <span class="n">candidates</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">candidates</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="create_espresso_profile">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.create_espresso_profile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_espresso_profile</span><span class="p">(</span>
+    <span class="n">para_info_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">npool</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">pwx_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">pp_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">ndiag</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">ntg</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EspressoProfile</span><span class="p">:</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;-nk </span><span class="si">{</span><span class="n">npool</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">ndiag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ndiag</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;-nd </span><span class="si">{</span><span class="n">ndiag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">ntg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ntg</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;-nt </span><span class="si">{</span><span class="n">ntg</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">flag_str</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">flags</span><span class="p">)</span>
+
+    <span class="n">command</span> <span class="o">=</span> <span class="n">_build_srun_command</span><span class="p">(</span><span class="n">para_info_dict</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">pwx_path</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">flag_str</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">EspressoProfile</span><span class="p">(</span>
+        <span class="n">command</span><span class="o">=</span><span class="n">command</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pp_path</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_qe_input_data">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_qe_input_data</span><span class="p">(</span><span class="n">calculation_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">qe_input_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;control&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;calculation&quot;</span><span class="p">:</span> <span class="n">calculation_type</span><span class="p">,</span>
+            <span class="s2">&quot;verbosity&quot;</span><span class="p">:</span> <span class="s2">&quot;high&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;qe&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;nstep&quot;</span><span class="p">:</span> <span class="mi">999</span><span class="p">,</span>
+            <span class="s2">&quot;tstress&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+            <span class="s2">&quot;tprnfor&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;disk_io&quot;</span><span class="p">:</span> <span class="s2">&quot;none&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;etot_conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-5</span><span class="p">,</span>
+            <span class="s2">&quot;forc_conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-5</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;system&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;tot_charge&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="mf">40.0</span><span class="p">,</span>
+            <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
+            <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;smearing&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">,</span>
+            <span class="s2">&quot;smearing&quot;</span><span class="p">:</span> <span class="s2">&quot;cold&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;input_dft&quot;</span><span class="p">:</span> <span class="s2">&quot;pbe&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;nspin&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;electrons&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;electron_maxstep&quot;</span><span class="p">:</span> <span class="mi">999</span><span class="p">,</span>
+            <span class="s2">&quot;scf_must_converge&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-12</span><span class="p">,</span>
+            <span class="s2">&quot;mixing_mode&quot;</span><span class="p">:</span> <span class="s2">&quot;local-TF&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
+            <span class="s2">&quot;startingwfc&quot;</span><span class="p">:</span> <span class="s2">&quot;random&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;diagonalization&quot;</span><span class="p">:</span> <span class="s2">&quot;david&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;ions&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ion_dynamics&quot;</span><span class="p">:</span> <span class="s2">&quot;bfgs&quot;</span><span class="p">,</span> <span class="s2">&quot;upscale&quot;</span><span class="p">:</span> <span class="mf">1e8</span><span class="p">,</span> <span class="s2">&quot;bfgs_ndim&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">},</span>
+        <span class="s2">&quot;cell&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;press_conv_thr&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span> <span class="s2">&quot;cell_dofree&quot;</span><span class="p">:</span> <span class="s2">&quot;all&quot;</span><span class="p">},</span>
+        <span class="o">**</span><span class="n">qe_input_kwargs</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="create_qe_calc_object">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_qe_calc_object</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Espresso</span><span class="p">:</span>
+    <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">generate_kpts</span><span class="p">(</span><span class="n">cell</span><span class="o">=</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="n">periodic_3d</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kspacing</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
+    <span class="n">npool</span> <span class="o">=</span> <span class="n">find_optimal_npool</span><span class="p">(</span>
+        <span class="n">total_kpoints</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">)),</span>
+        <span class="n">ranks_per_system</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;node_info&quot;</span><span class="p">][</span>
+            <span class="s2">&quot;ranks_per_system&quot;</span>
+        <span class="p">],</span>
+        <span class="n">min_ranks_per_pool</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">Espresso</span><span class="p">(</span>
+        <span class="n">profile</span><span class="o">=</span><span class="n">create_espresso_profile</span><span class="p">(</span>
+            <span class="n">para_info_dict</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;node_info&quot;</span><span class="p">],</span>
+            <span class="n">npool</span><span class="o">=</span><span class="n">npool</span><span class="p">,</span>
+            <span class="n">pwx_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;pwx_path&quot;</span><span class="p">],</span>
+            <span class="n">pp_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;pp_path&quot;</span><span class="p">],</span>
+        <span class="p">),</span>
+        <span class="n">input_data</span><span class="o">=</span><span class="n">get_qe_input_data</span><span class="p">(</span>
+            <span class="s2">&quot;scf&quot;</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;qe_input_kwargs&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="p">),</span>
+        <span class="n">kpts</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">),</span>
+        <span class="n">pseudopotentials</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;pseudo_dict&quot;</span><span class="p">],</span>
+        <span class="n">directory</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="run_sp_qe">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.run_sp_qe">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_sp_qe</span><span class="p">(</span>
+    <span class="n">input_structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span>
+    <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">high_accuracy_eval_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">_run_sp</span><span class="p">(</span>
+        <span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">create_qe_calc_object</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="run_go_qe">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_go_qe</span><span class="p">(</span>
+    <span class="n">input_structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span>
+    <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">high_accuracy_eval_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">_run_go</span><span class="p">(</span>
+        <span class="n">input_structure</span><span class="p">,</span>
+        <span class="n">out_dir</span><span class="p">,</span>
+        <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
+        <span class="n">create_qe_calc_object</span><span class="p">,</span>
+        <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">&quot;qe_opt&quot;</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

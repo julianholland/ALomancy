@@ -1,0 +1,227 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>High-Accuracy Evaluation &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Utilities" href="utils.html" />
+    <link rel="prev" title="Structure Generation" href="structure_generation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="core.html">Core Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html">MLIP Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html">Structure Generation</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">High-Accuracy Evaluation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#module-alomancy.high_accuracy_evaluation.dft">Calculator Registry</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.get_dft_functions"><code class="docutils literal notranslate"><span class="pre">get_dft_functions()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs"><code class="docutils literal notranslate"><span class="pre">warn_mismatched_kwargs()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-alomancy.high_accuracy_evaluation.dft.run_qe">Quantum Espresso Backend</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_espresso_profile"><code class="docutils literal notranslate"><span class="pre">create_espresso_profile()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object"><code class="docutils literal notranslate"><span class="pre">create_qe_calc_object()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.find_optimal_npool"><code class="docutils literal notranslate"><span class="pre">find_optimal_npool()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data"><code class="docutils literal notranslate"><span class="pre">get_qe_input_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe"><code class="docutils literal notranslate"><span class="pre">run_go_qe()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.run_sp_qe"><code class="docutils literal notranslate"><span class="pre">run_sp_qe()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-alomancy.high_accuracy_evaluation.dft.run_vasp">VASP Backend</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_calc_object"><code class="docutils literal notranslate"><span class="pre">create_vasp_calc_object()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_command"><code class="docutils literal notranslate"><span class="pre">create_vasp_command()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs"><code class="docutils literal notranslate"><span class="pre">get_vasp_input_kwargs()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.run_go_vasp"><code class="docutils literal notranslate"><span class="pre">run_go_vasp()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.run_sp_vasp"><code class="docutils literal notranslate"><span class="pre">run_sp_vasp()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html">Utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configs.html">Configuration</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">High-Accuracy Evaluation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/high_accuracy_evaluation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="high-accuracy-evaluation">
+<h1>High-Accuracy Evaluation<a class="headerlink" href="#high-accuracy-evaluation" title="Link to this heading"></a></h1>
+<section id="module-alomancy.high_accuracy_evaluation.dft">
+<span id="calculator-registry"></span><h2>Calculator Registry<a class="headerlink" href="#module-alomancy.high_accuracy_evaluation.dft" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.get_dft_functions">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.</span></span><span class="sig-name descname"><span class="pre">get_dft_functions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">calculator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.14)"><span class="pre">Callable</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft.html#get_dft_functions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.get_dft_functions" title="Link to this definition"></a></dt>
+<dd><p>Return (run_sp_fn, run_go_fn) for the requested calculator.</p>
+<p>Lazy imports keep optional heavy dependencies from breaking installs
+that only have one calculator available.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.</span></span><span class="sig-name descname"><span class="pre">warn_mismatched_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">calculator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft.html#warn_mismatched_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs" title="Link to this definition"></a></dt>
+<dd><p>Warn when kwargs that belong to a different calculator are present in the config.</p>
+</dd></dl>
+
+</section>
+<section id="module-alomancy.high_accuracy_evaluation.dft.run_qe">
+<span id="quantum-espresso-backend"></span><h2>Quantum Espresso Backend<a class="headerlink" href="#module-alomancy.high_accuracy_evaluation.dft.run_qe" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.create_espresso_profile">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">create_espresso_profile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">para_info_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">npool</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">pwx_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">pp_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ndiag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ntg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">EspressoProfile</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#create_espresso_profile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_espresso_profile" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">create_qe_calc_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atoms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Atoms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">high_accuracy_eval_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Espresso</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#create_qe_calc_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.find_optimal_npool">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">find_optimal_npool</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ranks_per_system</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_kpoints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ranks_per_node</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_ranks_per_pool</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#find_optimal_npool"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.find_optimal_npool" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">get_qe_input_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">calculation_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">qe_input_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#get_qe_input_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">run_go_qe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_structure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Atoms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">high_accuracy_eval_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Atoms</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#run_go_qe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.run_sp_qe">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">run_sp_qe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_structure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Atoms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">high_accuracy_eval_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Atoms</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#run_sp_qe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.run_sp_qe" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-alomancy.high_accuracy_evaluation.dft.run_vasp">
+<span id="vasp-backend"></span><h2>VASP Backend<a class="headerlink" href="#module-alomancy.high_accuracy_evaluation.dft.run_vasp" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_calc_object">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">create_vasp_calc_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atoms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Atoms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">high_accuracy_eval_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_relaxation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Vasp</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#create_vasp_calc_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_calc_object" title="Link to this definition"></a></dt>
+<dd><p>Create an ASE Vasp calculator — analogous to create_qe_calc_object.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_command">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">create_vasp_command</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">para_info_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">vasp_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#create_vasp_command"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_command" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">get_vasp_input_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vasp_input_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#get_vasp_input_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs" title="Link to this definition"></a></dt>
+<dd><p>Default INCAR parameters merged with user overrides — analogous to get_qe_input_data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.run_go_vasp">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">run_go_vasp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_structure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Atoms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">high_accuracy_eval_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Atoms</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#run_go_vasp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.run_go_vasp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.run_sp_vasp">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">run_sp_vasp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_structure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Atoms</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">high_accuracy_eval_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Atoms</span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#run_sp_vasp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.run_sp_vasp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="structure_generation.html" class="btn btn-neutral float-left" title="Structure Generation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="utils.html" class="btn btn-neutral float-right" title="Utilities" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

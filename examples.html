@@ -1,0 +1,342 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Examples &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Contributing" href="contributing.html" />
+    <link rel="prev" title="Configuration" href="api/configs.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-file">Configuration File</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#configuration-key-descriptions">Configuration Key Descriptions</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#using-vasp-as-the-dft-backend">Using VASP as the DFT Backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#custom-workflows">Custom Workflows</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#method-signatures-and-responsibilities">Method Signatures and Responsibilities</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#extra-datasets">Extra Datasets</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Examples</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/examples.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="examples">
+<h1>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h1>
+<section id="basic-usage">
+<h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h2>
+<p>Here’s a simple example of running an active learning workflow:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.config_dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_dictionaries</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.standard_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActiveLearningStandardMACE</span>
+
+<span class="c1"># Load configuration from YAML file</span>
+<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">&quot;standard_config.yaml&quot;</span><span class="p">)</span>
+
+<span class="c1"># Create and run the workflow</span>
+<span class="n">workflow</span> <span class="o">=</span> <span class="n">ActiveLearningStandardMACE</span><span class="p">(</span>
+    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/train_set.xyz&quot;</span><span class="p">,</span>
+    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/test_set.xyz&quot;</span><span class="p">,</span>
+    <span class="n">jobs_dict</span><span class="o">=</span><span class="n">jobs_dict</span><span class="p">,</span>
+    <span class="n">number_of_al_loops</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>                        <span class="c1"># 0=silent, 1=INFO progress, 2=DEBUG</span>
+    <span class="n">log_file</span><span class="o">=</span><span class="s2">&quot;results/alomancy.log&quot;</span><span class="p">,</span>  <span class="c1"># file always captures DEBUG</span>
+    <span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">workflow</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="configuration-file">
+<h2>Configuration File<a class="headerlink" href="#configuration-file" title="Link to this heading"></a></h2>
+<p>The configuration YAML file defines all the stages of the active learning workflow. Here’s a complete example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2H&quot;</span>
+<span class="w">  </span><span class="nt">test_to_train_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">test_config_types</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;IsolatedAtom&quot;</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;init_dimer&quot;</span>
+<span class="w">  </span><span class="nt">creation_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;H&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;O&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">mp_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">single_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">num_dimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">    </span><span class="nt">num_trimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">    </span><span class="nt">num_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<span class="w">    </span><span class="nt">num_stretch_compress_per_mp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">    </span><span class="nt">max_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_hpc&#39;</span>
+
+<span class="nt">mlip_committee</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mlip_committee&quot;</span>
+<span class="w">  </span><span class="nt">size_of_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;5H&quot;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_gpu_hpc&#39;</span>
+
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;structure_generation&quot;</span>
+<span class="w">  </span><span class="nt">desired_number_of_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10H&quot;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_gpu_hpc&#39;</span>
+
+<span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">   </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
+<span class="w">  </span><span class="nt">max_batch_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_cpu_hpc&#39;</span>
+</pre></div>
+</div>
+<section id="configuration-key-descriptions">
+<h3>Configuration Key Descriptions<a class="headerlink" href="#configuration-key-descriptions" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>initialization</strong>: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures. The <code class="docutils literal notranslate"><span class="pre">test_to_train_ratio</span></code> determines the split between test and training data.</p></li>
+<li><p><strong>mlip_committee</strong>: Trains an ensemble (committee) of MACE interatomic potentials. The <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code> parameter determines how many committee members are trained in parallel.</p></li>
+<li><p><strong>structure_generation</strong>: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee.</p></li>
+<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">calculator</span></code> key selects the backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default) or <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>. The <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> controls how many structures are included in each batch submission. If QE-specific keys (e.g. <code class="docutils literal notranslate"><span class="pre">pwx_path</span></code>) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.</p></li>
+</ul>
+</section>
+</section>
+<section id="using-vasp-as-the-dft-backend">
+<h2>Using VASP as the DFT Backend<a class="headerlink" href="#using-vasp-as-the-dft-backend" title="Link to this heading"></a></h2>
+<p>To switch from Quantum Espresso to VASP, set <code class="docutils literal notranslate"><span class="pre">calculator:</span> <span class="pre">vasp</span></code> in the <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code> block and replace the QE-specific HPC keys:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;vasp&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
+<span class="w">  </span><span class="nt">max_batch_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">  </span><span class="nt">vasp_input_kwargs</span><span class="p">:</span><span class="w">          </span><span class="c1"># INCAR overrides (optional)</span>
+<span class="w">    </span><span class="nt">encut</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
+<span class="w">    </span><span class="nt">ediff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0e-7</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven&quot;</span>
+<span class="w">    </span><span class="nt">vasp_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/vasp_std&quot;</span>
+<span class="w">    </span><span class="nt">pseudo_dict</span><span class="p">:</span><span class="w">              </span><span class="c1"># element → POTCAR suffix</span>
+<span class="w">      </span><span class="nt">H</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<span class="w">      </span><span class="nt">O</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;_GW&quot;</span>
+<span class="w">    </span><span class="nt">node_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">ranks_per_system</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">72</span>
+<span class="w">      </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">36</span>
+<span class="w">      </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;90G&quot;</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;cpu&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">vasp&quot;</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p>QE configs work unchanged — <code class="docutils literal notranslate"><span class="pre">calculator:</span> <span class="pre">qe</span></code> is the default and can be omitted.</p>
+</section>
+<section id="custom-workflows">
+<h2>Custom Workflows<a class="headerlink" href="#custom-workflows" title="Link to this heading"></a></h2>
+<p>You can create custom active learning workflows by extending <code class="docutils literal notranslate"><span class="pre">BaseActiveLearningWorkflow</span></code>. You must implement four abstract methods:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.base_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseActiveLearningWorkflow</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.atoms</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyCustomWorkflow</span><span class="p">(</span><span class="n">BaseActiveLearningWorkflow</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generate initial training and test sets.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            base_name: Name used for output directories</span>
+<span class="sd">            **kwargs: Additional configuration parameters</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Tuple of (train_atoms_list, test_atoms_list)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Your custom initialization logic</span>
+        <span class="n">train_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate training structures</span>
+        <span class="n">test_atoms</span> <span class="o">=</span> <span class="p">[]</span>   <span class="c1"># Load or generate test structures</span>
+        <span class="k">return</span> <span class="n">train_atoms</span><span class="p">,</span> <span class="n">test_atoms</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">train_mlip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Train the machine-learned interatomic potential (MLIP).</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            base_name: Name used for output directories</span>
+<span class="sd">            job_dict: Configuration dictionary for this job</span>
+<span class="sd">            **kwargs: Additional parameters</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            DataFrame with training metrics (MAE, RMSE, etc.)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Your custom MLIP training logic</span>
+        <span class="n">metrics</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+            <span class="s1">&#39;train_mae&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.01</span><span class="p">],</span>
+            <span class="s1">&#39;test_mae&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">],</span>
+        <span class="p">})</span>
+        <span class="k">return</span> <span class="n">metrics</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_structures</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">train_data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generate candidate structures for labeling based on uncertainty.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            base_name: Name used for output directories</span>
+<span class="sd">            job_dict: Configuration dictionary for this job</span>
+<span class="sd">            train_data: Current training set (list[Atoms])</span>
+<span class="sd">            **kwargs: Additional parameters</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            List of candidate Atoms objects</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Your custom structure generation logic</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Generate structures using MD or other methods</span>
+        <span class="k">return</span> <span class="n">candidates</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">high_accuracy_evaluation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">structures</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Perform high-accuracy evaluation (e.g., DFT) on selected structures.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            base_name: Name used for output directories</span>
+<span class="sd">            job_dict: Configuration dictionary for this job</span>
+<span class="sd">            structures: List of Atoms objects to evaluate</span>
+<span class="sd">            **kwargs: Additional parameters</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            List of Atoms objects with energy and force labels in:</span>
+<span class="sd">            - atoms.info[&quot;REF_energy&quot;]</span>
+<span class="sd">            - atoms.arrays[&quot;REF_forces&quot;]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Your custom high-accuracy evaluation logic</span>
+        <span class="n">evaluated</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Run DFT and attach results</span>
+        <span class="k">return</span> <span class="n">evaluated</span>
+</pre></div>
+</div>
+<section id="method-signatures-and-responsibilities">
+<h3>Method Signatures and Responsibilities<a class="headerlink" href="#method-signatures-and-responsibilities" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>initialize_training_set</strong>: Called once at the start. Should return initial train/test splits. Results are written to <code class="docutils literal notranslate"><span class="pre">results/&lt;base_name&gt;/initialization/</span></code>.</p></li>
+<li><p><strong>train_mlip</strong>: Called once per AL loop. Should train your MLIP on the current training set and return a DataFrame with performance metrics.</p></li>
+<li><p><strong>generate_structures</strong>: Called once per AL loop. Should use MD, Monte Carlo, or other methods to generate high-uncertainty candidates from the current committee.</p></li>
+<li><p><strong>high_accuracy_evaluation</strong>: Called once per AL loop. Should evaluate structures with DFT (or equivalent high-accuracy method) and attach energies and forces to the Atoms objects.</p></li>
+</ul>
+</section>
+</section>
+<section id="extra-datasets">
+<h2>Extra Datasets<a class="headerlink" href="#extra-datasets" title="Link to this heading"></a></h2>
+<p>The initialization configuration can include external datasets via an <code class="docutils literal notranslate"><span class="pre">extra_datasets</span></code> parameter. These structures are seeded into the GlobalDatabase before initialization runs. This is useful for incorporating reference data (e.g., from literature or previous computations) without regenerating isolated atoms.</p>
+<p>Example configuration:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2H&quot;</span>
+<span class="w">  </span><span class="nt">test_to_train_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">extra_datasets</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;path/to/external_structures.xyz&quot;</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;path/to/another_dataset.xyz&quot;</span>
+<span class="w">  </span><span class="nt">creation_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;H&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;O&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="c1"># ... other options ...</span>
+</pre></div>
+</div>
+<p>Structures in extra datasets should have:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;REF_energy&quot;]</span></code> (float) — DFT energy</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">atoms.arrays[&quot;REF_forces&quot;]</span></code> (array, shape N×3) — DFT forces</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;config_type&quot;]</span></code> (str) — origin label (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;IsolatedAtom&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;external_data&quot;</span></code>)</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="api/configs.html" class="btn btn-neutral float-left" title="Configuration" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="contributing.html" class="btn btn-neutral float-right" title="Contributing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
