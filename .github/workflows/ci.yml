@@ -49,11 +49,9 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
         exclude:
           # Exclude some combinations to reduce CI time
-          - os: macos-latest
-            python-version: "3.9"
           - os: macos-latest
             python-version: "3.11"
 
