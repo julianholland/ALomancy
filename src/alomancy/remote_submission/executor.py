@@ -1,7 +1,8 @@
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Union
 
 from expyre.func import ExPyRe
 
@@ -28,7 +29,7 @@ class RemoteJobExecutor:
         function_kwargs: dict[str, Any],
         input_files: list[Union[str, Path]] | None = None,
         output_files: list[Union[str, Path]] | None = None,
-        job_name: Optional[str] | None = None,
+        job_name: str | None | None = None,
         **expyre_kwargs,
     ) -> ExPyRe:
         if input_files is None:
@@ -65,8 +66,8 @@ class RemoteJobExecutor:
         function: Callable,
         job_configs: list[dict[str, Any]],
         common_input_files: list[Union[str, Path]] | None = None,
-        common_output_pattern: Optional[str] | None = None,
-        job_name_pattern: Optional[str] | None = None,
+        common_output_pattern: str | None | None = None,
+        job_name_pattern: str | None | None = None,
     ) -> list[ExPyRe]:
         if common_input_files is None:
             common_input_files = []

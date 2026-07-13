@@ -1,6 +1,6 @@
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 from ase import Atoms
