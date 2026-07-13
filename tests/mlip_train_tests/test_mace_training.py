@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
+from alomancy.mlip.mace_wfl import _select_validation_split
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 
@@ -195,3 +196,124 @@ class TestGetMaceEvalInfo:
         (tmp_path / "results" / "al_loop_1" / "mlip_committee").mkdir(parents=True)
         df = get_mace_eval_info({"name": "mlip_committee"})
         assert len(df) == 1
+
+
+class TestSelectValidationSplit:
+    """Tests for _select_validation_split — the per-fit validation set carver."""
+
+    def _atoms(self, n: int, config_type: str) -> list[Atoms]:
+        return [
+            Atoms(
+                ["H"],
+                positions=[[i, 0, 0]],
+                cell=[5, 5, 5],
+                pbc=True,
+                info={"config_type": config_type},
+            )
+            for i in range(n)
+        ]
+
+    @pytest.mark.unit
+    def test_carves_correct_fraction(self):
+        eligible = self._atoms(100, "dimer")
+        ineligible = self._atoms(10, "IsolatedAtom")
+        all_training = eligible + ineligible
+        new_train, valid = _select_validation_split(
+            all_training, ["dimer"], valid_fraction=0.05, rng=np.random.default_rng(42)
+        )
+        # 5% of 100 eligible = 5 go to valid
+        assert len(valid) == 5
+        assert len(new_train) == len(all_training) - 5
+
+    @pytest.mark.unit
+    def test_all_accounted_for(self):
+        all_training = self._atoms(40, "dimer") + self._atoms(10, "IsolatedAtom")
+        new_train, valid = _select_validation_split(
+            all_training, ["dimer"], valid_fraction=0.1, rng=np.random.default_rng(42)
+        )
+        assert len(new_train) + len(valid) == len(all_training)
+
+    @pytest.mark.unit
+    def test_no_overlap(self):
+        all_training = self._atoms(50, "dimer")
+        new_train, valid = _select_validation_split(
+            all_training, ["dimer"], valid_fraction=0.1, rng=np.random.default_rng(42)
+        )
+        train_ids = {id(a) for a in new_train}
+        valid_ids = {id(a) for a in valid}
+        assert train_ids.isdisjoint(valid_ids)
+
+    @pytest.mark.unit
+    def test_ineligible_always_in_train(self):
+        eligible = self._atoms(20, "dimer")
+        ineligible = self._atoms(5, "IsolatedAtom")
+        all_training = eligible + ineligible
+        new_train, valid = _select_validation_split(
+            all_training, ["dimer"], valid_fraction=0.2, rng=np.random.default_rng(42)
+        )
+        ineligible_ids = {id(a) for a in ineligible}
+        assert ineligible_ids.issubset({id(a) for a in new_train})
+        assert not any(id(a) in ineligible_ids for a in valid)
+
+    @pytest.mark.unit
+    def test_empty_eligible_returns_all_training(self):
+        # No structures with matching config_type
+        all_training = self._atoms(10, "IsolatedAtom")
+        new_train, valid = _select_validation_split(
+            all_training, ["dimer"], valid_fraction=0.1, rng=np.random.default_rng(42)
+        )
+        assert valid == []
+        assert len(new_train) == len(all_training)
+
+    @pytest.mark.unit
+    def test_rounds_to_zero_returns_all_training(self):
+        # 5% of 1 structure floors to 0
+        all_training = self._atoms(1, "dimer")
+        new_train, valid = _select_validation_split(
+            all_training, ["dimer"], valid_fraction=0.05, rng=np.random.default_rng(42)
+        )
+        assert valid == []
+        assert len(new_train) == 1
+
+    @pytest.mark.unit
+    def test_reproducible_with_same_seed(self):
+        all_training = self._atoms(50, "dimer")
+        _, valid_a = _select_validation_split(
+            all_training, ["dimer"], 0.1, np.random.default_rng(7)
+        )
+        _, valid_b = _select_validation_split(
+            all_training, ["dimer"], 0.1, np.random.default_rng(7)
+        )
+        assert [id(a) for a in valid_a] == [id(b) for b in valid_b]
+
+    @pytest.mark.unit
+    def test_different_seeds_different_splits(self):
+        all_training = self._atoms(100, "dimer")
+        _, valid_a = _select_validation_split(
+            all_training, ["dimer"], 0.1, np.random.default_rng(1)
+        )
+        _, valid_b = _select_validation_split(
+            all_training, ["dimer"], 0.1, np.random.default_rng(2)
+        )
+        # With 10 out of 100, it would be astronomically unlikely to get same selection
+        assert {id(a) for a in valid_a} != {id(b) for b in valid_b}
+
+    @pytest.mark.unit
+    def test_multiple_eligible_config_types(self):
+        dimers = self._atoms(20, "dimer")
+        high_sd = self._atoms(20, "high_sd")
+        isolated = self._atoms(5, "IsolatedAtom")
+        all_training = dimers + high_sd + isolated
+        new_train, valid = _select_validation_split(
+            all_training,
+            ["dimer", "high_sd"],
+            valid_fraction=0.1,
+            rng=np.random.default_rng(42),
+        )
+        # 10% of 40 eligible = 4 in valid
+        assert len(valid) == 4
+        assert len(new_train) + len(valid) == len(all_training)
+        # IsolatedAtom always in train
+        isolated_ids = {id(a) for a in isolated}
+        assert isolated_ids.issubset({id(a) for a in new_train})
+        assert not any(id(a) in isolated_ids for a in valid)

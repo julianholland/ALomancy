@@ -304,7 +304,8 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         return train_xyzs, test_xyzs
 
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict) -> pd.DataFrame:
+    def train_mlip(self, base_name: str, job_dict: dict) -> pd.DataFrame:
+        mlip_committee_job_dict = job_dict["mlip_committee"]
         if self._phase_done(base_name, "train_mlip"):
             logger.info("train_mlip already done for %s, reloading metrics.", base_name)
             return get_mace_eval_info(mlip_committee_job_dict=mlip_committee_job_dict)
@@ -337,7 +338,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 size_of_committee=mlip_committee_job_dict["size_of_committee"],
                 function=mace_fit,
                 function_kwargs={
-                    "mlip_committee_job_dict": mlip_committee_job_dict,
+                    "job_dict": job_dict,
                     "workdir_str": str(workdir),
                 },
             )

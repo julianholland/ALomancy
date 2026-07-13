@@ -825,9 +825,7 @@ class TestActiveLearningStandardMACE:
         )
 
         # Test train_mlip method
-        result = workflow.train_mlip(
-            "test_loop_0", mock_job_config_full["mlip_committee"]
-        )
+        result = workflow.train_mlip("test_loop_0", mock_job_config_full)
 
         # Verify remote submitter was called
         mock_committee_submitter.assert_called_once()
@@ -990,15 +988,13 @@ class TestTrainMlipSkipSubmission:
         monkeypatch,
     ):
         monkeypatch.chdir(tmp_path)
-        job_dict = minimal_jobs_dict["mlip_committee"]
+        committee_name = minimal_jobs_dict["mlip_committee"]["name"]
 
         # Create enough compiled model files to satisfy size_of_committee=3
         for i in range(3):
-            model_dir = (
-                tmp_path / "results" / "test_loop" / job_dict["name"] / f"fit_{i}"
-            )
+            model_dir = tmp_path / "results" / "test_loop" / committee_name / f"fit_{i}"
             model_dir.mkdir(parents=True)
-            (model_dir / f"{job_dict['name']}_stagetwo_compiled.model").touch()
+            (model_dir / f"{committee_name}_stagetwo_compiled.model").touch()
 
         mock_eval.return_value = pd.DataFrame({"mae_f": [0.1], "mae_e": [0.05]})
 
@@ -1008,7 +1004,7 @@ class TestTrainMlipSkipSubmission:
             jobs_dict=minimal_jobs_dict,
             db_path=str(tmp_path / "db"),
         )
-        wf.train_mlip("test_loop", job_dict)
+        wf.train_mlip("test_loop", minimal_jobs_dict)
 
         mock_submitter.assert_not_called()
         mock_eval.assert_called_once()
@@ -1024,9 +1020,8 @@ class TestTrainMlipSkipSubmission:
         monkeypatch,
     ):
         monkeypatch.chdir(tmp_path)
-        job_dict = minimal_jobs_dict["mlip_committee"].copy()
-        # Intentionally omit mace_fit_kwargs
-        assert "mace_fit_kwargs" not in job_dict
+        # Intentionally omit mace_fit_kwargs from the mlip_committee sub-dict
+        assert "mace_fit_kwargs" not in minimal_jobs_dict["mlip_committee"]
 
         mock_eval.return_value = pd.DataFrame({"mae_f": [0.1], "mae_e": [0.05]})
         mock_submitter.return_value = None
@@ -1037,10 +1032,10 @@ class TestTrainMlipSkipSubmission:
             jobs_dict=minimal_jobs_dict,
             db_path=str(tmp_path / "db"),
         )
-        wf.train_mlip("test_loop", job_dict)
+        wf.train_mlip("test_loop", minimal_jobs_dict)
 
-        # The method should inject mace_fit_kwargs into job_dict
-        assert "mace_fit_kwargs" in job_dict
+        # The method should inject mace_fit_kwargs into the mlip_committee sub-dict
+        assert "mace_fit_kwargs" in minimal_jobs_dict["mlip_committee"]
 
 
 # ============================================================================

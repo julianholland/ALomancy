@@ -130,9 +130,7 @@ class BaseActiveLearningWorkflow(ABC):
             logger.debug("  Training set size: %d", len(train_xyzs))
             logger.debug("  Test set size: %d", len(test_xyzs))
 
-            evaluation_results = self.train_mlip(
-                base_name, self.jobs_dict["mlip_committee"], **kwargs
-            )
+            evaluation_results = self.train_mlip(base_name, self.jobs_dict, **kwargs)
 
             logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
 
@@ -291,9 +289,7 @@ class BaseActiveLearningWorkflow(ABC):
         pass
 
     @abstractmethod
-    def train_mlip(
-        self, base_name: str, mlip_committee_job_dict: dict, **kwargs
-    ) -> pd.DataFrame:
+    def train_mlip(self, base_name: str, job_dict: dict, **kwargs) -> pd.DataFrame:
         """
         Train machine learning interatomic potential.
 

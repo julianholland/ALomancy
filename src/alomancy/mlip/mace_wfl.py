@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from ase import Atoms
+from ase.io import read, write
 from expyre import ExPyRe
 from mace import tools
 from mace.cli.run_train import run
@@ -12,92 +14,55 @@ from alomancy.configs.remote_info import RemoteInfo
 
 logger = logging.getLogger(__name__)
 
-# def mace_fit(seed: int,
-#              mlip_committee_job_dict: dict,
-#              workdir_str: str,
-#              fit_idx: int = 0):
 
-#     workdir = Path(workdir_str)
-#     mlip_dir = Path(workdir, mlip_committee_job_dict["name"])
-#     print(f"Creating MLIP directory: {mlip_dir}")
-#     mlip_dir.mkdir(exist_ok=True, parents=True)
+def _select_validation_split(
+    all_training: list[Atoms],
+    acceptable_configs: list[str],
+    valid_fraction: float,
+    rng: np.random.Generator,
+) -> tuple[list[Atoms], list[Atoms]]:
+    """Carve a per-fit validation set from all_training.
 
-#     assert "seed" not in mlip_committee_job_dict["mace_fit_kwargs"], (
-#         "Seed should not be in mace_fit_kwargs, it is passed separately."
-#     )
-#     assert "energy_key" in mlip_committee_job_dict["mace_fit_kwargs"], (
-#         "energy_key must be specified in mace_fit_kwargs. This corresponds to the energy key in the training set. using 'energy' is not recommended."
-#     )
-#     assert "forces_key" in mlip_committee_job_dict["mace_fit_kwargs"], (
-#         "forces_key must be specified in mace_fit_kwargs. This corresponds to the forces key in the training set. using 'forces' is not recommended."
-#     )
+    Only structures with config_type in acceptable_configs are eligible;
+    the rest always stay in training. Returns (new_train_set, valid_set).
+    """
+    eligible = [
+        a for a in all_training if a.info.get("config_type") in acceptable_configs
+    ]
 
-#     if mlip_committee_job_dict["max_num_epochs"] is None:
-#         epochs = 80
-#     else:
-#         epochs = mlip_committee_job_dict["max_num_epochs"]
+    if not eligible:
+        logger.warning(
+            "No structures with config_type in %s found; skipping validation split.",
+            acceptable_configs,
+        )
+        return all_training, []
 
-#     # Read MACE fit parameters
-#     training_file = Path(workdir, "train_set.xyz")
-#     test_file = Path(workdir, "test_set.xyz")
+    n_valid = int(np.floor(valid_fraction * len(eligible)))
+    if n_valid == 0:
+        logger.warning(
+            "%.0f%% of %d eligible structure(s) rounds to 0; skipping validation split.",
+            valid_fraction * 100,
+            len(eligible),
+        )
+        return all_training, []
 
-#     # default MACE fit parameters
-#     # These can be overridden by the job_dict passed to the function
-#     mace_fit_params = {
-#         "train_file": str(training_file),
-#         "test_file": str(test_file),
-#         "model": "MACE",
-#         "correlation": 3,
-#         "device": "cuda",
-#         "ema": None,
-#         "energy_weight": 1,
-#         "forces_weight": 10,
-#         "error_table": "PerAtomMAE",
-#         "eval_interval": 1,
-#         "max_L": 2,
-#         "max_num_epochs": epochs,
-#         "name": mlip_committee_job_dict["name"],
-#         "num_channels": 128,
-#         "num_interactions": 2,
-#         "patience": 30,
-#         "r_max": 5.0,
-#         "restart_latest": None,
-#         "save_cpu": None,
-#         "scheduler_patience": 15,
-#         "start_swa": int(np.floor(epochs * 0.8)),
-#         "swa": None,
-#         "batch_size": 16,
-#         "valid_batch_size": 16,
-#         "distributed": None,
-#         "seed": seed + fit_idx,
-#         **mlip_committee_job_dict["mace_fit_kwargs"],
-#     }
-#     print("MACE fit parameters:")
-#     for key, value in mace_fit_params.items():
-#         print(f"  {key}: {value}")
+    chosen = rng.choice(len(eligible), size=n_valid, replace=False)
+    valid_set = [eligible[i] for i in chosen]
+    valid_ids = {id(a) for a in valid_set}
+    new_train_set = [a for a in all_training if id(a) not in valid_ids]
 
-#     parser = tools.build_default_arg_parser()
-#     args = parser.parse_args(["--name", mace_fit_params["name"]])  # seed defaults
-#     for key, value in mace_fit_params.items():
-#         setattr(args, key, value)
-
-#     # run(args)
-#     # subprocess.run(
-#     #     ['mace_run_train',]
-#     # )
-
-#     # _mace_fit_expyre_call(
-#     #     train_atoms_path=str(training_file),
-#     #     test_atoms_path=str(test_file),
-#     #     remote_info=get_remote_info(mlip_committee_job_dict, input_files=[str(training_file), str(test_file)]),
-#     #     mace_name=mlip_committee_job_dict["name"],
-#     #     mace_fit_params=mace_fit_params,
-#     #     run_dir=Path(mlip_dir, f"fit_{fit_idx}")
-#     # )
+    logger.info(
+        "Validation split: %d valid, %d train (from %d total, %d eligible).",
+        len(valid_set),
+        len(new_train_set),
+        len(all_training),
+        len(eligible),
+    )
+    return new_train_set, valid_set
 
 
 def mace_fit(
-    mlip_committee_job_dict: dict,
+    job_dict: dict,
     seed: int,
     workdir_str: str,
     fit_idx: int = 0,
@@ -108,17 +73,16 @@ def mace_fit(
 
     Parameters
     ----------
-    fitting_configs_path : str or Path
-        Path to the training data file (XYZ or similar).
-    mace_name : str
-        Name/label for the MACE model.
-    mace_fit_params : dict
-        Hyperparameters passed as CLI flags to mace_run_train.
-    mace_fit_cmd : str, optional
-        Path/command for mace_run_train. Auto-detected if None.
-    run_dir : str, optional
-        Directory to run fitting in. Created if it doesn't exist.
+    job_dict : dict
+        Full jobs dictionary (mlip_committee and initialization sub-dicts are used).
+    seed : int
+        Base random seed; each committee member uses seed + fit_idx.
+    workdir_str : str
+        Path to the AL loop working directory (contains train_set.xyz / test_set.xyz).
+    fit_idx : int, optional
+        Committee member index (default 0).
     """
+    mlip_committee_job_dict = job_dict["mlip_committee"]
     workdir = Path(workdir_str)
     mlip_dir = Path(workdir, mlip_committee_job_dict["name"], f"fit_{fit_idx}")
     logger.info("Creating MLIP directory: %s", mlip_dir)
@@ -134,20 +98,60 @@ def mace_fit(
         "forces_key must be specified in mace_fit_kwargs. This corresponds to the forces key in the training set. using 'forces' is not recommended."
     )
 
-    if mlip_committee_job_dict["max_num_epochs"] is None:
-        epochs = 80
-    else:
-        epochs = mlip_committee_job_dict["max_num_epochs"]
+    epochs = (
+        80
+        if mlip_committee_job_dict["max_num_epochs"] is None
+        else mlip_committee_job_dict["max_num_epochs"]
+    )
 
-    # Read MACE fit parameters
-    training_file = Path("../../train_set.xyz")
-    test_file = Path("../../test_set.xyz")
+    # Read training data and carve per-fit validation set before chdir
+    training_file = Path(workdir, "train_set.xyz")
+    if not training_file.exists():
+        raise FileNotFoundError(
+            f"Training file not found: {training_file}. "
+            "Ensure train_set.xyz has been written to the working directory before fitting."
+        )
+    all_training = list(read(training_file, ":", format="extxyz"))
+    logger.info(
+        "Read %d training structures from %s.", len(all_training), training_file
+    )
+
+    # valid_config_types can be overridden in mlip_committee config; defaults to
+    # initialization test_config_types so validation covers the same structure classes
+    valid_config_types = mlip_committee_job_dict.get(
+        "valid_config_types", job_dict["initialization"]["test_config_types"]
+    )
+    acceptable_configs = [*valid_config_types, "high_sd"]
+    valid_fraction = mlip_committee_job_dict.get("valid_fraction", 0.05)
+    fit_seed = seed + fit_idx
+    rng = np.random.default_rng(fit_seed)
+    new_train_set, valid_set = _select_validation_split(
+        all_training, acceptable_configs, valid_fraction=valid_fraction, rng=rng
+    )
+
+    # When a split occurred, write per-fit train/valid files into mlip_dir (accessible
+    # after chdir). When no split, point directly at the original train_set.xyz.
+    valid_filename = f"valid_set_{fit_idx}.xyz"
+    if valid_set:
+        train_filename = f"train_set_{fit_idx}.xyz"
+        write(mlip_dir / train_filename, new_train_set, format="extxyz")
+        write(mlip_dir / valid_filename, valid_set, format="extxyz")
+        logger.debug(
+            "Wrote split: %d train to %s, %d valid to %s.",
+            len(new_train_set),
+            train_filename,
+            len(valid_set),
+            valid_filename,
+        )
+    else:
+        train_filename = "../../train_set.xyz"
 
     # default MACE fit parameters
     # These can be overridden by the job_dict passed to the function
     mace_fit_params = {
-        "train_file": str(training_file),
-        "test_file": str(test_file),
+        # Relative paths — MACE runs from inside mlip_dir after os.chdir below
+        "train_file": train_filename,
+        "test_file": "../../test_set.xyz",
         "model": "MACE",
         "correlation": 3,
         "device": "cuda",
@@ -171,20 +175,15 @@ def mace_fit(
         "batch_size": 16,
         "valid_batch_size": 16,
         "distributed": None,
+        "seed": fit_seed,
         **mlip_committee_job_dict["mace_fit_kwargs"],
     }
+    if valid_set:
+        mace_fit_params["valid_file"] = valid_filename
 
-    mace_fit_params["seed"] = seed + fit_idx
-    # mace_fit_params["results_dir"] = str(mlip_dir)
     logger.debug("MACE fit parameters:")
     for key, value in mace_fit_params.items():
         logger.debug("  %s: %s", key, value)
-
-    # Resolve the fitting command
-    # if mace_fit_cmd is None:
-    #     mace_fit_cmd = os.environ.get("WFL_MACE_FIT_COMMAND") or shutil.which("mace_run_train")
-    #     if mace_fit_cmd is None:
-    #         raise RuntimeError("mace_run_train not found. Set WFL_MACE_FIT_COMMAND or add it to PATH.")
 
     parser = tools.build_default_arg_parser()
     args = parser.parse_args(["--name", mace_fit_params["name"]])  # seed defaults
@@ -197,23 +196,6 @@ def mace_fit(
         run(args)
     finally:
         os.chdir(orig_dir)
-    # # Build CLI command string
-    # for key, val in mace_fit_params.items():
-    #     if isinstance(val, (int, float)):
-    #         mace_fit_cmd += f" --{key}={val}"
-    #     elif val is None:
-    #         mace_fit_cmd += f" --{key}"
-    #     else:
-    #         mace_fit_cmd += f" --{key}='{val}'"
-
-    # orig_dir = os.getcwd()
-    # try:
-    #     os.chdir(mlip_dir)
-    #     subprocess.run(mace_fit_cmd, shell=True, check=True)
-    # except subprocess.CalledProcessError as e:
-    #     raise RuntimeError(f"MACE fitting failed with exit code {e.returncode}") from e
-    # finally:
-    #     os.chdir(orig_dir)
 
 
 def _mace_fit_expyre_call(
