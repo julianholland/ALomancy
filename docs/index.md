@@ -1,5 +1,7 @@
 # ALomancy Documentation
 
+[![GitHub](https://img.shields.io/badge/GitHub-ALomancy-5B21B6?logo=github)](https://github.com/julianholland/ALomancy)
+
 Welcome to ALomancy - Modular Active Learning Workflows for Modern Computational Chemistry.
 
 ```{toctree}

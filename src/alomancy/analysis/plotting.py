@@ -4,6 +4,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from alomancy.analysis.colors import PALETTE, add_logo_watermark, setup_alomancy_style
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,11 +18,13 @@ class Plot:
         ylabel: str,
         directory: str = ".",
         log_scale_y: bool = False,
+        error_bars: bool = False,
     ):
         """
         data: pd.DataFrame or dict-like, where each column/field is a series to plot
         """
         self.data = data
+        self.error_bars = error_bars
         self.log_scale_y = log_scale_y
         self.title = title
         self.xlabel = xlabel
@@ -39,10 +43,13 @@ class Plot:
             "Creating plot with data columns: %s",
             self.data.columns if hasattr(self.data, "columns") else self.data,
         )
-        plt.figure(figsize=(10, 6))
+        import matplotlib
+        setup_alomancy_style()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_prop_cycle(matplotlib.cycler(color=PALETTE))
         if isinstance(self.data, pd.DataFrame):
             for col in self.data.columns:
-                plt.plot(
+                ax.plot(
                     self.data.index,
                     self.data[col],
                     marker="o",
@@ -51,18 +58,19 @@ class Plot:
                 )
         elif isinstance(self.data, dict):
             for key, values in self.data.items():
-                plt.plot(
+                ax.plot(
                     range(len(values)), values, marker="o", linestyle="-", label=key
                 )
         else:
-            plt.plot(self.data, marker="o", linestyle="-", color="b")
-        plt.xlabel(self.xlabel)
-        plt.ylabel(self.ylabel)
-        plt.title(self.title)
+            ax.plot(self.data, marker="o", linestyle="-")
+        ax.set_xlabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
+        ax.set_title(self.title)
         if self.log_scale_y:
-            plt.yscale("log")
-        plt.grid(True)
-        plt.legend()
+            ax.set_yscale("log")
+        ax.grid(True)
+        ax.legend()
+        add_logo_watermark(fig)
 
     def show(self):
         plt.show()
@@ -93,18 +101,47 @@ class Plot:
 
 
 def mae_al_loop_plot(
-    all_avg_results, mlip_committee_job_dict, directory=Path("results")
-):
-    plot_object = Plot(
-        data=all_avg_results[["mae_e", "mae_f"]],
-        title=f"{mlip_committee_job_dict['name']} AL Loop MAE",
-        xlabel="AL Loop Iteration",
-        ylabel="Mean Absolute Error",
-        directory=directory,
-        log_scale_y=True,
-    )
-    plot_object.create()
-    plot_object.save()
+    all_avg_results: pd.DataFrame,
+    mlip_committee_job_dict: dict,
+    directory: Path = Path("results"),
+) -> None:
+    import matplotlib
+
+    setup_alomancy_style()
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_prop_cycle(matplotlib.cycler(color=PALETTE))
+
+    x = all_avg_results.index.tolist()
+    name = mlip_committee_job_dict["name"]
+
+    for col, label in (("mae_e", "Energy MAE (eV/atom)"), ("mae_f", "Force MAE (eV/Å)")):
+        if col not in all_avg_results.columns:
+            continue
+        y = all_avg_results[col].to_numpy()
+        std_col = f"{col}_std_dev"
+        if std_col in all_avg_results.columns:
+            yerr = all_avg_results[std_col].to_numpy()
+            ax.errorbar(
+                x, y, yerr=yerr,
+                marker="o", linestyle="-", capsize=4, capthick=1.2,
+                linewidth=1.5, label=label,
+            )
+        else:
+            ax.plot(x, y, marker="o", linestyle="-", linewidth=1.5, label=label)
+
+    ax.set_xlabel("AL Loop Iteration")
+    ax.set_ylabel("Mean Absolute Error")
+    ax.set_title(f"{name} AL Loop MAE")
+    ax.set_yscale("log")
+    ax.grid(True)
+    ax.legend()
+
+    fig.tight_layout()
+    add_logo_watermark(fig)
+    filename = Path(directory) / f"{name}_al_loop_mae_plot.png"
+    plt.savefig(str(filename))
+    plt.close(fig)
+    logger.debug("Saved AL loop MAE plot to %s", filename)
 
 
 if __name__ == "__main__":

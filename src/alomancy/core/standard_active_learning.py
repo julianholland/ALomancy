@@ -343,6 +343,18 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 },
             )
 
+        models_found = list(
+            Path(f"results/{base_name}").glob(
+                f"{mlip_committee_job_dict['name']}/fit_*/{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
+            )
+        )
+        if len(models_found) < mlip_committee_job_dict["size_of_committee"]:
+            raise RuntimeError(
+                f"train_mlip for {base_name}: expected "
+                f"{mlip_committee_job_dict['size_of_committee']} trained models but found "
+                f"{len(models_found)}. Check remote job logs for failures."
+            )
+
         mae_avg_results = get_mace_eval_info(
             mlip_committee_job_dict=mlip_committee_job_dict
         )

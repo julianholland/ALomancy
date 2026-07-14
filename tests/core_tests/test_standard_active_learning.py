@@ -801,9 +801,15 @@ class TestActiveLearningStandardMACE:
         mock_committee_submitter,
         temp_files_co2,
         mock_job_config_full,
+        tmp_path,
+        monkeypatch,
     ):
         """Test MLIP training method."""
         train_file, test_file, _ = temp_files_co2
+        monkeypatch.chdir(tmp_path)
+
+        committee_name = mock_job_config_full["mlip_committee"]["name"]
+        n = mock_job_config_full["mlip_committee"]["size_of_committee"]
 
         # Set up mocks
         mock_remote_info = MagicMock()
@@ -817,11 +823,21 @@ class TestActiveLearningStandardMACE:
         )
         mock_mace_recover.return_value = mock_results_df
 
+        # Submitter creates model files so the post-submission existence check passes
+        def _create_models(*args, **kwargs):
+            for i in range(n):
+                d = tmp_path / "results" / "test_loop_0" / committee_name / f"fit_{i}"
+                d.mkdir(parents=True, exist_ok=True)
+                (d / f"{committee_name}_stagetwo_compiled.model").touch()
+
+        mock_committee_submitter.side_effect = _create_models
+
         workflow = ActiveLearningStandardMACE(
             initial_train_file_path=train_file,
             initial_test_file_path=test_file,
             jobs_dict=mock_job_config_full,
             plots=False,
+            db_path=str(tmp_path / "db"),
         )
 
         # Test train_mlip method
@@ -1022,6 +1038,12 @@ class TestTrainMlipSkipSubmission:
         monkeypatch.chdir(tmp_path)
         # Intentionally omit mace_fit_kwargs from the mlip_committee sub-dict
         assert "mace_fit_kwargs" not in minimal_jobs_dict["mlip_committee"]
+
+        committee_name = minimal_jobs_dict["mlip_committee"]["name"]
+        for i in range(minimal_jobs_dict["mlip_committee"]["size_of_committee"]):
+            model_dir = tmp_path / "results" / "test_loop" / committee_name / f"fit_{i}"
+            model_dir.mkdir(parents=True)
+            (model_dir / f"{committee_name}_stagetwo_compiled.model").touch()
 
         mock_eval.return_value = pd.DataFrame({"mae_f": [0.1], "mae_e": [0.05]})
         mock_submitter.return_value = None

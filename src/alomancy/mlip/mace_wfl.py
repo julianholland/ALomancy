@@ -1,3 +1,4 @@
+import importlib.util
 import logging
 import os
 import sys
@@ -13,6 +14,17 @@ from mace.cli.run_train import run
 from alomancy.configs.remote_info import RemoteInfo
 
 logger = logging.getLogger(__name__)
+
+if (
+    importlib.util.find_spec("torch._native") is not None
+    and "TRITON_CACHE_DIR" not in os.environ
+):
+    logger.warning(
+        "This PyTorch version uses triton for native GPU ops (torch._native). "
+        "On HPC nodes without python3-dev headers, triton kernel compilation will "
+        "fail at training time. Set TRITON_CACHE_DIR to a persistent path and "
+        "pre-warm the cache in an interactive GPU job. See CLAUDE.md for details."
+    )
 
 
 def _select_validation_split(

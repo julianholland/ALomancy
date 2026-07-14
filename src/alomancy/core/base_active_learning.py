@@ -135,7 +135,24 @@ class BaseActiveLearningWorkflow(ABC):
             logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
 
             if self.plots:
-                mae_al_loop_plot(evaluation_results, self.jobs_dict["mlip_committee"])
+                plots_dir = Path("results", "current_plots")
+                plots_dir.mkdir(exist_ok=True, parents=True)
+                mae_al_loop_plot(
+                    evaluation_results,
+                    self.jobs_dict["mlip_committee"],
+                    directory=plots_dir,
+                )
+                from alomancy.analysis.mlip_plots import (
+                    plot_dft_vs_model,
+                    plot_training_curves,
+                )
+
+                plot_training_curves(
+                    base_name, self.jobs_dict["mlip_committee"], self.seed, plots_dir
+                )
+                plot_dft_vs_model(
+                    base_name, self.jobs_dict["mlip_committee"], self.seed, plots_dir
+                )
 
             generated_structures = self.generate_structures(
                 base_name, self.jobs_dict, train_xyzs, **kwargs

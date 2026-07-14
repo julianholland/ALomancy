@@ -34,5 +34,13 @@ def get_mace_eval_info(
             for key in results[0]
             if key in ["mae_f", "mae_e"]
         }
+        std_dev_results = {
+            key: np.std([np.float32(result[key]) for result in results])
+            for key in results[0]
+            if key in ["mae_f", "mae_e"]
+        }
+        avg_result.update(
+            {f"{key}_std_dev": std_dev_results[key] for key in std_dev_results}
+        )
         all_avg_results.append(avg_result)
     return pd.DataFrame(all_avg_results)
