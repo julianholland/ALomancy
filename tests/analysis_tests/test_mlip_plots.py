@@ -2,9 +2,14 @@
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
+import numpy as np
 import pandas as pd
 import pytest
+from ase import Atoms
+from ase.calculators.calculator import Calculator
+from ase.io import write
 
 # ---------------------------------------------------------------------------
 # _get_stage_two_epoch
@@ -212,3 +217,252 @@ def test_parse_used_epoch_missing_file(tmp_path):
     fit_dir = tmp_path / "fit_0"
     epoch = _parse_used_epoch(fit_dir, "mymodel", 803)
     assert epoch is None
+
+
+# ---------------------------------------------------------------------------
+# glob fallbacks (seed mismatch)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_training_jsonl_glob_fallback(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_training_jsonl
+
+    fit_dir = tmp_path / "fit_0"
+    results_dir = fit_dir / "results"
+    results_dir.mkdir(parents=True)
+    txt = results_dir / "mymodel_run-999_train.txt"
+    txt.write_text(
+        json.dumps(
+            {
+                "epoch": 0,
+                "mode": "eval",
+                "loss": 0.5,
+                "mae_e": 0.1,
+                "mae_f": 0.2,
+                "mae_e_per_atom": 0.05,
+            }
+        )
+        + "\n"
+    )
+    # Requested seed 803, file has seed 999 — glob fallback should find it.
+    df = _parse_training_jsonl(fit_dir, "mymodel", 803)
+    assert df is not None
+    assert len(df) == 1
+
+
+@pytest.mark.unit
+def test_parse_used_epoch_glob_fallback(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_used_epoch
+
+    fit_dir = tmp_path / "fit_0"
+    logs_dir = fit_dir / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "mymodel_run-999.log").write_text(
+        "INFO: Loaded Stage two model from epoch 42 for evaluation\n"
+    )
+    epoch = _parse_used_epoch(fit_dir, "mymodel", 803)
+    assert epoch == 42
+
+
+# ---------------------------------------------------------------------------
+# _load_and_subsample
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_load_and_subsample_missing_file(tmp_path):
+    from alomancy.analysis.mlip_plots import _load_and_subsample
+
+    result = _load_and_subsample(tmp_path / "nonexistent.xyz", seed=42, label="test")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_load_and_subsample_under_cap(tmp_path):
+    from alomancy.analysis.mlip_plots import _MAX_PARITY_STRUCTURES, _load_and_subsample
+
+    atoms_list = [Atoms("H") for _ in range(10)]
+    xyz_path = tmp_path / "test.xyz"
+    write(str(xyz_path), atoms_list, format="extxyz")
+
+    result = _load_and_subsample(xyz_path, seed=42, label="test")
+    assert result is not None
+    assert len(result) == 10
+    assert _MAX_PARITY_STRUCTURES >= 10  # sanity: 10 < cap so no subsample
+
+
+@pytest.mark.unit
+def test_load_and_subsample_over_cap(tmp_path):
+    from alomancy.analysis.mlip_plots import _MAX_PARITY_STRUCTURES, _load_and_subsample
+
+    n = _MAX_PARITY_STRUCTURES + 50
+    atoms_list = [Atoms("H") for _ in range(n)]
+    xyz_path = tmp_path / "test.xyz"
+    write(str(xyz_path), atoms_list, format="extxyz")
+
+    result = _load_and_subsample(xyz_path, seed=42, label="test")
+    assert result is not None
+    assert len(result) == _MAX_PARITY_STRUCTURES
+
+
+# ---------------------------------------------------------------------------
+# _run_inference
+# ---------------------------------------------------------------------------
+
+
+class _TrivialCalc(Calculator):
+    """Minimal ASE calculator for testing — returns energy=-n, forces=zeros."""
+
+    implemented_properties: ClassVar[list] = ["energy", "forces"]
+
+    def calculate(self, atoms=None, properties=None, system_changes=None):
+        n = len(atoms)
+        self.results = {"energy": -1.0 * n, "forces": np.zeros((n, 3))}
+
+
+@pytest.mark.unit
+def test_run_inference_skips_missing_ref_energy():
+    from alomancy.analysis.mlip_plots import _run_inference
+
+    atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    # no REF_energy → should be skipped
+    e_dft, _e_pred, _f_dft, _f_pred = _run_inference(_TrivialCalc(), [atoms])
+    assert len(e_dft) == 0
+
+
+@pytest.mark.unit
+def test_run_inference_returns_per_atom_energy():
+    from alomancy.analysis.mlip_plots import _run_inference
+
+    atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
+    atoms.info["REF_energy"] = -4.0
+    atoms.arrays["REF_forces"] = np.zeros((2, 3))
+
+    e_dft, e_pred, f_dft, f_pred = _run_inference(_TrivialCalc(), [atoms])
+
+    assert len(e_dft) == 1
+    assert e_dft[0] == pytest.approx(-2.0)   # -4.0 / 2 atoms
+    assert e_pred[0] == pytest.approx(-1.0)  # TrivialCalc: -1.0*n / n
+    assert len(f_dft) == 6   # 2 atoms x 3 components
+    assert len(f_pred) == 6
+
+
+# ---------------------------------------------------------------------------
+# plot_training_curves
+# ---------------------------------------------------------------------------
+
+
+def _write_fit_data(base_dir: Path, name: str, seed: int, n_epochs: int = 10) -> None:
+    fit_dir = base_dir / f"results/demo/{name}/fit_0"
+    results_dir = fit_dir / "results"
+    logs_dir = fit_dir / "logs"
+    results_dir.mkdir(parents=True)
+    logs_dir.mkdir(parents=True)
+
+    txt = results_dir / f"{name}_run-{seed}_train.txt"
+    with txt.open("w") as fh:
+        for ep in range(n_epochs):
+            hf = json.dumps(
+                {
+                    "epoch": ep,
+                    "mode": "eval",
+                    "loss": 1.0 - 0.05 * ep,
+                    "mae_e": 0.5 - 0.02 * ep,
+                    "mae_f": 0.3 - 0.01 * ep,
+                    "mae_e_per_atom": 0.05 - 0.002 * ep,
+                }
+            )
+            fh.write(hf + "\n")
+
+    (logs_dir / f"{name}_run-{seed}.log").write_text(
+        f"INFO: Loaded Stage two model from epoch {n_epochs - 2} for evaluation\n"
+    )
+
+
+@pytest.mark.unit
+def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
+    from alomancy.analysis.mlip_plots import plot_training_curves
+
+    monkeypatch.chdir(tmp_path)
+    _write_fit_data(tmp_path, "mlip_committee", seed=803)
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {
+        "name": "mlip_committee",
+        "size_of_committee": 1,
+        "max_num_epochs": 10,
+        "mace_fit_kwargs": {},
+    }
+    plot_training_curves("demo", job_dict, 803, plots_dir)
+
+    assert (plots_dir / "training_mae_demo.png").exists()
+    assert (plots_dir / "training_loss_demo.png").exists()
+
+
+@pytest.mark.unit
+def test_plot_training_curves_no_data_no_output(tmp_path, monkeypatch):
+    from alomancy.analysis.mlip_plots import plot_training_curves
+
+    monkeypatch.chdir(tmp_path)
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {
+        "name": "mlip_committee",
+        "size_of_committee": 2,
+        "max_num_epochs": 80,
+        "mace_fit_kwargs": {},
+    }
+    plot_training_curves("empty_loop", job_dict, 803, plots_dir)
+    assert not list(plots_dir.glob("*.png"))
+
+
+# ---------------------------------------------------------------------------
+# _draw_parity_figure
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_draw_parity_figure_all_missing_creates_file(tmp_path):
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    _draw_parity_figure(
+        results_per_fit=[None, None],
+        n_fits=2,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=plots_dir,
+        file_suffix="test",
+    )
+    assert (plots_dir / "fit_parity_test_test_loop.png").exists()
+
+
+@pytest.mark.unit
+def test_draw_parity_figure_with_data_creates_file(tmp_path):
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    rng = np.random.default_rng(0)
+    result = (
+        rng.random(20),   # e_dft
+        rng.random(20),   # e_pred
+        rng.random(60),   # f_dft
+        rng.random(60),   # f_pred
+    )
+    _draw_parity_figure(
+        results_per_fit=[result],
+        n_fits=1,
+        name="mlip_committee",
+        seed=803,
+        set_label="Train",
+        base_name="test_loop",
+        plots_dir=plots_dir,
+        file_suffix="train",
+    )
+    assert (plots_dir / "fit_parity_train_test_loop.png").exists()

@@ -83,7 +83,7 @@ def add_logo_watermark(
 
     pad = 0.01
     ax_wm = fig.add_axes(
-        [1.0 - size - pad, pad, size, height],
+        [1.0 - size - pad, 1.0 - height - pad, size, height],
         label="_alomancy_watermark",
     )
     ax_wm.imshow(logo_rgba, alpha=alpha, aspect="equal")

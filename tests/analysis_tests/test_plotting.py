@@ -251,3 +251,44 @@ class TestMaeAlLoopPlot:
         )
         mock_plt.subplots.assert_called_once()
         mock_plt.savefig.assert_called_once()
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_uses_errorbar_when_std_columns_present(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pd.DataFrame(
+            {
+                "mae_e": [0.1, 0.05],
+                "mae_f": [0.3, 0.15],
+                "mae_e_std_dev": [0.01, 0.005],
+                "mae_f_std_dev": [0.03, 0.015],
+            }
+        )
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        assert mock_ax.errorbar.called
+        assert not mock_ax.plot.called
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_falls_back_to_plot_without_std_columns(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pd.DataFrame({"mae_e": [0.1, 0.05], "mae_f": [0.3, 0.15]})
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        assert not mock_ax.errorbar.called
+        assert mock_ax.plot.called
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_legend_labels_include_units(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pd.DataFrame({"mae_e": [0.1], "mae_f": [0.3]})
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        labels = [call.kwargs.get("label", "") for call in mock_ax.plot.call_args_list]
+        assert any("eV/atom" in lbl for lbl in labels)
+        assert any("eV/Å" in lbl for lbl in labels)
