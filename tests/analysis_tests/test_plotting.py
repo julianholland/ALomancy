@@ -1,6 +1,6 @@
 """Tests for plotting module."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -55,6 +55,7 @@ class TestPlotCreate:
     def test_create_with_dataframe(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
 
+        mock_plt.subplots.return_value = (MagicMock(), MagicMock())
         p = Plot(
             data=_make_df(),
             title="Test",
@@ -63,12 +64,13 @@ class TestPlotCreate:
             directory=str(tmp_path),
         )
         p.create()
-        mock_plt.figure.assert_called_once()
+        mock_plt.subplots.assert_called_once()
 
     @patch("alomancy.analysis.plotting.plt")
     def test_create_with_dict(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
 
+        mock_plt.subplots.return_value = (MagicMock(), MagicMock())
         data = {"series_a": [1.0, 0.5, 0.2], "series_b": [2.0, 1.0, 0.5]}
         p = Plot(
             data=data,
@@ -78,12 +80,13 @@ class TestPlotCreate:
             directory=str(tmp_path),
         )
         p.create()
-        mock_plt.figure.assert_called_once()
+        mock_plt.subplots.assert_called_once()
 
     @patch("alomancy.analysis.plotting.plt")
     def test_create_with_list(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
 
+        mock_plt.subplots.return_value = (MagicMock(), MagicMock())
         data = [1.0, 0.8, 0.5]
         p = Plot(
             data=data,
@@ -93,12 +96,14 @@ class TestPlotCreate:
             directory=str(tmp_path),
         )
         p.create()
-        mock_plt.figure.assert_called_once()
+        mock_plt.subplots.assert_called_once()
 
     @patch("alomancy.analysis.plotting.plt")
     def test_create_sets_labels_and_grid(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
 
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
         p = Plot(
             data=_make_df(),
             title="Test",
@@ -107,10 +112,10 @@ class TestPlotCreate:
             directory=str(tmp_path),
         )
         p.create()
-        mock_plt.xlabel.assert_called_with("epoch")
-        mock_plt.ylabel.assert_called_with("MAE")
-        mock_plt.title.assert_called_with("Test")
-        mock_plt.grid.assert_called_with(True)
+        mock_ax.set_xlabel.assert_called_with("epoch")
+        mock_ax.set_ylabel.assert_called_with("MAE")
+        mock_ax.set_title.assert_called_with("Test")
+        mock_ax.grid.assert_called_with(True)
 
 
 @pytest.mark.unit
@@ -237,11 +242,53 @@ class TestMaeAlLoopPlot:
     def test_mae_al_loop_plot_runs(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import mae_al_loop_plot
 
+        mock_plt.subplots.return_value = (MagicMock(), MagicMock())
         df = _make_df()
         mae_al_loop_plot(
             all_avg_results=df,
             mlip_committee_job_dict={"name": "test_committee"},
             directory=tmp_path,
         )
-        mock_plt.figure.assert_called_once()
+        mock_plt.subplots.assert_called_once()
         mock_plt.savefig.assert_called_once()
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_uses_errorbar_when_std_columns_present(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pd.DataFrame(
+            {
+                "mae_e": [0.1, 0.05],
+                "mae_f": [0.3, 0.15],
+                "mae_e_std_dev": [0.01, 0.005],
+                "mae_f_std_dev": [0.03, 0.015],
+            }
+        )
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        assert mock_ax.errorbar.called
+        assert not mock_ax.plot.called
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_falls_back_to_plot_without_std_columns(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pd.DataFrame({"mae_e": [0.1, 0.05], "mae_f": [0.3, 0.15]})
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        assert not mock_ax.errorbar.called
+        assert mock_ax.plot.called
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_legend_labels_include_units(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pd.DataFrame({"mae_e": [0.1], "mae_f": [0.3]})
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        labels = [call.kwargs.get("label", "") for call in mock_ax.plot.call_args_list]
+        assert any("eV/atom" in lbl for lbl in labels)
+        assert any("eV/Å" in lbl for lbl in labels)

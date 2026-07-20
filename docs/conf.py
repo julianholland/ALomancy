@@ -52,6 +52,23 @@ master_doc = "index"
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
+_logo_path = Path(__file__).parent / "_static" / "alomancy_logo.png"
+if _logo_path.exists():
+    html_logo = "_static/alomancy_logo.png"
+
+html_theme_options = {
+    "logo_only": False,
+    "display_version": True,
+}
+
+html_context = {
+    "display_github": True,
+    "github_user": "julianholland",
+    "github_repo": "ALomancy",
+    "github_version": "master",
+    "conf_py_path": "/docs/",
+}
+
 # Intersphinx mapping
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),

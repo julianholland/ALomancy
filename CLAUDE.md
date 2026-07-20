@@ -85,6 +85,8 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 
 `RemoteJobExecutor` wraps Expyre's `ExPyRe`. Call pattern: `submit_multiple_jobs → start_all_jobs → wait_for_all_jobs → cleanup_jobs`. The convenience method `run_and_wait` does all four steps. **Note**: `wait_for_all_jobs` is intentionally called twice in `run_and_wait` to ensure results sync locally from the remote.
 
+**PyTorch triton requirement**: Recent PyTorch versions ship native triton-backed GPU ops via `torch._native` (confirmed present in torch 2.13). Triton JIT-compiles CUDA extensions at runtime, which requires `python3-dev` (Python headers) on the compute node. HPC compute nodes typically do not have these headers. Fix: set `TRITON_CACHE_DIR` to a persistent path in the `mlip_committee` `pre_cmds` and pre-warm the cache once in an **interactive GPU job** (not the login node — the login node driver may be too old). `mace_wfl.py` logs a WARNING at import time if `torch._native` is detected and `TRITON_CACHE_DIR` is not set. Pre-warm command (run inside an interactive GPU job): `TRITON_CACHE_DIR=/fhi/home/jholl/.triton_cache python -m mace.cli.run_train --help`
+
 **Remote deployment**: ExPyRe serializes functions **by reference** (module path + function name). The remote machine imports the module to resolve the function at run time. When changing the signature or body of any function submitted remotely (e.g. `mace_fit`), you must reinstall the updated package on the remote machine (`pip install -e .` there) before restarting, or jobs will import the old code and fail with a `TypeError` at the call site — typically hours after submission.
 
 ### Module responsibilities

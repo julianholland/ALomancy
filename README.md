@@ -1,9 +1,8 @@
 <div align="center">
 
-</div>
-<div align="center">
+<img src="docs/_static/alomancy_logo.png" alt="ALomancy" width="200"/>
 
-# `ALomancy` 🔮
+# `ALomancy`
 
 **Modular Active Learning Workflows for Modern Computational Chemistry**
 
