@@ -21,6 +21,7 @@ from alomancy.initialize.initialization_structure_list import (
 )
 from alomancy.mlip.get_mace_eval_info import (
     get_mace_eval_info,
+    select_best_committee_model,
 )
 from alomancy.mlip.mace_wfl import mace_fit
 from alomancy.remote_submission import (
@@ -441,15 +442,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             input_structures,
             format="extxyz",
         )
-        base_mace_model_path = str(
-            Path(
-                "results",
-                base_name,
-                job_dict["mlip_committee"]["name"],
-                "fit_0",
-                f"{job_dict['mlip_committee']['name']}_stagetwo.model",
-            )
+        best_fit_idx, best_model_path = select_best_committee_model(
+            base_name,
+            job_dict["mlip_committee"],
+            seed=self.seed,
         )
+        base_mace_model_path = str(best_model_path)
+        committee_size = job_dict["mlip_committee"]["size_of_committee"]
+        fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
 
         if "run_md_kwargs" not in job_dict["structure_generation"]:
             job_dict["structure_generation"]["run_md_kwargs"] = {}
@@ -499,9 +499,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "base_name": base_name,
                 "job_dict": job_dict,
                 "base_mlip": base_mace_model_path,
-                "fits_to_use": list(
-                    range(1, job_dict["mlip_committee"]["size_of_committee"])
-                ),
+                "fits_to_use": fits_to_use,
             },
         )
 
