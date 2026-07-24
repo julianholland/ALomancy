@@ -197,7 +197,9 @@ def _load_and_subsample(xyz_path: Path, seed: int, label: str) -> list | None:
         rng = np.random.default_rng(seed)
         idx = sorted(rng.choice(len(atoms), _MAX_PARITY_STRUCTURES, replace=False))
         atoms = [atoms[i] for i in idx]
-        logger.info("Subsampled %s set to %d structures.", label, _MAX_PARITY_STRUCTURES)
+        logger.info(
+            "Subsampled %s set to %d structures.", label, _MAX_PARITY_STRUCTURES
+        )
     return atoms
 
 
@@ -244,31 +246,57 @@ def _draw_parity_figure(
 
         if result is None:
             for ax in (ax_e, ax_f):
-                ax.text(0.5, 0.5, "Model missing", ha="center", va="center",
-                        transform=ax.transAxes)
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Model missing",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
         else:
             e_dft_arr, e_pred_arr, f_dft_arr, f_pred_arr = result
             color = PALETTE[i % len(PALETTE)]
 
             if len(e_dft_arr):
                 mae_e = np.mean(np.abs(e_dft_arr - e_pred_arr))
-                lim = (min(e_dft_arr.min(), e_pred_arr.min()),
-                       max(e_dft_arr.max(), e_pred_arr.max()))
-                ax_e.scatter(e_dft_arr, e_pred_arr, s=6, alpha=0.5,
-                             color=color, rasterized=True)
+                lim = (
+                    min(e_dft_arr.min(), e_pred_arr.min()),
+                    max(e_dft_arr.max(), e_pred_arr.max()),
+                )
+                ax_e.scatter(
+                    e_dft_arr, e_pred_arr, s=6, alpha=0.5, color=color, rasterized=True
+                )
                 ax_e.plot(lim, lim, color=DIAGONAL_COLOR, linestyle="--", linewidth=0.8)
-                ax_e.text(0.05, 0.95, f"MAE = {mae_e:.4f} eV/atom",
-                          transform=ax_e.transAxes, va="top", fontsize=8)
+                ax_e.text(
+                    0.05,
+                    0.95,
+                    f"MAE = {mae_e:.4f} eV/atom",
+                    transform=ax_e.transAxes,
+                    va="top",
+                    fontsize=8,
+                )
 
             if len(f_dft_arr):
                 mae_f = np.mean(np.abs(f_dft_arr - f_pred_arr))
-                lim_f = (min(f_dft_arr.min(), f_pred_arr.min()),
-                         max(f_dft_arr.max(), f_pred_arr.max()))
-                ax_f.scatter(f_dft_arr, f_pred_arr, s=2, alpha=0.2,
-                             color=color, rasterized=True)
-                ax_f.plot(lim_f, lim_f, color=DIAGONAL_COLOR, linestyle="--", linewidth=0.8)
-                ax_f.text(0.05, 0.95, f"MAE = {mae_f:.4f} eV/Å",
-                          transform=ax_f.transAxes, va="top", fontsize=8)
+                lim_f = (
+                    min(f_dft_arr.min(), f_pred_arr.min()),
+                    max(f_dft_arr.max(), f_pred_arr.max()),
+                )
+                ax_f.scatter(
+                    f_dft_arr, f_pred_arr, s=2, alpha=0.2, color=color, rasterized=True
+                )
+                ax_f.plot(
+                    lim_f, lim_f, color=DIAGONAL_COLOR, linestyle="--", linewidth=0.8
+                )
+                ax_f.text(
+                    0.05,
+                    0.95,
+                    f"MAE = {mae_f:.4f} eV/Å",
+                    transform=ax_f.transAxes,
+                    va="top",
+                    fontsize=8,
+                )
 
         ax_e.set_xlabel("DFT energy (eV/atom)")
         ax_e.set_ylabel("Model energy (eV/atom)")
@@ -321,7 +349,9 @@ def plot_dft_vs_model(
             / f"{name}_stagetwo_compiled.model"
         )
         if not model_path.exists():
-            logger.warning("Model not found: %s — skipping fit_%d parity.", model_path, i)
+            logger.warning(
+                "Model not found: %s — skipping fit_%d parity.", model_path, i
+            )
             train_results.append(None)
             test_results.append(None)
             continue
@@ -342,8 +372,10 @@ def plot_dft_vs_model(
         test_results.append(_run_inference(calc, test_atoms) if test_atoms else None)
 
     if train_atoms:
-        _draw_parity_figure(train_results, n_fits, name, seed,
-                            "Training", base_name, plots_dir, "train")
+        _draw_parity_figure(
+            train_results, n_fits, name, seed, "Training", base_name, plots_dir, "train"
+        )
     if test_atoms:
-        _draw_parity_figure(test_results, n_fits, name, seed,
-                            "Test", base_name, plots_dir, "test")
+        _draw_parity_figure(
+            test_results, n_fits, name, seed, "Test", base_name, plots_dir, "test"
+        )

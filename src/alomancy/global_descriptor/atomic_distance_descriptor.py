@@ -18,9 +18,7 @@ def scale_global_descriptor_length(
         scaled_char_vec = np.interp(x_new, x_old, normalized_char_vec)
     else:
         # Downsample to the desired dimension
-        indices = np.linspace(
-            0, len(normalized_char_vec) - 1, dimensions
-        ).astype(int)
+        indices = np.linspace(0, len(normalized_char_vec) - 1, dimensions).astype(int)
         scaled_char_vec = normalized_char_vec[indices]
 
     return scaled_char_vec
@@ -66,7 +64,9 @@ def assign_descriptor_to_all_partition(partition, dimensions: int = 128) -> None
     partition_ram = list(partition.containers)
 
     for container in tqdm(
-        partition_ram, desc="Assigning descriptors to partition", total=len(partition_ram)
+        partition_ram,
+        desc="Assigning descriptors to partition",
+        total=len(partition_ram),
     ):
         assign_descriptor_to_container(container, dimensions=dimensions)
 

@@ -44,6 +44,7 @@ class Plot:
             self.data.columns if hasattr(self.data, "columns") else self.data,
         )
         import matplotlib
+
         setup_alomancy_style()
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.set_prop_cycle(matplotlib.cycler(color=PALETTE))
@@ -114,7 +115,10 @@ def mae_al_loop_plot(
     x = all_avg_results.index.tolist()
     name = mlip_committee_job_dict["name"]
 
-    for col, label in (("mae_e_per_atom", "Energy MAE (eV/atom)"), ("mae_f", "Force MAE (eV/Å)")):
+    for col, label in (
+        ("mae_e_per_atom", "Energy MAE (eV/atom)"),
+        ("mae_f", "Force MAE (eV/Å)"),
+    ):
         if col not in all_avg_results.columns:
             continue
         y = all_avg_results[col].to_numpy()
@@ -122,9 +126,15 @@ def mae_al_loop_plot(
         if std_col in all_avg_results.columns:
             yerr = all_avg_results[std_col].to_numpy()
             ax.errorbar(
-                x, y, yerr=yerr,
-                marker="o", linestyle="-", capsize=4, capthick=1.2,
-                linewidth=1.5, label=label,
+                x,
+                y,
+                yerr=yerr,
+                marker="o",
+                linestyle="-",
+                capsize=4,
+                capthick=1.2,
+                linewidth=1.5,
+                label=label,
             )
         else:
             ax.plot(x, y, marker="o", linestyle="-", linewidth=1.5, label=label)

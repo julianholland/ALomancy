@@ -342,9 +342,9 @@ def test_run_inference_returns_per_atom_energy():
     e_dft, e_pred, f_dft, f_pred = _run_inference(_TrivialCalc(), [atoms])
 
     assert len(e_dft) == 1
-    assert e_dft[0] == pytest.approx(-2.0)   # -4.0 / 2 atoms
+    assert e_dft[0] == pytest.approx(-2.0)  # -4.0 / 2 atoms
     assert e_pred[0] == pytest.approx(-1.0)  # TrivialCalc: -1.0*n / n
-    assert len(f_dft) == 6   # 2 atoms x 3 components
+    assert len(f_dft) == 6  # 2 atoms x 3 components
     assert len(f_pred) == 6
 
 
@@ -450,10 +450,10 @@ def test_draw_parity_figure_with_data_creates_file(tmp_path):
     plots_dir.mkdir()
     rng = np.random.default_rng(0)
     result = (
-        rng.random(20),   # e_dft
-        rng.random(20),   # e_pred
-        rng.random(60),   # f_dft
-        rng.random(60),   # f_pred
+        rng.random(20),  # e_dft
+        rng.random(20),  # e_pred
+        rng.random(60),  # f_dft
+        rng.random(60),  # f_pred
     )
     _draw_parity_figure(
         results_per_fit=[result],

@@ -130,13 +130,13 @@ class BaseActiveLearningWorkflow(ABC):
         if self.remove_redundancy:
             remove_redundancy_from_partition(
                 self.db,
-                config_list=self.jobs_dict["initialization"]["test_config_types"] + ["high_sd"],
+                config_list=self.jobs_dict["initialization"]["test_config_types"]
+                + ["high_sd"],
             )
 
         if self.high_force_threshold is not None:
             remove_high_force_structures_from_partition(
-                self.db,
-                force_threshold=self.high_force_threshold
+                self.db, force_threshold=self.high_force_threshold
             )
 
         for loop in range(effective_start, self.number_of_al_loops):

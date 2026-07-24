@@ -21,7 +21,9 @@ def _make_s2(max_force: float, ref_energy: float = -10.0) -> Atoms:
     atoms.info["config_type"] = "high_sd"
     atoms.info["REF_energy"] = ref_energy
     # Force vector (max_force, 0, 0) on both atoms
-    atoms.arrays["REF_forces"] = np.array([[max_force, 0.0, 0.0], [max_force, 0.0, 0.0]])
+    atoms.arrays["REF_forces"] = np.array(
+        [[max_force, 0.0, 0.0], [max_force, 0.0, 0.0]]
+    )
     return atoms
 
 

@@ -314,7 +314,9 @@ class TestRunWorkflowStructure:
         assert len(train_calls) == 2  # loops 2 and 3 only
 
     @pytest.mark.unit
-    def test_base_names_correct_for_loops(self, tmp_path, minimal_jobs_dict, monkeypatch):
+    def test_base_names_correct_for_loops(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
         """Test that base_name is correct for each loop."""
         monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
@@ -901,9 +903,7 @@ class TestSkipInitialization:
         assert train_calls == ["al_loop_1"]
 
     @pytest.mark.unit
-    def test_loads_train_atoms_from_db(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
-    ):
+    def test_loads_train_atoms_from_db(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """generate_structures receives train atoms loaded from the DB."""
         monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)

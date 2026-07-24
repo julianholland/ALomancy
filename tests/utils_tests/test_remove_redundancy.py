@@ -84,7 +84,9 @@ def test_non_config_list_structures_unaffected(tmp_path):
 
     db = GlobalDatabase(str(tmp_path / "db"))
     db.add_structures([always_train], split="train", skip_duplicates=False)
-    db.add_structures([_make_s2(base), _make_s2(near)], split="train", skip_duplicates=False)
+    db.add_structures(
+        [_make_s2(base), _make_s2(near)], split="train", skip_duplicates=False
+    )
 
     remove_redundancy_from_partition(db, config_list=["init_amorphous"])
 

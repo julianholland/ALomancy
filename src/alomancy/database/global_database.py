@@ -252,7 +252,9 @@ class GlobalDatabase:
         """
         import random
 
-        eligible_set = set(eligible_config_types) if eligible_config_types is not None else None
+        eligible_set = (
+            set(eligible_config_types) if eligible_config_types is not None else None
+        )
 
         train_only: list[int] = []
         split_eligible: list[int] = []
@@ -266,7 +268,9 @@ class GlobalDatabase:
                 split_eligible.append(i)
 
         if not train_only and not split_eligible:
-            logger.info("apply_train_test_split: all containers already tagged, nothing to do.")
+            logger.info(
+                "apply_train_test_split: all containers already tagged, nothing to do."
+            )
             return 0, 0
 
         meta_map: dict[int, dict] = {i: {"split": "train"} for i in train_only}

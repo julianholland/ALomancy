@@ -11,7 +11,9 @@ from alomancy.global_descriptor.atomic_distance_descriptor import (
 logger = logging.getLogger(__name__)
 
 
-def remove_redundancy_from_partition(db, config_list: list, tolerance: float = 0.01) -> None:
+def remove_redundancy_from_partition(
+    db, config_list: list, tolerance: float = 0.01
+) -> None:
     """Flag near-duplicate structures in the training split of *db*.
 
     Only structures whose config_type is in config_list are subject to dedup.
@@ -42,15 +44,21 @@ def remove_redundancy_from_partition(db, config_list: list, tolerance: float = 0
 
     if not config_indices:
         logger.info(
-            "No train structures matching config_list %s — nothing to dedup.", config_list
+            "No train structures matching config_list %s — nothing to dedup.",
+            config_list,
         )
         return
 
     subset_p = train_partition.export_subset(
-        config_indices, new_path=None, new_storage="memory", batch_size=500, verbose=False
+        config_indices,
+        new_path=None,
+        new_storage="memory",
+        batch_size=500,
+        verbose=False,
     )
     logger.info(
-        "Assigning descriptors to %d train structures for redundancy removal.", len(subset_p)
+        "Assigning descriptors to %d train structures for redundancy removal.",
+        len(subset_p),
     )
     assign_descriptor_to_all_partition(subset_p, dimensions=128)
 

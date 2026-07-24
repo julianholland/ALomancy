@@ -39,9 +39,9 @@ PALETTE: list[str] = [
 # Fixed reference colours
 # ---------------------------------------------------------------------------
 
-STAGE2_COLOR: str = "#3A106E"    # darkened brand violet — stage-2 / sentinel lines
+STAGE2_COLOR: str = "#3A106E"  # darkened brand violet — stage-2 / sentinel lines
 DIAGONAL_COLOR: str = "#374151"  # dark charcoal         — parity y=x diagonal
-GRID_COLOR: str = "#C1A8F0"      # light tint of brand   — grid lines
+GRID_COLOR: str = "#C1A8F0"  # light tint of brand   — grid lines
 GRID_ALPHA: float = 0.3
 
 
