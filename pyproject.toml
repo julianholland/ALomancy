@@ -64,8 +64,8 @@ test = [
     "pytest-xdist>=3.0",
 ]
 
-# [project.scripts]
-# alomancy = "alomancy.cli.main:main"
+[project.scripts]
+alomancy = "alomancy.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/julianholland/ALomancy"

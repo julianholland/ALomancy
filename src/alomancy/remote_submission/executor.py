@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Union
@@ -22,6 +23,7 @@ class RemoteJobExecutor:
     def __init__(self, remote_info: RemoteInfo):
         self.remote_info = remote_info
         self.jobs = []
+        self._submit_wall_time: float | None = None
 
     def submit_job(
         self,
@@ -112,6 +114,8 @@ class RemoteJobExecutor:
                 partial_node=getattr(self.remote_info, "partial_node", False),
                 **start_kwargs,
             )
+        self._submit_wall_time = time.time()
+        logger.info("Submitted %d jobs to queue.", len(self.jobs))
 
     def wait_for_all_jobs(self) -> list[Any]:
         results = []
@@ -128,6 +132,17 @@ class RemoteJobExecutor:
                 )
                 results.append(result)
                 logger.info("Job %d completed successfully.", i + 1)
+                try:
+                    if self._submit_wall_time is not None:
+                        started_file = job.stage_dir / "_expyre_job_started"
+                        if started_file.exists():
+                            queue_s = max(
+                                0.0,
+                                started_file.stat().st_mtime - self._submit_wall_time,
+                            )
+                            logger.info("Job %d queue_time=%.1f s.", i + 1, queue_s)
+                except Exception as _qe:
+                    logger.debug("Could not compute queue time for job %d: %s", i + 1, _qe)
 
             except Exception as exc:
                 logger.warning("Job %d failed: %s", i + 1, exc)

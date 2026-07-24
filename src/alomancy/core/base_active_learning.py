@@ -64,6 +64,7 @@ class BaseActiveLearningWorkflow(ABC):
         self.remove_redundancy = remove_redundancy
         self.high_force_threshold = high_force_threshold
         self.skip_initialization = skip_initialization
+        self.log_file = log_file
         setup_logging(verbose=verbose, log_file=log_file)
 
     def _phase_done(self, base_name: str, phase: str) -> bool:
@@ -245,6 +246,11 @@ class BaseActiveLearningWorkflow(ABC):
                 loop,
                 len(train_xyzs),
             )
+
+            if self.plots and self.log_file is not None:
+                from alomancy.analysis.timing_plots import timing_plots
+
+                timing_plots(self.log_file, Path("results", "current_plots"))
 
     def _seed_db_from_extra_dataset(self, extra_dataset: str) -> None:
         """
