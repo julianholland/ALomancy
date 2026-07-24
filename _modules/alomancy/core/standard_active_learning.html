@@ -30,6 +30,7 @@
           
           <a href="../../../index.html" class="icon icon-home">
             ALomancy
+              <img src="../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
@@ -96,6 +97,7 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.get_mace_eval_info</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_mace_eval_info</span><span class="p">,</span>
+    <span class="n">select_best_committee_model</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.mace_wfl</span><span class="w"> </span><span class="kn">import</span> <span class="n">mace_fit</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -183,6 +185,11 @@
                 <span class="n">test_xyzs</span><span class="p">,</span>
                 <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="c1"># Seed DB with split tags if empty so restart can reconstruct</span>
+            <span class="c1"># train/test from the DB instead of accumulated xyz files.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span>
 
         <span class="c1"># --- DB-aware path --------------------------------------------</span>
@@ -425,6 +432,18 @@
                 <span class="p">},</span>
             <span class="p">)</span>
 
+        <span class="n">models_found</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+            <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">models_found</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;train_mlip for </span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">: expected &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;size_of_committee&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> trained models but found &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">models_found</span><span class="p">)</span><span class="si">}</span><span class="s2">. Check remote job logs for failures.&quot;</span>
+            <span class="p">)</span>
+
         <span class="n">mae_avg_results</span> <span class="o">=</span> <span class="n">get_mace_eval_info</span><span class="p">(</span>
             <span class="n">mlip_committee_job_dict</span><span class="o">=</span><span class="n">mlip_committee_job_dict</span>
         <span class="p">)</span>
@@ -509,15 +528,14 @@
             <span class="n">input_structures</span><span class="p">,</span>
             <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">base_mace_model_path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span>
-            <span class="n">Path</span><span class="p">(</span>
-                <span class="s2">&quot;results&quot;</span><span class="p">,</span>
-                <span class="n">base_name</span><span class="p">,</span>
-                <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
-                <span class="s2">&quot;fit_0&quot;</span><span class="p">,</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;mlip_committee&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo.model&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
+        <span class="n">best_fit_idx</span><span class="p">,</span> <span class="n">best_model_path</span> <span class="o">=</span> <span class="n">select_best_committee_model</span><span class="p">(</span>
+            <span class="n">base_name</span><span class="p">,</span>
+            <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span>
+            <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="n">base_mace_model_path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">best_model_path</span><span class="p">)</span>
+        <span class="n">committee_size</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]</span>
+        <span class="n">fits_to_use</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">committee_size</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">best_fit_idx</span><span class="p">]</span>
 
         <span class="k">if</span> <span class="s2">&quot;run_md_kwargs&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">]:</span>
             <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;run_md_kwargs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -567,9 +585,7 @@
                 <span class="s2">&quot;base_name&quot;</span><span class="p">:</span> <span class="n">base_name</span><span class="p">,</span>
                 <span class="s2">&quot;job_dict&quot;</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">,</span>
                 <span class="s2">&quot;base_mlip&quot;</span><span class="p">:</span> <span class="n">base_mace_model_path</span><span class="p">,</span>
-                <span class="s2">&quot;fits_to_use&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span>
-                    <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">])</span>
-                <span class="p">),</span>
+                <span class="s2">&quot;fits_to_use&quot;</span><span class="p">:</span> <span class="n">fits_to_use</span><span class="p">,</span>
             <span class="p">},</span>
         <span class="p">)</span>
 

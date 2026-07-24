@@ -33,6 +33,7 @@
           
           <a href="../index.html" class="icon icon-home">
             ALomancy
+              <img src="../_static/alomancy_logo.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
@@ -51,12 +52,20 @@
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Database</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase</span></code></a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.add_structures"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.add_structures()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.apply_train_test_split"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.apply_train_test_split()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.assign_global_db_ids()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_all_by_config_type_and_formula()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type_and_formula()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.flag_as_duplicates()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.flag_as_high_force"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.flag_as_high_force()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_all_as_atoms"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_all_as_atoms()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_split_partition"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_split_partition()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_structures_by_config_type"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_structures_by_config_type()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_test_atoms"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_test_atoms()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_train_atoms"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_train_atoms()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.size"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.size</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.update_splits_post_hoc()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -89,7 +98,7 @@
           <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
       <li class="breadcrumb-item active">Database</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../_sources/api/database.rst.txt" rel="nofollow"> View page source</a>
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/api/database.rst" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -112,7 +121,7 @@ The DB is the authoritative source for what has been evaluated; individual
 modules still work with xyz files and are unaware of the DB.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.add_structures">
-<span class="sig-name descname"><span class="pre">add_structures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atoms_list</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">skip_duplicates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_types_to_dedup</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.add_structures"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.add_structures" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">add_structures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">atoms_list</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">skip_duplicates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_types_to_dedup</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.add_structures"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.add_structures" title="Link to this definition"></a></dt>
 <dd><p>Add post-DFT structures to the database.</p>
 <p>Deduplication strategy:
 - For config_types in config_types_to_dedup (default: IsolatedAtom,</p>
@@ -128,7 +137,44 @@ checking before generating new structures.</p></li>
 </ul>
 <p>REF_forces (Nx3 array) are serialised into atoms.info before adding
 because sage_lib only persists atoms.info, not atoms.arrays.</p>
+<dl class="simple">
+<dt>split: optional “train” or “test” tag stored in container metadata.</dt><dd><p>Used by get_train_atoms() / get_test_atoms() for restart and
+by remove_redundancy_from_partition for filtered deduplication.</p>
+</dd>
+</dl>
 <p>Returns the number of structures actually added.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.apply_train_test_split">
+<span class="sig-name descname"><span class="pre">apply_train_test_split</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">test_fraction</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">803</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eligible_config_types</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.apply_train_test_split"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.apply_train_test_split" title="Link to this definition"></a></dt>
+<dd><p>Apply a random train/test split to all containers that lack a split tag.</p>
+<p>Intended for migrating a DB that was populated before split tagging was
+introduced. Already-tagged containers are left untouched.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>test_fraction</strong> – Fraction of eligible structures to assign to test.</p></li>
+<li><p><strong>seed</strong> – Random seed for reproducibility.</p></li>
+<li><p><strong>eligible_config_types</strong> – If provided, only structures whose config_type
+is in this list are eligible for the test set; all other untagged
+structures are assigned to train unconditionally. If None, every
+untagged structure is eligible.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>(n_train, n_test) — counts of newly tagged containers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.assign_global_db_ids">
+<span class="sig-name descname"><span class="pre">assign_global_db_ids</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.assign_global_db_ids"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids" title="Link to this definition"></a></dt>
+<dd><p>Assign global_db_id to any container that does not already have one.</p>
+<p>Uses the container’s 0-based positional index as the ID. Safe to call on
+a DB populated before this feature existed — already-tagged containers are
+skipped. Returns the number of containers newly tagged.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -153,9 +199,33 @@ Used by compute_initialization_needs for per-element-combo checking.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.flag_as_duplicates">
+<span class="sig-name descname"><span class="pre">flag_as_duplicates</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">positional_indices</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.flag_as_duplicates"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates" title="Link to this definition"></a></dt>
+<dd><p>Set is_duplicate=True on containers at the given positional indices.</p>
+<p>Near-duplicates are never deleted from the archive; this flag causes
+get_train_atoms(exclude_duplicates=True) to omit them from XYZ outputs.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.flag_as_high_force">
+<span class="sig-name descname"><span class="pre">flag_as_high_force</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">positional_indices</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.flag_as_high_force"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.flag_as_high_force" title="Link to this definition"></a></dt>
+<dd><p>Set is_high_force=True on containers at the given positional indices.</p>
+<p>High-force structures are never deleted from the archive; this flag causes
+get_train_atoms(exclude_high_force=True) to omit them from XYZ outputs.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.get_all_as_atoms">
 <span class="sig-name descname"><span class="pre">get_all_as_atoms</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.get_all_as_atoms"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.get_all_as_atoms" title="Link to this definition"></a></dt>
 <dd><p>Return all structures in the DB as ASE Atoms objects.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.get_split_partition">
+<span class="sig-name descname"><span class="pre">get_split_partition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">split</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Partition</span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.get_split_partition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.get_split_partition" title="Link to this definition"></a></dt>
+<dd><p>Export an in-memory Partition containing only structures with the given split tag.</p>
+<p>Used by remove_redundancy_from_partition to work on sage_lib objects
+rather than plain Atoms lists.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -164,10 +234,33 @@ Used by compute_initialization_needs for per-element-combo checking.</p>
 <dd><p>Return all structures whose config_type is in config_types.</p>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.get_test_atoms">
+<span class="sig-name descname"><span class="pre">get_test_atoms</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.get_test_atoms"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.get_test_atoms" title="Link to this definition"></a></dt>
+<dd><p>Return all test-split structures.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.get_train_atoms">
+<span class="sig-name descname"><span class="pre">get_train_atoms</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exclude_duplicates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exclude_high_force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.get_train_atoms"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.get_train_atoms" title="Link to this definition"></a></dt>
+<dd><p>Return all train-split structures, optionally excluding flagged containers.</p>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.size">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.size" title="Link to this definition"></a></dt>
 <dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc">
+<span class="sig-name descname"><span class="pre">update_splits_post_hoc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">train_atoms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_atoms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.update_splits_post_hoc"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc" title="Link to this definition"></a></dt>
+<dd><p>Match atoms to DB containers by positional hash and set their split tag.</p>
+<p>Called after initialize_training_set to tag structures that were added
+to the DB without a split tag during the DFT evaluation phase. Matching
+uses (config_type, formula, n_atoms, hash-of-rounded-positions) which
+is unique for initialization structures by design.</p>
+<p>Returns the number of containers whose split tag was updated.</p>
+</dd></dl>
 
 </dd></dl>
 

@@ -30,6 +30,7 @@
           
           <a href="../../../index.html" class="icon icon-home">
             ALomancy
+              <img src="../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
@@ -87,6 +88,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">clean_structures</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.file_saving_and_parsing</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_atoms_file_if_enabled</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.logging_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_high_force_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">remove_high_force_structures_from_partition</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_redundancy</span><span class="w"> </span><span class="kn">import</span> <span class="n">remove_redundancy_from_partition</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.test_train_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">split_atoms_list_into_test_and_train</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -121,6 +126,9 @@
         <span class="n">plots</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">803</span><span class="p">,</span>
         <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
+        <span class="n">remove_redundancy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">high_force_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span>
+        <span class="n">skip_initialization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">initial_train_file_path</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">initial_test_file_path</span><span class="p">)</span>
@@ -131,6 +139,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">plots</span> <span class="o">=</span> <span class="n">plots</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">GlobalDatabase</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span> <span class="o">=</span> <span class="n">remove_redundancy</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="o">=</span> <span class="n">high_force_threshold</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">skip_initialization</span> <span class="o">=</span> <span class="n">skip_initialization</span>
         <span class="n">setup_logging</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">log_file</span><span class="o">=</span><span class="n">log_file</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_phase_done</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">phase</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
@@ -143,15 +154,10 @@
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Phase </span><span class="si">%s</span><span class="s2"> marked complete for </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">phase</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_last_complete_loop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return index of last consecutive loop with loop.done and accumulated sets, or -1.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return index of last consecutive completed loop (has loop.done), or -1.&quot;&quot;&quot;</span>
         <span class="n">last</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
         <span class="k">for</span> <span class="n">loop</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">number_of_al_loops</span><span class="p">):</span>
-            <span class="n">loop_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="p">(</span><span class="n">loop_dir</span> <span class="o">/</span> <span class="s2">&quot;loop.done&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
-                <span class="ow">and</span> <span class="p">(</span><span class="n">loop_dir</span> <span class="o">/</span> <span class="s2">&quot;accumulated_train_set.xyz&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
-                <span class="ow">and</span> <span class="p">(</span><span class="n">loop_dir</span> <span class="o">/</span> <span class="s2">&quot;accumulated_test_set.xyz&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
-            <span class="p">):</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;loop.done&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
                 <span class="n">last</span> <span class="o">=</span> <span class="n">loop</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">break</span>
@@ -169,23 +175,56 @@
         <span class="n">last_complete</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_complete_loop</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="n">last_complete</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">acc_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/al_loop_</span><span class="si">{</span><span class="n">last_complete</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">acc_dir</span> <span class="o">/</span> <span class="s2">&quot;accumulated_train_set.xyz&quot;</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">))</span>
-            <span class="n">test_xyzs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">acc_dir</span> <span class="o">/</span> <span class="s2">&quot;accumulated_test_set.xyz&quot;</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">))</span>
+            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_train_atoms</span><span class="p">()</span>
+            <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
             <span class="n">effective_start</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_loop</span><span class="p">,</span> <span class="n">last_complete</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;Resuming from loop </span><span class="si">%d</span><span class="s2"> (loops 0-</span><span class="si">%d</span><span class="s2"> already done).&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;Resuming from loop </span><span class="si">%d</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> train / </span><span class="si">%d</span><span class="s2"> test from DB).&quot;</span><span class="p">,</span>
                 <span class="n">effective_start</span><span class="p">,</span>
-                <span class="n">last_complete</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">skip_initialization</span><span class="p">:</span>
+            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_train_atoms</span><span class="p">()</span>
+            <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
+            <span class="n">effective_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_loop</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;skip_initialization=True: loading </span><span class="si">%d</span><span class="s2"> train / </span><span class="si">%d</span><span class="s2"> test from DB, &quot;</span>
+                <span class="s2">&quot;starting at loop </span><span class="si">%d</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">),</span>
+                <span class="n">effective_start</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initialize_training_set</span><span class="p">(</span>
                 <span class="s2">&quot;initialization&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
             <span class="p">)</span>
+            <span class="n">n_tagged</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">update_splits_post_hoc</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Initialized training set with </span><span class="si">%d</span><span class="s2"> structures; tagged </span><span class="si">%d</span><span class="s2"> in DB.&quot;</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
+                <span class="n">n_tagged</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="n">effective_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_loop</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Initialized training set with </span><span class="si">%d</span><span class="s2"> structures.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
+            <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+                <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">]</span>
+                <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;high_sd&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">remove_high_force_structures_from_partition</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="n">force_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span>
+            <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">loop</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">effective_start</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">number_of_al_loops</span><span class="p">):</span>
+            <span class="c1"># Derive current train/test from DB at the start of each iteration</span>
+            <span class="c1"># so any redundancy flags from the previous loop are reflected.</span>
+            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_train_atoms</span><span class="p">()</span>
+            <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
+
             <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
@@ -214,7 +253,24 @@
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;AL Loop </span><span class="si">%d</span><span class="s2"> evaluation results:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">loop</span><span class="p">,</span> <span class="n">evaluation_results</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span><span class="p">:</span>
-                <span class="n">mae_al_loop_plot</span><span class="p">(</span><span class="n">evaluation_results</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">])</span>
+                <span class="n">plots_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="s2">&quot;current_plots&quot;</span><span class="p">)</span>
+                <span class="n">plots_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">mae_al_loop_plot</span><span class="p">(</span>
+                    <span class="n">evaluation_results</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span>
+                    <span class="n">directory</span><span class="o">=</span><span class="n">plots_dir</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.mlip_plots</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+                    <span class="n">plot_dft_vs_model</span><span class="p">,</span>
+                    <span class="n">plot_training_curves</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="n">plot_training_curves</span><span class="p">(</span>
+                    <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span> <span class="n">plots_dir</span>
+                <span class="p">)</span>
+                <span class="n">plot_dft_vs_model</span><span class="p">(</span>
+                    <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span> <span class="n">plots_dir</span>
+                <span class="p">)</span>
 
             <span class="n">generated_structures</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_structures</span><span class="p">(</span>
                 <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">,</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
@@ -239,29 +295,29 @@
                 <span class="n">extra_metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;al_loop&quot;</span><span class="p">:</span> <span class="n">loop</span><span class="p">},</span>
             <span class="p">)</span>
 
-            <span class="c1"># Add evaluated AL loop structures to the global DB</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_training_data</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-
             <span class="n">new_train_data</span><span class="p">,</span> <span class="n">new_test_data</span> <span class="o">=</span> <span class="n">split_atoms_list_into_test_and_train</span><span class="p">(</span>
                 <span class="n">new_training_data</span><span class="p">,</span>
                 <span class="n">test_fraction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_to_train_ratio&quot;</span><span class="p">],</span>
                 <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
             <span class="p">)</span>
 
-            <span class="n">train_xyzs</span> <span class="o">+=</span> <span class="n">new_train_data</span>
-            <span class="n">test_xyzs</span> <span class="o">+=</span> <span class="n">new_test_data</span>
+            <span class="c1"># Add AL loop structures to DB with split tags; DB is the restart source.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_train_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_test_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">write</span><span class="p">(</span>
-                    <span class="n">workdir</span> <span class="o">/</span> <span class="s2">&quot;accumulated_train_set.xyz&quot;</span><span class="p">,</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
+                <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+                    <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">]</span>
+                    <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;high_sd&quot;</span><span class="p">],</span>
                 <span class="p">)</span>
-                <span class="n">write</span><span class="p">(</span><span class="n">workdir</span> <span class="o">/</span> <span class="s2">&quot;accumulated_test_set.xyz&quot;</span><span class="p">,</span> <span class="n">test_xyzs</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="k">if</span> <span class="s2">&quot;test&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
-                    <span class="k">raise</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;Could not write accumulated files (test environment): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">remove_high_force_structures_from_partition</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+                    <span class="n">force_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span><span class="p">,</span>
                 <span class="p">)</span>
+
             <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;loop&quot;</span><span class="p">)</span>
 
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>

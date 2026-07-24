@@ -33,6 +33,7 @@
           
           <a href="../index.html" class="icon icon-home">
             ALomancy
+              <img src="../_static/alomancy_logo.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
@@ -52,6 +53,7 @@
 <li class="toctree-l2 current"><a class="current reference internal" href="#">MLIP Training</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.mace_wfl.mace_fit"><code class="docutils literal notranslate"><span class="pre">mace_fit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.get_mace_eval_info.get_mace_eval_info"><code class="docutils literal notranslate"><span class="pre">get_mace_eval_info()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.get_mace_eval_info.select_best_committee_model"><code class="docutils literal notranslate"><span class="pre">select_best_committee_model()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="structure_generation.html">Structure Generation</a></li>
@@ -81,7 +83,7 @@
           <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
       <li class="breadcrumb-item active">MLIP Training</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../_sources/api/mlip.rst.txt" rel="nofollow"> View page source</a>
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/api/mlip.rst" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -111,6 +113,17 @@
 <dt class="sig sig-object py" id="alomancy.mlip.get_mace_eval_info.get_mace_eval_info">
 <span class="sig-prename descclassname"><span class="pre">alomancy.mlip.get_mace_eval_info.</span></span><span class="sig-name descname"><span class="pre">get_mace_eval_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mlip_committee_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/alomancy/mlip/get_mace_eval_info.html#get_mace_eval_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.mlip.get_mace_eval_info.get_mace_eval_info" title="Link to this definition"></a></dt>
 <dd><p>Recover final results from train.txt files in MACE AL loop directories.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.mlip.get_mace_eval_info.select_best_committee_model">
+<span class="sig-prename descclassname"><span class="pre">alomancy.mlip.get_mace_eval_info.</span></span><span class="sig-name descname"><span class="pre">select_best_committee_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">base_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mlip_committee_job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mae_f'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.14)"><span class="pre">Path</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/mlip/get_mace_eval_info.html#select_best_committee_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.mlip.get_mace_eval_info.select_best_committee_model" title="Link to this definition"></a></dt>
+<dd><p>Select the committee member with the lowest test-set force MAE.</p>
+<p>Reads the <code class="docutils literal notranslate"><span class="pre">*_test.txt</span></code> metrics file written by MACE at the end of each
+training run, picks the fit with the lowest value of <em>metric</em> on the held-
+out test set, and returns <code class="docutils literal notranslate"><span class="pre">(best_fit_index,</span> <span class="pre">stagetwo_model_path)</span></code>.</p>
+<p>Falls back to <code class="docutils literal notranslate"><span class="pre">(0,</span> <span class="pre">fit_0_path)</span></code> if test metrics cannot be read for any
+committee member.</p>
 </dd></dl>
 
 </section>

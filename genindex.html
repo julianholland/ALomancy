@@ -30,6 +30,7 @@
           
           <a href="index.html" class="icon icon-home">
             ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -64,6 +65,7 @@
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
       <li class="breadcrumb-item active">Index</li>
       <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/genindex" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -89,6 +91,7 @@
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
+ | <a href="#U"><strong>U</strong></a>
  | <a href="#W"><strong>W</strong></a>
  
 </div>
@@ -157,8 +160,6 @@
         <li><a href="api/high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft.run_qe">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     alomancy.high_accuracy_evaluation.dft.run_vasp
 
@@ -166,6 +167,8 @@
         <li><a href="api/high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft.run_vasp">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     alomancy.mlip.get_mace_eval_info
 
@@ -229,6 +232,10 @@
         <li><a href="api/utils.html#module-alomancy.utils.test_train_manager">module</a>
 </li>
       </ul></li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.apply_train_test_split">apply_train_test_split() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids">assign_global_db_ids() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -279,9 +286,13 @@
 </li>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.find_optimal_npool">find_optimal_npool() (in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
 </li>
+      <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.find_sd_of_all_structures">find_sd_of_all_structures() (in module alomancy.structure_generation.find_high_sd_structures)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.find_sd_of_all_structures">find_sd_of_all_structures() (in module alomancy.structure_generation.find_high_sd_structures)</a>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates">flag_as_duplicates() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_high_force">flag_as_high_force() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.flatten_array_of_forces">flatten_array_of_forces() (in module alomancy.structure_generation.find_high_sd_structures)</a>
 
@@ -309,15 +320,21 @@
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.get_forces_for_all_maces">get_forces_for_all_maces() (in module alomancy.structure_generation.md.md_wfl)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/mlip.html#alomancy.mlip.get_mace_eval_info.get_mace_eval_info">get_mace_eval_info() (in module alomancy.mlip.get_mace_eval_info)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">get_qe_input_data() (in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
 </li>
       <li><a href="api/configs.html#alomancy.configs.remote_info.get_remote_info">get_remote_info() (in module alomancy.configs.remote_info)</a>
 </li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_split_partition">get_split_partition() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_structures_by_config_type">get_structures_by_config_type() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_test_atoms">get_test_atoms() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_train_atoms">get_train_atoms() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs">get_vasp_input_kwargs() (in module alomancy.high_accuracy_evaluation.dft.run_vasp)</a>
 </li>
@@ -446,14 +463,16 @@
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.get_mace_eval_info.select_best_committee_model">select_best_committee_model() (in module alomancy.mlip.get_mace_eval_info)</a>
+</li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.select_initial_structures.select_initial_structures">select_initial_structures() (in module alomancy.structure_generation.select_initial_structures)</a>
 </li>
       <li><a href="api/utils.html#alomancy.utils.logging_config.setup_logging">setup_logging() (in module alomancy.utils.logging_config)</a>
 </li>
-      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.size">size (alomancy.database.global_database.GlobalDatabase property)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.size">size (alomancy.database.global_database.GlobalDatabase property)</a>
+</li>
       <li><a href="api/utils.html#alomancy.utils.test_train_manager.split_atoms_list_into_test_and_train">split_atoms_list_into_test_and_train() (in module alomancy.utils.test_train_manager)</a>
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.std_deviation_of_forces">std_deviation_of_forces() (in module alomancy.structure_generation.find_high_sd_structures)</a>
@@ -474,6 +493,14 @@
         <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.train_mlip">(alomancy.core.standard_active_learning.ActiveLearningStandardMACE method)</a>
 </li>
       </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="U">U</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc">update_splits_post_hoc() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
   </ul></td>
 </tr></table>
 

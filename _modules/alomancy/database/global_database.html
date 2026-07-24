@@ -30,6 +30,7 @@
           
           <a href="../../../index.html" class="icon icon-home">
             ALomancy
+              <img src="../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
@@ -117,6 +118,7 @@
         <span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
         <span class="n">skip_duplicates</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">config_types_to_dedup</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">split</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Add post-DFT structures to the database.</span>
@@ -132,6 +134,10 @@
 
 <span class="sd">        REF_forces (Nx3 array) are serialised into atoms.info before adding</span>
 <span class="sd">        because sage_lib only persists atoms.info, not atoms.arrays.</span>
+
+<span class="sd">        split: optional &quot;train&quot; or &quot;test&quot; tag stored in container metadata.</span>
+<span class="sd">            Used by get_train_atoms() / get_test_atoms() for restart and</span>
+<span class="sd">            by remove_redundancy_from_partition for filtered deduplication.</span>
 
 <span class="sd">        Returns the number of structures actually added.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -156,9 +162,15 @@
             <span class="n">storage_ready_apm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_for_storage</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">storage_ready_apm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">split</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">storage_ready_apm</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;split&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">split</span>
                 <span class="n">sr_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">storage_ready_apm</span><span class="p">)</span>
                 <span class="n">existing</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
                 <span class="n">added</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">start_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">sr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sr_list</span><span class="p">):</span>
+            <span class="n">sr</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;global_db_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">start_id</span> <span class="o">+</span> <span class="n">i</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">sr_list</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">added</span></div>
@@ -230,6 +242,223 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_all_as_atoms</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all structures in the DB as ASE Atoms objects.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()]</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.get_train_atoms">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_train_atoms">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_train_atoms</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">exclude_duplicates</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">exclude_high_force</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all train-split structures, optionally excluding flagged containers.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;train&quot;</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
+                <span class="n">exclude_duplicates</span>
+                <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_duplicate&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
+                <span class="n">exclude_high_force</span>
+                <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_high_force&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.get_test_atoms">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_test_atoms">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_test_atoms</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all test-split structures.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;test&quot;</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.get_split_partition">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_split_partition">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_split_partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">split</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Partition</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Export an in-memory Partition containing only structures with the given split tag.</span>
+
+<span class="sd">        Used by remove_redundancy_from_partition to work on sage_lib objects</span>
+<span class="sd">        rather than plain Atoms lists.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">indices</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">i</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">split</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">export_subset</span><span class="p">(</span>
+            <span class="n">indices</span><span class="p">,</span> <span class="n">new_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">new_storage</span><span class="o">=</span><span class="s2">&quot;memory&quot;</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># In-place metadata update helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="GlobalDatabase.flag_as_duplicates">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">flag_as_duplicates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">positional_indices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set is_duplicate=True on containers at the given positional indices.</span>
+
+<span class="sd">        Near-duplicates are never deleted from the archive; this flag causes</span>
+<span class="sd">        get_train_atoms(exclude_duplicates=True) to omit them from XYZ outputs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">id_meta_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;is_duplicate&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">positional_indices</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">id_meta_map</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.flag_as_high_force">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_high_force">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">flag_as_high_force</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">positional_indices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set is_high_force=True on containers at the given positional indices.</span>
+
+<span class="sd">        High-force structures are never deleted from the archive; this flag causes</span>
+<span class="sd">        get_train_atoms(exclude_high_force=True) to omit them from XYZ outputs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">id_meta_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;is_high_force&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">positional_indices</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">id_meta_map</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.assign_global_db_ids">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign_global_db_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Assign global_db_id to any container that does not already have one.</span>
+
+<span class="sd">        Uses the container&#39;s 0-based positional index as the ID. Safe to call on</span>
+<span class="sd">        a DB populated before this feature existed — already-tagged containers are</span>
+<span class="sd">        skipped. Returns the number of containers newly tagged.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">untagged</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;global_db_id&quot;</span><span class="p">:</span> <span class="n">i</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">())</span>
+            <span class="k">if</span> <span class="s2">&quot;global_db_id&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">untagged</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">untagged</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;assign_global_db_ids: tagged </span><span class="si">%d</span><span class="s2"> container(s).&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">untagged</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">untagged</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.apply_train_test_split">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.apply_train_test_split">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_train_test_split</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">test_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">803</span><span class="p">,</span>
+        <span class="n">eligible_config_types</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply a random train/test split to all containers that lack a split tag.</span>
+
+<span class="sd">        Intended for migrating a DB that was populated before split tagging was</span>
+<span class="sd">        introduced. Already-tagged containers are left untouched.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            test_fraction: Fraction of eligible structures to assign to test.</span>
+<span class="sd">            seed: Random seed for reproducibility.</span>
+<span class="sd">            eligible_config_types: If provided, only structures whose config_type</span>
+<span class="sd">                is in this list are eligible for the test set; all other untagged</span>
+<span class="sd">                structures are assigned to train unconditionally. If None, every</span>
+<span class="sd">                untagged structure is eligible.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            (n_train, n_test) — counts of newly tagged containers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+
+        <span class="n">eligible_set</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">set</span><span class="p">(</span><span class="n">eligible_config_types</span><span class="p">)</span> <span class="k">if</span> <span class="n">eligible_config_types</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+
+        <span class="n">train_only</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">split_eligible</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()):</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">):</span>
+                <span class="k">continue</span>  <span class="c1"># already tagged</span>
+            <span class="n">ct</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">eligible_set</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ct</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">eligible_set</span><span class="p">:</span>
+                <span class="n">train_only</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">split_eligible</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">train_only</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">split_eligible</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;apply_train_test_split: all containers already tagged, nothing to do.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+
+        <span class="n">meta_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="s2">&quot;train&quot;</span><span class="p">}</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">train_only</span><span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">split_eligible</span><span class="p">:</span>
+            <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+            <span class="n">rng</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">split_eligible</span><span class="p">)</span>
+            <span class="n">n_test</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">split_eligible</span><span class="p">)</span> <span class="o">*</span> <span class="n">test_fraction</span><span class="p">))</span>
+            <span class="n">test_indices</span> <span class="o">=</span> <span class="n">split_eligible</span><span class="p">[:</span><span class="n">n_test</span><span class="p">]</span>
+            <span class="n">train_indices</span> <span class="o">=</span> <span class="n">split_eligible</span><span class="p">[</span><span class="n">n_test</span><span class="p">:]</span>
+            <span class="n">meta_map</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">}</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">test_indices</span><span class="p">})</span>
+            <span class="n">meta_map</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="s2">&quot;train&quot;</span><span class="p">}</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">train_indices</span><span class="p">})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">test_indices</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">train_indices</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">meta_map</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">n_train_total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_only</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_indices</span><span class="p">)</span>
+        <span class="n">n_test_total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_indices</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;apply_train_test_split: tagged </span><span class="si">%d</span><span class="s2"> train, </span><span class="si">%d</span><span class="s2"> test (</span><span class="si">%.0f%%</span><span class="s2"> test fraction, </span><span class="si">%d</span><span class="s2"> config-type-restricted to train).&quot;</span><span class="p">,</span>
+            <span class="n">n_train_total</span><span class="p">,</span>
+            <span class="n">n_test_total</span><span class="p">,</span>
+            <span class="mi">100</span> <span class="o">*</span> <span class="n">test_fraction</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">train_only</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">n_train_total</span><span class="p">,</span> <span class="n">n_test_total</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.update_splits_post_hoc">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_splits_post_hoc</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">train_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">test_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Match atoms to DB containers by positional hash and set their split tag.</span>
+
+<span class="sd">        Called after initialize_training_set to tag structures that were added</span>
+<span class="sd">        to the DB without a split tag during the DFT evaluation phase. Matching</span>
+<span class="sd">        uses (config_type, formula, n_atoms, hash-of-rounded-positions) which</span>
+<span class="sd">        is unique for initialization structures by design.</span>
+
+<span class="sd">        Returns the number of containers whose split tag was updated.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_key</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">(),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">),</span>
+                <span class="nb">hash</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">positions</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())),</span>
+            <span class="p">)</span>
+
+        <span class="n">train_keys</span> <span class="o">=</span> <span class="p">{</span><span class="n">_key</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">train_atoms</span><span class="p">}</span>
+        <span class="n">test_keys</span> <span class="o">=</span> <span class="p">{</span><span class="n">_key</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">test_atoms</span><span class="p">}</span>
+
+        <span class="n">split_meta_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">container</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()):</span>
+            <span class="k">if</span> <span class="n">container</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">):</span>
+                <span class="k">continue</span>  <span class="c1"># already tagged</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">container</span><span class="p">)</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="n">_key</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">train_keys</span><span class="p">:</span>
+                <span class="n">split_meta_map</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="s2">&quot;train&quot;</span><span class="p">}</span>
+            <span class="k">elif</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">test_keys</span><span class="p">:</span>
+                <span class="n">split_meta_map</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;split&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">split_meta_map</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">split_meta_map</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">updated</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">split_meta_map</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;update_splits_post_hoc: tagged </span><span class="si">%d</span><span class="s2"> containers.&quot;</span><span class="p">,</span> <span class="n">updated</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">updated</span></div>
 
 
     <span class="nd">@property</span>
