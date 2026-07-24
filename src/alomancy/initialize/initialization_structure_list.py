@@ -226,7 +226,9 @@ def create_initialization_atoms_list(
         densities_list = [1.0]
     for density in densities_list:
         logger.debug("Creating amorphous structures with density %.2f g/cm^3.", density)
-        per_density = int(np.floor(amorphous_target / len(densities_list)) or 1)
+        per_density = int(np.floor(amorphous_target / len(densities_list)))
+        if per_density == 0:
+            continue
         amorphous_atoms_list.extend(
             create_amorphous_atoms_list(
                 elements=elements,

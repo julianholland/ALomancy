@@ -255,6 +255,29 @@ class TestCreateInitializationAtomsList:
 
         mock_trimer.assert_not_called()
 
+    def test_zero_amorphous_produces_none(self, tmp_path):
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(amorphous_return=[_make_atoms()]),
+            )
+            mock_amorphous = mocks[4]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["H"],
+                mp_structures=False,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=0,
+            )
+
+        mock_amorphous.assert_not_called()
+
     def test_amorphous_override_controls_count(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
