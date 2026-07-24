@@ -45,7 +45,7 @@ def extend_test_and_train_sets_with_extra_dataset(
     test_fraction: float,
     seed: int,
     filter_out_config_types: list[str] | None = None,
-    fall_back_config_type: None | str = None,
+    fall_back_config_type: str | None = None,
 ) -> tuple[list[Atoms], list[Atoms]]:
 
     if filter_out_config_types is None:
