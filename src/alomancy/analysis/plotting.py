@@ -114,7 +114,7 @@ def mae_al_loop_plot(
     x = all_avg_results.index.tolist()
     name = mlip_committee_job_dict["name"]
 
-    for col, label in (("mae_e", "Energy MAE (eV/atom)"), ("mae_f", "Force MAE (eV/Å)")):
+    for col, label in (("mae_e_per_atom", "Energy MAE (eV/atom)"), ("mae_f", "Force MAE (eV/Å)")):
         if col not in all_avg_results.columns:
             continue
         y = all_avg_results[col].to_numpy()

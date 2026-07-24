@@ -226,9 +226,10 @@ class TestRunWorkflowStructure:
 
     @pytest.mark.unit
     def test_run_delegates_extra_dataset_seeding_to_initialize(
-        self, tmp_path, minimal_jobs_dict, h_atom
+        self, tmp_path, minimal_jobs_dict, h_atom, monkeypatch
     ):
         """Test that run() does not pre-seed extra_datasets; seeding is initialize_training_set's responsibility."""
+        monkeypatch.chdir(tmp_path)
         extra = tmp_path / "extra.xyz"
         write(str(extra), [h_atom], format="extxyz")
         minimal_jobs_dict["initialization"]["extra_datasets"] = [str(extra)]
@@ -258,8 +259,9 @@ class TestRunWorkflowStructure:
         assert len(seed_calls_from_run) == 0
 
     @pytest.mark.unit
-    def test_loop_count(self, tmp_path, minimal_jobs_dict):
+    def test_loop_count(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """Test that run() executes the correct number of AL loops."""
+        monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
         wf.plots = False  # Disable plotting
         train_call_count = []
@@ -282,8 +284,9 @@ class TestRunWorkflowStructure:
         assert len(train_call_count) == 2  # number_of_al_loops=2
 
     @pytest.mark.unit
-    def test_start_loop_respected(self, tmp_path, minimal_jobs_dict):
+    def test_start_loop_respected(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """Test that start_loop parameter is respected."""
+        monkeypatch.chdir(tmp_path)
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
@@ -311,8 +314,9 @@ class TestRunWorkflowStructure:
         assert len(train_calls) == 2  # loops 2 and 3 only
 
     @pytest.mark.unit
-    def test_base_names_correct_for_loops(self, tmp_path, minimal_jobs_dict):
+    def test_base_names_correct_for_loops(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """Test that base_name is correct for each loop."""
+        monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
         wf.plots = False  # Disable plotting
         train_calls = []
@@ -334,8 +338,11 @@ class TestRunWorkflowStructure:
         assert train_calls[1] == "al_loop_1"
 
     @pytest.mark.unit
-    def test_abstract_methods_called_in_sequence(self, tmp_path, minimal_jobs_dict):
+    def test_abstract_methods_called_in_sequence(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
         """Test that abstract methods are called in the correct sequence."""
+        monkeypatch.chdir(tmp_path)
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
@@ -378,8 +385,11 @@ class TestRunWorkflowStructure:
         assert call_sequence[3] == "eval"
 
     @pytest.mark.unit
-    def test_workdir_created_for_each_loop(self, tmp_path, minimal_jobs_dict):
+    def test_workdir_created_for_each_loop(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
         """Test that work directories are created for each loop."""
+        monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
         wf.plots = False  # Disable plotting
 
@@ -392,13 +402,13 @@ class TestRunWorkflowStructure:
         ):
             wf.run()
 
-        # Verify that the expected directories exist
-        assert Path("results/al_loop_0").exists()
-        assert Path("results/al_loop_1").exists()
+        assert (tmp_path / "results" / "al_loop_0").exists()
+        assert (tmp_path / "results" / "al_loop_1").exists()
 
     @pytest.mark.unit
-    def test_train_test_files_written(self, tmp_path, minimal_jobs_dict):
+    def test_train_test_files_written(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """Test that train and test set files are written for each loop."""
+        monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
         wf.plots = False  # Disable plotting
 
@@ -416,8 +426,11 @@ class TestRunWorkflowStructure:
         assert mock_write.call_count >= 4
 
     @pytest.mark.unit
-    def test_al_loop_structures_tagged_as_high_sd(self, tmp_path, minimal_jobs_dict):
+    def test_al_loop_structures_tagged_as_high_sd(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
         """New structures from high_accuracy_evaluation get config_type='high_sd'."""
+        monkeypatch.chdir(tmp_path)
         from ase import Atoms
 
         wf = ConcreteWorkflow(
@@ -460,8 +473,11 @@ class TestRunWorkflowStructure:
         assert all(a.info.get("config_type") == "high_sd" for a in all_db)
 
     @pytest.mark.unit
-    def test_al_loop_metadata_stored_in_structures(self, tmp_path, minimal_jobs_dict):
+    def test_al_loop_metadata_stored_in_structures(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
         """Structures from loop N carry al_loop=N in their info dict."""
+        monkeypatch.chdir(tmp_path)
         from ase import Atoms
 
         wf = ConcreteWorkflow(
@@ -669,8 +685,6 @@ class TestSentinelHelpers:
             loop_dir = tmp_path / "results" / f"al_loop_{loop}"
             loop_dir.mkdir(parents=True)
             (loop_dir / "loop.done").write_text("done")
-            (loop_dir / "accumulated_train_set.xyz").write_text("")
-            (loop_dir / "accumulated_test_set.xyz").write_text("")
         assert wf._last_complete_loop() == 1
 
     @pytest.mark.unit
@@ -684,21 +698,19 @@ class TestSentinelHelpers:
             loop_dir = tmp_path / "results" / f"al_loop_{loop}"
             loop_dir.mkdir(parents=True)
             (loop_dir / "loop.done").write_text("done")
-            (loop_dir / "accumulated_train_set.xyz").write_text("")
-            (loop_dir / "accumulated_test_set.xyz").write_text("")
         assert wf._last_complete_loop() == 0
 
     @pytest.mark.unit
-    def test_last_complete_loop_requires_accumulated_files(
+    def test_last_complete_loop_sufficient_with_only_sentinel(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
-        # loop.done exists but accumulated files do not → not considered complete
+        # loop.done alone (no accumulated XYZ files) is now sufficient
         loop_dir = tmp_path / "results" / "al_loop_0"
         loop_dir.mkdir(parents=True)
         (loop_dir / "loop.done").write_text("done")
-        assert wf._last_complete_loop() == -1
+        assert wf._last_complete_loop() == 0
 
 
 class TestRunAutoRestart:
@@ -725,16 +737,6 @@ class TestRunAutoRestart:
         loop0_dir = tmp_path / "results" / "al_loop_0"
         loop0_dir.mkdir(parents=True)
         (loop0_dir / "loop.done").write_text("done")
-        write(
-            str(loop0_dir / "accumulated_train_set.xyz"),
-            [Atoms("H", cell=[5, 5, 5], pbc=True)],
-            format="extxyz",
-        )
-        write(
-            str(loop0_dir / "accumulated_test_set.xyz"),
-            [Atoms("H", cell=[5, 5, 5], pbc=True)],
-            format="extxyz",
-        )
 
         init_calls = []
 
@@ -760,28 +762,24 @@ class TestRunAutoRestart:
         assert train_calls == ["al_loop_1"], "only loop 1 should run"
 
     @pytest.mark.unit
-    def test_run_loads_accumulated_sets_on_restart(
+    def test_run_loads_train_atoms_from_db_on_restart(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
+        """On restart, generate_structures receives train atoms from the DB, not XYZ files."""
         monkeypatch.chdir(tmp_path)
         wf = self._make_workflow(tmp_path, minimal_jobs_dict)
 
+        # Pre-populate DB with a marker structure tagged as train
         marker = Atoms("He", cell=[5, 5, 5], pbc=True)
+        marker.info["REF_energy"] = -1.0
+        marker.arrays["REF_forces"] = np.zeros((1, 3))
+        marker.info["config_type"] = "high_sd"
         marker.info["marker"] = "from_loop0"
+        wf.db.add_structures([marker], split="train", skip_duplicates=False)
 
         loop0_dir = tmp_path / "results" / "al_loop_0"
         loop0_dir.mkdir(parents=True)
         (loop0_dir / "loop.done").write_text("done")
-        write(
-            str(loop0_dir / "accumulated_train_set.xyz"),
-            [marker],
-            format="extxyz",
-        )
-        write(
-            str(loop0_dir / "accumulated_test_set.xyz"),
-            [marker],
-            format="extxyz",
-        )
 
         received_train: list = []
 
@@ -799,3 +797,136 @@ class TestRunAutoRestart:
 
         assert len(received_train) == 1
         assert received_train[0].info.get("marker") == "from_loop0"
+
+
+class TestSkipInitialization:
+    """Tests for skip_initialization=True in run()."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, **kwargs):
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=2,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+            skip_initialization=True,
+            **kwargs,
+        )
+
+    def _add_train_structure(self, db):
+        a = Atoms("He", cell=[5, 5, 5], pbc=True)
+        a.info["REF_energy"] = -1.0
+        a.arrays["REF_forces"] = np.zeros((1, 3))
+        a.info["config_type"] = "high_sd"
+        db.add_structures([a], split="train", skip_duplicates=False)
+
+    @pytest.mark.unit
+    def test_initialize_training_set_not_called(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """skip_initialization=True must never call initialize_training_set."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        self._add_train_structure(wf.db)
+
+        init_calls = []
+
+        with (
+            patch.object(
+                wf,
+                "initialize_training_set",
+                side_effect=lambda *a, **kw: init_calls.append(1) or ([], []),
+            ),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert init_calls == []
+
+    @pytest.mark.unit
+    def test_starts_from_loop_zero_when_no_loops_done(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """With no loop.done files, starts from loop 0 (not initialization)."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        self._add_train_structure(wf.db)
+
+        train_calls = []
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(
+                wf,
+                "train_mlip",
+                side_effect=lambda *a, **kw: train_calls.append(a[0]) or pd.DataFrame(),
+            ),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert train_calls == ["al_loop_0", "al_loop_1"]
+
+    @pytest.mark.unit
+    def test_respects_last_complete_loop(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When loop 0 is already done, starts from loop 1 even with skip_initialization."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        self._add_train_structure(wf.db)
+
+        loop0_dir = tmp_path / "results" / "al_loop_0"
+        loop0_dir.mkdir(parents=True)
+        (loop0_dir / "loop.done").write_text("done")
+
+        train_calls = []
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(
+                wf,
+                "train_mlip",
+                side_effect=lambda *a, **kw: train_calls.append(a[0]) or pd.DataFrame(),
+            ),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert train_calls == ["al_loop_1"]
+
+    @pytest.mark.unit
+    def test_loads_train_atoms_from_db(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """generate_structures receives train atoms loaded from the DB."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+
+        marker = Atoms("He", cell=[5, 5, 5], pbc=True)
+        marker.info["REF_energy"] = -2.0
+        marker.arrays["REF_forces"] = np.zeros((1, 3))
+        marker.info["config_type"] = "high_sd"
+        marker.info["marker"] = "db_train"
+        wf.db.add_structures([marker], split="train", skip_duplicates=False)
+
+        received: list = []
+
+        def capture_gen(base_name, job_dict, train_data, **kwargs):
+            received.extend(train_data)
+            return []
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", side_effect=capture_gen),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert any(a.info.get("marker") == "db_train" for a in received)

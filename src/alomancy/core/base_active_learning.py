@@ -12,6 +12,10 @@ from alomancy.database.global_database import GlobalDatabase
 from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 from alomancy.utils.logging_config import setup_logging
+from alomancy.utils.remove_high_force_structures import (
+    remove_high_force_structures_from_partition,
+)
+from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 logger = logging.getLogger(__name__)
@@ -44,6 +48,9 @@ class BaseActiveLearningWorkflow(ABC):
         plots: bool = True,
         seed: int = 803,
         db_path: str = "results/global_database",
+        remove_redundancy: bool = True,
+        high_force_threshold: float | None = 100.0,
+        skip_initialization: bool = False,
     ):
         self.initial_train_file_path = Path(initial_train_file_path)
         self.initial_test_file_path = Path(initial_test_file_path)
@@ -54,6 +61,9 @@ class BaseActiveLearningWorkflow(ABC):
         self.plots = plots
         self.seed = seed
         self.db = GlobalDatabase(db_path)
+        self.remove_redundancy = remove_redundancy
+        self.high_force_threshold = high_force_threshold
+        self.skip_initialization = skip_initialization
         setup_logging(verbose=verbose, log_file=log_file)
 
     def _phase_done(self, base_name: str, phase: str) -> bool:
@@ -66,15 +76,10 @@ class BaseActiveLearningWorkflow(ABC):
         logger.debug("Phase %s marked complete for %s.", phase, base_name)
 
     def _last_complete_loop(self) -> int:
-        """Return index of last consecutive loop with loop.done and accumulated sets, or -1."""
+        """Return index of last consecutive completed loop (has loop.done), or -1."""
         last = -1
         for loop in range(self.number_of_al_loops):
-            loop_dir = Path("results", f"al_loop_{loop}")
-            if (
-                (loop_dir / "loop.done").exists()
-                and (loop_dir / "accumulated_train_set.xyz").exists()
-                and (loop_dir / "accumulated_test_set.xyz").exists()
-            ):
+            if (Path("results", f"al_loop_{loop}") / "loop.done").exists():
                 last = loop
             else:
                 break
@@ -90,23 +95,56 @@ class BaseActiveLearningWorkflow(ABC):
         last_complete = self._last_complete_loop()
 
         if last_complete >= 0:
-            acc_dir = Path(f"results/al_loop_{last_complete}")
-            train_xyzs = list(read(acc_dir / "accumulated_train_set.xyz", ":"))
-            test_xyzs = list(read(acc_dir / "accumulated_test_set.xyz", ":"))
+            train_xyzs = self.db.get_train_atoms()
+            test_xyzs = self.db.get_test_atoms()
             effective_start = max(self.start_loop, last_complete + 1)
             logger.info(
-                "Resuming from loop %d (loops 0-%d already done).",
+                "Resuming from loop %d (%d train / %d test from DB).",
                 effective_start,
-                last_complete,
+                len(train_xyzs),
+                len(test_xyzs),
+            )
+        elif self.skip_initialization:
+            train_xyzs = self.db.get_train_atoms()
+            test_xyzs = self.db.get_test_atoms()
+            effective_start = self.start_loop
+            logger.info(
+                "skip_initialization=True: loading %d train / %d test from DB, "
+                "starting at loop %d.",
+                len(train_xyzs),
+                len(test_xyzs),
+                effective_start,
             )
         else:
             train_xyzs, test_xyzs = self.initialize_training_set(
                 "initialization", **kwargs
             )
+            n_tagged = self.db.update_splits_post_hoc(train_xyzs, test_xyzs)
+            logger.info(
+                "Initialized training set with %d structures; tagged %d in DB.",
+                len(train_xyzs),
+                n_tagged,
+            )
             effective_start = self.start_loop
-            logger.info("Initialized training set with %d structures.", len(train_xyzs))
+
+        if self.remove_redundancy:
+            remove_redundancy_from_partition(
+                self.db,
+                config_list=self.jobs_dict["initialization"]["test_config_types"] + ["high_sd"],
+            )
+
+        if self.high_force_threshold is not None:
+            remove_high_force_structures_from_partition(
+                self.db,
+                force_threshold=self.high_force_threshold
+            )
 
         for loop in range(effective_start, self.number_of_al_loops):
+            # Derive current train/test from DB at the start of each iteration
+            # so any redundancy flags from the previous loop are reflected.
+            train_xyzs = self.db.get_train_atoms()
+            test_xyzs = self.db.get_test_atoms()
+
             base_name = f"al_loop_{loop}"
             workdir = Path(f"results/{base_name}")
 
@@ -177,29 +215,29 @@ class BaseActiveLearningWorkflow(ABC):
                 extra_metadata={"al_loop": loop},
             )
 
-            # Add evaluated AL loop structures to the global DB
-            self.db.add_structures(new_training_data, skip_duplicates=False)
-
             new_train_data, new_test_data = split_atoms_list_into_test_and_train(
                 new_training_data,
                 test_fraction=self.jobs_dict["initialization"]["test_to_train_ratio"],
                 seed=self.seed,
             )
 
-            train_xyzs += new_train_data
-            test_xyzs += new_test_data
+            # Add AL loop structures to DB with split tags; DB is the restart source.
+            self.db.add_structures(new_train_data, split="train", skip_duplicates=False)
+            self.db.add_structures(new_test_data, split="test", skip_duplicates=False)
 
-            try:
-                write(
-                    workdir / "accumulated_train_set.xyz", train_xyzs, format="extxyz"
+            if self.remove_redundancy:
+                remove_redundancy_from_partition(
+                    self.db,
+                    config_list=self.jobs_dict["initialization"]["test_config_types"]
+                    + ["high_sd"],
                 )
-                write(workdir / "accumulated_test_set.xyz", test_xyzs, format="extxyz")
-            except OSError as e:
-                if "test" not in str(e).lower():
-                    raise
-                logger.warning(
-                    "Could not write accumulated files (test environment): %s", e
+
+            if self.high_force_threshold is not None:
+                remove_high_force_structures_from_partition(
+                    self.db,
+                    force_threshold=self.high_force_threshold,
                 )
+
             self._mark_phase_done(base_name, "loop")
 
             logger.debug(

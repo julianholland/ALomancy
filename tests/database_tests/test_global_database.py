@@ -366,3 +366,420 @@ class TestPrepareForStorageEdgeCases:
         assert db.size == 1
         retrieved = db.get_all_as_atoms()
         assert retrieved[0].info["REF_energy"] == pytest.approx(-13.6)
+
+
+class TestSplitTagging:
+    """Tests for add_structures(split=...) and get_train/test_atoms."""
+
+    @pytest.mark.unit
+    def test_add_with_train_split_tag(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a], split="train", skip_duplicates=False)
+        train = db.get_train_atoms()
+        assert len(train) == 1
+        assert train[0].info.get("split") == "train"
+
+    @pytest.mark.unit
+    def test_get_train_excludes_test_split(self, tmp_path):
+        h2 = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                        ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        o2 = make_atoms(["O", "O"], config_type="init_dimer", ref_energy=-50.0,
+                        ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h2], split="train", skip_duplicates=False)
+        db.add_structures([o2], split="test", skip_duplicates=False)
+        assert len(db.get_train_atoms()) == 1
+        assert len(db.get_test_atoms()) == 1
+
+    @pytest.mark.unit
+    def test_get_test_atoms_filters_correctly(self, tmp_path):
+        a = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
+                       ref_forces=[[0.0, 0.0, 0.0]])
+        b = make_atoms(["O"], config_type="IsolatedAtom", ref_energy=-432.0,
+                       ref_forces=[[0.0, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a], split="train", skip_duplicates=False)
+        db.add_structures([b], split="test", skip_duplicates=False)
+        test = db.get_test_atoms()
+        assert len(test) == 1
+        assert test[0].get_chemical_formula() == "O"
+
+    @pytest.mark.unit
+    def test_get_train_atoms_excludes_duplicates_by_default(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        b = make_atoms(["O", "O"], config_type="init_dimer", ref_energy=-50.0,
+                       ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a, b], split="train", skip_duplicates=False)
+        # Flag first structure as duplicate
+        db.flag_as_duplicates([0])
+        assert len(db.get_train_atoms()) == 1
+        assert len(db.get_train_atoms(exclude_duplicates=False)) == 2
+
+    @pytest.mark.unit
+    def test_untagged_structures_absent_from_split_queries(self, tmp_path):
+        a = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6,
+                       ref_forces=[[0.0, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        # Add without split tag
+        db.add_structures([a], skip_duplicates=False)
+        assert len(db.get_train_atoms()) == 0
+        assert len(db.get_test_atoms()) == 0
+        assert db.size == 1
+
+
+class TestGetSplitPartition:
+    """Tests for get_split_partition."""
+
+    @pytest.mark.unit
+    def test_returns_only_train_split(self, tmp_path):
+        h2 = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                        ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        o2 = make_atoms(["O", "O"], config_type="init_dimer", ref_energy=-50.0,
+                        ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h2], split="train", skip_duplicates=False)
+        db.add_structures([o2], split="test", skip_duplicates=False)
+        train_p = db.get_split_partition("train")
+        assert len(train_p) == 1
+
+    @pytest.mark.unit
+    def test_empty_when_no_train_structures(self, tmp_path):
+        a = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6)
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a], split="test", skip_duplicates=False)
+        train_p = db.get_split_partition("train")
+        assert len(train_p) == 0
+
+
+class TestFlagAsDuplicates:
+    """Tests for flag_as_duplicates and the is_duplicate metadata field."""
+
+    @pytest.mark.unit
+    def test_flags_specific_container(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        b = make_atoms(["O", "O"], config_type="init_dimer", ref_energy=-50.0,
+                       ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a, b], split="train", skip_duplicates=False)
+        db.flag_as_duplicates([0])
+        containers = list(db.partition.list_containers())
+        assert containers[0].AtomPositionManager.metadata.get("is_duplicate") is True
+        assert not containers[1].AtomPositionManager.metadata.get("is_duplicate", False)
+
+    @pytest.mark.unit
+    def test_flagged_excluded_from_get_train(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a], split="train", skip_duplicates=False)
+        db.flag_as_duplicates([0])
+        assert len(db.get_train_atoms()) == 0
+        assert len(db.get_train_atoms(exclude_duplicates=False)) == 1
+
+
+class TestUpdateSplitsPostHoc:
+    """Tests for update_splits_post_hoc."""
+
+    @pytest.mark.unit
+    def test_tags_matching_structures(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        b = make_atoms(["O", "O"], config_type="init_dimer", ref_energy=-50.0,
+                       ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        # Add without split tags (simulates DB path from initialize_training_set)
+        db.add_structures([a, b], skip_duplicates=False)
+        n = db.update_splits_post_hoc(train_atoms=[a], test_atoms=[b])
+        assert n == 2
+        assert len(db.get_train_atoms()) == 1
+        assert len(db.get_test_atoms()) == 1
+
+    @pytest.mark.unit
+    def test_skips_already_tagged_structures(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a], split="train", skip_duplicates=False)
+        # Call again — already tagged, should return 0 updates
+        n = db.update_splits_post_hoc(train_atoms=[a], test_atoms=[])
+        assert n == 0
+
+    @pytest.mark.unit
+    def test_returns_zero_when_no_match(self, tmp_path):
+        a = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-31.0,
+                       ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]])
+        b = make_atoms(["O", "O"], config_type="init_dimer", ref_energy=-50.0,
+                       ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([a], skip_duplicates=False)
+        # b not in DB — no match possible
+        n = db.update_splits_post_hoc(train_atoms=[b], test_atoms=[])
+        assert n == 0
+
+
+class TestApplyTrainTestSplit:
+    """Tests for apply_train_test_split — migrating a DB without split tags."""
+
+    def _make_db(self, tmp_path, n: int) -> GlobalDatabase:
+        db = GlobalDatabase(str(tmp_path / "db"))
+        for k in range(n):
+            a = make_atoms(
+                ["H", "H"],
+                config_type="high_sd",
+                ref_energy=-float(k),
+                ref_forces=[[0.0, 0.0, float(k)], [0.0, 0.0, -float(k)]],
+            )
+            db.add_structures([a], skip_duplicates=False)
+        return db
+
+    @pytest.mark.unit
+    def test_all_structures_tagged(self, tmp_path):
+        """Every container gets a split tag; total equals DB size."""
+        db = self._make_db(tmp_path, 10)
+        n_train, n_test = db.apply_train_test_split(test_fraction=0.2, seed=42)
+        assert n_train + n_test == 10
+
+    @pytest.mark.unit
+    def test_test_fraction_honoured(self, tmp_path):
+        """Approximately test_fraction of structures end up as test."""
+        db = self._make_db(tmp_path, 20)
+        n_train, n_test = db.apply_train_test_split(test_fraction=0.1, seed=1)
+        # 10% of 20 = 2 → at least 1 test (min=1)
+        assert n_test == 2
+        assert n_train == 18
+
+    @pytest.mark.unit
+    def test_at_least_one_test_structure(self, tmp_path):
+        """Even with a tiny fraction the result always has ≥1 test structure."""
+        db = self._make_db(tmp_path, 5)
+        _, n_test = db.apply_train_test_split(test_fraction=0.01, seed=0)
+        assert n_test >= 1
+
+    @pytest.mark.unit
+    def test_already_tagged_containers_skipped(self, tmp_path):
+        """Containers with an existing split tag are left untouched."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        a = make_atoms(["H", "H"], config_type="high_sd", ref_energy=-1.0,
+                       ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        b = make_atoms(["O", "O"], config_type="high_sd", ref_energy=-2.0,
+                       ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        db.add_structures([a], split="train", skip_duplicates=False)  # already tagged
+        db.add_structures([b], skip_duplicates=False)                  # untagged
+
+        n_train, n_test = db.apply_train_test_split(test_fraction=0.5, seed=0)
+        # only the untagged b was processed
+        assert n_train + n_test == 1
+
+    @pytest.mark.unit
+    def test_returns_zero_when_all_already_tagged(self, tmp_path):
+        """Returns (0, 0) when every container already has a split tag."""
+        db = self._make_db(tmp_path, 3)
+        db.apply_train_test_split(test_fraction=0.3, seed=0)
+        n_train, n_test = db.apply_train_test_split(test_fraction=0.3, seed=0)
+        assert (n_train, n_test) == (0, 0)
+
+    @pytest.mark.unit
+    def test_split_is_persistent(self, tmp_path):
+        """Tags survive a fresh GlobalDatabase handle (on-disk persistence)."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        a = make_atoms(["H", "H"], config_type="high_sd", ref_energy=-1.0,
+                       ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        db.add_structures([a], skip_duplicates=False)
+        db.apply_train_test_split(test_fraction=0.0, seed=0)  # 0% → all train (min 1 test)
+
+        db2 = GlobalDatabase(str(tmp_path / "db"))
+        all_splits = [
+            c.AtomPositionManager.metadata.get("split")
+            for c in db2.partition.list_containers()
+        ]
+        assert all(s in ("train", "test") for s in all_splits)
+
+    @pytest.mark.unit
+    def test_seeded_split_is_reproducible(self, tmp_path):
+        """Same seed produces the same train/test assignment."""
+        db1 = self._make_db(tmp_path / "a", 10)
+        db2 = self._make_db(tmp_path / "b", 10)
+        db1.apply_train_test_split(test_fraction=0.3, seed=99)
+        db2.apply_train_test_split(test_fraction=0.3, seed=99)
+
+        splits1 = [
+            c.AtomPositionManager.metadata.get("split")
+            for c in db1.partition.list_containers()
+        ]
+        splits2 = [
+            c.AtomPositionManager.metadata.get("split")
+            for c in db2.partition.list_containers()
+        ]
+        assert splits1 == splits2
+
+    @pytest.mark.unit
+    def test_eligible_config_types_restricts_test_set(self, tmp_path):
+        """Structures not in eligible_config_types always go to train; only eligible ones can be test."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        # 3 eligible, 2 ineligible (IsolatedAtom)
+        for ct in ["high_sd", "high_sd", "init_amorphous"]:
+            a = make_atoms(["H", "H"], config_type=ct, ref_energy=-1.0,
+                           ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+            db.add_structures([a], skip_duplicates=False)
+        for _ in range(2):
+            a = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-0.5,
+                           ref_forces=[[0.0, 0.0, 0.0]])
+            db.add_structures([a], skip_duplicates=False)
+
+        db.apply_train_test_split(
+            test_fraction=0.33,
+            seed=0,
+            eligible_config_types=["high_sd", "init_amorphous"],
+        )
+
+        test_atoms = db.get_test_atoms()
+        test_config_types = {a.info.get("config_type") for a in test_atoms}
+        # IsolatedAtom must never appear in the test set
+        assert "IsolatedAtom" not in test_config_types
+
+    @pytest.mark.unit
+    def test_ineligible_structures_always_train(self, tmp_path):
+        """Every structure whose config_type is not in eligible_config_types is tagged train."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        for ct in ["IsolatedAtom", "init_MP", "high_sd"]:
+            a = make_atoms(["H", "H"], config_type=ct, ref_energy=-1.0,
+                           ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+            db.add_structures([a], skip_duplicates=False)
+
+        db.apply_train_test_split(
+            test_fraction=0.5,
+            seed=0,
+            eligible_config_types=["high_sd", "init_amorphous"],
+        )
+
+        all_containers = list(db.partition.list_containers())
+        for c in all_containers:
+            ct = c.AtomPositionManager.metadata.get("config_type")
+            split = c.AtomPositionManager.metadata.get("split")
+            if ct not in ("high_sd", "init_amorphous"):
+                assert split == "train", f"{ct} should be train-only, got {split}"
+
+    @pytest.mark.unit
+    def test_no_eligible_structures_all_go_to_train(self, tmp_path):
+        """When no untagged structures match eligible_config_types, all go to train, n_test=0."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        for _ in range(3):
+            a = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-0.5,
+                           ref_forces=[[0.0, 0.0, 0.0]])
+            db.add_structures([a], skip_duplicates=False)
+
+        n_train, n_test = db.apply_train_test_split(
+            test_fraction=0.3,
+            seed=0,
+            eligible_config_types=["high_sd"],
+        )
+        assert n_test == 0
+        assert n_train == 3
+
+
+class TestGlobalDbId:
+    """Tests for global_db_id tagging on add_structures and assign_global_db_ids."""
+
+    def _make_atoms(self, energy: float = -1.0) -> "Atoms":
+        return make_atoms(
+            ["H", "H"],
+            config_type="high_sd",
+            ref_energy=energy,
+            ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        )
+
+    @pytest.mark.unit
+    def test_id_in_atoms_info(self, tmp_path):
+        """global_db_id appears in atoms.info after a round-trip through the DB."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([self._make_atoms()], skip_duplicates=False)
+        atoms = db.get_all_as_atoms()
+        assert "global_db_id" in atoms[0].info
+        assert isinstance(atoms[0].info["global_db_id"], int)
+
+    @pytest.mark.unit
+    def test_ids_are_sequential_from_zero(self, tmp_path):
+        """N structures added in one batch get IDs 0 … N-1."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        n = 5
+        db.add_structures(
+            [self._make_atoms(float(k)) for k in range(n)], skip_duplicates=False
+        )
+        ids = {a.info["global_db_id"] for a in db.get_all_as_atoms()}
+        assert ids == set(range(n))
+
+    @pytest.mark.unit
+    def test_ids_unique_across_batches(self, tmp_path):
+        """Two separate add_structures calls produce non-overlapping sequential IDs."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures(
+            [self._make_atoms(0.0), self._make_atoms(1.0)], skip_duplicates=False
+        )
+        db.add_structures(
+            [self._make_atoms(2.0), self._make_atoms(3.0)], skip_duplicates=False
+        )
+        ids = [a.info["global_db_id"] for a in db.get_all_as_atoms()]
+        assert sorted(ids) == [0, 1, 2, 3]
+
+    @pytest.mark.unit
+    def test_id_survives_reload(self, tmp_path):
+        """IDs persist after reopening the DB from disk."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures(
+            [self._make_atoms(0.0), self._make_atoms(1.0)], skip_duplicates=False
+        )
+
+        db2 = GlobalDatabase(str(tmp_path / "db"))
+        ids = {a.info["global_db_id"] for a in db2.get_all_as_atoms()}
+        assert ids == {0, 1}
+
+    @pytest.mark.unit
+    def test_assign_global_db_ids_backfills(self, tmp_path):
+        """assign_global_db_ids tags containers that have no global_db_id."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        # Bypass add_structures to simulate a pre-existing DB without IDs
+        from sage_lib.single_run.SingleRun import SingleRun
+
+        for k in range(3):
+            sr = GlobalDatabase._prepare_for_storage(self._make_atoms(float(k)))
+            db.partition.add([sr])
+
+        n = db.assign_global_db_ids()
+        assert n == 3
+        ids = {a.info["global_db_id"] for a in db.get_all_as_atoms()}
+        assert ids == {0, 1, 2}
+
+    @pytest.mark.unit
+    def test_assign_global_db_ids_skips_already_tagged(self, tmp_path):
+        """Containers that already have global_db_id are left untouched."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures(
+            [self._make_atoms(0.0), self._make_atoms(1.0)], skip_duplicates=False
+        )
+        # All containers already tagged by add_structures
+        n = db.assign_global_db_ids()
+        assert n == 0
+
+    @pytest.mark.unit
+    def test_assign_global_db_ids_idempotent(self, tmp_path):
+        """Calling assign_global_db_ids twice leaves IDs unchanged on the second call."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        from sage_lib.single_run.SingleRun import SingleRun
+
+        for k in range(2):
+            sr = GlobalDatabase._prepare_for_storage(self._make_atoms(float(k)))
+            db.partition.add([sr])
+
+        db.assign_global_db_ids()
+        ids_after_first = [a.info["global_db_id"] for a in db.get_all_as_atoms()]
+
+        n = db.assign_global_db_ids()
+        ids_after_second = [a.info["global_db_id"] for a in db.get_all_as_atoms()]
+
+        assert n == 0
+        assert ids_after_first == ids_after_second

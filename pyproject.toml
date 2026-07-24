@@ -38,6 +38,7 @@ dependencies = [
     "pathlib>=1.0.0",
     "sage_lib>=0.1.9.13",
     "polars>=0.20.0",
+    "deduplicate-lib>=0.1.0",
 ]
 
 [project.optional-dependencies]

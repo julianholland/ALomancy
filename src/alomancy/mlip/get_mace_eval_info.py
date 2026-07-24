@@ -32,12 +32,12 @@ def get_mace_eval_info(
         avg_result = {
             key: np.mean([np.float32(result[key]) for result in results])
             for key in results[0]
-            if key in ["mae_f", "mae_e"]
+            if key in ["mae_f", "mae_e_per_atom"]
         }
         std_dev_results = {
             key: np.std([np.float32(result[key]) for result in results])
             for key in results[0]
-            if key in ["mae_f", "mae_e"]
+            if key in ["mae_f", "mae_e_per_atom"]
         }
         avg_result.update(
             {f"{key}_std_dev": std_dev_results[key] for key in std_dev_results}

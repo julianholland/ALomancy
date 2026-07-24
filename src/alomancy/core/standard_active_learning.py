@@ -104,6 +104,11 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 test_xyzs,
                 format="extxyz",
             )
+            # Seed DB with split tags if empty so restart can reconstruct
+            # train/test from the DB instead of accumulated xyz files.
+            if self.db.size == 0:
+                self.db.add_structures(train_xyzs, split="train", skip_duplicates=True)
+                self.db.add_structures(test_xyzs, split="test", skip_duplicates=True)
             return train_xyzs, test_xyzs
 
         # --- DB-aware path --------------------------------------------

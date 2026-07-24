@@ -260,9 +260,9 @@ class TestMaeAlLoopPlot:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         df = pd.DataFrame(
             {
-                "mae_e": [0.1, 0.05],
+                "mae_e_per_atom": [0.1, 0.05],
                 "mae_f": [0.3, 0.15],
-                "mae_e_std_dev": [0.01, 0.005],
+                "mae_e_per_atom_std_dev": [0.01, 0.005],
                 "mae_f_std_dev": [0.03, 0.015],
             }
         )
@@ -276,7 +276,7 @@ class TestMaeAlLoopPlot:
 
         mock_fig, mock_ax = MagicMock(), MagicMock()
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
-        df = pd.DataFrame({"mae_e": [0.1, 0.05], "mae_f": [0.3, 0.15]})
+        df = pd.DataFrame({"mae_e_per_atom": [0.1, 0.05], "mae_f": [0.3, 0.15]})
         mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
         assert not mock_ax.errorbar.called
         assert mock_ax.plot.called
@@ -287,7 +287,7 @@ class TestMaeAlLoopPlot:
 
         mock_fig, mock_ax = MagicMock(), MagicMock()
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
-        df = pd.DataFrame({"mae_e": [0.1], "mae_f": [0.3]})
+        df = pd.DataFrame({"mae_e_per_atom": [0.1], "mae_f": [0.3]})
         mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
         labels = [call.kwargs.get("label", "") for call in mock_ax.plot.call_args_list]
         assert any("eV/atom" in lbl for lbl in labels)
