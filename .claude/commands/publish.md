@@ -1,13 +1,12 @@
 ---
 description: Check CI, bump version tag, build, and publish to PyPI
-allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git tag:*), Bash(git push:*), Bash(python -m build:*), Bash(twine upload:*), Bash(twine check:*), Bash(rm -rf:*), Bash(pip install:*)
+allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(python -m build:*), Bash(twine upload:*), Bash(twine check:*), Bash(rm -rf:*), Bash(pip install:*)
 ---
 
 ## Context
 
 - Latest CI runs on master: !`gh run list --branch master --limit 5 --json conclusion,status,name,headSha,databaseId`
 - Current tags: !`git tag --sort=-version:refname | head -5`
-- Current version (setuptools_scm): !`python -m setuptools_scm 2>/dev/null || git describe --tags`
 - Current branch: !`git branch --show-current`
 
 ## Your task
