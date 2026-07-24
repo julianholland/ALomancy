@@ -119,7 +119,9 @@ class TestTrainTestSplit:
 class TestGetMaceEvalInfo:
     """Tests for get_mace_eval_info reading MACE train.txt result files."""
 
-    def _write_train_txt(self, results_dir: Path, mae_f: float, mae_e_per_atom: float = 0.01) -> None:
+    def _write_train_txt(
+        self, results_dir: Path, mae_f: float, mae_e_per_atom: float = 0.01
+    ) -> None:
         results_dir.mkdir(parents=True, exist_ok=True)
         line = str([("mae_f", str(mae_f)), ("mae_e_per_atom", str(mae_e_per_atom))])
         (results_dir / "results_train.txt").write_text(f"epoch step\n{line}\n")
@@ -336,11 +338,25 @@ class TestSelectBestCommitteeModel:
         self, results_dir: Path, mae_f: float, mae_e_per_atom: float = 0.01
     ) -> None:
         results_dir.mkdir(parents=True, exist_ok=True)
-        record = json.dumps({"mode": "test", "epoch": 79, "mae_f": mae_f, "mae_e_per_atom": mae_e_per_atom})
+        record = json.dumps(
+            {
+                "mode": "test",
+                "epoch": 79,
+                "mae_f": mae_f,
+                "mae_e_per_atom": mae_e_per_atom,
+            }
+        )
         (results_dir / "results_test.txt").write_text(record + "\n")
 
     def _fit_dir(self, base: Path, fit_idx: int) -> Path:
-        return base / "results" / "al_loop_0" / "mlip_committee" / f"fit_{fit_idx}" / "results"
+        return (
+            base
+            / "results"
+            / "al_loop_0"
+            / "mlip_committee"
+            / f"fit_{fit_idx}"
+            / "results"
+        )
 
     @pytest.mark.unit
     def test_selects_fit_with_lowest_mae_f(self, tmp_path, monkeypatch):
@@ -363,7 +379,9 @@ class TestSelectBestCommitteeModel:
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.05)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.20)
 
-        _, model_path = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+        _, model_path = select_best_committee_model(
+            "al_loop_0", self.JOB_DICT, seed=803
+        )
         assert "fit_1" in str(model_path)
         assert model_path.name == "mlip_committee_stagetwo.model"
 
@@ -407,7 +425,9 @@ class TestSelectBestCommitteeModel:
         assert best_idx == 1
 
     @pytest.mark.unit
-    def test_skips_fits_missing_test_file_picks_best_of_rest(self, tmp_path, monkeypatch):
+    def test_skips_fits_missing_test_file_picks_best_of_rest(
+        self, tmp_path, monkeypatch
+    ):
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
