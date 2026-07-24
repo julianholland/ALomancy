@@ -171,9 +171,10 @@ def test_timing_plots_saves_files(tmp_path):
     log = _write_log(tmp_path, _loop0_lines())
     plots_dir = tmp_path / "plots"
 
-    with mock.patch("matplotlib.pyplot.savefig") as mock_save, mock.patch(
-        "matplotlib.figure.Figure.savefig"
-    ) as mock_fig_save:
+    with (
+        mock.patch("matplotlib.pyplot.savefig") as mock_save,
+        mock.patch("matplotlib.figure.Figure.savefig") as mock_fig_save,
+    ):
         timing_plots(log, plots_dir)
         # Either fig.savefig or plt.savefig should have been called twice
         total_calls = mock_save.call_count + mock_fig_save.call_count
@@ -187,9 +188,10 @@ def test_timing_plots_no_op_on_empty_df(tmp_path):
     log = _write_log(tmp_path, ["no timing lines"])
     plots_dir = tmp_path / "plots"
 
-    with mock.patch("matplotlib.pyplot.savefig") as mock_save, mock.patch(
-        "matplotlib.figure.Figure.savefig"
-    ) as mock_fig_save:
+    with (
+        mock.patch("matplotlib.pyplot.savefig") as mock_save,
+        mock.patch("matplotlib.figure.Figure.savefig") as mock_fig_save,
+    ):
         timing_plots(log, plots_dir)
         assert mock_save.call_count == 0
         assert mock_fig_save.call_count == 0

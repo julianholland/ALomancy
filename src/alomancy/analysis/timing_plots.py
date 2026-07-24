@@ -17,7 +17,9 @@ _LOOP_START_RE = re.compile(_TS + r".*Starting AL loop (\d+)")
 _N_TRAIN_RE = re.compile(_TS + r".*Training set size: (\d+)")
 _SUBMITTED_RE = re.compile(_TS + r".*Submitted \d+ jobs to queue\.")
 _QUEUE_TIME_RE = re.compile(_TS + r".*Job \d+ queue_time=([\d.]+) s\.")
-_GEN_START_RE = re.compile(_TS + r".* structures selected for structure generation step\.")
+_GEN_START_RE = re.compile(
+    _TS + r".* structures selected for structure generation step\."
+)
 _GEN_END_RE = re.compile(
     _TS + r".*Selected \d+ structures for DFT calculations based on force std dev\."
 )
@@ -27,7 +29,12 @@ _DFT_END_RE = re.compile(
 _LOOP_END_RE = re.compile(_TS + r".*Completed AL loop (\d+),")
 
 _QUEUE_COLOR = "#cccccc"
-_PHASE_LABELS = ["training_plots", "generate_structures", "high_accuracy_evaluation", "postprocess"]
+_PHASE_LABELS = [
+    "training_plots",
+    "generate_structures",
+    "high_accuracy_evaluation",
+    "postprocess",
+]
 
 
 def _ts(s: str) -> datetime:
@@ -225,7 +232,11 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
     queue_patch_added = False
 
     for pi, (col, q_col, label) in enumerate(phase_cols):
-        phase_h = df[col].to_numpy() / 3600.0 if col in df.columns else np.full(len(loops), np.nan)
+        phase_h = (
+            df[col].to_numpy() / 3600.0
+            if col in df.columns
+            else np.full(len(loops), np.nan)
+        )
         q_h = (
             df[q_col].to_numpy() / 3600.0
             if (q_col is not None and q_col in df.columns)

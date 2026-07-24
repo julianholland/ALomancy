@@ -63,9 +63,7 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     os.chdir(results_dir.parent)
 
     name, n_fits, seed = detect_committee_info(results_dir)
-    logger.info(
-        "Detected committee: name=%r, size=%d, seed=%d", name, n_fits, seed
-    )
+    logger.info("Detected committee: name=%r, size=%d, seed=%d", name, n_fits, seed)
 
     job_dict = {"name": name, "size_of_committee": n_fits}
     plots_dir = results_dir / "current_plots"
@@ -83,7 +81,9 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     )
 
     if not loops:
-        logger.warning("No completed loops found under %s — nothing to plot.", results_dir)
+        logger.warning(
+            "No completed loops found under %s — nothing to plot.", results_dir
+        )
         return
 
     for loop_dir in loops:
@@ -98,7 +98,9 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     if not df.empty:
         mae_al_loop_plot(df, job_dict, directory=plots_dir)
     else:
-        logger.warning("get_mace_eval_info returned empty DataFrame — MAE loop plot skipped.")
+        logger.warning(
+            "get_mace_eval_info returned empty DataFrame — MAE loop plot skipped."
+        )
 
     # Timing plots (purely log-based, no MACE needed)
     log_file = results_dir / "alomancy.log"

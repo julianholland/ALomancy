@@ -142,7 +142,9 @@ class RemoteJobExecutor:
                             )
                             logger.info("Job %d queue_time=%.1f s.", i + 1, queue_s)
                 except Exception as _qe:
-                    logger.debug("Could not compute queue time for job %d: %s", i + 1, _qe)
+                    logger.debug(
+                        "Could not compute queue time for job %d: %s", i + 1, _qe
+                    )
 
             except Exception as exc:
                 logger.warning("Job %d failed: %s", i + 1, exc)
