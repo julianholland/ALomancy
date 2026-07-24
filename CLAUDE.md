@@ -98,7 +98,7 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 | `initialize/mp_interface.py` | Fetches structures from the Materials Project API (`mp_api`) |
 | `mlip/committee_remote_submitter.py` | Submits N MACE training jobs (committee); each fit lands in `results/<base>/mlip_committee/fit_<i>/` |
 | `mlip/mace_wfl.py` | Wraps the `mace_fit` CLI call for a single committee member |
-| `mlip/get_mace_eval_info.py` | Reads trained MACE model error metrics into a DataFrame |
+| `mlip/get_mace_eval_info.py` | `get_mace_eval_info` reads trained model metrics into a DataFrame; `select_best_committee_model` picks the fit with lowest test-set `mae_f` and returns `(fit_idx, model_path)` |
 | `structure_generation/md/md_remote_submitter.py` | Submits MD runs (one per input structure) and force-evaluation jobs across all committee members |
 | `structure_generation/find_high_sd_structures.py` | Selects structures with highest force standard-deviation across the committee (uncertainty metric); uses Polars DataFrames |
 | `structure_generation/select_initial_structures.py` | Picks seed structures from training data for MD |
@@ -116,6 +116,11 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 - The `seed` parameter (default `803`) is used everywhere randomness appears for reproducibility.
 - `verbose` is an int: `0` = silent, `>0` = progress prints.
 - The global DB lives at `results/global_database/` (configurable via `db_path` in `BaseActiveLearningWorkflow.__init__`). Only DFT-evaluated structures (with `REF_energy`/`REF_forces`) are stored in it.
+- Every structure in `GlobalDatabase` carries `atoms.info["global_db_id"]`: a zero-based integer index assigned at insertion time, stable across sessions. Call `db.assign_global_db_ids()` to backfill existing DBs.
+- `BaseActiveLearningWorkflow` accepts `remove_redundancy=True` and `high_force_threshold=100.0` — these run after initialization and after each AL loop to prune similar structures and exclude unphysical forces from the DB before the next training round.
+- `skip_initialization=True` on `BaseActiveLearningWorkflow`: when no AL loops have completed, loads train/test from the DB and starts at `start_loop` without calling `initialize_training_set`. Useful when the DB is pre-populated.
+- `generate_structures` uses `select_best_committee_model` (lowest test-set `mae_f` from `fit_*/results/*_test.txt`) as the MD base model; all other fits form the uncertainty comparison committee. `fits_to_use` excludes the best fit index to avoid double-counting in the std-dev computation.
+- Energy MAE reported as `mae_e_per_atom` (eV/atom) everywhere — `get_mace_eval_info`, `plotting.py`, and `mlip_plots.py` all use this key. Never use `mae_e` (total energy per structure) in plots; it has similar magnitude to `mae_f` and causes visual confusion.
 - Initialization config uses individual counts (`num_dimers_per_combo`, `num_trimers_per_combo`, `num_amorphous`, `num_stretch_compress_per_mp`) rather than the old `d_t_s_a_ratio` + `target_non_mp_structures_to_add`.
 - `IsolatedAtom` and `init_MP` config_types are deduplicated by `(config_type, formula)` in `GlobalDatabase.add_structures()`; other config_types (dimers, trimers, amorphous, AL loop structures) are always added without exact dedup.
 - In `initialize_training_set`, the DB is checked **first** (`compute_initialization_needs` against current DB state). `extra_datasets` are seeded only if the DB is still missing some initialization targets, then needs are re-checked before any structure generation. An already-populated DB is always honoured before consulting extra datasets.
@@ -143,3 +148,5 @@ Key test patterns:
 - `compute_initialization_needs` tests use a `MagicMock` DB that returns controlled `count_all_by_config_type_and_formula()` dicts.
 - `mace` is patched at the top of `test_standard_active_learning.py` via `sys.modules.setdefault(...)` before the module is imported (avoids GPU dependency at collection time).
 - `wfl` is not installed — never patch or import it in tests.
+- `select_best_committee_model` tests (`TestSelectBestCommitteeModel` in `tests/mlip_train_tests/test_mace_training.py`) write fake `*_test.txt` files under `tmp_path` and use `monkeypatch.chdir` — no real MACE models needed. Cover both JSON-lines and Python list-of-tuples formats.
+- `_write_train_txt` in `TestGetMaceEvalInfo` writes `mae_e_per_atom` (not `mae_e`) to match what `get_mace_eval_info` filters for.

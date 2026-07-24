@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Best committee model selection** (`mlip/get_mace_eval_info.py`): `select_best_committee_model(base_name, mlip_committee_job_dict, seed, metric="mae_f")` reads each committee member's `*_test.txt` metrics file and returns `(fit_idx, stagetwo_model_path)` for the member with the lowest test-set force MAE. `generate_structures` now uses this model as the MD base; the remaining committee members form the uncertainty comparison set. Handles both JSON-lines (newer MACE) and Python list-of-tuples (older MACE) file formats. Falls back to `fit_0` when no test metrics are readable.
+- **`skip_initialization`** parameter on `BaseActiveLearningWorkflow` (default `False`): when `True` and no AL loops have completed yet, loads train/test sets directly from the GlobalDatabase and begins the AL loop without running `initialize_training_set`. Use this when the DB is already populated from a prior run and you want to resume from loop 0 without regenerating structures.
+- **`remove_redundancy`** parameter on `BaseActiveLearningWorkflow` (default `True`): calls `remove_redundancy_from_partition` after initialization and after each AL loop to prune geometrically similar structures from the DB before the next training round.
+- **`high_force_threshold`** parameter on `BaseActiveLearningWorkflow` (default `100.0` eV/Å): calls `remove_high_force_structures_from_partition` after initialization and after each AL loop to flag and exclude structures with unphysically large atomic forces.
+- **`global_db_id`** integer tag on every structure in `GlobalDatabase`: zero-based positional index assigned at insertion time and stable across sessions (structures are never deleted from the DB). Propagated automatically into `atoms.info` by all query methods (`get_train_atoms`, `get_test_atoms`, `get_all_as_atoms`, `get_structures_by_config_type`). `assign_global_db_ids()` backfills existing DBs that predate this feature.
+- **`eligible_config_types`** parameter on `split_atoms_list_into_test_and_train`: restricts which config_types are eligible to enter the test split; structures with other config_types always go to train unconditionally (e.g. `IsolatedAtom` stays in train so MACE can read E0s).
+
+### Fixed
+- **MAE plot energy/force swap**: `mae_al_loop_plot` was displaying the energy and force error lines inverted. Root cause: `get_mace_eval_info` was collecting `mae_e` (total energy per structure, ~0.2 eV) which has similar magnitude to `mae_f` (~0.2 eV/Å). Fixed throughout `get_mace_eval_info.py` and `plotting.py` by switching to `mae_e_per_atom` (~0.017 eV/atom), which now also matches the scale used in `mlip_plots.py` training-curve plots.
+- `None | str` type annotation in `test_train_manager.py` corrected to `str | None` (ruff RUF036).
+
 ## [0.2.0] - 2026-07-13
 
 ### Added
