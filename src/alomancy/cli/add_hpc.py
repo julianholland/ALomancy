@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -181,6 +182,17 @@ def _read_ssh_hosts() -> list[str]:
     return hosts
 
 
+def _derive_python_from_venv(venv_cmd: str) -> str | None:
+    """Extract the python executable path from a venv activation command.
+
+    Handles: source /path/to/venv/bin/activate → /path/to/venv/bin/python
+    """
+    m = re.search(r"source\s+(.+)/bin/activate", venv_cmd)
+    if m:
+        return f"{m.group(1)}/bin/python"
+    return None
+
+
 def _pick_ssh_host() -> str:
     """Show SSH aliases from ~/.ssh/config and let the user pick or type one."""
     hosts = _read_ssh_hosts()
@@ -240,7 +252,14 @@ def add_hpc_wizard() -> None:
         ssh_host = _pick_ssh_host()
 
     gpu = _yes_no("GPU system?", default=False)
-    rundir = _prompt("Scratch/run directory on remote (e.g. /ptmp/user/scratch)")
+    print(
+        "\nScratch/run directory — ExPyRe will create job subdirectories here.\n"
+        "Use a fast scratch filesystem, not your home directory. All results\n"
+        "are automatically synced back to your local machine after each job."
+    )
+    rundir = _prompt(
+        "Scratch directory path on remote, e.g. /ptmp/user/alomancy_scratch"
+    )
 
     print(
         "\nModule/setup commands — press Enter after each command.\n"
@@ -264,7 +283,7 @@ def add_hpc_wizard() -> None:
             continue
         cores = _prompt_int(f"  Cores per node for '{pname}'")
         max_time = _prompt(f"  Max time for '{pname}'", default="24:00:00")
-        max_mem = _prompt(f"  Max memory for '{pname}' (e.g. '240GB')")
+        max_mem = _prompt(f"  Max memory for '{pname}', e.g. 240GB")
         partitions[pname] = {
             "num_cores": cores,
             "max_time": max_time,
@@ -277,9 +296,9 @@ def add_hpc_wizard() -> None:
     gpu_gres: str | None = None
     if gpu:
         print("\nGPU SBATCH options (press Enter to skip each):")
-        c = _prompt("  Constraint string (e.g. 'gpu')").strip()
+        c = _prompt("  Constraint string, e.g. gpu").strip()
         gpu_constraint = c or None
-        g = _prompt("  Gres string (e.g. 'gpu:a100:1')").strip()
+        g = _prompt("  Gres string, e.g. gpu:a100:1").strip()
         gpu_gres = g or None
 
     expyre_entry = build_expyre_entry(
@@ -297,13 +316,13 @@ def add_hpc_wizard() -> None:
     print("  (This name goes in your run YAML: hpc: '<profile_name>')")
     profile_name = _prompt("Profile name", default=system_name)
     venv_cmd = _prompt(
-        "Venv activation command (e.g. 'source /u/user/.venvs/alomancy/bin/activate')"
+        "Venv activation command, e.g. source /u/user/.venvs/alomancy/bin/activate"
     )
 
     triton_cache: str | None = None
     if gpu:
         tc = _prompt(
-            "TRITON_CACHE_DIR path (for GPU PyTorch cache, or Enter to skip)"
+            "TRITON_CACHE_DIR path for GPU PyTorch JIT cache, or Enter to skip"
         ).strip()
         triton_cache = tc or None
 
@@ -320,7 +339,7 @@ def add_hpc_wizard() -> None:
     ranks_per_node = _prompt_int(
         "Ranks per node (usually = cores per node)", default=default_ranks
     )
-    max_mem_node = _prompt("Max memory per node (e.g. '60GB')", default=default_mem)
+    max_mem_node = _prompt("Max memory per node", default=default_mem)
     node_info = {
         "ranks_per_system": ranks_per_node,
         "ranks_per_node": ranks_per_node,
@@ -365,8 +384,10 @@ def add_hpc_wizard() -> None:
     print("\n--- Remote Installation ---")
     do_install = _yes_no("Install alomancy on this system now?", default=False)
     if do_install:
+        derived_python = _derive_python_from_venv(venv_cmd) or ""
         python_path = _prompt(
-            "Python executable path on remote (e.g. /u/user/.venvs/alomancy/bin/python)"
+            "Python executable path on remote",
+            default=derived_python,
         ).strip()
         if python_path:
             print(
@@ -378,7 +399,9 @@ def add_hpc_wizard() -> None:
             except Exception as exc:
                 print(f"  Remote install failed: {exc}")
                 print(
-                    "  Config files were already written — you can install manually later."
+                    "  Please install manually by running:\n"
+                    f"    ssh {ssh_host} '{python_path} -m pip install alomancy'\n"
+                    "  Config files are already written — continuing setup."
                 )
 
     print(f"\nSetup complete! Use '{profile_name}' in your run YAML:")
