@@ -1,6 +1,6 @@
 ---
 description: Check CI, bump version tag, build, and publish to PyPI
-allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git status:*), Bash(git add:*), Bash(git commit:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(python -m build:*), Bash(twine upload:*), Bash(twine check:*), Bash(rm -rf:*), Bash(pip install:*)
+allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git status:*), Bash(git add:*), Bash(git commit:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(python -m build:*), Bash(twine upload:*), Bash(twine check:*), Bash(rm -rf:*), Bash(pip install:*), Bash(date:*), Bash(ruff:*)
 ---
 
 ## Context
@@ -20,9 +20,20 @@ Parse the CI run list above. Find the most recent completed run for the `CI/CD P
 
 If CI is still in progress, tell the user and stop.
 
+### Step 1b — Lint and auto-format
+
+Run ruff to auto-fix any formatting or lint issues before checking the working tree:
+
+```bash
+ruff format .
+ruff check . --fix
+```
+
+If ruff reports unfixable errors after `--fix`, stop and report them — do not proceed with a broken codebase. If ruff modified any files, the working-tree check in Step 2 will pick them up and commit them.
+
 ### Step 2 — Ensure a clean working tree
 
-Check the `Uncommitted changes` output above. If any tracked files are modified or staged, **commit them before tagging**:
+Check the `Uncommitted changes` output above (re-run `git status --short` to reflect any ruff changes). If any tracked files are modified or staged, **commit them before tagging**:
 
 ```bash
 git add <files>
@@ -41,6 +52,31 @@ The project uses `setuptools_scm` — the version is driven entirely by git tags
 - **major** (e.g. v0.2.0 → v1.0.0) — breaking changes
 
 Wait for the user to confirm the new tag before proceeding.
+
+### Step 3b — Update changelog, CLAUDE.md, and docs
+
+Before tagging, ensure the release is documented.
+
+**CHANGELOG.md:**
+Read `CHANGELOG.md`. If an `## [Unreleased]` section exists, rename it to `## [<version without 'v'>] - <today's date>`. Get today's date with:
+```bash
+date +%Y-%m-%d
+```
+If there is no `[Unreleased]` section, warn the user and ask whether they want to add release notes before continuing.
+
+**CLAUDE.md:**
+Ask the user: "Does CLAUDE.md need any updates for this release? (new modules, conventions, architecture changes)" — if yes, read the file and make the edits they describe.
+
+**docs/:**
+Ask the user: "Do any docs pages need updating for this release?" — if yes, read and edit the relevant files.
+
+**Commit all documentation changes:**
+Once all edits are done, stage and commit only the files that were actually modified:
+```bash
+git add CHANGELOG.md CLAUDE.md docs/
+git commit -m "docs: update changelog and docs for <new_tag>"
+```
+If nothing changed, skip the commit.
 
 ### Step 4 — Create and push the git tag
 
