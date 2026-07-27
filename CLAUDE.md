@@ -77,7 +77,11 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 
 ### Configuration (`src/alomancy/configs/`)
 
-`load_dictionaries(config_path)` reads a YAML file into a `jobs_dict` passed to the workflow constructor. Three top-level keys are required: `initialization`, `mlip_committee`, `structure_generation`, `high_accuracy_evaluation`. Each carries a `name`, `max_time`, and `hpc` sub-dict (`hpc_name`, `partitions`, `pre_cmds`).
+`load_dictionaries(config_path)` reads a YAML file into a `jobs_dict` passed to the workflow constructor. Four top-level keys are required: `initialization`, `mlip_committee`, `structure_generation`, `high_accuracy_evaluation`. Each carries a `name`, `max_time`, and `hpc` value.
+
+**HPC string resolution**: `hpc:` may be either a dict (full inline profile, backwards-compatible) or a string name (e.g. `hpc: 'raven_gpu'`). When it is a string, `load_dictionaries` looks it up in `~/.alomancy/hpc_config.yaml` (loaded by `global_config._load_global_hpc_config()`) and substitutes the full dict in-place. Raises `ValueError` if the named profile is not found — message directs the user to `alomancy add-hpc`.
+
+`global_config.py` holds path constants (`ALOMANCY_HPC_CONFIG = ~/.alomancy/hpc_config.yaml`, `EXPYRE_CONFIG = ~/.expyre/config.json`) and `_load_global_hpc_config()`.
 
 `RemoteInfo` and `get_remote_info()` convert a job sub-dict into an Expyre `RemoteInfo` object. The `sys_name` field maps to an Expyre system name (defined in the user's Expyre config, not in this repo).
 
@@ -106,6 +110,8 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 | `utils/clean_structures.py` | Validates/cleans ASE Atoms objects after DFT (sets `config_type`, removes bad structures) |
 | `utils/test_train_manager.py` | Splits atom lists into train/test and merges extra datasets |
 | `analysis/plotting.py` | Plots MAE vs AL loop number |
+| `configs/global_config.py` | Path constants (`ALOMANCY_HPC_CONFIG`, `EXPYRE_CONFIG`) and `_load_global_hpc_config()` — reads `~/.alomancy/hpc_config.yaml` |
+| `cli/add_hpc.py` | `add_hpc_wizard()` interactive setup wizard; pure builders `build_expyre_entry`, `build_alomancy_profile`, `write_expyre_config`, `write_alomancy_hpc_config`, `run_remote_install` |
 
 ### Key conventions
 

@@ -24,44 +24,51 @@ workflow = ActiveLearningStandardMACE(
 workflow.run()
 ```
 
+## HPC Setup
+
+Before writing a config file, run the interactive wizard to register your HPC system:
+
+```bash
+alomancy add-hpc
+```
+
+The wizard reads your `~/.ssh/config` and lets you pick a host alias from a numbered list.
+It writes two files:
+- `~/.expyre/config.json` — ExPyRe scheduler entry (Slurm headers, partitions, scratch dir)
+- `~/.alomancy/hpc_config.yaml` — ALomancy profile (venv activation, DFT paths, node info)
+
+Once registered, refer to profiles by name in your run YAML (see below).
+
 ## Configuration
 
-Create a `standard_config.yaml` file with the required top-level keys:
+Create a `standard_config.yaml` file with the required top-level keys.  
+The `hpc:` value is the profile name written by `alomancy add-hpc`:
 
 ```yaml
 initialization:
   name: "initialization"
   max_time: "4:00:00"
-  hpc:
-    hpc_name: "local"
-    partitions: []
-    pre_cmds: []
+  hpc: "raven_cpu"       # profile name from ~/.alomancy/hpc_config.yaml
 
 mlip_committee:
   name: "mace_training"
   max_time: "12:00:00"
-  hpc:
-    hpc_name: "local"
-    partitions: []
-    pre_cmds: []
+  hpc: "raven_gpu"
 
 structure_generation:
   name: "md_generation"
   max_time: "8:00:00"
-  hpc:
-    hpc_name: "local"
-    partitions: []
-    pre_cmds: []
+  hpc: "raven_gpu"
 
 high_accuracy_evaluation:
-  name: "dft_evaluation"
-  calculator: "qe"    # "qe" (default) or "vasp"
+  name: "high_accuracy_evaluation"
+  calculator: "qe"       # "qe" (default) or "vasp"
   max_time: "24:00:00"
-  hpc:
-    hpc_name: "local"
-    partitions: []
-    pre_cmds: []
+  hpc: "raven_cpu"
 ```
+
+`load_dictionaries` resolves each string `hpc:` value from `~/.alomancy/hpc_config.yaml`
+automatically — no manual merging needed in your run script.
 
 See the [examples](examples.md) for more detailed configurations.
 
