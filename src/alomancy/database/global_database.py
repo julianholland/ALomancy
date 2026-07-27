@@ -2,6 +2,7 @@ import logging
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
 from sage_lib.partition.Partition import Partition
@@ -192,6 +193,77 @@ class GlobalDatabase:
     # ------------------------------------------------------------------
     # In-place metadata update helpers
     # ------------------------------------------------------------------
+
+    def store_mace_predictions(
+        self,
+        loop_idx: int,
+        fit_idx: int,
+        predictions: dict[int, dict],
+    ) -> None:
+        """Write per-structure MACE predictions for one committee member.
+
+        predictions: {global_db_id: {"energy": float, "forces": list[list[float]]}}
+        Writes keys mace_energy_loop_{loop_idx}_fit_{fit_idx} and
+        mace_forces_loop_{loop_idx}_fit_{fit_idx} into each container's metadata.
+        """
+        id_meta_map = {
+            gid: {
+                f"mace_energy_loop_{loop_idx}_fit_{fit_idx}": p["energy"],
+                f"mace_forces_loop_{loop_idx}_fit_{fit_idx}": p["forces"],
+            }
+            for gid, p in predictions.items()
+        }
+        self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
+
+    def get_mace_predictions(
+        self,
+        loop_idx: int,
+        fit_idx: int,
+    ) -> dict[str, tuple] | None:
+        """Retrieve stored MACE predictions for parity plotting, split by train/test.
+
+        Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)} where
+        each element is a numpy array (e values per-atom eV/atom, f values flat
+        eV/Å), or None if no predictions are stored for this loop/fit.
+        """
+        energy_key = f"mace_energy_loop_{loop_idx}_fit_{fit_idx}"
+        forces_key = f"mace_forces_loop_{loop_idx}_fit_{fit_idx}"
+
+        buckets: dict[str, dict] = {
+            "train": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
+            "test": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
+        }
+        found = False
+
+        for c in self.partition.list_containers():
+            apm = c.AtomPositionManager
+            if energy_key not in apm.metadata:
+                continue
+            found = True
+            split = apm.metadata.get("split", "train")
+            bucket = buckets.get(split, buckets["train"])
+            n = len(apm.atomLabelsList)
+            bucket["e_dft"].append(apm.energy / n)
+            bucket["e_pred"].append(apm.metadata[energy_key] / n)
+            if apm.forces is not None:
+                bucket["f_dft"].extend(apm.forces.flatten().tolist())
+                bucket["f_pred"].extend(
+                    np.array(apm.metadata[forces_key]).flatten().tolist()
+                )
+
+        if not found:
+            return None
+
+        return {
+            split: (
+                np.array(b["e_dft"]),
+                np.array(b["e_pred"]),
+                np.array(b["f_dft"]),
+                np.array(b["f_pred"]),
+            )
+            for split, b in buckets.items()
+            if b["e_dft"]
+        }
 
     def flag_as_duplicates(self, positional_indices: list[int]) -> None:
         """Set is_duplicate=True on containers at the given positional indices.

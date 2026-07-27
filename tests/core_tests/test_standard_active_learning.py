@@ -1469,3 +1469,69 @@ class TestHighAccuracyEvaluationCoverage:
             )
 
         assert mock_sub.call_count == 2
+
+
+class TestStoreMlipPredictions:
+    """Tests for ActiveLearningStandardMACE.store_mlip_predictions."""
+
+    def _wf(self, tmp_path, minimal_jobs_dict):
+        return ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=1,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+        )
+
+    def _write_xyz(self, path, atoms_list):
+        write(str(path), atoms_list, format="extxyz")
+
+    @pytest.mark.unit
+    def test_skips_if_sentinel_exists(self, tmp_path, minimal_jobs_dict, monkeypatch):
+        """Returns immediately without any inference when mace_predictions.done exists."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        loop_dir = tmp_path / "results" / "al_loop_0"
+        loop_dir.mkdir(parents=True)
+        (loop_dir / "mace_predictions.done").touch()
+
+        store_calls = []
+        with patch.object(
+            wf.db,
+            "store_mace_predictions",
+            side_effect=lambda *a: store_calls.append(a),
+        ):
+            wf.store_mlip_predictions(0, "al_loop_0", minimal_jobs_dict)
+
+        assert store_calls == []
+
+    @pytest.mark.unit
+    def test_skips_missing_model_writes_sentinel(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """When no model file exists, logs warning and writes sentinel without storing."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        dummy = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        dummy.info["REF_energy"] = -1.0
+        dummy.arrays["REF_forces"] = np.zeros((1, 3))
+        dummy.info["global_db_id"] = 0
+
+        loop_dir = tmp_path / "results" / "al_loop_0"
+        loop_dir.mkdir(parents=True)
+        self._write_xyz(loop_dir / "train_set.xyz", [dummy])
+        self._write_xyz(loop_dir / "test_set.xyz", [dummy])
+
+        store_calls = []
+        with patch.object(
+            wf.db,
+            "store_mace_predictions",
+            side_effect=lambda *a: store_calls.append(a),
+        ):
+            wf.store_mlip_predictions(0, "al_loop_0", minimal_jobs_dict)
+
+        assert store_calls == []
+        assert (loop_dir / "mace_predictions.done").exists()

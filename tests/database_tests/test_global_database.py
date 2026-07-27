@@ -883,3 +883,72 @@ class TestGlobalDbId:
 
         assert n == 0
         assert ids_after_first == ids_after_second
+
+
+class TestMacePredictions:
+    """Tests for store_mace_predictions and get_mace_predictions."""
+
+    def _make_db_with_one_structure(self, tmp_path, split="train"):
+        atoms = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-1.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([atoms], split=split, skip_duplicates=False)
+        db.assign_global_db_ids()
+        return db
+
+    @pytest.mark.unit
+    def test_store_writes_keys(self, tmp_path):
+        db = self._make_db_with_one_structure(tmp_path)
+        preds = {0: {"energy": -2.0, "forces": [[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]]}}
+        db.store_mace_predictions(0, 0, preds)
+        container = next(iter(db.partition.list_containers()))
+        meta = container.AtomPositionManager.metadata
+        assert "mace_energy_loop_0_fit_0" in meta
+        assert meta["mace_energy_loop_0_fit_0"] == pytest.approx(-2.0)
+        assert meta["mace_forces_loop_0_fit_0"][0] == pytest.approx([0.2, 0.0, 0.0])
+
+    @pytest.mark.unit
+    def test_get_returns_none_when_missing(self, tmp_path):
+        db = self._make_db_with_one_structure(tmp_path)
+        assert db.get_mace_predictions(0, 0) is None
+
+    @pytest.mark.unit
+    def test_round_trip_values(self, tmp_path):
+        db = self._make_db_with_one_structure(tmp_path, split="train")
+        forces = [[0.3, 0.1, 0.0], [-0.3, -0.1, 0.0]]
+        db.store_mace_predictions(1, 2, {0: {"energy": -3.0, "forces": forces}})
+        result = db.get_mace_predictions(1, 2)
+        assert result is not None
+        assert "train" in result
+        e_dft, e_pred, f_dft, f_pred = result["train"]
+        # 2-atom structure: per-atom energy = -1.0/2 = -0.5 (dft) and -3.0/2 = -1.5 (pred)
+        assert e_dft[0] == pytest.approx(-0.5)
+        assert e_pred[0] == pytest.approx(-1.5)
+        assert len(f_dft) == 6  # 2 atoms x 3 components
+        assert len(f_pred) == 6
+
+    @pytest.mark.unit
+    def test_split_separation(self, tmp_path):
+        """Structures split into train/test land in the correct bucket."""
+        db = GlobalDatabase(str(tmp_path / "db"))
+        train_a = make_atoms(["H"], config_type="init_dimer", ref_energy=-1.0)
+        test_a = make_atoms(["H"], config_type="init_dimer", ref_energy=-2.0)
+        db.add_structures([train_a], split="train", skip_duplicates=False)
+        db.add_structures([test_a], split="test", skip_duplicates=False)
+        db.assign_global_db_ids()
+        db.store_mace_predictions(
+            0,
+            0,
+            {
+                0: {"energy": -0.9, "forces": [[0.0, 0.0, 0.0]]},
+                1: {"energy": -1.9, "forces": [[0.0, 0.0, 0.0]]},
+            },
+        )
+        result = db.get_mace_predictions(0, 0)
+        assert result is not None
+        assert "train" in result
+        assert "test" in result

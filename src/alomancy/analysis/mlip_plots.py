@@ -3,6 +3,7 @@ import logging
 import math
 import re
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -318,32 +319,45 @@ def plot_dft_vs_model(
     mlip_committee_job_dict: dict,
     seed: int,
     plots_dir: Path,
+    db: Any = None,
+    loop_idx: int | None = None,
 ) -> None:
-    try:
-        from mace.calculators import MACECalculator
-    except ImportError:
-        logger.warning("mace not importable — skipping parity plots.")
-        return
-
     setup_alomancy_style()
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["size_of_committee"]
 
-    train_atoms = _load_and_subsample(
-        Path("results", base_name, "train_set.xyz"), seed, "train"
-    )
-    test_atoms = _load_and_subsample(
-        Path("results", base_name, "test_set.xyz"), seed, "test"
-    )
-
-    if train_atoms is None and test_atoms is None:
-        return
-
-    # Load each model once; run inference on both sets.
     train_results: list = []
     test_results: list = []
 
     for i in range(n_fits):
+        # Use stored DB predictions when available — no model load or GPU needed.
+        if db is not None and loop_idx is not None:
+            stored = db.get_mace_predictions(loop_idx, i)
+            if stored is not None:
+                train_results.append(stored.get("train"))
+                test_results.append(stored.get("test"))
+                logger.info(
+                    "Using stored DB predictions for loop %d fit %d.", loop_idx, i
+                )
+                continue
+
+        # Fall back to live inference.
+        try:
+            from mace.calculators import MACECalculator
+        except ImportError:
+            logger.warning("mace not importable — skipping parity plots.")
+            return
+
+        train_atoms = _load_and_subsample(
+            Path("results", base_name, "train_set.xyz"), seed, "train"
+        )
+        test_atoms = _load_and_subsample(
+            Path("results", base_name, "test_set.xyz"), seed, "test"
+        )
+
+        if train_atoms is None and test_atoms is None:
+            return
+
         model_path = (
             Path("results", base_name, name, f"fit_{i}")
             / f"{name}_stagetwo_compiled.model"
@@ -371,11 +385,17 @@ def plot_dft_vs_model(
         train_results.append(_run_inference(calc, train_atoms) if train_atoms else None)
         test_results.append(_run_inference(calc, test_atoms) if test_atoms else None)
 
-    if train_atoms:
+    if not train_results and not test_results:
+        return
+
+    has_train = any(r is not None for r in train_results)
+    has_test = any(r is not None for r in test_results)
+
+    if has_train:
         _draw_parity_figure(
             train_results, n_fits, name, seed, "Training", base_name, plots_dir, "train"
         )
-    if test_atoms:
+    if has_test:
         _draw_parity_figure(
             test_results, n_fits, name, seed, "Test", base_name, plots_dir, "test"
         )

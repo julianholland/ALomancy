@@ -57,6 +57,25 @@ def _needs_anything(needs: dict) -> bool:
     )
 
 
+def _predict_structures(calc: object, atoms_list: list[Atoms]) -> dict[int, dict]:
+    """Run calc on each structure; return {global_db_id: {energy, forces}}."""
+    predictions: dict[int, dict] = {}
+    for atoms in atoms_list:
+        gid = atoms.info.get("global_db_id")
+        if gid is None or "REF_energy" not in atoms.info:
+            continue
+        a = atoms.copy()
+        a.calc = calc
+        try:
+            predictions[gid] = {
+                "energy": float(a.get_potential_energy()),
+                "forces": a.get_forces().tolist(),
+            }
+        except Exception as exc:
+            logger.debug("Prediction failed for global_db_id=%s: %s", gid, exc)
+    return predictions
+
+
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     """
     AL Technique: Committee
@@ -367,6 +386,62 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         self._mark_phase_done(base_name, "train_mlip")
         return mae_avg_results
+
+    def store_mlip_predictions(
+        self, loop_idx: int, base_name: str, job_dict: dict
+    ) -> None:
+        done_file = Path(f"results/{base_name}/mace_predictions.done")
+        if done_file.exists():
+            logger.info("MACE predictions already stored for %s, skipping.", base_name)
+            return
+
+        from mace.calculators import (
+            MACECalculator,  # lazy import — avoids GPU dep at import time
+        )
+
+        mlip_job_dict = job_dict["mlip_committee"]
+        name = mlip_job_dict["name"]
+        size = mlip_job_dict.get("size_of_committee", 1)
+        workdir = Path(f"results/{base_name}")
+
+        train_xyz = workdir / "train_set.xyz"
+        test_xyz = workdir / "test_set.xyz"
+        all_atoms: list[Atoms] = []
+        if train_xyz.exists():
+            all_atoms += list(read(train_xyz, index=":", format="extxyz"))
+        if test_xyz.exists():
+            all_atoms += list(read(test_xyz, index=":", format="extxyz"))
+
+        if not all_atoms:
+            logger.warning(
+                "No train/test xyz found for %s — skipping predictions.", base_name
+            )
+            done_file.touch()
+            return
+
+        for fit_idx in range(size):
+            model_path = (
+                workdir / name / f"fit_{fit_idx}" / f"{name}_stagetwo_compiled.model"
+            )
+            if not model_path.exists():
+                logger.warning(
+                    "Model missing for fit_%d — skipping predictions for this fit.",
+                    fit_idx,
+                )
+                continue
+            calc = MACECalculator(
+                model_paths=[str(model_path)], device="cpu", default_dtype="float64"
+            )
+            preds = _predict_structures(calc, all_atoms)
+            self.db.store_mace_predictions(loop_idx, fit_idx, preds)
+            logger.info(
+                "Stored MACE predictions: loop %d fit %d (%d structures).",
+                loop_idx,
+                fit_idx,
+                len(preds),
+            )
+
+        done_file.touch()
 
     def generate_structures(
         self, base_name: str, job_dict: dict, train_atoms_list: list[Atoms]

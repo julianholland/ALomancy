@@ -170,6 +170,7 @@ class BaseActiveLearningWorkflow(ABC):
             logger.debug("  Test set size: %d", len(test_xyzs))
 
             evaluation_results = self.train_mlip(base_name, self.jobs_dict, **kwargs)
+            self.store_mlip_predictions(loop, base_name, self.jobs_dict)
 
             logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
 
@@ -190,7 +191,12 @@ class BaseActiveLearningWorkflow(ABC):
                     base_name, self.jobs_dict["mlip_committee"], self.seed, plots_dir
                 )
                 plot_dft_vs_model(
-                    base_name, self.jobs_dict["mlip_committee"], self.seed, plots_dir
+                    base_name,
+                    self.jobs_dict["mlip_committee"],
+                    self.seed,
+                    plots_dir,
+                    db=self.db,
+                    loop_idx=loop,
                 )
 
             generated_structures = self.generate_structures(
@@ -348,6 +354,14 @@ class BaseActiveLearningWorkflow(ABC):
             Structures with high-accuracy results (energy, forces, etc.)
         """
         pass
+
+    def store_mlip_predictions(  # noqa: B027
+        self, loop_idx: int, base_name: str, job_dict: dict
+    ) -> None:
+        """Store per-structure MLIP predictions in the DB after training.
+
+        Default is a no-op. Override in subclasses that support prediction storage.
+        """
 
     @abstractmethod
     def train_mlip(self, base_name: str, job_dict: dict, **kwargs) -> pd.DataFrame:
