@@ -930,3 +930,54 @@ class TestSkipInitialization:
             wf.run()
 
         assert any(a.info.get("marker") == "db_train" for a in received)
+
+
+class TestStoreMlipPredictionsHook:
+    """Tests that store_mlip_predictions no-op hook works correctly."""
+
+    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+        return ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=1,
+            plots=False,
+            db_path=str(tmp_path / "db"),
+        )
+
+    @pytest.mark.unit
+    def test_noop_returns_none(self, tmp_path, minimal_jobs_dict):
+        """Base class store_mlip_predictions returns None without error."""
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        result = wf.store_mlip_predictions(0, "al_loop_0", minimal_jobs_dict)
+        assert result is None
+
+    @pytest.mark.unit
+    def test_hook_called_after_train_mlip(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """run() calls store_mlip_predictions once per loop after train_mlip."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+
+        a = Atoms("He", cell=[5, 5, 5], pbc=True)
+        a.info["REF_energy"] = -1.0
+        a.arrays["REF_forces"] = np.zeros((1, 3))
+        a.info["config_type"] = "high_sd"
+        wf.db.add_structures([a], split="train", skip_duplicates=False)
+
+        hook_calls = []
+
+        with (
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(
+                wf,
+                "store_mlip_predictions",
+                side_effect=lambda *a, **kw: hook_calls.append(a[0]),
+            ),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]),
+        ):
+            wf.run()
+
+        assert hook_calls == [0]
