@@ -78,6 +78,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.singlepoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">SinglePointCalculator</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">sage_lib.partition.Partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partition</span>
@@ -297,6 +298,83 @@
     <span class="c1"># ------------------------------------------------------------------</span>
     <span class="c1"># In-place metadata update helpers</span>
     <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="GlobalDatabase.store_mace_predictions">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.store_mace_predictions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">store_mace_predictions</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">loop_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">fit_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Write per-structure MACE predictions for one committee member.</span>
+
+<span class="sd">        predictions: {global_db_id: {&quot;energy&quot;: float, &quot;forces&quot;: list[list[float]]}}</span>
+<span class="sd">        Writes keys mace_energy_loop_{loop_idx}_fit_{fit_idx} and</span>
+<span class="sd">        mace_forces_loop_{loop_idx}_fit_{fit_idx} into each container&#39;s metadata.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">id_meta_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">gid</span><span class="p">:</span> <span class="p">{</span>
+                <span class="sa">f</span><span class="s2">&quot;mace_energy_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;energy&quot;</span><span class="p">],</span>
+                <span class="sa">f</span><span class="s2">&quot;mace_forces_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;forces&quot;</span><span class="p">],</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">gid</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">id_meta_map</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.get_mace_predictions">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_mace_predictions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_mace_predictions</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">loop_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">fit_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieve stored MACE predictions for parity plotting, split by train/test.</span>
+
+<span class="sd">        Returns {&quot;train&quot;: (e_dft, e_pred, f_dft, f_pred), &quot;test&quot;: (...)} where</span>
+<span class="sd">        each element is a numpy array (e values per-atom eV/atom, f values flat</span>
+<span class="sd">        eV/Å), or None if no predictions are stored for this loop/fit.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">energy_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;mace_energy_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">forces_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;mace_forces_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="n">buckets</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;train&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;e_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;e_pred&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_pred&quot;</span><span class="p">:</span> <span class="p">[]},</span>
+            <span class="s2">&quot;test&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;e_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;e_pred&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_pred&quot;</span><span class="p">:</span> <span class="p">[]},</span>
+        <span class="p">}</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
+            <span class="n">apm</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span>
+            <span class="k">if</span> <span class="n">energy_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">found</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">split</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">,</span> <span class="s2">&quot;train&quot;</span><span class="p">)</span>
+            <span class="n">bucket</span> <span class="o">=</span> <span class="n">buckets</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">split</span><span class="p">,</span> <span class="n">buckets</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">])</span>
+            <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span><span class="p">)</span>
+            <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;e_dft&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">energy</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span>
+            <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;e_pred&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">energy_key</span><span class="p">]</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;f_dft&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">forces</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;f_pred&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">forces_key</span><span class="p">])</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">found</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">split</span><span class="p">:</span> <span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">&quot;e_dft&quot;</span><span class="p">]),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">&quot;e_pred&quot;</span><span class="p">]),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">&quot;f_dft&quot;</span><span class="p">]),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">&quot;f_pred&quot;</span><span class="p">]),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">split</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">buckets</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="s2">&quot;e_dft&quot;</span><span class="p">]</span>
+        <span class="p">}</span></div>
+
 
 <div class="viewcode-block" id="GlobalDatabase.flag_as_duplicates">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates">[docs]</a>

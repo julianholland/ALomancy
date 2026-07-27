@@ -133,6 +133,25 @@
     <span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_predict_structures</span><span class="p">(</span><span class="n">calc</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Run calc on each structure; return {global_db_id: {energy, forces}}.&quot;&quot;&quot;</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
+        <span class="n">gid</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global_db_id&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">gid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="s2">&quot;REF_energy&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">a</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calc</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">predictions</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;energy&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()),</span>
+                <span class="s2">&quot;forces&quot;</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+            <span class="p">}</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Prediction failed for global_db_id=</span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">gid</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">predictions</span>
+
+
 <div class="viewcode-block" id="ActiveLearningStandardMACE">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ActiveLearningStandardMACE</span><span class="p">(</span><span class="n">BaseActiveLearningWorkflow</span><span class="p">):</span>
@@ -450,6 +469,65 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;train_mlip&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">mae_avg_results</span></div>
+
+
+<div class="viewcode-block" id="ActiveLearningStandardMACE.store_mlip_predictions">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.store_mlip_predictions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">store_mlip_predictions</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">loop_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">done_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">/mace_predictions.done&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">done_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;MACE predictions already stored for </span><span class="si">%s</span><span class="s2">, skipping.&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">mace.calculators</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+            <span class="n">MACECalculator</span><span class="p">,</span>  <span class="c1"># lazy import — avoids GPU dep at import time</span>
+        <span class="p">)</span>
+
+        <span class="n">mlip_job_dict</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">]</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">mlip_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="n">mlip_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">train_xyz</span> <span class="o">=</span> <span class="n">workdir</span> <span class="o">/</span> <span class="s2">&quot;train_set.xyz&quot;</span>
+        <span class="n">test_xyz</span> <span class="o">=</span> <span class="n">workdir</span> <span class="o">/</span> <span class="s2">&quot;test_set.xyz&quot;</span>
+        <span class="n">all_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">train_xyz</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">all_atoms</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">train_xyz</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">test_xyz</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">all_atoms</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">test_xyz</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">all_atoms</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;No train/test xyz found for </span><span class="si">%s</span><span class="s2"> — skipping predictions.&quot;</span><span class="p">,</span> <span class="n">base_name</span>
+            <span class="p">)</span>
+            <span class="n">done_file</span><span class="o">.</span><span class="n">touch</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="k">for</span> <span class="n">fit_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">size</span><span class="p">):</span>
+            <span class="n">model_path</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">workdir</span> <span class="o">/</span> <span class="n">name</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">model_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Model missing for fit_</span><span class="si">%d</span><span class="s2"> — skipping predictions for this fit.&quot;</span><span class="p">,</span>
+                    <span class="n">fit_idx</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span>
+                <span class="n">model_paths</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">)],</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="n">default_dtype</span><span class="o">=</span><span class="s2">&quot;float64&quot;</span>
+            <span class="p">)</span>
+            <span class="n">preds</span> <span class="o">=</span> <span class="n">_predict_structures</span><span class="p">(</span><span class="n">calc</span><span class="p">,</span> <span class="n">all_atoms</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">store_mace_predictions</span><span class="p">(</span><span class="n">loop_idx</span><span class="p">,</span> <span class="n">fit_idx</span><span class="p">,</span> <span class="n">preds</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Stored MACE predictions: loop </span><span class="si">%d</span><span class="s2"> fit </span><span class="si">%d</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> structures).&quot;</span><span class="p">,</span>
+                <span class="n">loop_idx</span><span class="p">,</span>
+                <span class="n">fit_idx</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">preds</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="n">done_file</span><span class="o">.</span><span class="n">touch</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="ActiveLearningStandardMACE.generate_structures">
