@@ -22,13 +22,13 @@ def write_temporary_yaml():
         "mlip_committee": {
             "name": "mlip_test",
             "max_time": "value",
-            "hpc": "value",
+            "hpc": {"hpc_name": "test-hpc"},
             "size_of_committee": 5,
         },
         "structure_generation": {
             "name": "struc_gen_test",
             "max_time": "value",
-            "hpc": "value",
+            "hpc": {"hpc_name": "test-hpc"},
             "number_of_concurrent_jobs": 5,
         },
         "high_accuracy_evaluation": {

@@ -1,5 +1,157 @@
 # Examples
 
+## Setting Up an HPC System with `alomancy add-hpc`
+
+Before writing a run config, register your HPC system with the interactive wizard:
+
+```bash
+alomancy add-hpc
+```
+
+The wizard configures two files:
+- `~/.expyre/config.json` — ExPyRe scheduler config (Slurm headers, partitions, scratch directory)
+- `~/.alomancy/hpc_config.yaml` — ALomancy profile (venv path, DFT binary paths, node info)
+
+> **Prerequisite:** Add the HPC to `~/.ssh/config` first so it is reachable by alias, e.g.:
+> ```
+> Host raven
+>     HostName raven.mpcdf.mpg.de
+>     User jholl
+> ```
+> Verify with: `ssh raven hostname`
+
+### Example walkthrough
+
+```
+=== ALomancy HPC Setup Wizard ===
+
+Configures two files:
+  /home/jholl/.expyre/config.json
+  /home/jholl/.alomancy/hpc_config.yaml
+
+Before continuing, make sure this HPC is reachable by SSH alias ...
+
+--- ExPyRe System (scheduler config) ---
+System name in ~/.expyre/config.json (e.g. 'raven_gpu'): raven_gpu
+
+Available SSH hosts from ~/.ssh/config:
+  1) raven
+  2) draco
+  3) raccoon
+  Enter a number to select, or type a hostname directly.
+SSH host: 1                          # picks 'raven'
+
+GPU system? [y/N]: y
+Scratch/run directory on remote (e.g. /ptmp/user/scratch): /ptmp/jholl/scratch
+
+Module/setup commands — press Enter after each command.
+Enter on a blank line to finish.
+Examples: 'module purge'  'module load python/3.11'  'export OMP_NUM_THREADS=1'
+  > module purge
+  > module load cuda/12.2 python/3.11
+  > export OMP_NUM_THREADS=1
+  >
+
+Partitions (at least one required):
+  Partition name (e.g. 'general'): gpubig
+  Cores per node for 'gpubig': 18
+  Max time for 'gpubig' [24:00:00]:
+  Max memory for 'gpubig' (e.g. '240GB'): 120GB
+  Add another partition? [y/N]: n
+
+GPU SBATCH options (press Enter to skip each):
+  Constraint string (e.g. 'gpu'):
+  Gres string (e.g. 'gpu:a100:1'): gpu:a100:1
+
+--- ALomancy HPC Profile ---
+  (This name goes in your run YAML: hpc: '<profile_name>')
+Profile name [raven_gpu]:
+Venv activation command: source /u/jholl/.venvs/alomancy/bin/activate
+TRITON_CACHE_DIR path (for GPU PyTorch cache, or Enter to skip): /u/jholl/.triton_cache
+
+Which partition(s) will this profile use? (comma-separated) [gpubig]:
+Ranks per node (usually = cores per node) [18]:
+Max memory per node (e.g. '60GB') [120GB]:
+
+DFT code on this system? Options: qe / vasp / none
+DFT code [none]:
+
+--- Remote Installation ---
+Install alomancy on this system now? [y/N]: y
+Python executable path on remote: /u/jholl/.venvs/alomancy/bin/python
+  Running: ssh raven '/u/jholl/.venvs/alomancy/bin/python -m pip install alomancy' …
+  Done.
+
+--- Writing config files ---
+  /home/jholl/.expyre/config.json  ← added 'raven_gpu'
+  /home/jholl/.alomancy/hpc_config.yaml  ← added 'raven_gpu'
+
+Setup complete! Use 'raven_gpu' in your run YAML:
+  mlip_committee:
+    hpc: 'raven_gpu'
+  structure_generation:
+    hpc: 'raven_gpu'
+  high_accuracy_evaluation:
+    hpc: 'raven_gpu'
+```
+
+The wizard writes a profile like this to `~/.alomancy/hpc_config.yaml`:
+
+```yaml
+raven_gpu:
+  hpc_name: raven_gpu
+  gpu: true
+  pre_cmds:
+    - source /u/jholl/.venvs/alomancy/bin/activate
+    - export TRITON_CACHE_DIR=/u/jholl/.triton_cache
+  partitions:
+    - gpubig
+  node_info:
+    ranks_per_system: 18
+    ranks_per_node: 18
+    threads_per_rank: 1
+    max_mem_per_node: 120GB
+```
+
+And this entry to `~/.expyre/config.json`:
+
+```json
+{
+  "systems": {
+    "raven_gpu": {
+      "host": "raven",
+      "remsh_cmd": "ssh",
+      "scheduler": "slurm",
+      "header": [
+        "#SBATCH --no-requeue",
+        "#SBATCH --nodes={num_nodes}",
+        "#SBATCH --cpus-per-task={num_cores}",
+        "#SBATCH --gres=gpu:a100:1"
+      ],
+      "commands": [
+        "module purge",
+        "module load cuda/12.2 python/3.11",
+        "export OMP_NUM_THREADS=1"
+      ],
+      "partitions": {
+        "gpubig": {"num_cores": 18, "max_time": "24:00:00", "max_mem": "120GB"}
+      },
+      "rundir": "/ptmp/jholl/scratch"
+    }
+  }
+}
+```
+
+Run `alomancy add-hpc` again to add more profiles (e.g. a separate CPU profile for DFT).
+Existing entries in both files are preserved.
+
+> **DFT paths and `pseudo_dict`:** The wizard writes flat keys (`pwx_path`, `pp_path`,
+> `vasp_path`) directly into the profile. The `pseudo_dict` (element → UPF/POTCAR mapping)
+> must be added manually to `~/.alomancy/hpc_config.yaml` after the wizard finishes,
+> because it is per-element and changes between projects.
+
+---
+
 ## Basic Usage
 
 Here's a simple example of running an active learning workflow:
