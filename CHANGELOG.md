@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.1] - 2026-07-27
 
 ### Added
 - **`alomancy add-hpc` wizard** (`cli/add_hpc.py`): interactive terminal wizard that configures two files in one go — `~/.expyre/config.json` (ExPyRe scheduler entry) and `~/.alomancy/hpc_config.yaml` (ALomancy HPC profile). Wizard flow: reads available SSH aliases from `~/.ssh/config` and presents a numbered pick-list; collects Slurm partition details (name, cores, max time, memory); builds the correct CPU or GPU SBATCH header automatically; collects the venv activation command and optional `TRITON_CACHE_DIR` for GPU nodes; optionally collects DFT paths (`pwx_path`/`pp_path` for QE, `vasp_path`/`pp_path` for VASP); optionally runs `pip install alomancy` on the remote over SSH. Existing entries in both files are preserved — the wizard only adds/overwrites the named entry.
@@ -113,6 +113,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - HPC system definitions
   - Flexible parameter management
 
-[Unreleased]: https://github.com/your-username/alomancy/compare/v0.1.1...HEAD
-[0.1.1]: https://github.com/your-username/alomancy/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/your-username/alomancy/releases/tag/v0.1.0
+[Unreleased]: https://github.com/julianholland/ALomancy/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/julianholland/ALomancy/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/julianholland/ALomancy/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/julianholland/ALomancy/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/julianholland/ALomancy/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/julianholland/ALomancy/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/julianholland/ALomancy/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/julianholland/ALomancy/releases/tag/v0.1.0

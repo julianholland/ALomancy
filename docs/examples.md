@@ -42,7 +42,11 @@ Available SSH hosts from ~/.ssh/config:
 SSH host: 1                          # picks 'raven'
 
 GPU system? [y/N]: y
-Scratch/run directory on remote (e.g. /ptmp/user/scratch): /ptmp/jholl/scratch
+
+Scratch/run directory — ExPyRe will create job subdirectories here.
+Use a fast scratch filesystem, not your home directory. All results
+are automatically synced back to your local machine after each job.
+Scratch directory path on remote, e.g. /ptmp/user/alomancy_scratch: /ptmp/jholl/alomancy_scratch
 
 Module/setup commands — press Enter after each command.
 Enter on a blank line to finish.
@@ -56,35 +60,35 @@ Partitions (at least one required):
   Partition name (e.g. 'general'): gpubig
   Cores per node for 'gpubig': 18
   Max time for 'gpubig' [24:00:00]:
-  Max memory for 'gpubig' (e.g. '240GB'): 120GB
+  Max memory for 'gpubig', e.g. 240GB: 120GB
   Add another partition? [y/N]: n
 
 GPU SBATCH options (press Enter to skip each):
-  Constraint string (e.g. 'gpu'):
-  Gres string (e.g. 'gpu:a100:1'): gpu:a100:1
+  Constraint string, e.g. gpu:
+  Gres string, e.g. gpu:a100:1: gpu:a100:1
 
 --- ALomancy HPC Profile ---
   (This name goes in your run YAML: hpc: '<profile_name>')
 Profile name [raven_gpu]:
-Venv activation command: source /u/jholl/.venvs/alomancy/bin/activate
-TRITON_CACHE_DIR path (for GPU PyTorch cache, or Enter to skip): /u/jholl/.triton_cache
+Venv activation command, e.g. source /u/user/.venvs/alomancy/bin/activate: source /u/jholl/.venvs/alomancy/bin/activate
+TRITON_CACHE_DIR path for GPU PyTorch JIT cache, or Enter to skip: /u/jholl/.triton_cache
 
 Which partition(s) will this profile use? (comma-separated) [gpubig]:
 Ranks per node (usually = cores per node) [18]:
-Max memory per node (e.g. '60GB') [120GB]:
+Max memory per node [120GB]:
 
 DFT code on this system? Options: qe / vasp / none
 DFT code [none]:
 
---- Remote Installation ---
-Install alomancy on this system now? [y/N]: y
-Python executable path on remote: /u/jholl/.venvs/alomancy/bin/python
-  Running: ssh raven '/u/jholl/.venvs/alomancy/bin/python -m pip install alomancy' …
-  Done.
-
 --- Writing config files ---
   /home/jholl/.expyre/config.json  ← added 'raven_gpu'
   /home/jholl/.alomancy/hpc_config.yaml  ← added 'raven_gpu'
+
+--- Remote Installation ---
+Install alomancy on this system now? [y/N]: y
+Python executable path on remote [/u/jholl/.venvs/alomancy/bin/python]:
+  Running: ssh raven '/u/jholl/.venvs/alomancy/bin/python -m pip install alomancy' …
+  Done.
 
 Setup complete! Use 'raven_gpu' in your run YAML:
   mlip_committee:
@@ -375,3 +379,30 @@ Structures in extra datasets should have:
 - `atoms.info["REF_energy"]` (float) — DFT energy
 - `atoms.arrays["REF_forces"]` (array, shape N×3) — DFT forces
 - `atoms.info["config_type"]` (str) — origin label (e.g. `"IsolatedAtom"`, `"external_data"`)
+
+## MACE Committee Predictions in the GlobalDatabase
+
+After each AL loop's MACE committee training, ALomancy runs inference with every committee model over the loop's train and test sets and stores the predicted energies and forces in the GlobalDatabase. This means parity plots are generated from the DB (fast, no GPU required) rather than by reloading models and re-running inference on each plot call.
+
+The stored metadata keys follow the pattern:
+```
+mace_energy_loop_{N}_fit_{i}   # predicted energy (eV, raw)
+mace_forces_loop_{N}_fit_{i}   # predicted forces ([[fx,fy,fz], ...], eV/Å)
+```
+
+You can retrieve predictions programmatically:
+
+```python
+from alomancy.database.global_database import GlobalDatabase
+
+db = GlobalDatabase("results/global_database")
+
+# Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)}
+# where each element is a numpy array; e values are per-atom (eV/atom)
+preds = db.get_mace_predictions(loop_idx=0, fit_idx=0)
+
+e_dft, e_pred, f_dft, f_pred = preds["train"]
+print(f"Train energy MAE: {abs(e_dft - e_pred).mean():.4f} eV/atom")
+```
+
+Predictions are guarded by a `results/al_loop_{N}/mace_predictions.done` sentinel so they are not recomputed on restart. If you need to regenerate predictions (e.g. after installing a different model), delete that sentinel file.
