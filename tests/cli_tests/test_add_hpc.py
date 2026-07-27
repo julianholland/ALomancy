@@ -6,8 +6,8 @@ import pytest
 from yaml import safe_load
 
 
-@pytest.mark.unit
 class TestBuildExpyreEntry:
+    @pytest.mark.unit
     def test_cpu_header(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
@@ -24,6 +24,7 @@ class TestBuildExpyreEntry:
         assert not any("cpus-per-task" in h for h in entry["header"])
         assert not any("gres" in h for h in entry["header"])
 
+    @pytest.mark.unit
     def test_gpu_header_with_constraint_and_gres(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
@@ -42,6 +43,7 @@ class TestBuildExpyreEntry:
         assert any("constraint" in h for h in entry["header"])
         assert any("gres" in h for h in entry["header"])
 
+    @pytest.mark.unit
     def test_gpu_header_no_optional_lines(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
@@ -58,6 +60,7 @@ class TestBuildExpyreEntry:
         assert not any("constraint" in h for h in entry["header"])
         assert not any("gres" in h for h in entry["header"])
 
+    @pytest.mark.unit
     def test_basic_fields_present(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
@@ -75,8 +78,8 @@ class TestBuildExpyreEntry:
         assert entry["commands"] == ["module purge"]
 
 
-@pytest.mark.unit
 class TestBuildAlomancyProfile:
+    @pytest.mark.unit
     def test_cpu_profile_no_triton(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 
@@ -96,6 +99,7 @@ class TestBuildAlomancyProfile:
         assert profile["hpc_name"] == "raven"
         assert not any("TRITON" in c for c in profile["pre_cmds"])
 
+    @pytest.mark.unit
     def test_gpu_profile_with_triton(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 
@@ -113,6 +117,7 @@ class TestBuildAlomancyProfile:
             for c in profile["pre_cmds"]
         )
 
+    @pytest.mark.unit
     def test_gpu_no_triton_not_added(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 
@@ -126,6 +131,7 @@ class TestBuildAlomancyProfile:
         )
         assert not any("TRITON" in c for c in profile["pre_cmds"])
 
+    @pytest.mark.unit
     def test_qe_paths_written(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 
@@ -141,6 +147,7 @@ class TestBuildAlomancyProfile:
         assert profile["pwx_path"] == "/path/to/pw.x"
         assert profile["pp_path"] == "/path/to/pps"
 
+    @pytest.mark.unit
     def test_vasp_paths_written(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 
@@ -158,8 +165,8 @@ class TestBuildAlomancyProfile:
         assert "pwx_path" not in profile
 
 
-@pytest.mark.unit
 class TestWriteExpyreConfig:
+    @pytest.mark.unit
     def test_creates_new_file(self, tmp_path):
         from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
 
@@ -174,6 +181,7 @@ class TestWriteExpyreConfig:
         assert "myhost" in data["systems"]
         assert data["systems"]["myhost"]["host"] == "h"
 
+    @pytest.mark.unit
     def test_merges_without_overwriting_existing(self, tmp_path):
         from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
 
@@ -188,9 +196,21 @@ class TestWriteExpyreConfig:
         assert "existing" in data["systems"]
         assert "new_system" in data["systems"]
 
+    @pytest.mark.unit
+    def test_malformed_json_raises_value_error(self, tmp_path):
+        from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
 
-@pytest.mark.unit
+        cfg = tmp_path / "config.json"
+        cfg.write_text("{not valid json")
+        entry = build_expyre_entry(
+            host="h", gpu=False, partitions={}, commands=[], rundir="/s"
+        )
+        with pytest.raises(ValueError, match="not valid JSON"):
+            write_expyre_config("myhost", entry, path=cfg)
+
+
 class TestWriteAlomancyHpcConfig:
+    @pytest.mark.unit
     def test_creates_dir_and_file(self, tmp_path):
         from alomancy.cli.add_hpc import (
             build_alomancy_profile,
@@ -207,6 +227,7 @@ class TestWriteAlomancyHpcConfig:
             data = safe_load(f)
         assert "raven" in data
 
+    @pytest.mark.unit
     def test_merges_without_overwriting_existing(self, tmp_path):
         from alomancy.cli.add_hpc import (
             build_alomancy_profile,

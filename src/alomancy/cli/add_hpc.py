@@ -97,8 +97,14 @@ def write_expyre_config(
     """Add or overwrite a system entry in the ExPyRe config JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        with open(path) as f:
-            config = json.load(f)
+        try:
+            with open(path) as f:
+                config = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{path} is not valid JSON. Fix or delete it before running the wizard.\n"
+                f"Parse error: {exc}"
+            ) from exc
     else:
         config = {"systems": {}}
     config.setdefault("systems", {})[system_name] = entry
@@ -141,6 +147,16 @@ def _prompt(msg: str, default: str = "") -> str:
     return input(f"{msg}: ").strip()
 
 
+def _prompt_int(msg: str, default: int | None = None) -> int:
+    default_str = str(default) if default is not None else ""
+    while True:
+        raw = _prompt(msg, default=default_str)
+        try:
+            return int(raw)
+        except ValueError:
+            print(f"  Please enter a whole number (got '{raw}').")
+
+
 def _yes_no(msg: str, default: bool = False) -> bool:
     yn = "[Y/n]" if default else "[y/N]"
     answer = input(f"{msg} {yn}: ").strip().lower()
@@ -173,12 +189,17 @@ def _pick_ssh_host() -> str:
         for i, h in enumerate(hosts, 1):
             print(f"  {i}) {h}")
         print("  Enter a number to select, or type a hostname directly.")
-        raw = input("SSH host: ").strip()
-        if raw.isdigit():
-            idx = int(raw) - 1
-            if 0 <= idx < len(hosts):
-                return hosts[idx]
-        return raw
+        while True:
+            raw = input("SSH host: ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(hosts):
+                    return hosts[idx]
+                print(
+                    f"  Please enter a number between 1 and {len(hosts)}, or a hostname."
+                )
+            elif raw:
+                return raw
     return _prompt("SSH host alias (e.g. 'raven')")
 
 
@@ -241,11 +262,11 @@ def add_hpc_wizard() -> None:
         if not pname:
             print("  Partition name cannot be empty.")
             continue
-        cores_str = _prompt(f"  Cores per node for '{pname}'")
+        cores = _prompt_int(f"  Cores per node for '{pname}'")
         max_time = _prompt(f"  Max time for '{pname}'", default="24:00:00")
         max_mem = _prompt(f"  Max memory for '{pname}' (e.g. '240GB')")
         partitions[pname] = {
-            "num_cores": int(cores_str),
+            "num_cores": cores,
             "max_time": max_time,
             "max_mem": max_mem,
         }
@@ -294,12 +315,11 @@ def add_hpc_wizard() -> None:
     profile_partitions = [p.strip() for p in partitions_str.split(",") if p.strip()]
 
     first_part = next(iter(partitions.values())) if partitions else {}
-    default_cores = str(first_part.get("num_cores", ""))
+    default_ranks = first_part.get("num_cores")
     default_mem = str(first_part.get("max_mem", ""))
-    ranks_str = _prompt(
-        "Ranks per node (usually = cores per node)", default=default_cores
+    ranks_per_node = _prompt_int(
+        "Ranks per node (usually = cores per node)", default=default_ranks
     )
-    ranks_per_node = int(ranks_str)
     max_mem_node = _prompt("Max memory per node (e.g. '60GB')", default=default_mem)
     node_info = {
         "ranks_per_system": ranks_per_node,
@@ -334,6 +354,13 @@ def add_hpc_wizard() -> None:
         dft_paths=dft_paths if dft_paths else None,
     )
 
+    # --- Write files (before remote install so a failed install doesn't lose answers) ---
+    print("\n--- Writing config files ---")
+    write_expyre_config(system_name, expyre_entry)
+    print(f"  {EXPYRE_CONFIG}  ← added '{system_name}'")
+    write_alomancy_hpc_config(profile_name, alomancy_profile)
+    print(f"  {ALOMANCY_HPC_CONFIG}  ← added '{profile_name}'")
+
     # --- Remote install ---
     print("\n--- Remote Installation ---")
     do_install = _yes_no("Install alomancy on this system now?", default=False)
@@ -345,15 +372,14 @@ def add_hpc_wizard() -> None:
             print(
                 f"  Running: ssh {ssh_host} '{python_path} -m pip install alomancy' …"
             )
-            run_remote_install(ssh_host, python_path)
-            print("  Done.")
-
-    # --- Write files ---
-    print("\n--- Writing config files ---")
-    write_expyre_config(system_name, expyre_entry)
-    print(f"  {EXPYRE_CONFIG}  ← added '{system_name}'")
-    write_alomancy_hpc_config(profile_name, alomancy_profile)
-    print(f"  {ALOMANCY_HPC_CONFIG}  ← added '{profile_name}'")
+            try:
+                run_remote_install(ssh_host, python_path)
+                print("  Done.")
+            except Exception as exc:
+                print(f"  Remote install failed: {exc}")
+                print(
+                    "  Config files were already written — you can install manually later."
+                )
 
     print(f"\nSetup complete! Use '{profile_name}' in your run YAML:")
     print("  mlip_committee:")

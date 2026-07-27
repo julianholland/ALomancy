@@ -43,7 +43,7 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
                     f"found in ~/.alomancy/hpc_config.yaml. "
                     f"Run 'alomancy add-hpc' to add it."
                 )
-            jobs_dict[section]["hpc"] = hpc_config[hpc_ref]
+            jobs_dict[section]["hpc"] = hpc_config[hpc_ref].copy()
 
     return jobs_dict
 

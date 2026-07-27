@@ -12,4 +12,12 @@ def _load_global_hpc_config() -> dict:
     if not ALOMANCY_HPC_CONFIG.exists():
         return {}
     with open(ALOMANCY_HPC_CONFIG) as f:
-        return safe_load(f) or {}
+        data = safe_load(f)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{ALOMANCY_HPC_CONFIG} must contain a YAML mapping, "
+            f"but got {type(data).__name__}. Check the file for formatting errors."
+        )
+    return data
