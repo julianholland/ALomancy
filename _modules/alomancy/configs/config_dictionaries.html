@@ -121,7 +121,7 @@
                     <span class="sa">f</span><span class="s2">&quot;found in ~/.alomancy/hpc_config.yaml. &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;Run &#39;alomancy add-hpc&#39; to add it.&quot;</span>
                 <span class="p">)</span>
-            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span>
+            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
     <span class="k">return</span> <span class="n">jobs_dict</span></div>
 
