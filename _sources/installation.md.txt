@@ -24,6 +24,20 @@ pip install -e ".[dev]"
 - [mp-api](https://github.com/materialsproject/api) — Materials Project API for fetching reference structures
 - numpy, pandas, polars, scipy, matplotlib, seaborn, tqdm, pyyaml
 
+## HPC Setup
+
+After installing, run the interactive wizard to register your HPC system(s):
+
+```bash
+alomancy add-hpc
+```
+
+The wizard configures:
+- `~/.expyre/config.json` — ExPyRe scheduler entry (Slurm, partitions, scratch directory)
+- `~/.alomancy/hpc_config.yaml` — ALomancy HPC profile (venv, DFT paths, node info)
+
+Run it once per HPC system (or profile). See [Examples](examples.md) for a full walkthrough.
+
 ## Development Installation
 
 For contributors and developers:

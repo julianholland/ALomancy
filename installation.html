@@ -49,6 +49,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#from-pypi-recommended">From PyPI (Recommended)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#from-source">From Source</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#dependencies">Dependencies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hpc-setup">HPC Setup</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#development-installation">Development Installation</a></li>
 </ul>
 </li>
@@ -109,6 +110,19 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li><p><a class="reference external" href="https://github.com/materialsproject/api">mp-api</a> — Materials Project API for fetching reference structures</p></li>
 <li><p>numpy, pandas, polars, scipy, matplotlib, seaborn, tqdm, pyyaml</p></li>
 </ul>
+</section>
+<section id="hpc-setup">
+<h2>HPC Setup<a class="headerlink" href="#hpc-setup" title="Link to this heading"></a></h2>
+<p>After installing, run the interactive wizard to register your HPC system(s):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>alomancy<span class="w"> </span>add-hpc
+</pre></div>
+</div>
+<p>The wizard configures:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code> — ExPyRe scheduler entry (Slurm, partitions, scratch directory)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code> — ALomancy HPC profile (venv, DFT paths, node info)</p></li>
+</ul>
+<p>Run it once per HPC system (or profile). See <a class="reference internal" href="examples.html"><span class="std std-doc">Examples</span></a> for a full walkthrough.</p>
 </section>
 <section id="development-installation">
 <h2>Development Installation<a class="headerlink" href="#development-installation" title="Link to this heading"></a></h2>

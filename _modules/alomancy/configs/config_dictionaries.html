@@ -80,59 +80,55 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">yaml</span><span class="w"> </span><span class="kn">import</span> <span class="n">safe_load</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.global_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">_load_global_hpc_config</span>
+
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="n">_JOB_SECTIONS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">&quot;initialization&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;mlip_committee&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;structure_generation&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">,</span>
+<span class="p">)</span>
 
 
 <div class="viewcode-block" id="load_dictionaries">
 <a class="viewcode-back" href="../../../api/configs.html#alomancy.configs.config_dictionaries.load_dictionaries">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_dictionaries</span><span class="p">(</span><span class="n">config_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Set the information for the HPCs and jobs used in the active learning workflow.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a run YAML config and resolve any HPC string references.</span>
 
-<span class="sd">    three jobs are required</span>
-<span class="sd">    mlip_committee: advised to use a GPU based HPC</span>
-<span class="sd">    structure_generation: advised to use a GPU based HPC</span>
-<span class="sd">    high_accuracy_evaluation: advised to use a CPU based HPC</span>
+<span class="sd">    If a job section&#39;s ``hpc:`` value is a string, it is looked up in</span>
+<span class="sd">    ``~/.alomancy/hpc_config.yaml`` and replaced with the full profile dict.</span>
+<span class="sd">    Dict values are passed through unchanged (backwards compatible).</span>
 
-<span class="sd">    for each job, the following information is required:</span>
-<span class="sd">    - name: the name of the job, used to identify the job in the workflow</span>
-<span class="sd">    - max_time: the maximum time allowed for the job to run</span>
-<span class="sd">    - hpc: a dictionary containing information about the HPCs available for the job</span>
-<span class="sd">        - pre_cmds: commands to run before starting the job, e.g. activating a virtual environment</span>
-<span class="sd">        - partitions: the partition used for the job on the HPC</span>
-
-
-<span class="sd">    for the mlip_committee job, the following information is required:</span>
-<span class="sd">    - size_of_committee: the number of models in the committee</span>
-<span class="sd">    - epochs: the number of epochs to train the models for</span>
-
-<span class="sd">    for the structure_generation job, the following information is required:</span>
-<span class="sd">    - number_of_concurrent_jobs: the number of concurrent jobs to run</span>
-
-<span class="sd">    for the high_accuracy_evaluation job, the following information is required in the hpc dictionary:</span>
-<span class="sd">    - node_info: a dictionary containing information about the nodes available for the job</span>
-<span class="sd">        - ranks_per_system: the number of ranks per system</span>
-<span class="sd">        - ranks_per_node: the number of ranks per node</span>
-<span class="sd">        - threads_per_rank: the number of threads per rank</span>
-<span class="sd">        - max_mem_per_node: the maximum memory per node</span>
-<span class="sd">    - pwx_path: the path to the Quantum Espresso pw.x executable</span>
-<span class="sd">    - pp_path: the path to the pseudopotentials directory</span>
-<span class="sd">    - pseudo_dict: a dictionary containing the pseudopotentials used for each element</span>
-<span class="sd">    Returns</span>
-<span class="sd">    -------</span>
-<span class="sd">    dict</span>
-<span class="sd">        A dictionary containing the HPC and job information.</span>
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If a string HPC name is not found in the global config.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">config_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-        <span class="n">JOB_DICT</span> <span class="o">=</span> <span class="n">safe_load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">config_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">jobs_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">JOB_DICT</span></div>
+    <span class="n">hpc_config</span> <span class="o">=</span> <span class="n">_load_global_hpc_config</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">section</span> <span class="ow">in</span> <span class="n">_JOB_SECTIONS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">section</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">jobs_dict</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">hpc_ref</span> <span class="o">=</span> <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc_ref</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">hpc_ref</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hpc_config</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;HPC profile &#39;</span><span class="si">{</span><span class="n">hpc_ref</span><span class="si">}</span><span class="s2">&#39; referenced in &#39;</span><span class="si">{</span><span class="n">section</span><span class="si">}</span><span class="s2">.hpc&#39; was not &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;found in ~/.alomancy/hpc_config.yaml. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Run &#39;alomancy add-hpc&#39; to add it.&quot;</span>
+                <span class="p">)</span>
+            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">jobs_dict</span></div>
 
 
 
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="n">config_path</span> <span class="o">=</span> <span class="s2">&quot;standard_config.yaml&quot;</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="n">config_path</span><span class="p">))</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;standard_config.yaml&quot;</span><span class="p">)))</span>
 </pre></div>
 
            </div>

@@ -96,47 +96,13 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="alomancy.configs.config_dictionaries.load_dictionaries">
 <span class="sig-prename descclassname"><span class="pre">alomancy.configs.config_dictionaries.</span></span><span class="sig-name descname"><span class="pre">load_dictionaries</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.14)"><span class="pre">Path</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/configs/config_dictionaries.html#load_dictionaries"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.configs.config_dictionaries.load_dictionaries" title="Link to this definition"></a></dt>
-<dd><p>Set the information for the HPCs and jobs used in the active learning workflow.</p>
-<p>three jobs are required
-mlip_committee: advised to use a GPU based HPC
-structure_generation: advised to use a GPU based HPC
-high_accuracy_evaluation: advised to use a CPU based HPC</p>
-<p>for each job, the following information is required:
-- name: the name of the job, used to identify the job in the workflow
-- max_time: the maximum time allowed for the job to run
-- hpc: a dictionary containing information about the HPCs available for the job</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>pre_cmds: commands to run before starting the job, e.g. activating a virtual environment</p></li>
-<li><p>partitions: the partition used for the job on the HPC</p></li>
-</ul>
-</div></blockquote>
-<p>for the mlip_committee job, the following information is required:
-- size_of_committee: the number of models in the committee
-- epochs: the number of epochs to train the models for</p>
-<p>for the structure_generation job, the following information is required:
-- number_of_concurrent_jobs: the number of concurrent jobs to run</p>
-<p>for the high_accuracy_evaluation job, the following information is required in the hpc dictionary:
-- node_info: a dictionary containing information about the nodes available for the job</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>ranks_per_system: the number of ranks per system</p></li>
-<li><p>ranks_per_node: the number of ranks per node</p></li>
-<li><p>threads_per_rank: the number of threads per rank</p></li>
-<li><p>max_mem_per_node: the maximum memory per node</p></li>
-</ul>
-</div></blockquote>
-<ul class="simple">
-<li><p>pwx_path: the path to the Quantum Espresso pw.x executable</p></li>
-<li><p>pp_path: the path to the pseudopotentials directory</p></li>
-<li><p>pseudo_dict: a dictionary containing the pseudopotentials used for each element</p></li>
-</ul>
+<dd><p>Load a run YAML config and resolve any HPC string references.</p>
+<p>If a job section’s <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> value is a string, it is looked up in
+<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code> and replaced with the full profile dict.
+Dict values are passed through unchanged (backwards compatible).</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>A dictionary containing the HPC and job information.</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If a string HPC name is not found in the global config.</p>
 </dd>
 </dl>
 </dd></dl>

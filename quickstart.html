@@ -48,6 +48,7 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Quick Start</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#basic-active-learning-workflow">Basic Active Learning Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hpc-setup">HPC Setup</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#configuration">Configuration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#initialization-behavior">Initialization Behavior</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#verbosity-levels">Verbosity Levels</a></li>
@@ -108,43 +109,48 @@
 </pre></div>
 </div>
 </section>
+<section id="hpc-setup">
+<h2>HPC Setup<a class="headerlink" href="#hpc-setup" title="Link to this heading"></a></h2>
+<p>Before writing a config file, run the interactive wizard to register your HPC system:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>alomancy<span class="w"> </span>add-hpc
+</pre></div>
+</div>
+<p>The wizard reads your <code class="docutils literal notranslate"><span class="pre">~/.ssh/config</span></code> and lets you pick a host alias from a numbered list.
+It writes two files:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code> — ExPyRe scheduler entry (Slurm headers, partitions, scratch dir)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code> — ALomancy profile (venv activation, DFT paths, node info)</p></li>
+</ul>
+<p>Once registered, refer to profiles by name in your run YAML (see below).</p>
+</section>
 <section id="configuration">
 <h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading"></a></h2>
-<p>Create a <code class="docutils literal notranslate"><span class="pre">standard_config.yaml</span></code> file with the required top-level keys:</p>
+<p>Create a <code class="docutils literal notranslate"><span class="pre">standard_config.yaml</span></code> file with the required top-level keys.<br />
+The <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> value is the profile name written by <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
-<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_cpu&quot;</span><span class="w">       </span><span class="c1"># profile name from ~/.alomancy/hpc_config.yaml</span>
 
 <span class="nt">mlip_committee</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mace_training&quot;</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;12:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
-<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_gpu&quot;</span>
 
 <span class="nt">structure_generation</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;md_generation&quot;</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
-<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_gpu&quot;</span>
 
 <span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;dft_evaluation&quot;</span>
-<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">    </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">       </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;24:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local&quot;</span>
-<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_cpu&quot;</span>
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">load_dictionaries</span></code> resolves each string <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> value from <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>
+automatically — no manual merging needed in your run script.</p>
 <p>See the <a class="reference internal" href="examples.html"><span class="std std-doc">examples</span></a> for more detailed configurations.</p>
 </section>
 <section id="initialization-behavior">

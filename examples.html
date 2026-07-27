@@ -49,6 +49,10 @@
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#setting-up-an-hpc-system-with-alomancy-add-hpc">Setting Up an HPC System with <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#example-walkthrough">Example walkthrough</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#configuration-file">Configuration File</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#configuration-key-descriptions">Configuration Key Descriptions</a></li>
@@ -91,6 +95,154 @@
              
   <section id="examples">
 <h1>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h1>
+<section id="setting-up-an-hpc-system-with-alomancy-add-hpc">
+<h2>Setting Up an HPC System with <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code><a class="headerlink" href="#setting-up-an-hpc-system-with-alomancy-add-hpc" title="Link to this heading"></a></h2>
+<p>Before writing a run config, register your HPC system with the interactive wizard:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>alomancy<span class="w"> </span>add-hpc
+</pre></div>
+</div>
+<p>The wizard configures two files:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code> — ExPyRe scheduler config (Slurm headers, partitions, scratch directory)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code> — ALomancy profile (venv path, DFT binary paths, node info)</p></li>
+</ul>
+<blockquote>
+<div><p><strong>Prerequisite:</strong> Add the HPC to <code class="docutils literal notranslate"><span class="pre">~/.ssh/config</span></code> first so it is reachable by alias, e.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Host</span> <span class="n">raven</span>
+    <span class="n">HostName</span> <span class="n">raven</span><span class="o">.</span><span class="n">mpcdf</span><span class="o">.</span><span class="n">mpg</span><span class="o">.</span><span class="n">de</span>
+    <span class="n">User</span> <span class="n">jholl</span>
+</pre></div>
+</div>
+<p>Verify with: <code class="docutils literal notranslate"><span class="pre">ssh</span> <span class="pre">raven</span> <span class="pre">hostname</span></code></p>
+</div></blockquote>
+<section id="example-walkthrough">
+<h3>Example walkthrough<a class="headerlink" href="#example-walkthrough" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>=== ALomancy HPC Setup Wizard ===
+
+Configures two files:
+  /home/jholl/.expyre/config.json
+  /home/jholl/.alomancy/hpc_config.yaml
+
+Before continuing, make sure this HPC is reachable by SSH alias ...
+
+--- ExPyRe System (scheduler config) ---
+System name in ~/.expyre/config.json (e.g. &#39;raven_gpu&#39;): raven_gpu
+
+Available SSH hosts from ~/.ssh/config:
+  1) raven
+  2) draco
+  3) raccoon
+  Enter a number to select, or type a hostname directly.
+SSH host: 1                          # picks &#39;raven&#39;
+
+GPU system? [y/N]: y
+Scratch/run directory on remote (e.g. /ptmp/user/scratch): /ptmp/jholl/scratch
+
+Module/setup commands — press Enter after each command.
+Enter on a blank line to finish.
+Examples: &#39;module purge&#39;  &#39;module load python/3.11&#39;  &#39;export OMP_NUM_THREADS=1&#39;
+  &gt; module purge
+  &gt; module load cuda/12.2 python/3.11
+  &gt; export OMP_NUM_THREADS=1
+  &gt;
+
+Partitions (at least one required):
+  Partition name (e.g. &#39;general&#39;): gpubig
+  Cores per node for &#39;gpubig&#39;: 18
+  Max time for &#39;gpubig&#39; [24:00:00]:
+  Max memory for &#39;gpubig&#39; (e.g. &#39;240GB&#39;): 120GB
+  Add another partition? [y/N]: n
+
+GPU SBATCH options (press Enter to skip each):
+  Constraint string (e.g. &#39;gpu&#39;):
+  Gres string (e.g. &#39;gpu:a100:1&#39;): gpu:a100:1
+
+--- ALomancy HPC Profile ---
+  (This name goes in your run YAML: hpc: &#39;&lt;profile_name&gt;&#39;)
+Profile name [raven_gpu]:
+Venv activation command: source /u/jholl/.venvs/alomancy/bin/activate
+TRITON_CACHE_DIR path (for GPU PyTorch cache, or Enter to skip): /u/jholl/.triton_cache
+
+Which partition(s) will this profile use? (comma-separated) [gpubig]:
+Ranks per node (usually = cores per node) [18]:
+Max memory per node (e.g. &#39;60GB&#39;) [120GB]:
+
+DFT code on this system? Options: qe / vasp / none
+DFT code [none]:
+
+--- Remote Installation ---
+Install alomancy on this system now? [y/N]: y
+Python executable path on remote: /u/jholl/.venvs/alomancy/bin/python
+  Running: ssh raven &#39;/u/jholl/.venvs/alomancy/bin/python -m pip install alomancy&#39; …
+  Done.
+
+--- Writing config files ---
+  /home/jholl/.expyre/config.json  ← added &#39;raven_gpu&#39;
+  /home/jholl/.alomancy/hpc_config.yaml  ← added &#39;raven_gpu&#39;
+
+Setup complete! Use &#39;raven_gpu&#39; in your run YAML:
+  mlip_committee:
+    hpc: &#39;raven_gpu&#39;
+  structure_generation:
+    hpc: &#39;raven_gpu&#39;
+  high_accuracy_evaluation:
+    hpc: &#39;raven_gpu&#39;
+</pre></div>
+</div>
+<p>The wizard writes a profile like this to <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">raven_gpu</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">raven_gpu</span>
+<span class="w">  </span><span class="nt">gpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pre_cmds</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">source /u/jholl/.venvs/alomancy/bin/activate</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">export TRITON_CACHE_DIR=/u/jholl/.triton_cache</span>
+<span class="w">  </span><span class="nt">partitions</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpubig</span>
+<span class="w">  </span><span class="nt">node_info</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ranks_per_system</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+<span class="w">    </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+<span class="w">    </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">    </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120GB</span>
+</pre></div>
+</div>
+<p>And this entry to <code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code>:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;systems&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;raven_gpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;raven&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;remsh_cmd&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ssh&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;scheduler&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;slurm&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;header&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">&quot;#SBATCH --no-requeue&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;#SBATCH --nodes={num_nodes}&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;#SBATCH --cpus-per-task={num_cores}&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;#SBATCH --gres=gpu:a100:1&quot;</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;commands&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">&quot;module purge&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;module load cuda/12.2 python/3.11&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;export OMP_NUM_THREADS=1&quot;</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;partitions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;gpubig&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;num_cores&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;24:00:00&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max_mem&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;120GB&quot;</span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;rundir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/ptmp/jholl/scratch&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code> again to add more profiles (e.g. a separate CPU profile for DFT).
+Existing entries in both files are preserved.</p>
+<blockquote>
+<div><p><strong>DFT paths and <code class="docutils literal notranslate"><span class="pre">pseudo_dict</span></code>:</strong> The wizard writes flat keys (<code class="docutils literal notranslate"><span class="pre">pwx_path</span></code>, <code class="docutils literal notranslate"><span class="pre">pp_path</span></code>,
+<code class="docutils literal notranslate"><span class="pre">vasp_path</span></code>) directly into the profile. The <code class="docutils literal notranslate"><span class="pre">pseudo_dict</span></code> (element → UPF/POTCAR mapping)
+must be added manually to <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code> after the wizard finishes,
+because it is per-element and changes between projects.</p>
+</div></blockquote>
+</section>
+</section>
+<hr class="docutils" />
 <section id="basic-usage">
 <h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h2>
 <p>Here’s a simple example of running an active learning workflow:</p>
