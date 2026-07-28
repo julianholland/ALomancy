@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-07-28
+
+### Fixed
+- **`store_mlip_predictions` no longer runs local CPU inference**: previously fell back to loading `MACECalculator` and evaluating all train+test structures locally, causing a multi-hour hang when resuming at a later AL loop. Now reads per-structure predictions from `train_pred.xyz` / `test_pred.xyz` files written by `mace_fit` on the remote GPU node. If those files do not exist (runs predating v0.4.2), writes the sentinel and logs a clear message instead of hanging.
+- **`plot_dft_vs_model` no longer runs local inference as fallback**: follows the same DB → eval-file → skip chain. Blank subplots show "No predictions available" for loops that predate v0.4.2.
+
+### Added
+- **Post-training eval file writing in `mace_fit`** (`mlip/mace_wfl.py`): after `mace_run_train` finishes on the remote GPU node, the stagetwo compiled model evaluates both the training and test sets and writes `train_pred.xyz` / `test_pred.xyz` in the fit directory. These files carry `mace_energy` and `mace_forces` keys and are synced back by ExPyRe alongside the model files. `store_mlip_predictions` then reads them locally with no model loading required. **Note:** the remote machine must have the updated alomancy package installed (`pip install alomancy==0.4.2` or `pip install -e .` there) for the new eval step to run.
+
 ## [0.4.1] - 2026-07-27
 
 ### Added
@@ -113,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - HPC system definitions
   - Flexible parameter management
 
-[Unreleased]: https://github.com/julianholland/ALomancy/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/julianholland/ALomancy/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/julianholland/ALomancy/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/julianholland/ALomancy/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/julianholland/ALomancy/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/julianholland/ALomancy/compare/v0.3.0...v0.3.1

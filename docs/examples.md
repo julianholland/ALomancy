@@ -382,7 +382,11 @@ Structures in extra datasets should have:
 
 ## MACE Committee Predictions in the GlobalDatabase
 
-After each AL loop's MACE committee training, ALomancy runs inference with every committee model over the loop's train and test sets and stores the predicted energies and forces in the GlobalDatabase. This means parity plots are generated from the DB (fast, no GPU required) rather than by reloading models and re-running inference on each plot call.
+After each AL loop's MACE committee training finishes on the remote GPU node, ALomancy evaluates every committee model on the training and test sets **before returning from the remote job** and saves the per-structure predictions to `train_pred.xyz` / `test_pred.xyz` inside each fit directory. These files are synced back to your local machine by ExPyRe alongside the model files.
+
+`store_mlip_predictions` then reads those files locally and stores the predicted energies and forces in the GlobalDatabase — no model loading or local GPU required. Parity plots (`plot_dft_vs_model`) read from the DB first, then fall back to the eval xyz files, and never run local inference.
+
+> **Resuming from before v0.4.2**: loops trained without the post-training eval step will not have `train_pred.xyz` / `test_pred.xyz`. The sentinel `mace_predictions.done` is written and those loops are skipped gracefully; parity plots show "No predictions available" for them. Only future loops (trained with the updated remote package) will have predictions stored.
 
 The stored metadata keys follow the pattern:
 ```
