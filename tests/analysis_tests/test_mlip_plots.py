@@ -2,13 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import ClassVar
 
 import numpy as np
 import pandas as pd
 import pytest
 from ase import Atoms
-from ase.calculators.calculator import Calculator
 from ase.io import write
 
 # ---------------------------------------------------------------------------
@@ -266,86 +264,70 @@ def test_parse_used_epoch_glob_fallback(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# _load_and_subsample
+# _parse_eval_xyz
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_load_and_subsample_missing_file(tmp_path):
-    from alomancy.analysis.mlip_plots import _load_and_subsample
+def test_parse_eval_xyz_missing_file(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz
 
-    result = _load_and_subsample(tmp_path / "nonexistent.xyz", seed=42, label="test")
+    result = _parse_eval_xyz(tmp_path / "nonexistent.xyz")
     assert result is None
 
 
 @pytest.mark.unit
-def test_load_and_subsample_under_cap(tmp_path):
-    from alomancy.analysis.mlip_plots import _MAX_PARITY_STRUCTURES, _load_and_subsample
+def test_parse_eval_xyz_skips_missing_keys(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz
 
-    atoms_list = [Atoms("H") for _ in range(10)]
-    xyz_path = tmp_path / "test.xyz"
-    write(str(xyz_path), atoms_list, format="extxyz")
+    # Structure has REF_energy but no mace_energy — should be skipped
+    atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+    atoms.info["REF_energy"] = -1.0
+    xyz_path = tmp_path / "pred.xyz"
+    write(str(xyz_path), [atoms], format="extxyz")
 
-    result = _load_and_subsample(xyz_path, seed=42, label="test")
-    assert result is not None
-    assert len(result) == 10
-    assert _MAX_PARITY_STRUCTURES >= 10  # sanity: 10 < cap so no subsample
-
-
-@pytest.mark.unit
-def test_load_and_subsample_over_cap(tmp_path):
-    from alomancy.analysis.mlip_plots import _MAX_PARITY_STRUCTURES, _load_and_subsample
-
-    n = _MAX_PARITY_STRUCTURES + 50
-    atoms_list = [Atoms("H") for _ in range(n)]
-    xyz_path = tmp_path / "test.xyz"
-    write(str(xyz_path), atoms_list, format="extxyz")
-
-    result = _load_and_subsample(xyz_path, seed=42, label="test")
-    assert result is not None
-    assert len(result) == _MAX_PARITY_STRUCTURES
-
-
-# ---------------------------------------------------------------------------
-# _run_inference
-# ---------------------------------------------------------------------------
-
-
-class _TrivialCalc(Calculator):
-    """Minimal ASE calculator for testing — returns energy=-n, forces=zeros."""
-
-    implemented_properties: ClassVar[list] = ["energy", "forces"]
-
-    def calculate(self, atoms=None, properties=None, system_changes=None):
-        n = len(atoms)
-        self.results = {"energy": -1.0 * n, "forces": np.zeros((n, 3))}
+    result = _parse_eval_xyz(xyz_path)
+    assert result is None
 
 
 @pytest.mark.unit
-def test_run_inference_skips_missing_ref_energy():
-    from alomancy.analysis.mlip_plots import _run_inference
-
-    atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
-    # no REF_energy → should be skipped
-    e_dft, _e_pred, _f_dft, _f_pred = _run_inference(_TrivialCalc(), [atoms])
-    assert len(e_dft) == 0
-
-
-@pytest.mark.unit
-def test_run_inference_returns_per_atom_energy():
-    from alomancy.analysis.mlip_plots import _run_inference
+def test_parse_eval_xyz_returns_per_atom_energy(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
+    atoms.info["mace_energy"] = -3.8
     atoms.arrays["REF_forces"] = np.zeros((2, 3))
+    atoms.arrays["mace_forces"] = np.ones((2, 3)) * 0.01
+    xyz_path = tmp_path / "pred.xyz"
+    write(str(xyz_path), [atoms], format="extxyz")
 
-    e_dft, e_pred, f_dft, f_pred = _run_inference(_TrivialCalc(), [atoms])
+    e_dft, e_pred, f_dft, f_pred = _parse_eval_xyz(xyz_path)
 
     assert len(e_dft) == 1
-    assert e_dft[0] == pytest.approx(-2.0)  # -4.0 / 2 atoms
-    assert e_pred[0] == pytest.approx(-1.0)  # TrivialCalc: -1.0*n / n
-    assert len(f_dft) == 6  # 2 atoms x 3 components
+    assert e_dft[0] == pytest.approx(-2.0)   # -4.0 / 2 atoms
+    assert e_pred[0] == pytest.approx(-1.9)  # -3.8 / 2 atoms
+    assert len(f_dft) == 6   # 2 atoms x 3 components
     assert len(f_pred) == 6
+
+
+@pytest.mark.unit
+def test_parse_eval_xyz_no_forces_still_returns_energy(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz
+
+    atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+    atoms.info["REF_energy"] = -1.0
+    atoms.info["mace_energy"] = -1.05
+    # deliberately no mace_forces / REF_forces
+    xyz_path = tmp_path / "pred.xyz"
+    write(str(xyz_path), [atoms], format="extxyz")
+
+    result = _parse_eval_xyz(xyz_path)
+    assert result is not None
+    e_dft, e_pred, f_dft, f_pred = result
+    assert len(e_dft) == 1
+    assert e_dft[0] == pytest.approx(-1.0)
+    assert len(f_dft) == 0
 
 
 # ---------------------------------------------------------------------------

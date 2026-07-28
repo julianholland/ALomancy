@@ -27,6 +27,65 @@ if (
     )
 
 
+def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
+    """Evaluate the trained stagetwo model on train and test sets; write predictions.
+
+    Called from inside mace_fit while os.chdir'd into mlip_dir. Writes
+    train_pred.xyz and test_pred.xyz in the current directory with mace_energy
+    and mace_forces keys so store_mlip_predictions can read them locally without
+    re-running inference.
+    """
+    model_path = Path(f"{name}_stagetwo_compiled.model")
+    if not model_path.exists():
+        logger.warning("Stagetwo compiled model not found; skipping eval predictions.")
+        return
+
+    try:
+        from mace.calculators import MACECalculator
+
+        try:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+
+        calc = MACECalculator(
+            model_paths=[str(model_path.resolve())],
+            device=device,
+            default_dtype="float64",
+        )
+    except Exception as exc:
+        logger.warning("Failed to load MACECalculator for post-training eval: %s", exc)
+        return
+
+    for tag, xyz_path in [("train", train_filename), ("test", "../../test_set.xyz")]:
+        try:
+            atoms_list = list(read(xyz_path, ":", format="extxyz"))
+        except Exception as exc:
+            logger.debug("Could not read %s for eval predictions: %s", xyz_path, exc)
+            continue
+
+        out = []
+        for atoms in atoms_list:
+            a = atoms.copy()
+            a.calc = calc
+            try:
+                a.info["mace_energy"] = float(a.get_potential_energy())
+                a.arrays["mace_forces"] = a.get_forces()
+            except Exception as exc:
+                logger.debug("Prediction failed for one structure: %s", exc)
+            out.append(a)
+
+        try:
+            write(f"{tag}_pred.xyz", out, format="extxyz")
+            logger.info(
+                "Saved %d %s prediction(s) to %s_pred.xyz.", len(out), tag, tag
+            )
+        except Exception as exc:
+            logger.warning("Failed to write %s_pred.xyz: %s", tag, exc)
+
+
 def _select_validation_split(
     all_training: list[Atoms],
     acceptable_configs: list[str],
@@ -206,6 +265,7 @@ def mace_fit(
     try:
         os.chdir(mlip_dir)
         run(args)
+        _save_mace_eval_predictions(mlip_committee_job_dict["name"], train_filename)
     finally:
         os.chdir(orig_dir)
 

@@ -183,43 +183,34 @@ def plot_training_curves(
     logger.info("Saved training loss plot to %s", loss_path)
 
 
-_MAX_PARITY_STRUCTURES = 200
+def _parse_eval_xyz(path: Path) -> tuple | None:
+    """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft, f_pred).
 
+    Written by mace_fit after training completes on the remote node. Looks for
+    mace_energy / mace_forces keys. Returns None if the file has no usable rows.
+    """
+    from ase.io import read as ase_read
 
-def _load_and_subsample(xyz_path: Path, seed: int, label: str) -> list | None:
-    from ase.io import read
-
-    if not xyz_path.exists():
-        logger.warning("%s set not found at %s — skipping.", label, xyz_path)
+    try:
+        atoms_list = list(ase_read(str(path), ":", format="extxyz"))
+    except Exception as exc:
+        logger.warning("Failed to read eval xyz %s: %s", path, exc)
         return None
-    atoms = list(read(str(xyz_path), ":", format="extxyz"))
-    logger.info("Loaded %d %s structures for parity plots.", len(atoms), label)
-    if len(atoms) > _MAX_PARITY_STRUCTURES:
-        rng = np.random.default_rng(seed)
-        idx = sorted(rng.choice(len(atoms), _MAX_PARITY_STRUCTURES, replace=False))
-        atoms = [atoms[i] for i in idx]
-        logger.info(
-            "Subsampled %s set to %d structures.", label, _MAX_PARITY_STRUCTURES
-        )
-    return atoms
 
-
-def _run_inference(calc: object, atoms_list: list) -> tuple:
     e_dft, e_pred, f_dft, f_pred = [], [], [], []
     for atoms in atoms_list:
-        if "REF_energy" not in atoms.info:
+        if "REF_energy" not in atoms.info or "mace_energy" not in atoms.info:
             continue
-        a = atoms.copy()
-        a.calc = calc
-        try:
-            n = len(a)
-            e_dft.append(atoms.info["REF_energy"] / n)
-            e_pred.append(a.get_potential_energy() / n)
-            if "REF_forces" in atoms.arrays:
-                f_dft.extend(atoms.arrays["REF_forces"].flatten().tolist())
-                f_pred.extend(a.get_forces().flatten().tolist())
-        except Exception as exc:
-            logger.debug("Inference failed for one structure: %s", exc)
+        n = len(atoms)
+        e_dft.append(atoms.info["REF_energy"] / n)
+        e_pred.append(float(atoms.info["mace_energy"]) / n)
+        if "REF_forces" in atoms.arrays and "mace_forces" in atoms.arrays:
+            f_dft.extend(atoms.arrays["REF_forces"].flatten().tolist())
+            f_pred.extend(atoms.arrays["mace_forces"].flatten().tolist())
+
+    if not e_dft:
+        return None
+
     return (
         np.array(e_dft),
         np.array(e_pred),
@@ -250,7 +241,7 @@ def _draw_parity_figure(
                 ax.text(
                     0.5,
                     0.5,
-                    "Model missing",
+                    "No predictions available",
                     ha="center",
                     va="center",
                     transform=ax.transAxes,
@@ -330,7 +321,7 @@ def plot_dft_vs_model(
     test_results: list = []
 
     for i in range(n_fits):
-        # Use stored DB predictions when available — no model load or GPU needed.
+        # Primary: use stored DB predictions — no model load or GPU needed.
         if db is not None and loop_idx is not None:
             stored = db.get_mace_predictions(loop_idx, i)
             if stored is not None:
@@ -341,49 +332,33 @@ def plot_dft_vs_model(
                 )
                 continue
 
-        # Fall back to live inference.
-        try:
-            from mace.calculators import MACECalculator
-        except ImportError:
-            logger.warning("mace not importable — skipping parity plots.")
-            return
-
-        train_atoms = _load_and_subsample(
-            Path("results", base_name, "train_set.xyz"), seed, "train"
-        )
-        test_atoms = _load_and_subsample(
-            Path("results", base_name, "test_set.xyz"), seed, "test"
-        )
-
-        if train_atoms is None and test_atoms is None:
-            return
-
-        model_path = (
-            Path("results", base_name, name, f"fit_{i}")
-            / f"{name}_stagetwo_compiled.model"
-        )
-        if not model_path.exists():
-            logger.warning(
-                "Model not found: %s — skipping fit_%d parity.", model_path, i
+        # Secondary: read from eval xyz files written by mace_fit on the remote node.
+        fit_dir = Path("results", base_name, name, f"fit_{i}")
+        train_xyz = fit_dir / "train_pred.xyz"
+        test_xyz = fit_dir / "test_pred.xyz"
+        if train_xyz.exists() or test_xyz.exists():
+            train_results.append(
+                _parse_eval_xyz(train_xyz) if train_xyz.exists() else None
             )
-            train_results.append(None)
-            test_results.append(None)
+            test_results.append(
+                _parse_eval_xyz(test_xyz) if test_xyz.exists() else None
+            )
+            logger.info(
+                "Using eval xyz files for parity plot, loop %s fit %d.",
+                loop_idx if loop_idx is not None else "?",
+                i,
+            )
             continue
 
-        try:
-            calc = MACECalculator(
-                model_paths=[str(model_path)],
-                device="cpu",
-                default_dtype="float64",
-            )
-        except Exception as exc:
-            logger.warning("Failed to load model %s: %s", model_path, exc)
-            train_results.append(None)
-            test_results.append(None)
-            continue
-
-        train_results.append(_run_inference(calc, train_atoms) if train_atoms else None)
-        test_results.append(_run_inference(calc, test_atoms) if test_atoms else None)
+        # No predictions available — skip this fit rather than running local inference.
+        logger.info(
+            "No predictions available for fit_%d (loop %s) — parity plot will be blank. "
+            "Predictions are written during remote training from alomancy v0.4.2 onwards.",
+            i,
+            loop_idx if loop_idx is not None else "?",
+        )
+        train_results.append(None)
+        test_results.append(None)
 
     if not train_results and not test_results:
         return

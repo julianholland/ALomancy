@@ -57,23 +57,33 @@ def _needs_anything(needs: dict) -> bool:
     )
 
 
-def _predict_structures(calc: object, atoms_list: list[Atoms]) -> dict[int, dict]:
-    """Run calc on each structure; return {global_db_id: {energy, forces}}."""
-    predictions: dict[int, dict] = {}
-    for atoms in atoms_list:
-        gid = atoms.info.get("global_db_id")
-        if gid is None or "REF_energy" not in atoms.info:
+def _read_mace_eval_predictions(fit_dir: Path) -> dict[int, dict]:
+    """Read per-structure MACE predictions from train_pred.xyz / test_pred.xyz.
+
+    These files are written by mace_fit on the remote GPU node immediately after
+    training, so predictions are available locally without re-running inference.
+    Returns {global_db_id: {"energy": float, "forces": list}} or empty dict.
+    """
+    preds: dict[int, dict] = {}
+    for tag in ("train", "test"):
+        xyz = fit_dir / f"{tag}_pred.xyz"
+        if not xyz.exists():
             continue
-        a = atoms.copy()
-        a.calc = calc
         try:
-            predictions[gid] = {
-                "energy": float(a.get_potential_energy()),
-                "forces": a.get_forces().tolist(),
-            }
+            atoms_list = list(read(xyz, ":", format="extxyz"))
         except Exception as exc:
-            logger.debug("Prediction failed for global_db_id=%s: %s", gid, exc)
-    return predictions
+            logger.warning("Failed to read %s: %s", xyz, exc)
+            continue
+        for atoms in atoms_list:
+            gid = atoms.info.get("global_db_id")
+            if gid is None or "mace_energy" not in atoms.info:
+                continue
+            forces = atoms.arrays.get("mace_forces")
+            preds[int(gid)] = {
+                "energy": float(atoms.info["mace_energy"]),
+                "forces": forces.tolist() if forces is not None else [],
+            }
+    return preds
 
 
 class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
@@ -395,50 +405,35 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             logger.info("MACE predictions already stored for %s, skipping.", base_name)
             return
 
-        from mace.calculators import (
-            MACECalculator,  # lazy import — avoids GPU dep at import time
-        )
-
         mlip_job_dict = job_dict["mlip_committee"]
         name = mlip_job_dict["name"]
         size = mlip_job_dict.get("size_of_committee", 1)
         workdir = Path(f"results/{base_name}")
 
-        train_xyz = workdir / "train_set.xyz"
-        test_xyz = workdir / "test_set.xyz"
-        all_atoms: list[Atoms] = []
-        if train_xyz.exists():
-            all_atoms += list(read(train_xyz, index=":", format="extxyz"))
-        if test_xyz.exists():
-            all_atoms += list(read(test_xyz, index=":", format="extxyz"))
-
-        if not all_atoms:
-            logger.warning(
-                "No train/test xyz found for %s — skipping predictions.", base_name
-            )
-            done_file.touch()
-            return
-
+        any_stored = False
         for fit_idx in range(size):
-            model_path = (
-                workdir / name / f"fit_{fit_idx}" / f"{name}_stagetwo_compiled.model"
-            )
-            if not model_path.exists():
-                logger.warning(
-                    "Model missing for fit_%d — skipping predictions for this fit.",
+            fit_dir = workdir / name / f"fit_{fit_idx}"
+            preds = _read_mace_eval_predictions(fit_dir)
+            if preds:
+                self.db.store_mace_predictions(loop_idx, fit_idx, preds)
+                logger.info(
+                    "Stored MACE predictions from eval files: loop %d fit %d (%d structures).",
+                    loop_idx,
                     fit_idx,
+                    len(preds),
                 )
-                continue
-            calc = MACECalculator(
-                model_paths=[str(model_path)], device="cpu", default_dtype="float64"
-            )
-            preds = _predict_structures(calc, all_atoms)
-            self.db.store_mace_predictions(loop_idx, fit_idx, preds)
+                any_stored = True
+            else:
+                logger.debug(
+                    "No eval prediction files found for fit_%d in %s.", fit_idx, fit_dir
+                )
+
+        if not any_stored:
             logger.info(
-                "Stored MACE predictions: loop %d fit %d (%d structures).",
-                loop_idx,
-                fit_idx,
-                len(preds),
+                "No MACE eval prediction files found for %s — parity plots will not be "
+                "available for this loop. Predictions are written during remote training "
+                "from alomancy v0.4.2 onwards.",
+                base_name,
             )
 
         done_file.touch()
