@@ -103,6 +103,63 @@
     <span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_save_mace_eval_predictions</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">train_filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evaluate the trained stagetwo model on train and test sets; write predictions.</span>
+
+<span class="sd">    Called from inside mace_fit while os.chdir&#39;d into mlip_dir. Writes</span>
+<span class="sd">    train_pred.xyz and test_pred.xyz in the current directory with mace_energy</span>
+<span class="sd">    and mace_forces keys so store_mlip_predictions can read them locally without</span>
+<span class="sd">    re-running inference.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">model_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">model_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Stagetwo compiled model not found; skipping eval predictions.&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">mace.calculators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MACECalculator</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+            <span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
+
+        <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span>
+            <span class="n">model_paths</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">())],</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">default_dtype</span><span class="o">=</span><span class="s2">&quot;float64&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to load MACECalculator for post-training eval: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">xyz_path</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="n">train_filename</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="s2">&quot;../../test_set.xyz&quot;</span><span class="p">)]:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">xyz_path</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Could not read </span><span class="si">%s</span><span class="s2"> for eval predictions: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">xyz_path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calc</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;mace_energy&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">())</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">&quot;mace_forces&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Prediction failed for one structure: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">_pred.xyz&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Saved </span><span class="si">%d</span><span class="s2"> </span><span class="si">%s</span><span class="s2"> prediction(s) to </span><span class="si">%s</span><span class="s2">_pred.xyz.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">),</span> <span class="n">tag</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to write </span><span class="si">%s</span><span class="s2">_pred.xyz: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_select_validation_split</span><span class="p">(</span>
     <span class="n">all_training</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
     <span class="n">acceptable_configs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
@@ -284,6 +341,7 @@
     <span class="k">try</span><span class="p">:</span>
         <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">mlip_dir</span><span class="p">)</span>
         <span class="n">run</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="n">_save_mace_eval_predictions</span><span class="p">(</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">train_filename</span><span class="p">)</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">orig_dir</span><span class="p">)</span></div>
 
