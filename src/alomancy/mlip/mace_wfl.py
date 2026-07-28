@@ -79,9 +79,7 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
 
         try:
             write(f"{tag}_pred.xyz", out, format="extxyz")
-            logger.info(
-                "Saved %d %s prediction(s) to %s_pred.xyz.", len(out), tag, tag
-            )
+            logger.info("Saved %d %s prediction(s) to %s_pred.xyz.", len(out), tag, tag)
         except Exception as exc:
             logger.warning("Failed to write %s_pred.xyz: %s", tag, exc)
 

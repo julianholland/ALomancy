@@ -305,9 +305,9 @@ def test_parse_eval_xyz_returns_per_atom_energy(tmp_path):
     e_dft, e_pred, f_dft, f_pred = _parse_eval_xyz(xyz_path)
 
     assert len(e_dft) == 1
-    assert e_dft[0] == pytest.approx(-2.0)   # -4.0 / 2 atoms
+    assert e_dft[0] == pytest.approx(-2.0)  # -4.0 / 2 atoms
     assert e_pred[0] == pytest.approx(-1.9)  # -3.8 / 2 atoms
-    assert len(f_dft) == 6   # 2 atoms x 3 components
+    assert len(f_dft) == 6  # 2 atoms x 3 components
     assert len(f_pred) == 6
 
 
@@ -324,7 +324,7 @@ def test_parse_eval_xyz_no_forces_still_returns_energy(tmp_path):
 
     result = _parse_eval_xyz(xyz_path)
     assert result is not None
-    e_dft, e_pred, f_dft, f_pred = result
+    e_dft, _e_pred, f_dft, _f_pred = result
     assert len(e_dft) == 1
     assert e_dft[0] == pytest.approx(-1.0)
     assert len(f_dft) == 0
