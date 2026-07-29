@@ -117,7 +117,7 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 
 - All file I/O uses `extxyz` format via ASE's `read`/`write`.
 - Energy and force labels stored in `atoms.info["REF_energy"]` and `atoms.arrays["REF_forces"]`. **Never use bare `"energy"` as an info key** — ASE moves it to the calculator on extxyz read, losing it from `atoms.info`.
-- Structures that need geometry optimisation carry `atoms.info["needs_relaxation"] = True`.
+- Structures that need geometry optimisation carry `atoms.info["needs_relaxation"] = True`. **This flag is never cleared automatically** — it survives `atoms.copy()` (and `clean_structures`'s `structure.info.copy()`) through GlobalDatabase storage and back out again. If a `needs_relaxation=True` structure is later reused as an MD seed, every MD trajectory frame derived from it inherits the flag too. Any code path that generates structures which must never be relaxed (e.g. `generate_structures` in `standard_active_learning.py`) must explicitly set `needs_relaxation=False` on its output rather than relying on the key being absent.
 - `config_type` in `atoms.info` tracks provenance (e.g. `"initialization"`, `"init_dimer"`, `"high_sd"`). Structures selected by the AL loop uncertainty criterion get `config_type="high_sd"` (set by `clean_structures` in `base_active_learning.run()`); the per-loop index is stored separately in `atoms.info["al_loop"]` via `extra_metadata`. Do not use `"al_loop_N"` as a config_type — the loop number is not embedded in the type string.
 - The `seed` parameter (default `803`) is used everywhere randomness appears for reproducibility.
 - `verbose` is an int: `0` = silent, `>0` = progress prints.
