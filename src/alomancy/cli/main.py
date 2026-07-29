@@ -33,6 +33,18 @@ def main() -> None:
         help="Interactive wizard to add an HPC system to ALomancy",
     )
 
+    nuke = sub.add_parser(
+        "nuke",
+        help="Delete local ExPyRe job state (job cache, unsynced stage dirs)",
+    )
+    nuke.add_argument(
+        "--expyre-dir",
+        type=Path,
+        default=Path("~/.expyre").expanduser(),
+        metavar="PATH",
+        help="Path to the ExPyRe local directory (default: ~/.expyre)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "add-hpc":
@@ -46,3 +58,7 @@ def main() -> None:
             replot_results(args.results_dir.resolve(), no_parity=args.no_parity)
         else:
             res.print_help()
+    elif args.command == "nuke":
+        from alomancy.cli.nuke import nuke_expyre_results
+
+        nuke_expyre_results(args.expyre_dir.resolve())

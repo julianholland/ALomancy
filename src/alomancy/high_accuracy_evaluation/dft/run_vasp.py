@@ -1,4 +1,5 @@
 import logging
+import os
 from functools import partial
 
 from ase import Atoms
@@ -46,6 +47,10 @@ def create_vasp_calc_object(
     """Create an ASE Vasp calculator — analogous to create_qe_calc_object."""
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     hpc = high_accuracy_eval_job_dict["hpc"]
+    if hpc.get("pp_path"):
+        # ASE's Vasp calculator reads POTCAR locations from this env var, not
+        # from a constructor kwarg — must be set before Vasp(...) is built.
+        os.environ["VASP_PP_PATH"] = hpc["pp_path"]
     vasp_kwargs = get_vasp_input_kwargs(
         high_accuracy_eval_job_dict.get("vasp_input_kwargs", {})
     )

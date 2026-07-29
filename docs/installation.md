@@ -50,7 +50,8 @@ export MP_API_KEY <your key here>
 or if you use fish, in your `~/.config/fish/config.fish`
 
 ```fish
-
+set -gx MP_API_KEY <your key here>
+```
 
 ## Development Installation
 

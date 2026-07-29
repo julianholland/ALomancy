@@ -9,7 +9,7 @@ _CALCULATOR_REGISTRY: dict[str, dict] = {
         "module": "alomancy.high_accuracy_evaluation.dft.run_qe",
         "sp": "run_sp_qe",
         "go": "run_go_qe",
-        "keys": ["qe_input_kwargs", "pwx_path", "pp_path"],
+        "keys": ["qe_input_kwargs", "pwx_path"],
     },
     "vasp": {
         "module": "alomancy.high_accuracy_evaluation.dft.run_vasp",

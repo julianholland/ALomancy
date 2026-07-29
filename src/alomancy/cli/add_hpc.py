@@ -360,7 +360,14 @@ def add_hpc_wizard() -> None:
         )
     elif dft_code == "vasp":
         dft_paths["vasp_path"] = _prompt("  VASP executable path")
-        dft_paths["pp_path"] = _prompt("  POTCAR directory (pp_path)")
+        dft_paths["pp_path"] = _prompt(
+            "  POTCAR directory (pp_path, the parent of potpaw_PBE/potpaw_LDA;"
+            " sets VASP_PP_PATH)"
+        )
+        print(
+            "  Note: add pseudo_dict element→POTCAR-suffix overrides manually"
+            f" in {ALOMANCY_HPC_CONFIG}"
+        )
 
     alomancy_profile = build_alomancy_profile(
         expyre_sys_name=system_name,

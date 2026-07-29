@@ -1,5 +1,7 @@
 """Tests for VASP DFT backend (run_vasp.py)."""
 
+import os
+
 import pytest
 from ase import Atoms
 
@@ -130,3 +132,23 @@ class TestCreateVaspCalcObject:
         job["vasp_input_kwargs"] = {"encut": 700}
         calc = create_vasp_calc_object(_cu_atoms(), job, "/tmp/out")
         assert calc.float_params.get("encut") == 700
+
+    def test_pp_path_sets_vasp_pp_path_env_var(self, monkeypatch):
+        from alomancy.high_accuracy_evaluation.dft.run_vasp import (
+            create_vasp_calc_object,
+        )
+
+        monkeypatch.delenv("VASP_PP_PATH", raising=False)
+        job = _job_dict()
+        job["hpc"]["pp_path"] = "/u/antia/pps/potpaw_PBE"
+        create_vasp_calc_object(_cu_atoms(), job, "/tmp/out")
+        assert os.environ["VASP_PP_PATH"] == "/u/antia/pps/potpaw_PBE"
+
+    def test_no_pp_path_leaves_env_var_untouched(self, monkeypatch):
+        from alomancy.high_accuracy_evaluation.dft.run_vasp import (
+            create_vasp_calc_object,
+        )
+
+        monkeypatch.delenv("VASP_PP_PATH", raising=False)
+        create_vasp_calc_object(_cu_atoms(), _job_dict(), "/tmp/out")
+        assert "VASP_PP_PATH" not in os.environ
