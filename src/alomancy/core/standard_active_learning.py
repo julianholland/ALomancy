@@ -456,6 +456,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             if isinstance(high_sd_structures, Atoms):
                 high_sd_structures = [high_sd_structures]
 
+            # MD-generated structures must never be routed to geometry optimisation
+            # in high_accuracy_evaluation, even if a stale needs_relaxation=True was
+            # inherited by the on-disk copy from an earlier run.
+            for structure in high_sd_structures:
+                structure.info["needs_relaxation"] = False
+
             logger.info(
                 "%d High SD structures loaded from file: %s",
                 len(high_sd_structures),
@@ -580,9 +586,14 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             structure_forces_dict=structure_forces_dict,
         )
 
-        # Assign job IDs to high SD structures
+        # Assign job IDs to high SD structures. Also force needs_relaxation=False:
+        # MD seeds can inherit needs_relaxation=True from their source structure (e.g.
+        # amorphous init structures) via .copy(), and that flag survives the MD
+        # trajectory unless cleared here. MD-generated structures must never be
+        # routed to geometry optimisation in high_accuracy_evaluation.
         for i in range(len(high_sd_structures)):
             high_sd_structures[i].info["job_id"] = i
+            high_sd_structures[i].info["needs_relaxation"] = False
 
         self._mark_phase_done(base_name, "generate_structures")
         return high_sd_structures

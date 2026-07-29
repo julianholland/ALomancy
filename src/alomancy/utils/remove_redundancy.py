@@ -63,7 +63,7 @@ def remove_redundancy_from_partition(
     assign_descriptor_to_all_partition(subset_p, dimensions=128)
 
     descriptor_array = np.array(list(subset_p.get_metadata("char_vec")))
-    dm_dda = DistanceMatrix(tolerance=tolerance, dataset_array=descriptor_array)
+    dm_dda = DistanceMatrix(tolerance=tolerance, dataset_array=descriptor_array, max_vector_array_size=len(descriptor_array))
     dm_dda.get_dataset_unique_structures()
     unique_local = set(map(int, dm_dda.get_unique_vector_indices()))
 

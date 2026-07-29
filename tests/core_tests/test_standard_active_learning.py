@@ -1098,6 +1098,28 @@ class TestGenerateStructures:
         assert isinstance(result, list)
         assert len(result) == 1
 
+    def test_cached_high_sd_structures_forces_needs_relaxation_false(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """Cached high_sd_structures.xyz may carry a stale needs_relaxation=True
+        (inherited from an amorphous init structure via an earlier MD seed) — this
+        must be cleared so it is never routed to GO in high_accuracy_evaluation."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+        sg_name = job_dict["structure_generation"]["name"]
+        sd_dir = tmp_path / "results" / "test_base" / sg_name
+        sd_dir.mkdir(parents=True)
+        cached = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        cached.info["needs_relaxation"] = True
+        from ase.io import write as ase_write
+
+        ase_write(str(sd_dir / "high_sd_structures.xyz"), cached, format="extxyz")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+        result = wf.generate_structures("test_base", job_dict, [])
+
+        assert all(s.info["needs_relaxation"] is False for s in result)
+
     def test_loads_existing_input_structures_xyz(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
@@ -1218,6 +1240,48 @@ class TestGenerateStructures:
             result = wf.generate_structures("test_base", job_dict, structures)
 
         assert [s.info["job_id"] for s in result] == [0, 1, 2]
+
+    def test_forces_needs_relaxation_false_on_fresh_pipeline(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """MD seeds can inherit needs_relaxation=True from their source structure
+        (e.g. an amorphous init structure) via .copy(), and that flag survives the
+        MD trajectory. generate_structures must clear it on every returned
+        structure so MD output is never routed to GO in high_accuracy_evaluation."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+
+        selected = Atoms(
+            "H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True
+        )
+        leaked_high_sd = selected.copy()
+        leaked_high_sd.info["needs_relaxation"] = True
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.select_initial_structures",
+                return_value=[selected],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.md_remote_submitter",
+                return_value=[],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.all_maces_remote_submitter",
+                return_value={},
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.find_high_sd_structures",
+                return_value=[leaked_high_sd],
+            ),
+            patch("alomancy.core.standard_active_learning.get_remote_info"),
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            result = wf.generate_structures("test_base", job_dict, [selected])
+
+        assert result[0].info["needs_relaxation"] is False
 
     def test_injects_run_md_kwargs_when_missing(
         self, tmp_path, minimal_jobs_dict, monkeypatch
