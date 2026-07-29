@@ -545,6 +545,12 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">,</span> <span class="n">Atoms</span><span class="p">):</span>
                 <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">high_sd_structures</span><span class="p">]</span>
 
+            <span class="c1"># MD-generated structures must never be routed to geometry optimisation</span>
+            <span class="c1"># in high_accuracy_evaluation, even if a stale needs_relaxation=True was</span>
+            <span class="c1"># inherited by the on-disk copy from an earlier run.</span>
+            <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">high_sd_structures</span><span class="p">:</span>
+                <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;needs_relaxation&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
                 <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> High SD structures loaded from file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">),</span>
@@ -669,9 +675,14 @@
             <span class="n">structure_forces_dict</span><span class="o">=</span><span class="n">structure_forces_dict</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># Assign job IDs to high SD structures</span>
+        <span class="c1"># Assign job IDs to high SD structures. Also force needs_relaxation=False:</span>
+        <span class="c1"># MD seeds can inherit needs_relaxation=True from their source structure (e.g.</span>
+        <span class="c1"># amorphous init structures) via .copy(), and that flag survives the MD</span>
+        <span class="c1"># trajectory unless cleared here. MD-generated structures must never be</span>
+        <span class="c1"># routed to geometry optimisation in high_accuracy_evaluation.</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">)):</span>
             <span class="n">high_sd_structures</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;job_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="n">high_sd_structures</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;needs_relaxation&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;generate_structures&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">high_sd_structures</span></div>

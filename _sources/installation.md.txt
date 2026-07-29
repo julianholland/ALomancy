@@ -38,6 +38,20 @@ The wizard configures:
 
 Run it once per HPC system (or profile). See [Examples](examples.md) for a full walkthrough.
 
+## Materials Project API
+
+Ensure you have a `MP_API_KEY` accessible in the local environment. You can generate your API key on their [website](https://next-gen.materialsproject.org/api)
+
+then you can ensure it is always accessible by adding the following line to your `.bashrc`
+
+```bash
+export MP_API_KEY <your key here>
+```
+or if you use fish, in your `~/.config/fish/config.fish`
+
+```fish
+
+
 ## Development Installation
 
 For contributors and developers:

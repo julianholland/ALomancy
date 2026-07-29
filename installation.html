@@ -50,7 +50,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#from-source">From Source</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#dependencies">Dependencies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#hpc-setup">HPC Setup</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#development-installation">Development Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#materials-project-api">Materials Project API</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
@@ -124,16 +124,26 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 </ul>
 <p>Run it once per HPC system (or profile). See <a class="reference internal" href="examples.html"><span class="std std-doc">Examples</span></a> for a full walkthrough.</p>
 </section>
-<section id="development-installation">
-<h2>Development Installation<a class="headerlink" href="#development-installation" title="Link to this heading"></a></h2>
-<p>For contributors and developers:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Clone and install with development dependencies</span>
-git<span class="w"> </span>clone<span class="w"> </span>https://github.com/julianholland/ALomancy.git
-<span class="nb">cd</span><span class="w"> </span>ALomancy
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev,docs]&quot;</span>
+<section id="materials-project-api">
+<h2>Materials Project API<a class="headerlink" href="#materials-project-api" title="Link to this heading"></a></h2>
+<p>Ensure you have a <code class="docutils literal notranslate"><span class="pre">MP_API_KEY</span></code> accessible in the local environment. You can generate your API key on their <a class="reference external" href="https://next-gen.materialsproject.org/api">website</a></p>
+<p>then you can ensure it is always accessible by adding the following line to your <code class="docutils literal notranslate"><span class="pre">.bashrc</span></code></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span>MP_API_KEY<span class="w"> </span>&lt;your<span class="w"> </span>key<span class="w"> </span>here&gt;
+</pre></div>
+</div>
+<p>or if you use fish, in your <code class="docutils literal notranslate"><span class="pre">~/.config/fish/config.fish</span></code></p>
+<div class="highlight-fish notranslate"><div class="highlight"><pre><span></span><span class="c">## Development Installation</span>
 
-<span class="c1"># Install pre-commit hooks</span>
-pre-commit<span class="w"> </span>install
+For contributors <span class="k">and</span> developers:
+
+<span class="err">```</span>bash
+<span class="c"># Clone and install with development dependencies</span>
+git clone https://github.com/julianholland/ALomancy.git
+<span class="k">cd</span> ALomancy
+pip install -e <span class="s2">&quot;.[dev,docs]&quot;</span>
+
+<span class="c"># Install pre-commit hooks</span>
+pre-commit install
 </pre></div>
 </div>
 </section>
