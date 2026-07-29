@@ -38,6 +38,17 @@ The wizard configures:
 
 Run it once per HPC system (or profile). See [Examples](examples.md) for a full walkthrough.
 
+### Clearing local ExPyRe state
+
+```bash
+alomancy nuke
+```
+
+Deletes all local ExPyRe job state (job cache, unsynced stage directories) under
+`~/.expyre`, leaving `config.json` untouched. Prompts for confirmation before deleting.
+Useful when local ExPyRe state gets out of sync with the remote HPC system and jobs
+won't resubmit cleanly.
+
 ## Materials Project API
 
 Ensure you have a `MP_API_KEY` accessible in the local environment. You can generate your API key on their [website](https://next-gen.materialsproject.org/api)

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-07-29
+
+### Fixed
+- **VASP jobs failing with `No pseudopotential for <element>!`**: `hpc.pp_path` was collected by the `alomancy add-hpc` wizard for VASP profiles but never consumed — ASE's `Vasp` calculator only reads pseudopotential locations from the `VASP_PP_PATH` environment variable, not a constructor argument, so VASP runs depended entirely on whatever the remote node's `module load vasp` happened to export. `create_vasp_calc_object` (`high_accuracy_evaluation/dft/run_vasp.py`) now sets `os.environ["VASP_PP_PATH"] = hpc["pp_path"]` before building the calculator. Also removed `pp_path` from the QE-exclusive key list in the mismatch-warning registry, since it is a legitimate shared key for both calculators and was incorrectly logged as "will be ignored" under `calculator: vasp`.
+
+### Added
+- **`alomancy nuke` CLI command** (`cli/nuke.py`): deletes all local ExPyRe job state (job cache, unsynced stage directories) under `~/.expyre`, leaving `config.json` untouched. Prompts for confirmation before deleting.
+
 ## [0.4.3] - 2026-07-29
 
 ### Fixed
