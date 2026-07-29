@@ -337,6 +337,7 @@ because it is per-element and changes between projects.</p>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven&quot;</span>
 <span class="w">    </span><span class="nt">vasp_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/vasp_std&quot;</span>
+<span class="w">    </span><span class="nt">pp_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/potpaw_PBE&quot;</span><span class="w">  </span><span class="c1"># sets VASP_PP_PATH before each calculation</span>
 <span class="w">    </span><span class="nt">pseudo_dict</span><span class="p">:</span><span class="w">              </span><span class="c1"># element → POTCAR suffix</span>
 <span class="w">      </span><span class="nt">H</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
 <span class="w">      </span><span class="nt">O</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;_GW&quot;</span>
@@ -349,6 +350,15 @@ because it is per-element and changes between projects.</p>
 <span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">vasp&quot;</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
+<blockquote>
+<div><p><strong><code class="docutils literal notranslate"><span class="pre">pp_path</span></code> and <code class="docutils literal notranslate"><span class="pre">VASP_PP_PATH</span></code>:</strong> ASE’s <code class="docutils literal notranslate"><span class="pre">Vasp</span></code> calculator locates POTCAR files via
+the <code class="docutils literal notranslate"><span class="pre">VASP_PP_PATH</span></code> environment variable, not a constructor argument. <code class="docutils literal notranslate"><span class="pre">create_vasp_calc_object</span></code>
+sets <code class="docutils literal notranslate"><span class="pre">os.environ[&quot;VASP_PP_PATH&quot;]</span> <span class="pre">=</span> <span class="pre">hpc[&quot;pp_path&quot;]</span></code> before building the calculator, so
+<code class="docutils literal notranslate"><span class="pre">pp_path</span></code> must point at the directory <em>containing</em> <code class="docutils literal notranslate"><span class="pre">potpaw_PBE</span></code> (or <code class="docutils literal notranslate"><span class="pre">potpaw_LDA</span></code>), matching
+what <code class="docutils literal notranslate"><span class="pre">module</span> <span class="pre">load</span> <span class="pre">vasp</span></code> would otherwise export. Elements without a <code class="docutils literal notranslate"><span class="pre">pseudo_dict</span></code> override
+fall back to the default (unsuffixed) POTCAR under that path — if that directory doesn’t
+carry a given element (e.g. <code class="docutils literal notranslate"><span class="pre">Pd</span></code>), VASP fails with <code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">pseudopotential</span> <span class="pre">for</span> <span class="pre">&lt;element&gt;!</span></code>.</p>
+</div></blockquote>
 <p>QE configs work unchanged — <code class="docutils literal notranslate"><span class="pre">calculator:</span> <span class="pre">qe</span></code> is the default and can be omitted.</p>
 </section>
 <section id="custom-workflows">

@@ -250,6 +250,7 @@ high_accuracy_evaluation:
   hpc:
     hpc_name: "raven"
     vasp_path: "/path/to/vasp_std"
+    pp_path: "/path/to/potpaw_PBE"  # sets VASP_PP_PATH before each calculation
     pseudo_dict:              # element → POTCAR suffix
       H: ""
       O: "_GW"
@@ -261,6 +262,14 @@ high_accuracy_evaluation:
     partitions: ["cpu"]
     pre_cmds: ["module load vasp"]
 ```
+
+> **`pp_path` and `VASP_PP_PATH`:** ASE's `Vasp` calculator locates POTCAR files via
+> the `VASP_PP_PATH` environment variable, not a constructor argument. `create_vasp_calc_object`
+> sets `os.environ["VASP_PP_PATH"] = hpc["pp_path"]` before building the calculator, so
+> `pp_path` must point at the directory *containing* `potpaw_PBE` (or `potpaw_LDA`), matching
+> what `module load vasp` would otherwise export. Elements without a `pseudo_dict` override
+> fall back to the default (unsuffixed) POTCAR under that path — if that directory doesn't
+> carry a given element (e.g. `Pd`), VASP fails with `No pseudopotential for <element>!`.
 
 QE configs work unchanged — `calculator: qe` is the default and can be omitted.
 

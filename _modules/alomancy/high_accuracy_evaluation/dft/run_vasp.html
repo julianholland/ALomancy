@@ -76,6 +76,7 @@
              
   <h1>Source code for alomancy.high_accuracy_evaluation.dft.run_vasp</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
@@ -131,6 +132,10 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Create an ASE Vasp calculator — analogous to create_qe_calc_object.&quot;&quot;&quot;</span>
     <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">generate_kpts</span><span class="p">(</span><span class="n">cell</span><span class="o">=</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="n">periodic_3d</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kspacing</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
     <span class="n">hpc</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pp_path&quot;</span><span class="p">):</span>
+        <span class="c1"># ASE&#39;s Vasp calculator reads POTCAR locations from this env var, not</span>
+        <span class="c1"># from a constructor kwarg — must be set before Vasp(...) is built.</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;VASP_PP_PATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">&quot;pp_path&quot;</span><span class="p">]</span>
     <span class="n">vasp_kwargs</span> <span class="o">=</span> <span class="n">get_vasp_input_kwargs</span><span class="p">(</span>
         <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vasp_input_kwargs&quot;</span><span class="p">,</span> <span class="p">{})</span>
     <span class="p">)</span>
