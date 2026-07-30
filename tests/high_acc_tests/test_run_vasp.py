@@ -152,3 +152,34 @@ class TestCreateVaspCalcObject:
         monkeypatch.delenv("VASP_PP_PATH", raising=False)
         create_vasp_calc_object(_cu_atoms(), _job_dict(), "/tmp/out")
         assert "VASP_PP_PATH" not in os.environ
+
+    def test_non_periodic_molecule_forced_periodic(self):
+        from alomancy.high_accuracy_evaluation.dft.run_vasp import (
+            create_vasp_calc_object,
+        )
+
+        dimer = Atoms("HO", positions=[(0, 0, 0), (0, 0, 1.0)], cell=[3, 3, 3])
+        assert not dimer.pbc.all()
+        create_vasp_calc_object(dimer, _job_dict(), "/tmp/out")
+        assert dimer.pbc.all()
+
+    def test_non_periodic_molecule_gets_vacuum(self):
+        from alomancy.high_accuracy_evaluation.dft.run_vasp import (
+            create_vasp_calc_object,
+        )
+
+        dimer = Atoms("HO", positions=[(0, 0, 0), (0, 0, 1.0)], cell=[3, 3, 3])
+        create_vasp_calc_object(dimer, _job_dict(), "/tmp/out")
+        # atoms span 1.0 Angstrom; default padding is 10 Angstrom per side
+        assert (dimer.cell.cellpar()[:3] >= 20.0).all()
+
+    def test_already_periodic_atoms_unchanged(self):
+        from alomancy.high_accuracy_evaluation.dft.run_vasp import (
+            create_vasp_calc_object,
+        )
+
+        atoms = _cu_atoms()
+        before = atoms.cell.cellpar()[:3].copy()
+        create_vasp_calc_object(atoms, _job_dict(), "/tmp/out")
+        assert (atoms.cell.cellpar()[:3] == before).all()
+        assert atoms.pbc.all()

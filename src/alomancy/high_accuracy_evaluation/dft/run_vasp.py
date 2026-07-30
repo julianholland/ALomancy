@@ -14,6 +14,18 @@ from alomancy.utils.dft_utils import (
 
 logger = logging.getLogger(__name__)
 
+# ASE's Vasp calculator rejects any pbc other than [True, True, True] — VASP
+# itself has no non-periodic mode. Molecules generated for initialization
+# (isolated atoms, dimers, trimers) are built non-periodic, so they need
+# padding before they reach VASP or their periodic images will interact.
+_MIN_VACUUM_PER_SIDE = 10.0  # Angstrom
+
+
+def _ensure_fully_periodic(atoms: Atoms, vacuum: float = _MIN_VACUUM_PER_SIDE) -> None:
+    if not atoms.pbc.all():
+        atoms.center(vacuum=vacuum, axis=(0, 1, 2))
+        atoms.pbc = True
+
 
 def create_vasp_command(para_info_dict: dict, vasp_path: str) -> str:
     return _build_srun_command(para_info_dict, vasp_path)
@@ -45,6 +57,7 @@ def create_vasp_calc_object(
     is_relaxation: bool = False,
 ) -> Vasp:
     """Create an ASE Vasp calculator — analogous to create_qe_calc_object."""
+    _ensure_fully_periodic(atoms)
     kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
     hpc = high_accuracy_eval_job_dict["hpc"]
     if hpc.get("pp_path"):
