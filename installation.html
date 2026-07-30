@@ -49,7 +49,10 @@
 <li class="toctree-l2"><a class="reference internal" href="#from-pypi-recommended">From PyPI (Recommended)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#from-source">From Source</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#dependencies">Dependencies</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#hpc-setup">HPC Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hpc-setup">HPC Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#clearing-local-expyre-state">Clearing local ExPyRe state</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#materials-project-api">Materials Project API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#development-installation">Development Installation</a></li>
 </ul>
@@ -124,6 +127,16 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li><p><code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code> — ALomancy HPC profile (venv, DFT paths, node info)</p></li>
 </ul>
 <p>Run it once per HPC system (or profile). See <a class="reference internal" href="examples.html"><span class="std std-doc">Examples</span></a> for a full walkthrough.</p>
+<section id="clearing-local-expyre-state">
+<h3>Clearing local ExPyRe state<a class="headerlink" href="#clearing-local-expyre-state" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>alomancy<span class="w"> </span>nuke
+</pre></div>
+</div>
+<p>Deletes all local ExPyRe job state (job cache, unsynced stage directories) under
+<code class="docutils literal notranslate"><span class="pre">~/.expyre</span></code>, leaving <code class="docutils literal notranslate"><span class="pre">config.json</span></code> untouched. Prompts for confirmation before deleting.
+Useful when local ExPyRe state gets out of sync with the remote HPC system and jobs
+won’t resubmit cleanly.</p>
+</section>
 </section>
 <section id="materials-project-api">
 <h2>Materials Project API<a class="headerlink" href="#materials-project-api" title="Link to this heading"></a></h2>
