@@ -303,6 +303,37 @@ class TestRetrieval:
         assert db.size == 3
 
 
+class TestIsolatedAtomEnergies:
+    """Tests for get_isolated_atom_energies (E0 dict for formation-energy plots)."""
+
+    @pytest.mark.unit
+    def test_basic(self, tmp_path):
+        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6)
+        o_atom = make_atoms(["O"], config_type="IsolatedAtom", ref_energy=-432.1)
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h_atom, o_atom], skip_duplicates=False)
+        e0 = db.get_isolated_atom_energies()
+        assert e0 == {"H": pytest.approx(-13.6), "O": pytest.approx(-432.1)}
+
+    @pytest.mark.unit
+    def test_empty_db_returns_empty_dict(self, tmp_path):
+        db = GlobalDatabase(str(tmp_path / "db"))
+        assert db.get_isolated_atom_energies() == {}
+
+    @pytest.mark.unit
+    def test_ignores_non_isolated_atom_config_types(self, tmp_path):
+        h_atom = make_atoms(["H"], config_type="IsolatedAtom", ref_energy=-13.6)
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h_atom, h2_dimer], skip_duplicates=False)
+        assert db.get_isolated_atom_energies() == {"H": pytest.approx(-13.6)}
+
+
 class TestCountByConfigTypeAndFormula:
     """Tests for count_by_config_type_and_formula (single config_type lookup)."""
 
@@ -930,6 +961,52 @@ class TestMacePredictions:
         assert e_pred[0] == pytest.approx(-1.5)
         assert len(f_dft) == 6  # 2 atoms x 3 components
         assert len(f_pred) == 6
+
+    @pytest.mark.unit
+    def test_e0_computes_formation_energy(self, tmp_path):
+        db = self._make_db_with_one_structure(tmp_path, split="train")
+        db.store_mace_predictions(
+            1, 2, {0: {"energy": -3.0, "forces": [[0.0, 0.0, 0.0]] * 2}}
+        )
+        result = db.get_mace_predictions(1, 2, e0={"H": -0.3})
+        assert result is not None
+        e_dft, e_pred, _, _ = result["train"]
+        # 2-atom H2: dft formation = (-1.0 - 2*(-0.3))/2 = -0.2
+        # pred formation = (-3.0 - 2*(-0.3))/2 = -1.2
+        assert e_dft[0] == pytest.approx(-0.2)
+        assert e_pred[0] == pytest.approx(-1.2)
+
+    @pytest.mark.unit
+    def test_e0_missing_element_falls_back_to_raw_with_warning(self, tmp_path):
+        import logging
+
+        db = self._make_db_with_one_structure(tmp_path, split="train")
+        db.store_mace_predictions(
+            1, 2, {0: {"energy": -3.0, "forces": [[0.0, 0.0, 0.0]] * 2}}
+        )
+
+        db_logger = logging.getLogger("alomancy")
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        db_logger.addHandler(handler)
+        try:
+            result = db.get_mace_predictions(1, 2, e0={"O": -1.0})
+        finally:
+            db_logger.removeHandler(handler)
+
+        assert result is not None
+        e_dft, e_pred, _, _ = result["train"]
+        # Falls back to raw per-atom energy (same as test_round_trip_values).
+        assert e_dft[0] == pytest.approx(-0.5)
+        assert e_pred[0] == pytest.approx(-1.5)
+        messages = " ".join(r.getMessage() for r in records)
+        assert "H" in messages
+        assert any(r.levelno == logging.WARNING for r in records)
 
     @pytest.mark.unit
     def test_split_separation(self, tmp_path):

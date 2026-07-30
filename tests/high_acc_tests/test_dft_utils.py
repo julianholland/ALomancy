@@ -40,8 +40,16 @@ class TestBuildSrunCommand:
     def test_cpus_per_task(self):
         assert "--cpus-per-task=2" in _build_srun_command(_PARA_INFO, "pw.x")
 
-    def test_mem(self):
-        assert "--mem=90G" in _build_srun_command(_PARA_INFO, "pw.x")
+    def test_mem_is_zero_sentinel(self):
+        # --mem=0 means "inherit all memory already granted to the job", not
+        # "request zero memory" -- see comment in _build_srun_command.
+        # max_mem_per_node is deliberately not echoed here; requesting an
+        # explicit sub-amount from a nested srun step competes with the
+        # enclosing batch step's own memory reservation and can fail with
+        # "Unable to create step ... Memory required by task is not
+        # available" regardless of how much the job was granted.
+        assert "--mem=0 " in _build_srun_command(_PARA_INFO, "pw.x")
+        assert "--mem=90G" not in _build_srun_command(_PARA_INFO, "pw.x")
 
     def test_distribution(self):
         assert "--distribution=block:block" in _build_srun_command(_PARA_INFO, "pw.x")

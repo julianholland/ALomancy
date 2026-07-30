@@ -215,16 +215,39 @@ class GlobalDatabase:
         }
         self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
 
+    def get_isolated_atom_energies(self) -> dict[str, float]:
+        """Return {element_symbol: REF_energy} from stored IsolatedAtom structures.
+
+        Used to compute formation energies for parity plots (the same per-element
+        E0 is subtracted from both DFT and model energy for a given structure).
+        Returns an empty dict if no IsolatedAtom structures are stored — callers
+        must treat that as "cannot compute formation energy" and fall back.
+        """
+        e0: dict[str, float] = {}
+        for atoms in self.get_structures_by_config_type(["IsolatedAtom"]):
+            if "REF_energy" not in atoms.info:
+                continue
+            # Single-atom Atoms -> get_chemical_formula() is the bare element symbol.
+            e0[atoms.get_chemical_formula()] = atoms.info["REF_energy"]
+        return e0
+
     def get_mace_predictions(
         self,
         loop_idx: int,
         fit_idx: int,
+        e0: dict[str, float] | None = None,
     ) -> dict[str, tuple] | None:
         """Retrieve stored MACE predictions for parity plotting, split by train/test.
 
         Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)} where
-        each element is a numpy array (e values per-atom eV/atom, f values flat
-        eV/Å), or None if no predictions are stored for this loop/fit.
+        each element is a numpy array (f values flat eV/Å). Energy values are
+        per-atom eV/atom; if `e0` (element -> isolated-atom energy) is given,
+        each structure's per-element E0 sum is subtracted before dividing by
+        atom count, yielding formation energy per atom instead of raw energy
+        per atom. If any structure contains an element missing from `e0`, the
+        whole call falls back to raw per-atom energy (logging one warning)
+        rather than mixing formation- and raw-energy points in one figure.
+        Returns None if no predictions are stored for this loop/fit.
         """
         energy_key = f"mace_energy_loop_{loop_idx}_fit_{fit_idx}"
         forces_key = f"mace_forces_loop_{loop_idx}_fit_{fit_idx}"
@@ -233,6 +256,7 @@ class GlobalDatabase:
             "train": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
             "test": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
         }
+        points: dict[str, list[dict]] = {"train": [], "test": []}
         found = False
 
         for c in self.partition.list_containers():
@@ -241,18 +265,56 @@ class GlobalDatabase:
                 continue
             found = True
             split = apm.metadata.get("split", "train")
-            bucket = buckets.get(split, buckets["train"])
-            n = len(apm.atomLabelsList)
-            bucket["e_dft"].append(apm.energy / n)
-            bucket["e_pred"].append(apm.metadata[energy_key] / n)
-            if apm.forces is not None:
-                bucket["f_dft"].extend(apm.forces.flatten().tolist())
-                bucket["f_pred"].extend(
+            bucket_key = split if split in points else "train"
+            symbols = apm.atomLabelsList
+            point = {
+                "n": len(symbols),
+                "symbols": symbols,
+                "e_dft_total": apm.energy,
+                "e_pred_total": apm.metadata[energy_key],
+                "f_dft": apm.forces.flatten().tolist()
+                if apm.forces is not None
+                else [],
+                "f_pred": (
                     np.array(apm.metadata[forces_key]).flatten().tolist()
-                )
+                    if apm.forces is not None
+                    else []
+                ),
+            }
+            points[bucket_key].append(point)
 
         if not found:
             return None
+
+        use_e0 = e0 is not None
+        e0_map: dict[str, float] = e0 if e0 is not None else {}
+        if use_e0:
+            missing = {
+                s
+                for pts in points.values()
+                for p in pts
+                for s in p["symbols"]
+                if s not in e0_map
+            }
+            if missing:
+                logger.warning(
+                    "E0 dict missing energies for elements %s (loop %d fit %d) — "
+                    "parity data falling back to raw per-atom energy instead of "
+                    "formation energy.",
+                    sorted(missing),
+                    loop_idx,
+                    fit_idx,
+                )
+                use_e0 = False
+
+        for split, pts in points.items():
+            bucket = buckets[split]
+            for p in pts:
+                shift = sum(e0_map[s] for s in p["symbols"]) if use_e0 else 0.0
+                bucket["e_dft"].append((p["e_dft_total"] - shift) / p["n"])
+                bucket["e_pred"].append((p["e_pred_total"] - shift) / p["n"])
+                bucket["f_dft"].extend(p["f_dft"])
+                bucket["f_pred"].extend(p["f_pred"])
 
         return {
             split: (

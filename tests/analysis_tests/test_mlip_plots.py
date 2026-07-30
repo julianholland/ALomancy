@@ -330,6 +330,59 @@ def test_parse_eval_xyz_no_forces_still_returns_energy(tmp_path):
     assert len(f_dft) == 0
 
 
+@pytest.mark.unit
+def test_parse_eval_xyz_with_e0_returns_formation_energy(tmp_path):
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz
+
+    atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
+    atoms.info["REF_energy"] = -4.0
+    atoms.info["mace_energy"] = -3.8
+    xyz_path = tmp_path / "pred.xyz"
+    write(str(xyz_path), [atoms], format="extxyz")
+
+    e_dft, e_pred, _f_dft, _f_pred = _parse_eval_xyz(xyz_path, e0={"S": -1.0})
+
+    # dft formation = (-4.0 - 2*(-1.0)) / 2 = -1.0; pred formation = (-3.8 - 2*(-1.0)) / 2 = -0.9
+    assert e_dft[0] == pytest.approx(-1.0)
+    assert e_pred[0] == pytest.approx(-0.9)
+
+
+@pytest.mark.unit
+def test_parse_eval_xyz_missing_e0_element_falls_back(tmp_path):
+    import logging
+
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz
+
+    atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
+    atoms.info["REF_energy"] = -4.0
+    atoms.info["mace_energy"] = -3.8
+    xyz_path = tmp_path / "pred.xyz"
+    write(str(xyz_path), [atoms], format="extxyz")
+
+    # setup_logging (elsewhere in the suite) sets propagate=False on the
+    # "alomancy" logger, so caplog can't reliably intercept — attach a handler
+    # directly, matching CLAUDE.md's documented test convention.
+    al_logger = logging.getLogger("alomancy")
+    records: list[logging.LogRecord] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Collector()
+    al_logger.addHandler(handler)
+    try:
+        e_dft, e_pred, _f_dft, _f_pred = _parse_eval_xyz(xyz_path, e0={"O": -1.0})
+    finally:
+        al_logger.removeHandler(handler)
+
+    # Falls back to raw per-atom energy (same as test_parse_eval_xyz_returns_per_atom_energy).
+    assert e_dft[0] == pytest.approx(-2.0)
+    assert e_pred[0] == pytest.approx(-1.9)
+    assert any("S" in r.getMessage() for r in records)
+    assert any(r.levelno == logging.WARNING for r in records)
+
+
 # ---------------------------------------------------------------------------
 # plot_training_curves
 # ---------------------------------------------------------------------------
@@ -448,3 +501,224 @@ def test_draw_parity_figure_with_data_creates_file(tmp_path):
         file_suffix="train",
     )
     assert (plots_dir / "fit_parity_train_test_loop.png").exists()
+
+
+@pytest.mark.unit
+def test_draw_parity_figure_default_energy_label(tmp_path, monkeypatch):
+    from alomancy.analysis import mlip_plots
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    rng = np.random.default_rng(0)
+    result = (rng.random(5), rng.random(5), rng.random(15), rng.random(15))
+
+    captured = {}
+    real_close = mlip_plots.plt.close
+
+    def fake_close(fig):
+        captured["xlabel"] = fig.axes[0].get_xlabel()
+        real_close(fig)
+
+    monkeypatch.setattr(mlip_plots.plt, "close", fake_close)
+    _draw_parity_figure(
+        results_per_fit=[result],
+        n_fits=1,
+        name="mlip_committee",
+        seed=803,
+        set_label="Train",
+        base_name="test_loop",
+        plots_dir=plots_dir,
+        file_suffix="train",
+    )
+    assert captured["xlabel"] == "DFT energy (eV/atom)"
+
+
+@pytest.mark.unit
+def test_draw_parity_figure_formation_energy_label(tmp_path, monkeypatch):
+    from alomancy.analysis import mlip_plots
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    rng = np.random.default_rng(0)
+    result = (rng.random(5), rng.random(5), rng.random(15), rng.random(15))
+
+    captured = {}
+    real_close = mlip_plots.plt.close
+
+    def fake_close(fig):
+        captured["xlabel"] = fig.axes[0].get_xlabel()
+        real_close(fig)
+
+    monkeypatch.setattr(mlip_plots.plt, "close", fake_close)
+    _draw_parity_figure(
+        results_per_fit=[result],
+        n_fits=1,
+        name="mlip_committee",
+        seed=803,
+        set_label="Train",
+        base_name="test_loop",
+        plots_dir=plots_dir,
+        file_suffix="train",
+        energy_label="formation energy",
+    )
+    assert captured["xlabel"] == "DFT formation energy (eV/atom)"
+
+
+# ---------------------------------------------------------------------------
+# plot_dft_vs_model — E0 threading (real GlobalDatabase, no mock-testing)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_plot_dft_vs_model_uses_formation_energy_when_isolated_atoms_present(
+    tmp_path, monkeypatch, h_atom, h2_dimer
+):
+    from alomancy.analysis import mlip_plots
+    from alomancy.database.global_database import GlobalDatabase
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures([h_atom], skip_duplicates=False)
+    db.add_structures([h2_dimer], split="train", skip_duplicates=False)
+    db.assign_global_db_ids()
+
+    dimer_id = next(
+        a.info["global_db_id"]
+        for a in db.get_all_as_atoms()
+        if a.info.get("config_type") == "init_dimer"
+    )
+    db.store_mace_predictions(
+        0,
+        0,
+        {dimer_id: {"energy": -30.0, "forces": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}},
+    )
+
+    captured = {}
+
+    def fake_draw(
+        results_per_fit,
+        n_fits,
+        name,
+        seed,
+        set_label,
+        base_name,
+        plots_dir,
+        file_suffix,
+        energy_label="energy",
+    ):
+        captured[set_label] = (results_per_fit, energy_label)
+
+    monkeypatch.setattr(mlip_plots, "_draw_parity_figure", fake_draw)
+
+    mlip_plots.plot_dft_vs_model(
+        "al_loop_0",
+        {"name": "mlip_committee", "size_of_committee": 1},
+        seed=803,
+        plots_dir=tmp_path / "plots",
+        db=db,
+        loop_idx=0,
+    )
+
+    results_per_fit, energy_label = captured["Training"]
+    assert energy_label == "formation energy"
+    e_dft, e_pred, _f_dft, _f_pred = results_per_fit[0]
+    # h2_dimer REF_energy=-31.0, H isolated E0=-13.6 -> dft formation = (-31.0 - 2*(-13.6))/2
+    assert e_dft[0] == pytest.approx((-31.0 - 2 * (-13.6)) / 2)
+    assert e_pred[0] == pytest.approx((-30.0 - 2 * (-13.6)) / 2)
+
+
+@pytest.mark.unit
+def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
+    tmp_path, monkeypatch, h2_dimer
+):
+    import logging
+
+    from alomancy.analysis import mlip_plots
+    from alomancy.database.global_database import GlobalDatabase
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures([h2_dimer], split="train", skip_duplicates=False)
+    db.assign_global_db_ids()
+    dimer_id = db.get_all_as_atoms()[0].info["global_db_id"]
+    db.store_mace_predictions(
+        0,
+        0,
+        {dimer_id: {"energy": -30.0, "forces": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}},
+    )
+
+    captured = {}
+
+    def fake_draw(
+        results_per_fit,
+        n_fits,
+        name,
+        seed,
+        set_label,
+        base_name,
+        plots_dir,
+        file_suffix,
+        energy_label="energy",
+    ):
+        captured[set_label] = (results_per_fit, energy_label)
+
+    monkeypatch.setattr(mlip_plots, "_draw_parity_figure", fake_draw)
+
+    al_logger = logging.getLogger("alomancy")
+    records: list[logging.LogRecord] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Collector()
+    al_logger.addHandler(handler)
+    try:
+        mlip_plots.plot_dft_vs_model(
+            "al_loop_0",
+            {"name": "mlip_committee", "size_of_committee": 1},
+            seed=803,
+            plots_dir=tmp_path / "plots",
+            db=db,
+            loop_idx=0,
+        )
+    finally:
+        al_logger.removeHandler(handler)
+
+    results_per_fit, energy_label = captured["Training"]
+    assert energy_label == "energy"
+    e_dft, e_pred, _f_dft, _f_pred = results_per_fit[0]
+    # Raw per-atom energy (no E0 subtraction): -31.0/2 dft, -30.0/2 pred.
+    assert e_dft[0] == pytest.approx(-15.5)
+    assert e_pred[0] == pytest.approx(-15.0)
+    assert any(r.levelno == logging.WARNING for r in records)
+
+
+@pytest.mark.unit
+def test_plot_dft_vs_model_e0_computed_once_per_call(tmp_path, monkeypatch, h_atom):
+    from alomancy.analysis import mlip_plots
+    from alomancy.database.global_database import GlobalDatabase
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures([h_atom], skip_duplicates=False)
+
+    call_count = {"n": 0}
+    real_get = db.get_isolated_atom_energies
+
+    def counting_get():
+        call_count["n"] += 1
+        return real_get()
+
+    monkeypatch.setattr(db, "get_isolated_atom_energies", counting_get)
+    monkeypatch.setattr(mlip_plots, "_draw_parity_figure", lambda *a, **k: None)
+
+    mlip_plots.plot_dft_vs_model(
+        "al_loop_0",
+        {"name": "mlip_committee", "size_of_committee": 3},
+        seed=803,
+        plots_dir=tmp_path / "plots",
+        db=db,
+        loop_idx=0,
+    )
+
+    assert call_count["n"] == 1

@@ -61,6 +61,53 @@ class TestBuildExpyreEntry:
         assert not any("gres" in h for h in entry["header"])
 
     @pytest.mark.unit
+    def test_cpu_header_with_mem_mb(self):
+        from alomancy.cli.add_hpc import build_expyre_entry
+
+        entry = build_expyre_entry(
+            host="myhost",
+            gpu=False,
+            partitions={
+                "general": {"num_cores": 72, "max_time": "24:00:00", "max_mem": "240GB"}
+            },
+            commands=["module load python"],
+            rundir="/scratch",
+            mem_mb=61440,
+        )
+        assert "#SBATCH --mem=61440M" in entry["header"]
+
+    @pytest.mark.unit
+    def test_gpu_header_with_mem_mb(self):
+        from alomancy.cli.add_hpc import build_expyre_entry
+
+        entry = build_expyre_entry(
+            host="myhost",
+            gpu=True,
+            partitions={
+                "gpu": {"num_cores": 18, "max_time": "24:00:00", "max_mem": "12GB"}
+            },
+            commands=[],
+            rundir="/scratch",
+            mem_mb=12288,
+        )
+        assert "#SBATCH --mem=12288M" in entry["header"]
+
+    @pytest.mark.unit
+    def test_no_mem_mb_no_mem_line(self):
+        from alomancy.cli.add_hpc import build_expyre_entry
+
+        entry = build_expyre_entry(
+            host="myhost",
+            gpu=False,
+            partitions={
+                "general": {"num_cores": 72, "max_time": "24:00:00", "max_mem": "240GB"}
+            },
+            commands=[],
+            rundir="/scratch",
+        )
+        assert not any("--mem" in h for h in entry["header"])
+
+    @pytest.mark.unit
     def test_basic_fields_present(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
@@ -76,6 +123,33 @@ class TestBuildExpyreEntry:
         assert entry["scheduler"] == "slurm"
         assert entry["rundir"] == "/ptmp/user"
         assert entry["commands"] == ["module purge"]
+
+
+class TestMemStrToMb:
+    @pytest.mark.unit
+    def test_gb_converted(self):
+        from alomancy.cli.add_hpc import mem_str_to_mb
+
+        assert mem_str_to_mb("60GB") == 60 * 1024
+
+    @pytest.mark.unit
+    def test_tb_converted(self):
+        from alomancy.cli.add_hpc import mem_str_to_mb
+
+        assert mem_str_to_mb("1TB") == 1024 * 1024
+
+    @pytest.mark.unit
+    def test_empty_returns_none(self):
+        from alomancy.cli.add_hpc import mem_str_to_mb
+
+        assert mem_str_to_mb("") is None
+        assert mem_str_to_mb(None) is None
+
+    @pytest.mark.unit
+    def test_unparseable_returns_none(self):
+        from alomancy.cli.add_hpc import mem_str_to_mb
+
+        assert mem_str_to_mb("lots of memory") is None
 
 
 class TestBuildAlomancyProfile:

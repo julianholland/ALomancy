@@ -3,6 +3,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from expyre.units import mem_to_kB
 from yaml import safe_dump, safe_load
 
 from alomancy.configs.global_config import ALOMANCY_HPC_CONFIG, EXPYRE_CONFIG
@@ -24,6 +25,20 @@ _GPU_HEADER_BASE = [
 ]
 
 
+def mem_str_to_mb(mem_str: str | None) -> int | None:
+    """Convert a human memory string (e.g. '60GB') to whole MB.
+
+    Returns None if mem_str is empty or unparseable, so callers can skip
+    adding a --mem line rather than crash.
+    """
+    if not mem_str:
+        return None
+    try:
+        return mem_to_kB(mem_str) // 1024
+    except ValueError:
+        return None
+
+
 def build_expyre_entry(
     host: str,
     gpu: bool,
@@ -32,8 +47,27 @@ def build_expyre_entry(
     rundir: str,
     gpu_constraint: str | None = None,
     gpu_gres: str | None = None,
+    mem_mb: int | None = None,
 ) -> dict:
-    """Build the dict for one ExPyRe system entry."""
+    """Build the dict for one ExPyRe system entry.
+
+    mem_mb, if given, is baked in as a literal ``#SBATCH --mem=<mem_mb>M``
+    line (not a `{...}` template like num_nodes/num_cores, which ExPyRe fills
+    in at submit time). Without it, jobs get whatever memory default the
+    cluster applies to a job with no explicit --mem, which is not
+    necessarily enough for what the DFT/MLIP binary launched inside the job
+    actually needs. Note that the nested `srun` command which launches that
+    binary (`_build_srun_command` in dft_utils.py) deliberately requests
+    `--mem=0` ("use everything the job already has") rather than a specific
+    sub-amount: on some Slurm configs, the running batch script counts as
+    the job's first step and is credited with the *entire* job memory
+    allocation, so a nested step asking for its own explicit amount
+    competes with that reservation and fails immediately with "Unable to
+    create step ... Memory required by task is not available" — regardless
+    of how much the job was granted. mem_mb here exists to set a real
+    ceiling on the job as a whole, not to be matched exactly by anything
+    inside it.
+    """
     if gpu:
         header = list(_GPU_HEADER_BASE)
         if gpu_constraint:
@@ -42,6 +76,9 @@ def build_expyre_entry(
             header.append(f"#SBATCH --gres={gpu_gres}")
     else:
         header = list(_CPU_HEADER)
+
+    if mem_mb is not None:
+        header.append(f"#SBATCH --mem={mem_mb}M")
 
     return {
         "host": host,
@@ -292,6 +329,31 @@ def add_hpc_wizard() -> None:
         if not _yes_no("  Add another partition?", default=False):
             break
 
+    # Ranks/memory ALomancy will request per job — used both for the
+    # node_info baked into srun commands *and* the outer Slurm allocation's
+    # --mem, so the two can never drift apart and deadlock a nested step.
+    first_part = next(iter(partitions.values())) if partitions else {}
+    default_ranks = first_part.get("num_cores")
+    default_mem = str(first_part.get("max_mem", ""))
+    ranks_per_node = _prompt_int(
+        "Ranks per node (usually = cores per node)", default=default_ranks
+    )
+    max_mem_node = _prompt("Max memory per node", default=default_mem)
+    node_info = {
+        "ranks_per_system": ranks_per_node,
+        "ranks_per_node": ranks_per_node,
+        "threads_per_rank": 1,
+        "max_mem_per_node": max_mem_node,
+    }
+    mem_mb = mem_str_to_mb(max_mem_node)
+    if mem_mb is None and max_mem_node:
+        print(
+            f"  Warning: could not parse '{max_mem_node}' as a memory size "
+            "(expected e.g. '60GB'); no #SBATCH --mem line will be added. "
+            f"Add one manually in {EXPYRE_CONFIG}, or jobs may hang on a "
+            "nested srun step that requests more memory than the job has."
+        )
+
     gpu_constraint: str | None = None
     gpu_gres: str | None = None
     if gpu:
@@ -309,6 +371,7 @@ def add_hpc_wizard() -> None:
         rundir=rundir,
         gpu_constraint=gpu_constraint,
         gpu_gres=gpu_gres,
+        mem_mb=mem_mb,
     )
 
     # --- ALomancy profile ---
@@ -332,20 +395,6 @@ def add_hpc_wizard() -> None:
         default=default_partitions,
     )
     profile_partitions = [p.strip() for p in partitions_str.split(",") if p.strip()]
-
-    first_part = next(iter(partitions.values())) if partitions else {}
-    default_ranks = first_part.get("num_cores")
-    default_mem = str(first_part.get("max_mem", ""))
-    ranks_per_node = _prompt_int(
-        "Ranks per node (usually = cores per node)", default=default_ranks
-    )
-    max_mem_node = _prompt("Max memory per node", default=default_mem)
-    node_info = {
-        "ranks_per_system": ranks_per_node,
-        "ranks_per_node": ranks_per_node,
-        "threads_per_rank": 1,
-        "max_mem_per_node": max_mem_node,
-    }
 
     print("\nDFT code on this system? Options: qe / vasp / none")
     dft_code_raw = _prompt("DFT code", default="none").strip().lower()

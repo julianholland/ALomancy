@@ -183,11 +183,18 @@ def plot_training_curves(
     logger.info("Saved training loss plot to %s", loss_path)
 
 
-def _parse_eval_xyz(path: Path) -> tuple | None:
+def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | None:
     """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft, f_pred).
 
     Written by mace_fit after training completes on the remote node. Looks for
     mace_energy / mace_forces keys. Returns None if the file has no usable rows.
+
+    Energy values are per-atom eV/atom. If `e0` (element -> isolated-atom
+    energy) is given, each structure's per-element E0 sum is subtracted before
+    dividing by atom count, yielding formation energy per atom instead of raw
+    energy per atom. If any structure contains an element missing from `e0`,
+    the whole file falls back to raw per-atom energy (logging one warning)
+    rather than mixing formation- and raw-energy points in one figure.
     """
     from ase.io import read as ase_read
 
@@ -197,19 +204,38 @@ def _parse_eval_xyz(path: Path) -> tuple | None:
         logger.warning("Failed to read eval xyz %s: %s", path, exc)
         return None
 
+    rows = [
+        atoms
+        for atoms in atoms_list
+        if "REF_energy" in atoms.info and "mace_energy" in atoms.info
+    ]
+    if not rows:
+        return None
+
+    use_e0 = e0 is not None
+    e0_map: dict[str, float] = e0 if e0 is not None else {}
+    if use_e0:
+        missing = {
+            s for atoms in rows for s in atoms.get_chemical_symbols() if s not in e0_map
+        }
+        if missing:
+            logger.warning(
+                "E0 dict missing energies for elements %s in %s — falling back to "
+                "raw per-atom energy instead of formation energy.",
+                sorted(missing),
+                path,
+            )
+            use_e0 = False
+
     e_dft, e_pred, f_dft, f_pred = [], [], [], []
-    for atoms in atoms_list:
-        if "REF_energy" not in atoms.info or "mace_energy" not in atoms.info:
-            continue
+    for atoms in rows:
         n = len(atoms)
-        e_dft.append(atoms.info["REF_energy"] / n)
-        e_pred.append(float(atoms.info["mace_energy"]) / n)
+        shift = sum(e0_map[s] for s in atoms.get_chemical_symbols()) if use_e0 else 0.0
+        e_dft.append((atoms.info["REF_energy"] - shift) / n)
+        e_pred.append((float(atoms.info["mace_energy"]) - shift) / n)
         if "REF_forces" in atoms.arrays and "mace_forces" in atoms.arrays:
             f_dft.extend(atoms.arrays["REF_forces"].flatten().tolist())
             f_pred.extend(atoms.arrays["mace_forces"].flatten().tolist())
-
-    if not e_dft:
-        return None
 
     return (
         np.array(e_dft),
@@ -228,6 +254,7 @@ def _draw_parity_figure(
     base_name: str,
     plots_dir: Path,
     file_suffix: str,
+    energy_label: str = "energy",
 ) -> None:
     fig, axes = plt.subplots(n_fits, 2, figsize=(8, 4 * n_fits), squeeze=False)
     fig.suptitle(f"{name} — {set_label} Set Parity  [{base_name}]", y=1.01)
@@ -290,8 +317,8 @@ def _draw_parity_figure(
                     fontsize=8,
                 )
 
-        ax_e.set_xlabel("DFT energy (eV/atom)")
-        ax_e.set_ylabel("Model energy (eV/atom)")
+        ax_e.set_xlabel(f"DFT {energy_label} (eV/atom)")
+        ax_e.set_ylabel(f"Model {energy_label} (eV/atom)")
         ax_e.set_title(f"{row_title} — Energy")
         ax_f.set_xlabel("DFT forces (eV/Å)")
         ax_f.set_ylabel("Model forces (eV/Å)")
@@ -317,13 +344,27 @@ def plot_dft_vs_model(
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["size_of_committee"]
 
+    e0: dict[str, float] | None = None
+    if db is not None:
+        try:
+            e0 = db.get_isolated_atom_energies() or None
+        except Exception as exc:  # defensive: DB problems must not break plotting
+            logger.warning("Failed to compute isolated-atom E0 dict: %s", exc)
+            e0 = None
+        if e0 is None:
+            logger.warning(
+                "No IsolatedAtom energies in GlobalDatabase — parity plots will show "
+                "raw per-atom energy, not formation energy."
+            )
+    energy_label = "formation energy" if e0 else "energy"
+
     train_results: list = []
     test_results: list = []
 
     for i in range(n_fits):
         # Primary: use stored DB predictions — no model load or GPU needed.
         if db is not None and loop_idx is not None:
-            stored = db.get_mace_predictions(loop_idx, i)
+            stored = db.get_mace_predictions(loop_idx, i, e0=e0)
             if stored is not None:
                 train_results.append(stored.get("train"))
                 test_results.append(stored.get("test"))
@@ -338,10 +379,10 @@ def plot_dft_vs_model(
         test_xyz = fit_dir / "test_pred.xyz"
         if train_xyz.exists() or test_xyz.exists():
             train_results.append(
-                _parse_eval_xyz(train_xyz) if train_xyz.exists() else None
+                _parse_eval_xyz(train_xyz, e0=e0) if train_xyz.exists() else None
             )
             test_results.append(
-                _parse_eval_xyz(test_xyz) if test_xyz.exists() else None
+                _parse_eval_xyz(test_xyz, e0=e0) if test_xyz.exists() else None
             )
             logger.info(
                 "Using eval xyz files for parity plot, loop %s fit %d.",
@@ -368,9 +409,25 @@ def plot_dft_vs_model(
 
     if has_train:
         _draw_parity_figure(
-            train_results, n_fits, name, seed, "Training", base_name, plots_dir, "train"
+            train_results,
+            n_fits,
+            name,
+            seed,
+            "Training",
+            base_name,
+            plots_dir,
+            "train",
+            energy_label=energy_label,
         )
     if has_test:
         _draw_parity_figure(
-            test_results, n_fits, name, seed, "Test", base_name, plots_dir, "test"
+            test_results,
+            n_fits,
+            name,
+            seed,
+            "Test",
+            base_name,
+            plots_dir,
+            "test",
+            energy_label=energy_label,
         )

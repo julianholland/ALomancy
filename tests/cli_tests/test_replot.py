@@ -139,6 +139,67 @@ def test_replot_calls_plot_functions(tmp_path):
 
 
 @pytest.mark.unit
+def test_replot_passes_db_and_loop_idx_when_global_database_exists(tmp_path):
+    from alomancy.cli.replot import replot_results
+
+    results = _make_results_tree(tmp_path, n_loops=2)
+    (results / "global_database").mkdir()
+
+    import pandas as pd
+
+    with (
+        mock.patch("alomancy.cli.replot.plot_training_curves"),
+        mock.patch("alomancy.cli.replot.plot_dft_vs_model") as m_parity,
+        mock.patch(
+            "alomancy.cli.replot.get_mace_eval_info",
+            return_value=pd.DataFrame([{"mae_f": 0.1}]),
+        ),
+        mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
+        mock.patch("alomancy.cli.replot.timing_plots"),
+        mock.patch("os.chdir"),
+        mock.patch("alomancy.cli.replot.GlobalDatabase") as m_db_cls,
+    ):
+        db_instance = m_db_cls.return_value
+        replot_results(results)
+
+    m_db_cls.assert_called_once_with(str(results / "global_database"))
+    assert m_parity.call_count == 2
+    loop_idxs = {call.kwargs["loop_idx"] for call in m_parity.call_args_list}
+    assert loop_idxs == {0, 1}
+    for call in m_parity.call_args_list:
+        assert call.kwargs["db"] is db_instance
+
+
+@pytest.mark.unit
+def test_replot_no_global_database_dir_falls_back(tmp_path):
+    from alomancy.cli.replot import replot_results
+
+    results = _make_results_tree(tmp_path)
+    # Deliberately do not create results/global_database.
+
+    import pandas as pd
+
+    with (
+        mock.patch("alomancy.cli.replot.plot_training_curves"),
+        mock.patch("alomancy.cli.replot.plot_dft_vs_model") as m_parity,
+        mock.patch(
+            "alomancy.cli.replot.get_mace_eval_info",
+            return_value=pd.DataFrame([{"mae_f": 0.1}]),
+        ),
+        mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
+        mock.patch("alomancy.cli.replot.timing_plots"),
+        mock.patch("os.chdir"),
+        mock.patch("alomancy.cli.replot.GlobalDatabase") as m_db_cls,
+    ):
+        replot_results(results)
+
+    m_db_cls.assert_not_called()
+    for call in m_parity.call_args_list:
+        assert call.kwargs["db"] is None
+        assert call.kwargs["loop_idx"] == 0
+
+
+@pytest.mark.unit
 def test_replot_no_parity(tmp_path):
     from alomancy.cli.replot import replot_results
 

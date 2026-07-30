@@ -19,13 +19,24 @@ def generate_kpts(
 
 
 def _build_srun_command(para_info_dict: dict, executable_and_flags: str) -> str:
+    # --mem=0 means "use all memory already granted to the job" (documented
+    # Slurm sentinel), not "request 0 memory". This step runs nested inside
+    # a job whose own #SBATCH header may already set --mem; if it were, the
+    # enclosing batch script's process itself is accounted as the job's
+    # first step and, on some Slurm configs, is credited with the *entire*
+    # job memory allocation. A nested srun step that then asks for its own
+    # explicit sub-amount (e.g. --mem=60GB) competes with that reservation
+    # and fails immediately with "Unable to create step ... Memory required
+    # by task is not available", regardless of how large the job's total
+    # --mem is. --mem=0 avoids the conflict by inheriting rather than
+    # re-requesting.
     return (
         f"srun --ntasks={para_info_dict['ranks_per_system']} "
         f"--tasks-per-node={para_info_dict['ranks_per_node']} "
         f"--cpus-per-task={para_info_dict['threads_per_rank']} "
         f"--distribution=block:block "
         f"--hint=nomultithread "
-        f"--mem={para_info_dict['max_mem_per_node']} "
+        f"--mem=0 "
         f"{executable_and_flags}"
     )
 

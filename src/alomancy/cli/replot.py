@@ -6,6 +6,7 @@ from pathlib import Path
 from alomancy.analysis.mlip_plots import plot_dft_vs_model, plot_training_curves
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.analysis.timing_plots import timing_plots
+from alomancy.database.global_database import GlobalDatabase
 from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,19 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     plots_dir = results_dir / "current_plots"
     plots_dir.mkdir(exist_ok=True, parents=True)
 
+    # Reuse the GlobalDatabase's IsolatedAtom energies for formation-energy parity
+    # plots, matching the live AL loop. Only open it if it already exists — the
+    # constructor unconditionally mkdir's, and we don't want to create an empty
+    # DB for runs that predate GlobalDatabase support.
+    db_path = results_dir / "global_database"
+    db = GlobalDatabase(str(db_path)) if db_path.exists() else None
+    if db is None:
+        logger.info(
+            "No GlobalDatabase found at %s — parity plots will use raw per-atom "
+            "energy (older run, or run predates GlobalDatabase support).",
+            db_path,
+        )
+
     # Loops whose MACE training has produced at least one metrics file.
     def _has_train_txt(loop_dir: Path) -> bool:
         return bool(
@@ -88,10 +102,14 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
 
     for loop_dir in loops:
         base_name = loop_dir.name
+        m = re.fullmatch(r"al_loop_(\d+)", base_name)
+        loop_idx = int(m.group(1)) if m else None
         logger.info("Plotting loop %s …", base_name)
         plot_training_curves(base_name, job_dict, seed, plots_dir)
         if not no_parity:
-            plot_dft_vs_model(base_name, job_dict, seed, plots_dir)
+            plot_dft_vs_model(
+                base_name, job_dict, seed, plots_dir, db=db, loop_idx=loop_idx
+            )
 
     # Cross-loop MAE summary (reads all al_loop_*/... train.txt files)
     df = get_mace_eval_info(job_dict)
