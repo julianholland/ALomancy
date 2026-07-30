@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-07-30
+
+### Fixed
+- **VASP failing on non-periodic structures**: ASE's `Vasp` calculator rejects any `pbc` other than `[True, True, True]` — VASP itself has no non-periodic mode. Molecules generated for initialization (isolated atoms, dimers, trimers) are built non-periodic and would previously reach VASP as-is, triggering a calculator error. `create_vasp_calc_object` (`high_accuracy_evaluation/dft/run_vasp.py`) now calls `_ensure_fully_periodic`, which pads any non-periodic input with 10 Å of vacuum per side and sets `pbc=True` before the calculator is built.
+
 ## [0.4.4] - 2026-07-29
 
 ### Fixed
