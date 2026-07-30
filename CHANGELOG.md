@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-07-30
+
+### Fixed
+- **VASP jobs hanging with no output when the outer Slurm job sets an explicit `--mem`**: the nested `srun` command that launches the DFT/MLIP binary (`_build_srun_command` in `utils/dft_utils.py`) previously requested an explicit `--mem=<max_mem_per_node>`. On Slurm configs where the running batch script is accounted as the job's first step and credited with the job's *entire* memory allocation, that nested step's own explicit sub-request competes with the batch step's reservation and fails immediately with `"Unable to create step ... Memory required by task is not available"`, regardless of how much memory the job was granted. The nested `srun` now requests `--mem=0` — Slurm's documented sentinel for "use all memory already granted to the job" — so it inherits rather than re-requests.
+- **`alomancy add-hpc` wizard baking one partition's memory into a shared, multi-partition header**: the wizard used to derive a single `#SBATCH --mem=<N>M` line from just one partition's `max_mem` and apply it to the whole ExPyRe system header, so every job submitted through that profile carried the same memory ceiling regardless of which partition it actually landed on — under-requesting on large-memory partitions or getting rejected outright on small ones. `build_expyre_entry` now scopes `--mem` per partition via `_with_partition_mem_headers`, using ExPyRe's existing per-partition `header` mechanism so each job gets the ceiling that matches the partition it actually uses.
+- **`mem_str_to_mb` crashing on the `'_none_'` sentinel**: `expyre.units.mem_to_kB` returns `None` (rather than raising) for the literal string `'_none_'`; `mem_str_to_mb` now handles that `None` instead of crashing on `None // 1024`.
+- **Misleading double warning when isolated-atom E0 lookup fails**: `plot_dft_vs_model` (`analysis/mlip_plots.py`) would log "Failed to compute isolated-atom E0 dict" on a real exception from `db.get_isolated_atom_energies()`, then immediately log a second, inaccurate "No IsolatedAtom energies in GlobalDatabase" warning implying an empty dataset rather than a real error. The empty-dataset warning now only fires when the call actually succeeds and returns nothing.
+
 ## [0.4.5] - 2026-07-30
 
 ### Fixed
