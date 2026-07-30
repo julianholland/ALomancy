@@ -323,18 +323,44 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">id_meta_map</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="GlobalDatabase.get_isolated_atom_energies">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_isolated_atom_energies">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_isolated_atom_energies</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return {element_symbol: REF_energy} from stored IsolatedAtom structures.</span>
+
+<span class="sd">        Used to compute formation energies for parity plots (the same per-element</span>
+<span class="sd">        E0 is subtracted from both DFT and model energy for a given structure).</span>
+<span class="sd">        Returns an empty dict if no IsolatedAtom structures are stored — callers</span>
+<span class="sd">        must treat that as &quot;cannot compute formation energy&quot; and fall back.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">e0</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_structures_by_config_type</span><span class="p">([</span><span class="s2">&quot;IsolatedAtom&quot;</span><span class="p">]):</span>
+            <span class="k">if</span> <span class="s2">&quot;REF_energy&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># Single-atom Atoms -&gt; get_chemical_formula() is the bare element symbol.</span>
+            <span class="n">e0</span><span class="p">[</span><span class="n">atoms</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()]</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;REF_energy&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">e0</span></div>
+
+
 <div class="viewcode-block" id="GlobalDatabase.get_mace_predictions">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.get_mace_predictions">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_mace_predictions</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">loop_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">fit_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">e0</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieve stored MACE predictions for parity plotting, split by train/test.</span>
 
 <span class="sd">        Returns {&quot;train&quot;: (e_dft, e_pred, f_dft, f_pred), &quot;test&quot;: (...)} where</span>
-<span class="sd">        each element is a numpy array (e values per-atom eV/atom, f values flat</span>
-<span class="sd">        eV/Å), or None if no predictions are stored for this loop/fit.</span>
+<span class="sd">        each element is a numpy array (f values flat eV/Å). Energy values are</span>
+<span class="sd">        per-atom eV/atom; if `e0` (element -&gt; isolated-atom energy) is given,</span>
+<span class="sd">        each structure&#39;s per-element E0 sum is subtracted before dividing by</span>
+<span class="sd">        atom count, yielding formation energy per atom instead of raw energy</span>
+<span class="sd">        per atom. If any structure contains an element missing from `e0`, the</span>
+<span class="sd">        whole call falls back to raw per-atom energy (logging one warning)</span>
+<span class="sd">        rather than mixing formation- and raw-energy points in one figure.</span>
+<span class="sd">        Returns None if no predictions are stored for this loop/fit.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">energy_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;mace_energy_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="n">forces_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;mace_forces_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -343,6 +369,7 @@
             <span class="s2">&quot;train&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;e_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;e_pred&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_pred&quot;</span><span class="p">:</span> <span class="p">[]},</span>
             <span class="s2">&quot;test&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;e_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;e_pred&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_dft&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;f_pred&quot;</span><span class="p">:</span> <span class="p">[]},</span>
         <span class="p">}</span>
+        <span class="n">points</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;train&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;test&quot;</span><span class="p">:</span> <span class="p">[]}</span>
         <span class="n">found</span> <span class="o">=</span> <span class="kc">False</span>
 
         <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
@@ -351,18 +378,56 @@
                 <span class="k">continue</span>
             <span class="n">found</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="n">split</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;split&quot;</span><span class="p">,</span> <span class="s2">&quot;train&quot;</span><span class="p">)</span>
-            <span class="n">bucket</span> <span class="o">=</span> <span class="n">buckets</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">split</span><span class="p">,</span> <span class="n">buckets</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">])</span>
-            <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span><span class="p">)</span>
-            <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;e_dft&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">energy</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span>
-            <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;e_pred&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">energy_key</span><span class="p">]</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;f_dft&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">forces</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;f_pred&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+            <span class="n">bucket_key</span> <span class="o">=</span> <span class="n">split</span> <span class="k">if</span> <span class="n">split</span> <span class="ow">in</span> <span class="n">points</span> <span class="k">else</span> <span class="s2">&quot;train&quot;</span>
+            <span class="n">symbols</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span>
+            <span class="n">point</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;n&quot;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">symbols</span><span class="p">),</span>
+                <span class="s2">&quot;symbols&quot;</span><span class="p">:</span> <span class="n">symbols</span><span class="p">,</span>
+                <span class="s2">&quot;e_dft_total&quot;</span><span class="p">:</span> <span class="n">apm</span><span class="o">.</span><span class="n">energy</span><span class="p">,</span>
+                <span class="s2">&quot;e_pred_total&quot;</span><span class="p">:</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">energy_key</span><span class="p">],</span>
+                <span class="s2">&quot;f_dft&quot;</span><span class="p">:</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="p">[],</span>
+                <span class="s2">&quot;f_pred&quot;</span><span class="p">:</span> <span class="p">(</span>
                     <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">forces_key</span><span class="p">])</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-                <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                    <span class="k">else</span> <span class="p">[]</span>
+                <span class="p">),</span>
+            <span class="p">}</span>
+            <span class="n">points</span><span class="p">[</span><span class="n">bucket_key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">point</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">found</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">use_e0</span> <span class="o">=</span> <span class="n">e0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">e0_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">e0</span> <span class="k">if</span> <span class="n">e0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">use_e0</span><span class="p">:</span>
+            <span class="n">missing</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">s</span>
+                <span class="k">for</span> <span class="n">pts</span> <span class="ow">in</span> <span class="n">points</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span>
+                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;symbols&quot;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">s</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">e0_map</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;E0 dict missing energies for elements </span><span class="si">%s</span><span class="s2"> (loop </span><span class="si">%d</span><span class="s2"> fit </span><span class="si">%d</span><span class="s2">) — &quot;</span>
+                    <span class="s2">&quot;parity data falling back to raw per-atom energy instead of &quot;</span>
+                    <span class="s2">&quot;formation energy.&quot;</span><span class="p">,</span>
+                    <span class="nb">sorted</span><span class="p">(</span><span class="n">missing</span><span class="p">),</span>
+                    <span class="n">loop_idx</span><span class="p">,</span>
+                    <span class="n">fit_idx</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">use_e0</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">for</span> <span class="n">split</span><span class="p">,</span> <span class="n">pts</span> <span class="ow">in</span> <span class="n">points</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">bucket</span> <span class="o">=</span> <span class="n">buckets</span><span class="p">[</span><span class="n">split</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">:</span>
+                <span class="n">shift</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">e0_map</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;symbols&quot;</span><span class="p">])</span> <span class="k">if</span> <span class="n">use_e0</span> <span class="k">else</span> <span class="mf">0.0</span>
+                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;e_dft&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;e_dft_total&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">shift</span><span class="p">)</span> <span class="o">/</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;n&quot;</span><span class="p">])</span>
+                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;e_pred&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;e_pred_total&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">shift</span><span class="p">)</span> <span class="o">/</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;n&quot;</span><span class="p">])</span>
+                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;f_dft&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;f_dft&quot;</span><span class="p">])</span>
+                <span class="n">bucket</span><span class="p">[</span><span class="s2">&quot;f_pred&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;f_pred&quot;</span><span class="p">])</span>
 
         <span class="k">return</span> <span class="p">{</span>
             <span class="n">split</span><span class="p">:</span> <span class="p">(</span>
