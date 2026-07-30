@@ -34,9 +34,38 @@ def mem_str_to_mb(mem_str: str | None) -> int | None:
     if not mem_str:
         return None
     try:
-        return mem_to_kB(mem_str) // 1024
+        mem_kb = mem_to_kB(mem_str)
     except ValueError:
         return None
+    if mem_kb is None:
+        return None
+    return mem_kb // 1024
+
+
+def _with_partition_mem_headers(partitions: dict[str, dict]) -> dict[str, dict]:
+    """Return a copy of partitions, each carrying its own #SBATCH --mem line.
+
+    A system can offer partitions with very different node memory sizes
+    (e.g. a 12GB GPU partition and a 240GB CPU partition). ExPyRe applies a
+    partition's own "header" entries in addition to the system-wide header
+    for any job landing on it (see System.submit's per-partition header_extra
+    lookup), so scoping --mem here means each job gets the right ceiling for
+    the partition it actually uses — unlike a single blanket --mem baked
+    into the system-wide header from just one partition's max_mem, which
+    either under-requests on bigger-memory partitions or gets jobs rejected
+    outright on smaller ones.
+    """
+    result: dict[str, dict] = {}
+    for name, spec in partitions.items():
+        spec = dict(spec)
+        mem_mb = mem_str_to_mb(spec.get("max_mem"))
+        if mem_mb is not None:
+            spec_header = list(spec.get("header", []))
+            if not any("--mem" in line for line in spec_header):
+                spec_header.append(f"#SBATCH --mem={mem_mb}M")
+            spec["header"] = spec_header
+        result[name] = spec
+    return result
 
 
 def build_expyre_entry(
@@ -47,26 +76,26 @@ def build_expyre_entry(
     rundir: str,
     gpu_constraint: str | None = None,
     gpu_gres: str | None = None,
-    mem_mb: int | None = None,
 ) -> dict:
     """Build the dict for one ExPyRe system entry.
 
-    mem_mb, if given, is baked in as a literal ``#SBATCH --mem=<mem_mb>M``
-    line (not a `{...}` template like num_nodes/num_cores, which ExPyRe fills
-    in at submit time). Without it, jobs get whatever memory default the
-    cluster applies to a job with no explicit --mem, which is not
-    necessarily enough for what the DFT/MLIP binary launched inside the job
-    actually needs. Note that the nested `srun` command which launches that
-    binary (`_build_srun_command` in dft_utils.py) deliberately requests
-    `--mem=0` ("use everything the job already has") rather than a specific
+    Each partition gets its own #SBATCH --mem line (see
+    _with_partition_mem_headers), sized from that partition's own max_mem,
+    rather than one blanket value shared across every partition the system
+    offers. Without it, jobs get whatever memory default the cluster applies
+    to a job with no explicit --mem, which is not necessarily enough for
+    what the DFT/MLIP binary launched inside the job actually needs. Note
+    that the nested `srun` command which launches that binary
+    (`_build_srun_command` in dft_utils.py) deliberately requests `--mem=0`
+    ("use everything the job already has") rather than a specific
     sub-amount: on some Slurm configs, the running batch script counts as
     the job's first step and is credited with the *entire* job memory
     allocation, so a nested step asking for its own explicit amount
     competes with that reservation and fails immediately with "Unable to
     create step ... Memory required by task is not available" — regardless
-    of how much the job was granted. mem_mb here exists to set a real
-    ceiling on the job as a whole, not to be matched exactly by anything
-    inside it.
+    of how much the job was granted. The partition-level --mem here exists
+    to set a real ceiling on the job as a whole, not to be matched exactly
+    by anything inside it.
     """
     if gpu:
         header = list(_GPU_HEADER_BASE)
@@ -77,16 +106,13 @@ def build_expyre_entry(
     else:
         header = list(_CPU_HEADER)
 
-    if mem_mb is not None:
-        header.append(f"#SBATCH --mem={mem_mb}M")
-
     return {
         "host": host,
         "remsh_cmd": "ssh",
         "scheduler": "slurm",
         "header": header,
         "commands": commands,
-        "partitions": partitions,
+        "partitions": _with_partition_mem_headers(partitions),
         "rundir": rundir,
     }
 
@@ -321,6 +347,14 @@ def add_hpc_wizard() -> None:
         cores = _prompt_int(f"  Cores per node for '{pname}'")
         max_time = _prompt(f"  Max time for '{pname}'", default="24:00:00")
         max_mem = _prompt(f"  Max memory for '{pname}', e.g. 240GB")
+        if max_mem and mem_str_to_mb(max_mem) is None:
+            print(
+                f"  Warning: could not parse '{max_mem}' as a memory size "
+                "(expected e.g. '240GB'); this partition's job header will "
+                f"get no #SBATCH --mem line. Add one manually in "
+                f"{EXPYRE_CONFIG} under partitions.{pname}.header, or jobs "
+                "may get whatever memory default the cluster applies."
+            )
         partitions[pname] = {
             "num_cores": cores,
             "max_time": max_time,
@@ -329,9 +363,11 @@ def add_hpc_wizard() -> None:
         if not _yes_no("  Add another partition?", default=False):
             break
 
-    # Ranks/memory ALomancy will request per job — used both for the
-    # node_info baked into srun commands *and* the outer Slurm allocation's
-    # --mem, so the two can never drift apart and deadlock a nested step.
+    # Ranks per job ALomancy will request, and node_info.max_mem_per_node for
+    # the ALomancy profile below. The latter is descriptive only — it no
+    # longer drives any #SBATCH/srun --mem line (see _with_partition_mem_headers
+    # for the header source, and _build_srun_command's --mem=0 for why the
+    # nested srun deliberately doesn't request a specific sub-amount).
     first_part = next(iter(partitions.values())) if partitions else {}
     default_ranks = first_part.get("num_cores")
     default_mem = str(first_part.get("max_mem", ""))
@@ -345,14 +381,6 @@ def add_hpc_wizard() -> None:
         "threads_per_rank": 1,
         "max_mem_per_node": max_mem_node,
     }
-    mem_mb = mem_str_to_mb(max_mem_node)
-    if mem_mb is None and max_mem_node:
-        print(
-            f"  Warning: could not parse '{max_mem_node}' as a memory size "
-            "(expected e.g. '60GB'); no #SBATCH --mem line will be added. "
-            f"Add one manually in {EXPYRE_CONFIG}, or jobs may hang on a "
-            "nested srun step that requests more memory than the job has."
-        )
 
     gpu_constraint: str | None = None
     gpu_gres: str | None = None
@@ -371,7 +399,6 @@ def add_hpc_wizard() -> None:
         rundir=rundir,
         gpu_constraint=gpu_constraint,
         gpu_gres=gpu_gres,
-        mem_mb=mem_mb,
     )
 
     # --- ALomancy profile ---

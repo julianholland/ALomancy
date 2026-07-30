@@ -695,6 +695,54 @@ def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
 
 
 @pytest.mark.unit
+def test_plot_dft_vs_model_e0_exception_logs_only_one_warning(
+    tmp_path, monkeypatch, h2_dimer
+):
+    """When get_isolated_atom_energies() raises, only the 'failed to compute'
+    warning should fire — not also the separate 'No IsolatedAtom energies'
+    warning, which would misleadingly imply an empty dataset rather than a
+    real error."""
+    import logging
+
+    from alomancy.analysis import mlip_plots
+    from alomancy.database.global_database import GlobalDatabase
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures([h2_dimer], split="train", skip_duplicates=False)
+
+    def raising_get():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(db, "get_isolated_atom_energies", raising_get)
+    monkeypatch.setattr(mlip_plots, "_draw_parity_figure", lambda *a, **k: None)
+
+    al_logger = logging.getLogger("alomancy")
+    records: list[logging.LogRecord] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Collector()
+    al_logger.addHandler(handler)
+    try:
+        mlip_plots.plot_dft_vs_model(
+            "al_loop_0",
+            {"name": "mlip_committee", "size_of_committee": 1},
+            seed=803,
+            plots_dir=tmp_path / "plots",
+            db=db,
+            loop_idx=0,
+        )
+    finally:
+        al_logger.removeHandler(handler)
+
+    warnings = [r for r in records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "Failed to compute isolated-atom E0 dict" in warnings[0].getMessage()
+
+
+@pytest.mark.unit
 def test_plot_dft_vs_model_e0_computed_once_per_call(tmp_path, monkeypatch, h_atom):
     from alomancy.analysis import mlip_plots
     from alomancy.database.global_database import GlobalDatabase

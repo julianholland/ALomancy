@@ -61,7 +61,7 @@ class TestBuildExpyreEntry:
         assert not any("gres" in h for h in entry["header"])
 
     @pytest.mark.unit
-    def test_cpu_header_with_mem_mb(self):
+    def test_mem_line_goes_on_partition_not_system_header(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
         entry = build_expyre_entry(
@@ -72,12 +72,12 @@ class TestBuildExpyreEntry:
             },
             commands=["module load python"],
             rundir="/scratch",
-            mem_mb=61440,
         )
-        assert "#SBATCH --mem=61440M" in entry["header"]
+        assert not any("--mem" in h for h in entry["header"])
+        assert "#SBATCH --mem=245760M" in entry["partitions"]["general"]["header"]
 
     @pytest.mark.unit
-    def test_gpu_header_with_mem_mb(self):
+    def test_gpu_header_mem_line_on_partition(self):
         from alomancy.cli.add_hpc import build_expyre_entry
 
         entry = build_expyre_entry(
@@ -88,24 +88,54 @@ class TestBuildExpyreEntry:
             },
             commands=[],
             rundir="/scratch",
-            mem_mb=12288,
         )
-        assert "#SBATCH --mem=12288M" in entry["header"]
+        assert not any("--mem" in h for h in entry["header"])
+        assert "#SBATCH --mem=12288M" in entry["partitions"]["gpu"]["header"]
 
     @pytest.mark.unit
-    def test_no_mem_mb_no_mem_line(self):
+    def test_multi_partition_each_gets_own_mem(self):
+        """Regression test: a single blanket --mem derived from one
+        partition must not be applied to a different, differently-sized
+        partition in the same system."""
         from alomancy.cli.add_hpc import build_expyre_entry
 
         entry = build_expyre_entry(
             host="myhost",
             gpu=False,
             partitions={
-                "general": {"num_cores": 72, "max_time": "24:00:00", "max_mem": "240GB"}
+                "gpu": {"num_cores": 18, "max_time": "24:00:00", "max_mem": "12GB"},
+                "general": {
+                    "num_cores": 72,
+                    "max_time": "24:00:00",
+                    "max_mem": "240GB",
+                },
             },
             commands=[],
             rundir="/scratch",
         )
-        assert not any("--mem" in h for h in entry["header"])
+        assert "#SBATCH --mem=12288M" in entry["partitions"]["gpu"]["header"]
+        assert "#SBATCH --mem=245760M" in entry["partitions"]["general"]["header"]
+
+    @pytest.mark.unit
+    def test_unparseable_partition_mem_gets_no_mem_line(self):
+        from alomancy.cli.add_hpc import build_expyre_entry
+
+        entry = build_expyre_entry(
+            host="myhost",
+            gpu=False,
+            partitions={
+                "general": {
+                    "num_cores": 72,
+                    "max_time": "24:00:00",
+                    "max_mem": "lots",
+                }
+            },
+            commands=[],
+            rundir="/scratch",
+        )
+        assert not any(
+            "--mem" in h for h in entry["partitions"]["general"].get("header", [])
+        )
 
     @pytest.mark.unit
     def test_basic_fields_present(self):
@@ -123,6 +153,53 @@ class TestBuildExpyreEntry:
         assert entry["scheduler"] == "slurm"
         assert entry["rundir"] == "/ptmp/user"
         assert entry["commands"] == ["module purge"]
+
+
+class TestWithPartitionMemHeaders:
+    @pytest.mark.unit
+    def test_preserves_existing_header_entries(self):
+        from alomancy.cli.add_hpc import _with_partition_mem_headers
+
+        result = _with_partition_mem_headers(
+            {
+                "gpu": {
+                    "num_cores": 18,
+                    "max_time": "24:00:00",
+                    "max_mem": "12GB",
+                    "header": ["#SBATCH --gres=gpu:a100:1"],
+                }
+            }
+        )
+        header = result["gpu"]["header"]
+        assert "#SBATCH --gres=gpu:a100:1" in header
+        assert "#SBATCH --mem=12288M" in header
+
+    @pytest.mark.unit
+    def test_does_not_duplicate_existing_mem_line(self):
+        from alomancy.cli.add_hpc import _with_partition_mem_headers
+
+        result = _with_partition_mem_headers(
+            {
+                "general": {
+                    "num_cores": 72,
+                    "max_time": "24:00:00",
+                    "max_mem": "240GB",
+                    "header": ["#SBATCH --mem=100000M"],
+                }
+            }
+        )
+        mem_lines = [h for h in result["general"]["header"] if "--mem" in h]
+        assert mem_lines == ["#SBATCH --mem=100000M"]
+
+    @pytest.mark.unit
+    def test_does_not_mutate_input(self):
+        from alomancy.cli.add_hpc import _with_partition_mem_headers
+
+        original = {
+            "general": {"num_cores": 72, "max_time": "24:00:00", "max_mem": "240GB"}
+        }
+        _with_partition_mem_headers(original)
+        assert "header" not in original["general"]
 
 
 class TestMemStrToMb:
@@ -150,6 +227,15 @@ class TestMemStrToMb:
         from alomancy.cli.add_hpc import mem_str_to_mb
 
         assert mem_str_to_mb("lots of memory") is None
+
+    @pytest.mark.unit
+    def test_none_sentinel_string_returns_none(self):
+        # expyre.units.mem_to_kB treats the literal string '_none_' as a
+        # sentinel and returns None rather than raising -- mem_str_to_mb
+        # must handle that None, not blow up on `None // 1024`.
+        from alomancy.cli.add_hpc import mem_str_to_mb
+
+        assert mem_str_to_mb("_none_") is None
 
 
 class TestBuildAlomancyProfile:

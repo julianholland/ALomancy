@@ -351,11 +351,12 @@ def plot_dft_vs_model(
         except Exception as exc:  # defensive: DB problems must not break plotting
             logger.warning("Failed to compute isolated-atom E0 dict: %s", exc)
             e0 = None
-        if e0 is None:
-            logger.warning(
-                "No IsolatedAtom energies in GlobalDatabase — parity plots will show "
-                "raw per-atom energy, not formation energy."
-            )
+        else:
+            if e0 is None:
+                logger.warning(
+                    "No IsolatedAtom energies in GlobalDatabase — parity plots will "
+                    "show raw per-atom energy, not formation energy."
+                )
     energy_label = "formation energy" if e0 else "energy"
 
     train_results: list = []
