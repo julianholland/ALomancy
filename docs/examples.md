@@ -202,6 +202,8 @@ initialization:
     num_amorphous: 300
     num_stretch_compress_per_mp: 5
     max_atom_number: 20
+    amorphous_atom_number: 20
+    mp_max_energy_above_hull: 0.1
   hpc: 'my_hpc'
 
 mlip_committee:

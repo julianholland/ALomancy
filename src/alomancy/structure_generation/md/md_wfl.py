@@ -49,11 +49,21 @@ def run_md(
         default_dtype="float64",
     )
 
+    # md_seed is set by select_initial_structures when a structure is reused
+    # across more than one concurrent job (not enough selectable structures
+    # to give every job a unique starting point). Seeding Langevin's rng
+    # per-job makes duplicate starting structures diverge into different
+    # trajectories instead of running identical MD; without it, falls back
+    # to ASE's own default (numpy's global RNG).
+    md_seed = md_structure.info.get("md_seed")
+    rng = np.random.default_rng(md_seed) if md_seed is not None else None
+
     dyn = Langevin(
         atoms=md_structure,
         timestep=timestep_fs * fs,
         temperature_K=temperature,
         friction=friction,
+        rng=rng,
         logfile=str(
             Path(
                 out_dir,

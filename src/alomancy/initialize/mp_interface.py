@@ -32,11 +32,19 @@ def retrieve_mp_material_docs(
         )
 
         with MPRester(mp_api_key) as mpr:
+            # Restrict to the fields docs_to_atoms actually reads (structure)
+            # plus material_id. Requesting all_fields (the client default)
+            # pulls in the full SummaryDoc, including sub-models like
+            # bandstructure whose schema the live MP API and the installed
+            # mp_api client version can drift out of sync on — a missing
+            # field there raises a pydantic ValidationError and kills the
+            # whole fetch even though we never use that data.
             docs = mpr.materials.summary.search(
                 elements=el,
                 num_elements=len(el),
                 energy_above_hull=(0, max_energy_above_hull),
                 num_sites=(2, max_num_atoms),
+                fields=["material_id", "structure"],
             )
             docs_list.extend(docs)
 

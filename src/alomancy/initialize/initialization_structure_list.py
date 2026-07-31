@@ -99,8 +99,10 @@ def create_initialization_atoms_list(
     deform_xyz: bool | list[bool] = False,
     max_deformation: float = 0.2,
     max_atom_number: int = 20,
+    amorphous_atom_number: int = 20,
     composition_list: list[list[str]] | None = None,
     seed: int = 803,
+    mp_max_energy_above_hull: float = 0.1,
     # Override kwargs supplied by compute_initialization_needs to skip
     # already-completed subsets.  When None, the full target is used.
     isolated_atoms_override: list[str] | None = None,
@@ -127,6 +129,17 @@ def create_initialization_atoms_list(
         Total number of amorphous structures to generate.
     num_stretch_compress_per_mp
         Number of stretched/compressed variants per MP structure.
+    max_atom_number
+        Maximum atom count for structures fetched from the Materials Project
+        (passed to `atoms_list_from_mp` as `max_num_atoms`). Independent of
+        amorphous_atom_number — does not affect amorphous cell size.
+    mp_max_energy_above_hull
+        Maximum energy above hull for structures fetched from the Materials
+        Project (passed to `atoms_list_from_mp` as `max_energy_above_hull`).
+    amorphous_atom_number
+        Target atom count per generated amorphous cell (passed to
+        `create_amorphous_atoms_list` as `atom_number`). Independent of
+        max_atom_number — does not affect the MP fetch cap.
     isolated_atoms_override
         If provided, only generate isolated atoms for these elements.
     dimer_override
@@ -144,7 +157,7 @@ def create_initialization_atoms_list(
     if mp_structures:
         mp_atoms_list = atoms_list_from_mp(
             elements=elements,
-            max_energy_above_hull=0.1,
+            max_energy_above_hull=mp_max_energy_above_hull,
             max_num_atoms=max_atom_number,
             relax_structures=True,
         )
@@ -232,7 +245,7 @@ def create_initialization_atoms_list(
         amorphous_atoms_list.extend(
             create_amorphous_atoms_list(
                 elements=elements,
-                atom_number=max_atom_number,
+                atom_number=amorphous_atom_number,
                 density=density,
                 num_structures=per_density,
                 seed=seed,

@@ -16,6 +16,7 @@ def select_initial_structures(
     selectable_configs: list[str] | None = None,
     atom_number_range: tuple[int, int] = (0, 0),
     enforce_chemical_diversity: bool = False,
+    seed: int = 803,
 ):
     """randomly selects structures from a train set based on a chemical formula or
     max number of atoms and number of mds to run.
@@ -114,9 +115,23 @@ def select_initial_structures(
             if s.info.get("config_type") in selectable_configs
         ]
 
-    assert len(filtered_structures) >= max_number_of_concurrent_jobs, (
-        f"Not enough structures to select {max_number_of_concurrent_jobs} from. Available: {len(filtered_structures)}"
-    )
+    if len(filtered_structures) == 0:
+        raise ValueError(
+            "No structures available to select from after filtering "
+            f"(chem_formula_list={chem_formula_list}, selectable_configs="
+            f"{selectable_configs}, atom_number_range={atom_number_range})."
+        )
+
+    reuse = len(filtered_structures) < max_number_of_concurrent_jobs
+    if reuse:
+        logger.warning(
+            "Only %d structures available for %d concurrent structure_generation "
+            "jobs; reusing structures to fill the requested concurrency. Each "
+            "reused structure is assigned a distinct MD seed (atoms.info['md_seed']) "
+            "so its duplicate runs diverge into different trajectories.",
+            len(filtered_structures),
+            max_number_of_concurrent_jobs,
+        )
 
     if not enforce_chemical_diversity:
         initial_atoms = [
@@ -124,9 +139,10 @@ def select_initial_structures(
             for x in np.random.choice(
                 np.array(range(len(filtered_structures))),
                 max_number_of_concurrent_jobs,
-                replace=False,
+                replace=reuse,
             )
         ]
+        _assign_md_seeds(initial_atoms, seed)
         mark_structures_for_dft(
             initial_atoms, base_name, structure_generation_job_dict["name"]
         )
@@ -174,6 +190,7 @@ def select_initial_structures(
         selected_structure = np.random.choice(np.array(range(len(formula_structures))))
         initial_atoms.append(formula_structures[selected_structure].copy())
 
+    _assign_md_seeds(initial_atoms, seed)
     mark_structures_for_dft(
         initial_atoms, base_name, structure_generation_job_dict["name"]
     )
@@ -184,6 +201,19 @@ def select_initial_structures(
     )
 
     return initial_atoms
+
+
+def _assign_md_seeds(atoms_list: list[Atoms], seed: int) -> None:
+    """Give each selected structure a distinct atoms.info['md_seed'].
+
+    Needed because the same source structure can be selected more than once
+    (when max_number_of_concurrent_jobs exceeds the number of selectable
+    structures) — run_md seeds its stochastic dynamics from this value so
+    duplicate starting structures still diverge into different trajectories
+    instead of running identical MD.
+    """
+    for i, atoms in enumerate(atoms_list):
+        atoms.info["md_seed"] = seed + i
 
 
 def mark_structures_for_dft(

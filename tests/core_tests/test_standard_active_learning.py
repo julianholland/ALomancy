@@ -373,6 +373,128 @@ class TestInitializeTrainingSetDBPath:
         # Verify create_initialization_atoms_list was called
         mock_create.assert_called_once()
 
+    def test_db_path_passes_max_atom_number_and_amorphous_atom_number_independently(
+        self, tmp_path, minimal_jobs_dict
+    ):
+        """max_atom_number (MP fetch cap) and amorphous_atom_number (amorphous
+        cell size) are separate creation_kwargs and must reach
+        create_initialization_atoms_list with their own distinct values, not
+        one overriding/aliasing the other."""
+        minimal_jobs_dict["initialization"]["creation_kwargs"] = {
+            "elements": ["H", "O"],
+            "max_atom_number": 42,
+            "amorphous_atom_number": 7,
+            "mp_max_energy_above_hull": 0.05,
+        }
+        wf = ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "nonexistent_train.xyz"),
+            initial_test_file_path=str(tmp_path / "nonexistent_test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+        needs_dict = {
+            "isolated_atoms": ["H"],
+            "dimer_override": {},
+            "trimer_override": {},
+            "amorphous_override": 0,
+            "mp_structures": [],
+        }
+
+        generated_atoms = Atoms("H", positions=[[0, 0, 0]])
+        generated_atoms.info["config_type"] = "initialization"
+
+        with patch(
+            "alomancy.core.standard_active_learning.compute_initialization_needs"
+        ) as mock_needs:
+            mock_needs.return_value = needs_dict
+
+            with patch(
+                "alomancy.core.standard_active_learning.create_initialization_atoms_list"
+            ) as mock_create:
+                mock_create.return_value = [generated_atoms]
+
+                with (
+                    patch(
+                        "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
+                    ),
+                    patch.object(wf, "high_accuracy_evaluation") as mock_hae,
+                    patch(
+                        "alomancy.core.standard_active_learning.clean_structures"
+                    ) as mock_clean,
+                    patch("alomancy.core.standard_active_learning.write"),
+                ):
+                    mock_hae.return_value = [generated_atoms]
+                    mock_clean.return_value = [generated_atoms]
+
+                    wf.db.add_structures = Mock(return_value=1)
+                    test_struct = generated_atoms.copy()
+                    wf.db.get_all_as_atoms = Mock(return_value=[test_struct])
+
+                    wf.initialize_training_set("initialization")
+
+        assert mock_create.call_args.kwargs["max_atom_number"] == 42
+        assert mock_create.call_args.kwargs["amorphous_atom_number"] == 7
+        assert mock_create.call_args.kwargs["mp_max_energy_above_hull"] == 0.05
+
+    def test_db_path_mp_max_energy_above_hull_defaults_when_unset(
+        self, tmp_path, minimal_jobs_dict
+    ):
+        """mp_max_energy_above_hull falls back to 0.1 when not present in
+        creation_kwargs, matching create_initialization_atoms_list's own
+        default and preserving pre-existing behavior."""
+        minimal_jobs_dict["initialization"]["creation_kwargs"] = {
+            "elements": ["H", "O"],
+        }
+        wf = ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "nonexistent_train.xyz"),
+            initial_test_file_path=str(tmp_path / "nonexistent_test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+        needs_dict = {
+            "isolated_atoms": ["H"],
+            "dimer_override": {},
+            "trimer_override": {},
+            "amorphous_override": 0,
+            "mp_structures": [],
+        }
+
+        generated_atoms = Atoms("H", positions=[[0, 0, 0]])
+        generated_atoms.info["config_type"] = "initialization"
+
+        with patch(
+            "alomancy.core.standard_active_learning.compute_initialization_needs"
+        ) as mock_needs:
+            mock_needs.return_value = needs_dict
+
+            with patch(
+                "alomancy.core.standard_active_learning.create_initialization_atoms_list"
+            ) as mock_create:
+                mock_create.return_value = [generated_atoms]
+
+                with (
+                    patch(
+                        "alomancy.core.standard_active_learning.read_atoms_file_if_enabled"
+                    ),
+                    patch.object(wf, "high_accuracy_evaluation") as mock_hae,
+                    patch(
+                        "alomancy.core.standard_active_learning.clean_structures"
+                    ) as mock_clean,
+                    patch("alomancy.core.standard_active_learning.write"),
+                ):
+                    mock_hae.return_value = [generated_atoms]
+                    mock_clean.return_value = [generated_atoms]
+
+                    wf.db.add_structures = Mock(return_value=1)
+                    test_struct = generated_atoms.copy()
+                    wf.db.get_all_as_atoms = Mock(return_value=[test_struct])
+
+                    wf.initialize_training_set("initialization")
+
+        assert mock_create.call_args.kwargs["mp_max_energy_above_hull"] == 0.1
+
     def test_db_path_skips_generation_if_all_targets_met(
         self, tmp_path, minimal_jobs_dict
     ):

@@ -223,6 +223,12 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     deform_xyz=creation_kwargs.get("deform_xyz", False),
                     max_deformation=creation_kwargs.get("max_deformation", 0.2),
                     max_atom_number=creation_kwargs.get("max_atom_number", 20),
+                    amorphous_atom_number=creation_kwargs.get(
+                        "amorphous_atom_number", 20
+                    ),
+                    mp_max_energy_above_hull=creation_kwargs.get(
+                        "mp_max_energy_above_hull", 0.1
+                    ),
                     composition_list=creation_kwargs.get("composition_list"),
                     seed=creation_kwargs.get("seed", self.seed),
                     isolated_atoms_override=needs["isolated_atoms"] or None,
@@ -495,6 +501,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 base_name=base_name,
                 structure_generation_job_dict=job_dict["structure_generation"],
                 train_atoms_list=train_atoms_list,  # type: ignore
+                seed=self.seed,
                 **job_dict["structure_generation"]["structure_selection_kwargs"],
             )
 

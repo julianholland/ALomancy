@@ -14,6 +14,8 @@ initialization:
     num_amorphous: 300
     num_stretch_compress_per_mp: 5
     max_atom_number: 20
+    amorphous_atom_number: 20
+    mp_max_energy_above_hull: 0.1
     densities_list: [1.0, 2.0, 3.0]
     deform_xyz: false
     max_deformation: 0.2

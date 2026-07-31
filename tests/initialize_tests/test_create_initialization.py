@@ -303,6 +303,104 @@ class TestCreateInitializationAtomsList:
         assert mock_amorphous.call_count == 1
         assert mock_amorphous.call_args.kwargs["num_structures"] == 20
 
+    def test_max_atom_number_and_amorphous_atom_number_are_independent(self, tmp_path):
+        """max_atom_number (MP fetch cap) and amorphous_atom_number (amorphous
+        cell size) are separate knobs -- changing one must not affect the
+        other's call, and each generator must receive its own value."""
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        mp_atom = _make_atoms("NaCl")
+        mp_atom.info["config_type"] = "init_MP"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(mp_return=[mp_atom], amorphous_return=[_make_atoms()]),
+            )
+            mock_mp = mocks[0]
+            mock_amorphous = mocks[4]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["H"],
+                mp_structures=True,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=1,
+                max_atom_number=50,
+                amorphous_atom_number=8,
+                mp_max_energy_above_hull=0.05,
+            )
+
+        assert mock_mp.call_args.kwargs["max_num_atoms"] == 50
+        assert mock_mp.call_args.kwargs["max_energy_above_hull"] == 0.05
+        assert mock_amorphous.call_args.kwargs["atom_number"] == 8
+
+    def test_max_atom_number_and_amorphous_atom_number_default_independently(
+        self, tmp_path
+    ):
+        """All three default independently when unset, but are still routed
+        to separate generators rather than one value driving the others."""
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        mp_atom = _make_atoms("NaCl")
+        mp_atom.info["config_type"] = "init_MP"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(mp_return=[mp_atom], amorphous_return=[_make_atoms()]),
+            )
+            mock_mp = mocks[0]
+            mock_amorphous = mocks[4]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["H"],
+                mp_structures=True,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=1,
+            )
+
+        assert mock_mp.call_args.kwargs["max_num_atoms"] == 20
+        assert mock_mp.call_args.kwargs["max_energy_above_hull"] == 0.1
+        assert mock_amorphous.call_args.kwargs["atom_number"] == 20
+
+    def test_mp_max_energy_above_hull_does_not_affect_amorphous(self, tmp_path):
+        """Regression test: mp_max_energy_above_hull only tunes the MP fetch
+        and must never leak into the amorphous generator call."""
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        mp_atom = _make_atoms("NaCl")
+        mp_atom.info["config_type"] = "init_MP"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(mp_return=[mp_atom], amorphous_return=[_make_atoms()]),
+            )
+            mock_amorphous = mocks[4]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["H"],
+                mp_structures=True,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=1,
+                mp_max_energy_above_hull=0.3,
+            )
+
+        assert "mp_max_energy_above_hull" not in mock_amorphous.call_args.kwargs
+        assert "max_energy_above_hull" not in mock_amorphous.call_args.kwargs
+
     def test_writes_output_file(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,

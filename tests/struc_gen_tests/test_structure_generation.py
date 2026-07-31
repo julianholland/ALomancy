@@ -747,6 +747,136 @@ class TestSelectInitialStructures:
         assert all(len(a) == 2 for a in result)
         assert all(a.get_chemical_formula() in ["H2", "O2"] for a in result)
 
+    def test_reuses_structures_when_concurrency_exceeds_available(self):
+        """When max_number_of_concurrent_jobs exceeds the number of selectable
+        structures, structures are reused (not an error) and every returned
+        atoms object gets a distinct md_seed."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [self._make_atoms(["H", "H"]) for _ in range(2)]
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=5,
+        )
+        assert len(result) == 5
+        seeds = [a.info["md_seed"] for a in result]
+        assert len(set(seeds)) == 5
+
+    def test_reuse_warns(self):
+        """A warning is logged (not raised) when reuse is needed."""
+        import logging
+
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [self._make_atoms(["H", "H"]) for _ in range(2)]
+        job_dict = {"name": "test_md"}
+
+        al_logger = logging.getLogger("alomancy")
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        al_logger.addHandler(handler)
+        try:
+            select_initial_structures(
+                base_name="test",
+                structure_generation_job_dict=job_dict,
+                train_atoms_list=structures,
+                max_number_of_concurrent_jobs=5,
+            )
+        finally:
+            al_logger.removeHandler(handler)
+
+        assert any(r.levelno == logging.WARNING for r in records)
+
+    def test_no_reuse_when_enough_structures_available(self):
+        """When there are enough structures, selection stays without-replacement
+        (no duplicate structures/seeds needed) as before."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [self._make_atoms(["H", "H"]) for _ in range(10)]
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=3,
+        )
+        assert len(result) == 3
+        seeds = [a.info["md_seed"] for a in result]
+        assert len(set(seeds)) == 3
+
+    def test_reuse_with_enforce_chemical_diversity(self):
+        """Reuse also works (no error) when enforce_chemical_diversity=True and
+        fewer structures exist than max_number_of_concurrent_jobs."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [self._make_atoms(["H", "H"]) for _ in range(1)]
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=4,
+            enforce_chemical_diversity=True,
+        )
+        assert len(result) == 4
+        seeds = [a.info["md_seed"] for a in result]
+        assert len(set(seeds)) == 4
+
+    def test_zero_selectable_structures_raises_value_error(self):
+        """A genuinely empty pool (nothing to reuse either) is a real config
+        error, not silently swallowed."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        job_dict = {"name": "test_md"}
+        with pytest.raises(ValueError, match="No structures available"):
+            select_initial_structures(
+                base_name="test",
+                structure_generation_job_dict=job_dict,
+                train_atoms_list=[],
+                max_number_of_concurrent_jobs=3,
+            )
+
+    def test_seed_param_controls_md_seed_values(self):
+        """The seed parameter deterministically offsets md_seed values."""
+        from alomancy.structure_generation.select_initial_structures import (
+            select_initial_structures,
+        )
+
+        np.random.seed(42)
+        structures = [self._make_atoms(["H", "H"]) for _ in range(10)]
+        job_dict = {"name": "test_md"}
+        result = select_initial_structures(
+            base_name="test",
+            structure_generation_job_dict=job_dict,
+            train_atoms_list=structures,
+            max_number_of_concurrent_jobs=3,
+            seed=1000,
+        )
+        seeds = sorted(a.info["md_seed"] for a in result)
+        assert seeds == [1000, 1001, 1002]
+
 
 # ============================================================================
 # Tests for mark_structures_for_dft
@@ -957,6 +1087,72 @@ class TestMolecularDynamics:
 
         assert dyn is not None
         mock_langevin.assert_called_once()
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.Langevin")
+    def test_run_md_passes_seeded_rng_to_langevin(
+        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """A structure carrying atoms.info['md_seed'] (set by select_initial_
+        structures when reusing structures) must produce a seeded np.random.Generator
+        passed as Langevin's rng, so duplicate starting structures diverge."""
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+        mock_langevin_cls.side_effect = RuntimeError("stop after Langevin call")
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["md_seed"] = 42
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(RuntimeError, match="stop after Langevin call"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+            )
+
+        _, kwargs = mock_langevin_cls.call_args
+        assert isinstance(kwargs["rng"], np.random.Generator)
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.Langevin")
+    def test_run_md_no_seed_passes_none_rng(
+        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """Without md_seed (e.g. a structure not selected via select_initial_
+        structures), fall back to ASE's own default rng behavior."""
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+        mock_langevin_cls.side_effect = RuntimeError("stop after Langevin call")
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(RuntimeError, match="stop after Langevin call"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+            )
+
+        _, kwargs = mock_langevin_cls.call_args
+        assert kwargs["rng"] is None
 
     @patch("alomancy.remote_submission.md_remote_submitter")
     def test_md_remote_submission(self, mock_md_submitter):
