@@ -173,7 +173,7 @@ workflow = ActiveLearningStandardMACE(
     initial_test_file_path="results/initialization/test_set.xyz",
     jobs_dict=jobs_dict,
     number_of_al_loops=5,
-    verbose=1,                        # 0=silent, 1=INFO progress, 2=DEBUG
+    verbose=1,  # 0=silent, 1=INFO progress, 2=DEBUG
     log_file="results/alomancy.log",  # file always captures DEBUG
     db_path="results/global_database",
 )
@@ -284,52 +284,59 @@ from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 import pandas as pd
 from ase.atoms import Atoms
 
+
 class MyCustomWorkflow(BaseActiveLearningWorkflow):
-    def initialize_training_set(self, base_name, **kwargs) -> tuple[list[Atoms], list[Atoms]]:
+    def initialize_training_set(
+        self, base_name, **kwargs
+    ) -> tuple[list[Atoms], list[Atoms]]:
         """
         Generate initial training and test sets.
-        
+
         Args:
             base_name: Name used for output directories
             **kwargs: Additional configuration parameters
-            
+
         Returns:
             Tuple of (train_atoms_list, test_atoms_list)
         """
         # Your custom initialization logic
         train_atoms = []  # Load or generate training structures
-        test_atoms = []   # Load or generate test structures
+        test_atoms = []  # Load or generate test structures
         return train_atoms, test_atoms
 
     def train_mlip(self, base_name, job_dict, **kwargs) -> pd.DataFrame:
         """
         Train the machine-learned interatomic potential (MLIP).
-        
+
         Args:
             base_name: Name used for output directories
             job_dict: Configuration dictionary for this job
             **kwargs: Additional parameters
-            
+
         Returns:
             DataFrame with training metrics (MAE, RMSE, etc.)
         """
         # Your custom MLIP training logic
-        metrics = pd.DataFrame({
-            'train_mae': [0.01],
-            'test_mae': [0.02],
-        })
+        metrics = pd.DataFrame(
+            {
+                "train_mae": [0.01],
+                "test_mae": [0.02],
+            }
+        )
         return metrics
 
-    def generate_structures(self, base_name, job_dict, train_data, **kwargs) -> list[Atoms]:
+    def generate_structures(
+        self, base_name, job_dict, train_data, **kwargs
+    ) -> list[Atoms]:
         """
         Generate candidate structures for labeling based on uncertainty.
-        
+
         Args:
             base_name: Name used for output directories
             job_dict: Configuration dictionary for this job
             train_data: Current training set (list[Atoms])
             **kwargs: Additional parameters
-            
+
         Returns:
             List of candidate Atoms objects
         """
@@ -337,16 +344,18 @@ class MyCustomWorkflow(BaseActiveLearningWorkflow):
         candidates = []  # Generate structures using MD or other methods
         return candidates
 
-    def high_accuracy_evaluation(self, base_name, job_dict, structures, **kwargs) -> list[Atoms]:
+    def high_accuracy_evaluation(
+        self, base_name, job_dict, structures, **kwargs
+    ) -> list[Atoms]:
         """
         Perform high-accuracy evaluation (e.g., DFT) on selected structures.
-        
+
         Args:
             base_name: Name used for output directories
             job_dict: Configuration dictionary for this job
             structures: List of Atoms objects to evaluate
             **kwargs: Additional parameters
-            
+
         Returns:
             List of Atoms objects with energy and force labels in:
             - atoms.info["REF_energy"]

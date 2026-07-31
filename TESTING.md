@@ -202,6 +202,7 @@ To test log output, attach a handler directly:
 @pytest.mark.unit
 def test_logging_output():
     import logging
+
     handler = logging.StreamHandler()
     logger = logging.getLogger("alomancy")
     logger.addHandler(handler)
@@ -214,8 +215,8 @@ def test_logging_output():
 MACE is patched at the top of `test_standard_active_learning.py`:
 
 ```python
-sys.modules.setdefault('mace', MagicMock())
-sys.modules.setdefault('mace.calculators', MagicMock())
+sys.modules.setdefault("mace", MagicMock())
+sys.modules.setdefault("mace.calculators", MagicMock())
 ```
 
 **Never** import wfl in tests — it is not installed. If you need to mock wfl behavior, patch it via sys.modules.
@@ -276,6 +277,7 @@ def test_my_function_empty_list():
     """Test that function handles empty input."""
     result = my_function([])
     assert result == []
+
 
 @pytest.mark.unit
 def test_my_function_raises_on_invalid():

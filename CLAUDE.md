@@ -43,6 +43,7 @@ All output goes through Python's `logging` module. No bare `print()` calls exist
 ```python
 # Single configuration point — called in BaseActiveLearningWorkflow.__init__
 from alomancy.utils.logging_config import setup_logging
+
 setup_logging(verbose=1, log_file="results/my_run.log")
 ```
 

@@ -148,27 +148,34 @@ from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
 from ase import Atoms
 import pandas as pd
 
-class CustomWorkflow(BaseActiveLearningWorkflow):
 
+class CustomWorkflow(BaseActiveLearningWorkflow):
     def initialize_training_set(self, base_name: str, **kwargs):
         """Generate or load initial training data"""
         # Your custom initialization logic here
         return train_xyzs, test_xyzs
 
-    def train_mlip(self, base_name: str, mlip_committee_job_dict: dict, **kwargs) -> pd.DataFrame:
+    def train_mlip(
+        self, base_name: str, mlip_committee_job_dict: dict, **kwargs
+    ) -> pd.DataFrame:
         """Train committee and return MAE metrics"""
         # Your custom training logic here
         return pd.DataFrame({"mae_e": [...], "mae_f": [...]})
 
-    def generate_structures(self, base_name: str, job_dict: dict,
-                            train_data: list[Atoms], **kwargs) -> list[Atoms]:
+    def generate_structures(
+        self, base_name: str, job_dict: dict, train_data: list[Atoms], **kwargs
+    ) -> list[Atoms]:
         """Run MD and select high-uncertainty structures"""
         # Your structure generation logic here
         return high_uncertainty_structures
 
-    def high_accuracy_evaluation(self, base_name: str,
-                                  high_accuracy_eval_job_dict: dict,
-                                  structures: list[Atoms], **kwargs) -> list[Atoms]:
+    def high_accuracy_evaluation(
+        self,
+        base_name: str,
+        high_accuracy_eval_job_dict: dict,
+        structures: list[Atoms],
+        **kwargs,
+    ) -> list[Atoms]:
         """Run DFT on selected structures"""
         # Your high-accuracy calculation logic here
         return evaluated_structures

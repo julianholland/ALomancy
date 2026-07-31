@@ -16,7 +16,7 @@ def create_amorphous_atoms_list(
     density: float,
     num_structures: int,
     seed: int,
-    composition_list: None | list[list[str]] = None,
+    composition_list: list[list[str]] | None = None,
 ) -> list[Atoms]:
     """
     Create a list of amorphous atoms objects with given elements, atom number, and density.
