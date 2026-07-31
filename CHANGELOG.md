@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-07-31
+
+### Fixed
+- **`select_initial_structures` erroring out when concurrency exceeds available structures**: previously raised an `AssertionError` whenever `max_number_of_concurrent_jobs` was larger than the number of structures passing the `chem_formula_list`/`selectable_configs`/`atom_number_range` filters. Now reuses structures with replacement to fill the requested concurrency (still raises `ValueError` if the filtered pool is empty). Each selected structure gets a distinct `atoms.info["md_seed"]`, which `run_md` uses to seed Langevin's `rng` so duplicate starting structures diverge into different MD trajectories instead of running identically.
+- **Materials Project fetches failing on `mp_api`/live-API schema drift**: `retrieve_mp_material_docs` now requests only `fields=["material_id", "structure"]` from `mpr.materials.summary.search` instead of the client's `all_fields=True` default, avoiding pydantic `ValidationError`s from unrequested sub-model schemas (e.g. `bandstructure`) that could kill the whole fetch even though only `doc.structure` is ever read.
+
+### Added
+- **`creation_kwargs.amorphous_atom_number`**: separate knob (default `20`) for the target atom count of generated amorphous cells, decoupled from `max_atom_number` (which now only caps Materials Project fetch size).
+- **`creation_kwargs.mp_max_energy_above_hull`**: configurable energy-above-hull cutoff (default `0.1` eV) for Materials Project fetches, previously hardcoded.
+
 ## [0.4.6] - 2026-07-30
 
 ### Fixed
