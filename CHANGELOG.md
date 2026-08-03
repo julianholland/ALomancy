@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-08-03
 
 ### Added
 - **`max_concurrent_jobs` HPC profile setting**: caps how many jobs a `RemoteJobExecutor` keeps started (occupying a scheduler slot) at once for a given HPC profile; the next queued job starts the instant a running one finishes instead of waiting for an entire submission group to resolve. Lives in `~/.alomancy/hpc_config.yaml` (default `20`), collected by the `alomancy add-hpc` wizard.
@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 - **`max_batch_size`** (job-dict key on `high_accuracy_evaluation`): no longer read for chunking (chunking has been removed entirely). Still honoured as a fallback source for `max_concurrent_jobs` when the HPC profile doesn't define it, with a deprecation warning either way. Will be removed in 1.0.0 — see `docs/deprecations.md`.
+
+### Fixed
+- **Installation broken on Python 3.10**: `mp_api` pulled in an unpinned `emmet-core`, which as of `0.86.0rc1` uses `from typing import NotRequired` — only available on Python 3.11+, breaking install/import on this project's declared minimum Python 3.10. Pinned `emmet-core<0.86.0`.
+- **Pre-commit `ruff` hook out of sync with the version used for local linting**: `.pre-commit-config.yaml` pinned `ruff-pre-commit` to `v0.1.15` (over a year old) while the `ruff` installed via `pip install -e ".[dev]"` resolved to a much newer release, so a commit could still fail lint checks that `ruff check`/`ruff format` locally reported as clean. Bumped the pre-commit pin to `v0.16.1` to match.
 
 ## [0.4.7] - 2026-07-31
 
