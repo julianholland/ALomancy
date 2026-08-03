@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`max_concurrent_jobs` HPC profile setting**: caps how many jobs a `RemoteJobExecutor` keeps started (occupying a scheduler slot) at once for a given HPC profile; the next queued job starts the instant a running one finishes instead of waiting for an entire submission group to resolve. Lives in `~/.alomancy/hpc_config.yaml` (default `20`), collected by the `alomancy add-hpc` wizard.
+
+### Changed
+- **Remote job submission is now bounded-concurrency and rolling, not batch-and-wait**: `RemoteJobExecutor.run_and_wait` submits and waits for jobs through a `ThreadPoolExecutor` sized by `max_concurrent_jobs` instead of starting every job up front and then waiting for results strictly in submission order. `high_accuracy_evaluation` no longer chunks structures into `max_batch_size`-sized groups submitted one after another; all remaining structures go through a single submission call per invocation. Geometry-optimisation (GO) and single-point (SP) structures now share one submission pool instead of running as two fully sequential batches, distinguished only by which function each job runs and a `go_`/`sp_` job-name prefix.
+
+### Deprecated
+- **`max_batch_size`** (job-dict key on `high_accuracy_evaluation`): no longer read for chunking (chunking has been removed entirely). Still honoured as a fallback source for `max_concurrent_jobs` when the HPC profile doesn't define it, with a deprecation warning either way. Will be removed in 1.0.0 — see `docs/deprecations.md`.
+
 ## [0.4.7] - 2026-07-31
 
 ### Fixed

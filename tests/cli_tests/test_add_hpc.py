@@ -260,6 +260,33 @@ class TestBuildAlomancyProfile:
         assert not any("TRITON" in c for c in profile["pre_cmds"])
 
     @pytest.mark.unit
+    def test_max_concurrent_jobs_default(self):
+        from alomancy.cli.add_hpc import build_alomancy_profile
+
+        profile = build_alomancy_profile(
+            expyre_sys_name="raven",
+            gpu=False,
+            partitions=["general"],
+            venv_cmd="source /u/user/.venvs/alomancy/bin/activate",
+            node_info={},
+        )
+        assert profile["max_concurrent_jobs"] == 20
+
+    @pytest.mark.unit
+    def test_max_concurrent_jobs_custom(self):
+        from alomancy.cli.add_hpc import build_alomancy_profile
+
+        profile = build_alomancy_profile(
+            expyre_sys_name="raven",
+            gpu=False,
+            partitions=["general"],
+            venv_cmd="source /u/user/.venvs/alomancy/bin/activate",
+            node_info={},
+            max_concurrent_jobs=42,
+        )
+        assert profile["max_concurrent_jobs"] == 42
+
+    @pytest.mark.unit
     def test_gpu_profile_with_triton(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 

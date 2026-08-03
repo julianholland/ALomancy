@@ -1,7 +1,9 @@
 import logging
 import os
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Union
 
@@ -10,6 +12,43 @@ from expyre.func import ExPyRe
 from alomancy.configs.remote_info import RemoteInfo
 
 logger = logging.getLogger(__name__)
+
+_expyre_db_lock = threading.Lock()
+_expyre_db_patched = False
+
+
+def _ensure_expyre_db_thread_safe() -> None:
+    """Make expyre's module-level JobsDB connection safe for concurrent threads.
+
+    ExPyRe routes job.start()/job.get_results() through a single module-level
+    sqlite3 connection (expyre.config.db) opened with the default
+    check_same_thread=True. Every read/write funnels through JobsDB._execute,
+    a single choke point (a self-contained ``with self.db: ...`` transaction
+    per call). Reopening the connection with check_same_thread=False and
+    serializing just that call behind one lock makes concurrent access safe
+    without giving up real wall-clock concurrency of the blocking waits
+    between checks. Idempotent; a no-op if expyre hasn't been configured yet.
+    """
+    global _expyre_db_patched
+    if _expyre_db_patched:
+        return
+    from expyre import config as expyre_config
+
+    db = expyre_config.db
+    if db is None:
+        return
+
+    import sqlite3
+
+    db.db = sqlite3.connect(db.db_filename, check_same_thread=False)
+    orig_execute = db._execute
+
+    def _locked_execute(cmd, *args, **kwargs):
+        with _expyre_db_lock:
+            return orig_execute(cmd, *args, **kwargs)
+
+    db._execute = _locked_execute
+    _expyre_db_patched = True
 
 
 class RemoteJobExecutor:
@@ -23,7 +62,6 @@ class RemoteJobExecutor:
     def __init__(self, remote_info: RemoteInfo):
         self.remote_info = remote_info
         self.jobs = []
-        self._submit_wall_time: float | None = None
 
     def submit_job(
         self,
@@ -93,8 +131,10 @@ class RemoteJobExecutor:
             if not job_name and job_name_pattern:
                 job_name = job_name_pattern.format(job_id=i)
 
+            job_function = config.get("function", function)
+
             job = self.submit_job(
-                function=function,
+                function=job_function,
                 function_kwargs=config["function_kwargs"],
                 input_files=job_input_files,
                 output_files=job_output_files,
@@ -104,53 +144,80 @@ class RemoteJobExecutor:
 
         return jobs
 
-    def start_all_jobs(self, **start_kwargs) -> None:
-        for job in self.jobs:
+    def _run_single_job(self, index: int, job: ExPyRe) -> tuple[int, Any]:
+        """Start one job and block until it resolves. Runs inside a worker
+        thread of run_all_jobs_bounded's pool -- never lets an exception
+        propagate, so one job's failure frees its slot without blocking or
+        cancelling siblings."""
+        job_name = getattr(job, "name", f"job_{index}")
+        start_wall_time = time.time()
+        try:
             job.start(
                 resources=self.remote_info.resources,
                 system_name=self.remote_info.sys_name,
                 header_extra=getattr(self.remote_info, "header_extra", []),
                 exact_fit=getattr(self.remote_info, "exact_fit", True),
                 partial_node=getattr(self.remote_info, "partial_node", False),
-                **start_kwargs,
             )
-        self._submit_wall_time = time.time()
-        logger.info("Submitted %d jobs to queue.", len(self.jobs))
+            logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
 
-    def wait_for_all_jobs(self) -> list[Any]:
-        results = []
-
-        for i, job in enumerate(self.jobs):
-            stdout, stderr = None, None
-            job_name = getattr(job, "name", f"job_{i}")
-            logger.debug("Waiting for job %d/%d: %s", i + 1, len(self.jobs), job_name)
-
+            result, _stdout, _stderr = job.get_results(
+                timeout=self.remote_info.timeout,
+                check_interval=getattr(self.remote_info, "check_interval", 10),
+            )
+            logger.info("Job %d completed successfully.", index + 1)
             try:
-                result, stdout, stderr = job.get_results(
-                    timeout=self.remote_info.timeout,
-                    check_interval=getattr(self.remote_info, "check_interval", 10),
+                started_file = job.stage_dir / "_expyre_job_started"
+                if started_file.exists():
+                    queue_s = max(0.0, started_file.stat().st_mtime - start_wall_time)
+                    logger.info("Job %d queue_time=%.1f s.", index + 1, queue_s)
+            except Exception as _qe:
+                logger.debug(
+                    "Could not compute queue time for job %d: %s", index + 1, _qe
                 )
-                results.append(result)
-                logger.info("Job %d completed successfully.", i + 1)
-                try:
-                    if self._submit_wall_time is not None:
-                        started_file = job.stage_dir / "_expyre_job_started"
-                        if started_file.exists():
-                            queue_s = max(
-                                0.0,
-                                started_file.stat().st_mtime - self._submit_wall_time,
-                            )
-                            logger.info("Job %d queue_time=%.1f s.", i + 1, queue_s)
-                except Exception as _qe:
-                    logger.debug(
-                        "Could not compute queue time for job %d: %s", i + 1, _qe
-                    )
+            return index, result
+        except Exception as exc:
+            logger.warning("Job %d failed: %s", index + 1, exc)
+            return index, None
 
-            except Exception as exc:
-                logger.warning("Job %d failed: %s", i + 1, exc)
-                logger.debug("Job %d stdout:\n%s", i + 1, stdout)
-                logger.debug("Job %d stderr:\n%s", i + 1, stderr)
-                results.append(None)
+    def run_all_jobs_bounded(self) -> list[Any]:
+        """Start and wait for all submitted jobs, keeping at most
+        remote_info.max_concurrent_jobs started at once. The instant one
+        finishes (success or failure), the next pending job is started to
+        fill its slot -- ThreadPoolExecutor provides this rolling-window
+        scheduling for free. Returned results stay index-aligned with the
+        job_configs passed to submit_multiple_jobs, regardless of the order
+        jobs actually complete in."""
+        if not self.jobs:
+            return []
+
+        _ensure_expyre_db_thread_safe()
+
+        max_concurrent_jobs = getattr(self.remote_info, "max_concurrent_jobs", 20)
+        if not max_concurrent_jobs or max_concurrent_jobs < 1:
+            logger.warning(
+                "max_concurrent_jobs=%s is invalid; falling back to 1 "
+                "(serial submission).",
+                max_concurrent_jobs,
+            )
+            max_concurrent_jobs = 1
+        max_workers = min(max_concurrent_jobs, len(self.jobs))
+
+        results: list[Any] = [None] * len(self.jobs)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(self._run_single_job, i, job): i
+                for i, job in enumerate(self.jobs)
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    index, result = future.result()
+                    results[index] = result
+                except Exception as exc:
+                    logger.error(
+                        "Job %d worker raised unexpectedly: %s", index + 1, exc
+                    )
 
         return results
 
@@ -166,10 +233,6 @@ class RemoteJobExecutor:
     ) -> list[Any]:
         logger.debug("run_and_wait working directory: %s", os.getcwd())
         self.submit_multiple_jobs(function, job_configs, **kwargs)
-        self.start_all_jobs()
-        self.wait_for_all_jobs()
-
-        # final call essential to sync results locally from the remote
-        results = self.wait_for_all_jobs()
+        results = self.run_all_jobs_bounded()
         self.cleanup_jobs()
         return results

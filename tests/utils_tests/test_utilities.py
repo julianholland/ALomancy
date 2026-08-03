@@ -5,12 +5,112 @@ This module tests various utility functions used throughout the alomancy package
 """
 
 import tempfile
+import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from ase import Atoms
+
+from alomancy.remote_submission.executor import RemoteJobExecutor
+
+
+class _EventTracker:
+    """Records real start/finish wall-clock times per fake job name."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.events: dict[str, dict] = {}
+
+    def on_start(self, name):
+        with self.lock:
+            self.events.setdefault(name, {})["start"] = time.monotonic()
+
+    def on_finish(self, name):
+        with self.lock:
+            self.events.setdefault(name, {})["finish"] = time.monotonic()
+
+
+class _ConcurrencyTracker:
+    """Tracks the peak number of simultaneously-"started" fake jobs."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def on_start(self):
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+
+    def on_finish(self):
+        with self.lock:
+            self.active -= 1
+
+
+class _FakeExPyReJob:
+    """Mimics the ExPyRe interface RemoteJobExecutor relies on
+    (.start/.get_results/.stage_dir/.name/.mark_processed) with real,
+    controllable blocking timing -- no mocking of RemoteJobExecutor itself."""
+
+    def __init__(
+        self,
+        name,
+        stage_dir,
+        result=None,
+        duration=0.02,
+        should_fail=False,
+        event_tracker=None,
+        concurrency_tracker=None,
+    ):
+        self.name = name
+        self.stage_dir = stage_dir
+        self.result = result if result is not None else name
+        self.duration = duration
+        self.should_fail = should_fail
+        self._events = event_tracker
+        self._concurrency = concurrency_tracker
+
+    def start(self, **kwargs):
+        self.stage_dir.mkdir(parents=True, exist_ok=True)
+        (self.stage_dir / "_expyre_job_started").touch()
+        if self._events is not None:
+            self._events.on_start(self.name)
+        if self._concurrency is not None:
+            self._concurrency.on_start()
+
+    def get_results(self, **kwargs):
+        time.sleep(self.duration)
+        if self._events is not None:
+            self._events.on_finish(self.name)
+        if self._concurrency is not None:
+            self._concurrency.on_finish()
+        if self.should_fail:
+            raise RuntimeError(f"{self.name} failed")
+        return self.result, "stdout", "stderr"
+
+    def mark_processed(self):
+        pass
+
+
+def _fake_executor(max_concurrent_jobs, jobs):
+    remote_info = SimpleNamespace(
+        resources={},
+        sys_name="test-hpc",
+        timeout=10,
+        check_interval=0.001,
+        header_extra=[],
+        exact_fit=True,
+        partial_node=False,
+        max_concurrent_jobs=max_concurrent_jobs,
+    )
+    executor = RemoteJobExecutor(remote_info)
+    executor.jobs = jobs
+    return executor
 
 
 @pytest.fixture
@@ -87,6 +187,88 @@ class TestRemoteJobExecutor:
                 assert "function_kwargs" not in config
             elif not isinstance(config.get("function_kwargs"), dict):
                 assert not isinstance(config.get("function_kwargs"), dict)
+
+    @pytest.mark.unit
+    def test_never_exceeds_max_concurrent_jobs(self, tmp_path):
+        """Peak concurrently-started jobs never exceeds max_concurrent_jobs."""
+        tracker = _ConcurrencyTracker()
+        jobs = [
+            _FakeExPyReJob(
+                f"job{i}",
+                tmp_path / f"job{i}",
+                duration=0.05,
+                concurrency_tracker=tracker,
+            )
+            for i in range(8)
+        ]
+        executor = _fake_executor(max_concurrent_jobs=3, jobs=jobs)
+        results = executor.run_all_jobs_bounded()
+
+        assert tracker.peak <= 3
+        assert results == [f"job{i}" for i in range(8)]
+
+    @pytest.mark.unit
+    def test_finishing_job_frees_slot_promptly(self, tmp_path):
+        """A short job queued behind a long one starts as soon as *any*
+        running job frees a slot -- not only after the long straggler
+        finishes (the old batch-wide-wait behavior this replaces)."""
+        events = _EventTracker()
+        # job0 is slow; job1 is fast and shares a slot with it; job2/job3
+        # are queued and should start as slots free up from the fast jobs,
+        # well before job0 (the straggler) ever finishes.
+        jobs = [
+            _FakeExPyReJob(
+                "job0", tmp_path / "job0", duration=0.3, event_tracker=events
+            ),
+            _FakeExPyReJob(
+                "job1", tmp_path / "job1", duration=0.02, event_tracker=events
+            ),
+            _FakeExPyReJob(
+                "job2", tmp_path / "job2", duration=0.02, event_tracker=events
+            ),
+            _FakeExPyReJob(
+                "job3", tmp_path / "job3", duration=0.02, event_tracker=events
+            ),
+        ]
+        executor = _fake_executor(max_concurrent_jobs=2, jobs=jobs)
+        executor.run_all_jobs_bounded()
+
+        job0_finish = events.events["job0"]["finish"]
+        job2_start = events.events["job2"]["start"]
+        job3_start = events.events["job3"]["start"]
+
+        # job2 and job3 must have started well before the straggler (job0)
+        # finished -- proving they didn't wait for the whole group.
+        assert job2_start < job0_finish
+        assert job3_start < job0_finish
+
+    @pytest.mark.unit
+    def test_one_job_failure_does_not_block_others(self, tmp_path):
+        """A failing job returns None at its own index without blocking or
+        losing the results of sibling jobs."""
+        jobs = [
+            _FakeExPyReJob("job0", tmp_path / "job0", duration=0.01),
+            _FakeExPyReJob("job1", tmp_path / "job1", duration=0.01, should_fail=True),
+            _FakeExPyReJob("job2", tmp_path / "job2", duration=0.01),
+        ]
+        executor = _fake_executor(max_concurrent_jobs=3, jobs=jobs)
+        results = executor.run_all_jobs_bounded()
+
+        assert results == ["job0", None, "job2"]
+
+    @pytest.mark.unit
+    def test_results_index_aligned_regardless_of_completion_order(self, tmp_path):
+        """Results stay aligned to submission index even when a
+        later-submitted job finishes before an earlier one."""
+        jobs = [
+            _FakeExPyReJob("job0", tmp_path / "job0", result=0, duration=0.15),
+            _FakeExPyReJob("job1", tmp_path / "job1", result=1, duration=0.01),
+            _FakeExPyReJob("job2", tmp_path / "job2", result=2, duration=0.08),
+        ]
+        executor = _fake_executor(max_concurrent_jobs=3, jobs=jobs)
+        results = executor.run_all_jobs_bounded()
+
+        assert results == [0, 1, 2]
 
 
 class TestConfigurationUtils:
@@ -262,7 +444,7 @@ class TestDataValidation:
         assert atoms.arrays["forces"].shape[1] == 3  # x, y, z components
 
         # Test energy is a scalar
-        assert isinstance(atoms.info["energy"], (int, float))
+        assert isinstance(atoms.info["energy"], int | float)
 
 
 class TestArrayOperations:

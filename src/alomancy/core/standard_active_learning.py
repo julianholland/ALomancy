@@ -1,6 +1,5 @@
 import copy
 import logging
-import math
 import os
 from pathlib import Path
 
@@ -613,7 +612,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         allow_relaxation: bool = False,
         start_index: int = 0,
     ) -> list[Atoms]:
-
         sentinel_results = Path("results", base_name, "high_accuracy_eval_results.xyz")
         if self._phase_done(base_name, "high_accuracy_eval"):
             logger.info(
@@ -665,10 +663,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     len(structures),
                 )
 
-        n_new_batches = math.ceil(
-            len(structures) / high_accuracy_eval_job_dict["max_batch_size"]
-        )
-
         current_batches = sum(
             1
             for _ in Path("results", base_name, "high_accuracy_evaluation").glob(
@@ -677,90 +671,62 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         )
 
         logger.info(
-            "Structures to process: %d, max batch size: %d, new batches to submit: %d "
-            "(existing batch dirs: %d)",
+            "Structures to process: %d (existing batch dirs: %d)",
             len(structures),
-            high_accuracy_eval_job_dict["max_batch_size"],
-            n_new_batches,
             current_batches,
         )
 
-        # New GO batches are numbered [current_batches, current_batches + n_new_batches).
-        # SP batches start at current_batches + n_new_batches to avoid directory collision.
-        # Loop variable i indexes into the trimmed structures list; batch_num is the dir name.
-        go_high_accuracy_eval_job_dict = None
-        if allow_relaxation:
-            go_max_time = high_accuracy_eval_job_dict.get(
-                "max_go_time", high_accuracy_eval_job_dict["max_time"]
-            )
-            go_high_accuracy_eval_job_dict = copy.deepcopy(high_accuracy_eval_job_dict)
-            go_high_accuracy_eval_job_dict["max_time"] = go_max_time
-
-        sp_batch_num = current_batches + n_new_batches
-        for i in range(n_new_batches):
-            batch_num = current_batches + i
-            batch_start = i * high_accuracy_eval_job_dict["max_batch_size"]
-            batch_end = min(
-                (i + 1) * high_accuracy_eval_job_dict["max_batch_size"],
-                len(structures),
-            )
-            logger.info(
-                "Submitting batch %d (structures %d-%d of %d remaining)",
-                batch_num,
-                batch_start,
-                batch_end - 1,
-                len(structures),
-            )
-            batch_structures: list[Atoms] = structures[batch_start:batch_end]
-
+        # All remaining structures are submitted in one call, sharing one
+        # RemoteJobExecutor pool bounded by max_concurrent_jobs -- no more
+        # chunking by max_batch_size, and GO/SP structures share the same
+        # queue (distinguished only by which function each job runs and a
+        # go_/sp_ job-name prefix) instead of running as separate batches.
+        if structures:
             if allow_relaxation:
-                batch_structures_to_relax: list[Atoms] = []
-                single_point_batch_structures: list[Atoms] = []
-                for atom in batch_structures:
-                    (
-                        batch_structures_to_relax
-                        if atom.info.get("needs_relaxation") is True
-                        else single_point_batch_structures
-                    ).append(atom)
-                logger.debug(
-                    "%d GO structures, %d SP structures.",
-                    len(batch_structures_to_relax),
-                    len(single_point_batch_structures),
+                needs_go = any(
+                    atom.info.get("needs_relaxation") is True for atom in structures
                 )
-
-                if batch_structures_to_relax:
-                    ase_remote_submitter(
-                        remote_info=get_remote_info(
-                            go_high_accuracy_eval_job_dict, input_files=[]
-                        ),
-                        base_name=base_name,
-                        input_atoms_list=batch_structures_to_relax,
-                        function=run_go,
-                        batch=batch_num,
-                        function_kwargs=function_kwargs,
+                submit_job_dict = high_accuracy_eval_job_dict
+                if needs_go:
+                    go_max_time = high_accuracy_eval_job_dict.get(
+                        "max_go_time", high_accuracy_eval_job_dict["max_time"]
                     )
+                    submit_job_dict = copy.deepcopy(high_accuracy_eval_job_dict)
+                    submit_job_dict["max_time"] = go_max_time
 
-                if single_point_batch_structures:
-                    ase_remote_submitter(
-                        remote_info=get_remote_info(
-                            high_accuracy_eval_job_dict, input_files=[]
-                        ),
-                        base_name=base_name,
-                        input_atoms_list=single_point_batch_structures,
-                        function=run_sp,
-                        batch=sp_batch_num,
-                        function_kwargs=function_kwargs,
-                    )
-                    sp_batch_num += 1
+                per_structure_function = [
+                    run_go if atom.info.get("needs_relaxation") is True else run_sp
+                    for atom in structures
+                ]
+                n_go = sum(fn is run_go for fn in per_structure_function)
+                logger.info(
+                    "Submitting batch %d: %d GO + %d SP structures (shared queue)",
+                    current_batches,
+                    n_go,
+                    len(structures) - n_go,
+                )
+                ase_remote_submitter(
+                    remote_info=get_remote_info(submit_job_dict, input_files=[]),
+                    base_name=base_name,
+                    input_atoms_list=structures,
+                    per_structure_function=per_structure_function,
+                    batch=current_batches,
+                    function_kwargs=function_kwargs,
+                )
             else:
+                logger.info(
+                    "Submitting batch %d (%d structures)",
+                    current_batches,
+                    len(structures),
+                )
                 ase_remote_submitter(
                     remote_info=get_remote_info(
                         high_accuracy_eval_job_dict, input_files=[]
                     ),
                     base_name=base_name,
-                    input_atoms_list=batch_structures,
+                    input_atoms_list=structures,
                     function=run_sp,
-                    batch=batch_num,
+                    batch=current_batches,
                     function_kwargs=function_kwargs,
                 )
 

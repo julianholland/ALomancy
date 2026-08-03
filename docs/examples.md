@@ -77,6 +77,12 @@ Which partition(s) will this profile use? (comma-separated) [gpubig]:
 Ranks per node (usually = cores per node) [18]:
 Max memory per node [120GB]:
 
+Concurrency — how many ALomancy jobs should run on this HPC at once?
+ExPyRe/Slurm still queue everything submitted; this caps how many are
+started (occupying a queue slot) at the same time — the next queued job
+starts the instant a running one finishes.
+Number of concurrent jobs you wish to have running on this hpc from alomancy [20]:
+
 DFT code on this system? Options: qe / vasp / none
 DFT code [none]:
 
@@ -115,6 +121,7 @@ raven_gpu:
     ranks_per_node: 18
     threads_per_rank: 1
     max_mem_per_node: 120GB
+  max_concurrent_jobs: 20
 ```
 
 And this entry to `~/.expyre/config.json`:
@@ -222,8 +229,7 @@ high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
   calculator: "qe"   # "qe" (default) or "vasp"
   max_time: "30m"
-  max_batch_size: 20
-  hpc: 'my_cpu_hpc'
+  hpc: 'my_cpu_hpc'   # concurrency is set on the HPC profile, see max_concurrent_jobs above
 ```
 
 ### Configuration Key Descriptions
@@ -234,7 +240,7 @@ high_accuracy_evaluation:
 
 - **structure_generation**: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `calculator` key selects the backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. The `max_batch_size` controls how many structures are included in each batch submission. If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `calculator` key selects the backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — not a per-workflow-phase setting, since it's a property of the HPC system/account. The older job-dict-level `max_batch_size` key is deprecated and will be removed in 1.0.0; see [Deprecations](deprecations.md). If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
 
 ## Using VASP as the DFT Backend
 
@@ -245,7 +251,6 @@ high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
   calculator: "vasp"
   max_time: "30m"
-  max_batch_size: 20
   vasp_input_kwargs:          # INCAR overrides (optional)
     encut: 600
     ediff: 1.0e-7
@@ -261,6 +266,7 @@ high_accuracy_evaluation:
       ranks_per_node: 36
       threads_per_rank: 1
       max_mem_per_node: "90G"
+    max_concurrent_jobs: 20   # jobs started at once on this HPC (default 20)
     partitions: ["cpu"]
     pre_cmds: ["module load vasp"]
 ```

@@ -33,6 +33,7 @@ dependencies = [
     "matplotlib>=3.5.0",
     "expyre-wfl>=0.1.0",
     "mp_api>=0.40.0",
+    "emmet-core<0.86.0",
     "seaborn>=0.11.0",
     "mace-torch>=0.3.0",
     "pathlib>=1.0.0",

@@ -1452,7 +1452,8 @@ class TestGenerateStructures:
 
 @pytest.mark.unit
 class TestHighAccuracyEvaluationCoverage:
-    """Cover the batching, GO/SP split, and result-collection paths."""
+    """Cover the restart-safety trimming, GO/SP shared submission, and
+    result-collection paths."""
 
     def _wf(self, tmp_path, minimal_jobs_dict):
         return ActiveLearningStandardMACE(
@@ -1511,7 +1512,6 @@ class TestHighAccuracyEvaluationCoverage:
         """When some results exist, only the remaining structures are submitted."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
-        job_dict["max_batch_size"] = 5
         output_name = job_dict["name"]
         from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
 
@@ -1546,13 +1546,12 @@ class TestHighAccuracyEvaluationCoverage:
         submitted = mock_sub.call_args.kwargs["input_atoms_list"]
         assert len(submitted) == 2
 
-    def test_go_sp_split_submits_separately(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
-    ):
-        """With allow_relaxation=True, GO and SP structures go to separate submitter calls."""
+    def test_go_sp_share_one_submission(self, tmp_path, minimal_jobs_dict, monkeypatch):
+        """With allow_relaxation=True, GO and SP structures share one submission
+        call to a single RemoteJobExecutor pool, distinguished only by
+        per-structure function (not separate batches)."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
-        job_dict["max_batch_size"] = 10
 
         go_atom = self._atoms()
         go_atom.info["needs_relaxation"] = True
@@ -1570,18 +1569,24 @@ class TestHighAccuracyEvaluationCoverage:
                 allow_relaxation=True,
             )
 
-        # Two separate calls: one for GO, one for SP
-        assert mock_sub.call_count == 2
-        go_call_atoms = mock_sub.call_args_list[0].kwargs["input_atoms_list"]
-        sp_call_atoms = mock_sub.call_args_list[1].kwargs["input_atoms_list"]
-        assert go_call_atoms[0].info.get("needs_relaxation") is True
-        assert sp_call_atoms[0].info.get("needs_relaxation") is not True
+        # One call carrying both structures, with per-structure functions
+        # picking GO vs SP at their original indices.
+        assert mock_sub.call_count == 1
+        call_kwargs = mock_sub.call_args.kwargs
+        submitted_atoms = call_kwargs["input_atoms_list"]
+        per_structure_function = call_kwargs["per_structure_function"]
+        assert len(submitted_atoms) == 2
+        assert len(per_structure_function) == 2
+        assert submitted_atoms[0].info.get("needs_relaxation") is True
+        assert "go" in per_structure_function[0].__name__
+        assert submitted_atoms[1].info.get("needs_relaxation") is not True
+        assert "sp" in per_structure_function[1].__name__
 
     def test_sp_only_batch_no_go(self, tmp_path, minimal_jobs_dict, monkeypatch):
-        """With allow_relaxation=True but no relaxation-flagged structures, only SP submitted."""
+        """With allow_relaxation=True but no relaxation-flagged structures, every
+        structure's function is still SP, in the single shared submission."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
-        job_dict["max_batch_size"] = 10
 
         sp_atoms = [self._atoms() for _ in range(2)]  # none have needs_relaxation
 
@@ -1598,6 +1603,30 @@ class TestHighAccuracyEvaluationCoverage:
             )
 
         assert mock_sub.call_count == 1
+        per_structure_function = mock_sub.call_args.kwargs["per_structure_function"]
+        assert all("sp" in fn.__name__ for fn in per_structure_function)
+
+    def test_single_call_regardless_of_structure_count(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """No chunking: a large structure list still produces exactly one
+        ase_remote_submitter call."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with patch(
+            "alomancy.core.standard_active_learning.ase_remote_submitter"
+        ) as mock_sub:
+            wf.high_accuracy_evaluation(
+                "test_loop",
+                job_dict,
+                [self._atoms() for _ in range(20)],
+            )
+
+        assert mock_sub.call_count == 1
+        assert len(mock_sub.call_args.kwargs["input_atoms_list"]) == 20
 
     def test_result_collection_reads_completed_xyz_files(
         self, tmp_path, minimal_jobs_dict, monkeypatch
@@ -1605,7 +1634,6 @@ class TestHighAccuracyEvaluationCoverage:
         """After submission, the method reads xyz files from ase_output_* dirs."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
-        job_dict["max_batch_size"] = 10
         output_name = job_dict["name"]
         from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
 
@@ -1636,25 +1664,6 @@ class TestHighAccuracyEvaluationCoverage:
             )
 
         assert len(result) == 2
-
-    def test_multiple_batches_submitted(self, tmp_path, minimal_jobs_dict, monkeypatch):
-        """When structures > max_batch_size, multiple ase_remote_submitter calls are made."""
-        monkeypatch.chdir(tmp_path)
-        job_dict = minimal_jobs_dict["high_accuracy_evaluation"].copy()
-        job_dict["max_batch_size"] = 2  # forces 2 batches for 4 structures
-
-        wf = self._wf(tmp_path, minimal_jobs_dict)
-
-        with patch(
-            "alomancy.core.standard_active_learning.ase_remote_submitter"
-        ) as mock_sub:
-            wf.high_accuracy_evaluation(
-                "test_loop",
-                job_dict,
-                [self._atoms() for _ in range(4)],
-            )
-
-        assert mock_sub.call_count == 2
 
 
 class TestStoreMlipPredictions:
