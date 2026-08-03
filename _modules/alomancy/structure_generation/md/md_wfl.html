@@ -47,6 +47,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
 </ul>
 
         </div>
@@ -127,11 +128,21 @@
         <span class="n">default_dtype</span><span class="o">=</span><span class="s2">&quot;float64&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
+    <span class="c1"># md_seed is set by select_initial_structures when a structure is reused</span>
+    <span class="c1"># across more than one concurrent job (not enough selectable structures</span>
+    <span class="c1"># to give every job a unique starting point). Seeding Langevin&#39;s rng</span>
+    <span class="c1"># per-job makes duplicate starting structures diverge into different</span>
+    <span class="c1"># trajectories instead of running identical MD; without it, falls back</span>
+    <span class="c1"># to ASE&#39;s own default (numpy&#39;s global RNG).</span>
+    <span class="n">md_seed</span> <span class="o">=</span> <span class="n">md_structure</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;md_seed&quot;</span><span class="p">)</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">md_seed</span><span class="p">)</span> <span class="k">if</span> <span class="n">md_seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
     <span class="n">dyn</span> <span class="o">=</span> <span class="n">Langevin</span><span class="p">(</span>
         <span class="n">atoms</span><span class="o">=</span><span class="n">md_structure</span><span class="p">,</span>
         <span class="n">timestep</span><span class="o">=</span><span class="n">timestep_fs</span> <span class="o">*</span> <span class="n">fs</span><span class="p">,</span>
         <span class="n">temperature_K</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
         <span class="n">friction</span><span class="o">=</span><span class="n">friction</span><span class="p">,</span>
+        <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
         <span class="n">logfile</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span>
             <span class="n">Path</span><span class="p">(</span>
                 <span class="n">out_dir</span><span class="p">,</span>

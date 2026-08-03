@@ -13,6 +13,7 @@ quickstart
 api/index
 examples
 contributing
+deprecations
 ```
 
 ## Overview

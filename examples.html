@@ -68,6 +68,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
 </ul>
 
         </div>
@@ -172,6 +173,12 @@ Which partition(s) will this profile use? (comma-separated) [gpubig]:
 Ranks per node (usually = cores per node) [18]:
 Max memory per node [120GB]:
 
+Concurrency — how many ALomancy jobs should run on this HPC at once?
+ExPyRe/Slurm still queue everything submitted; this caps how many are
+started (occupying a queue slot) at the same time — the next queued job
+starts the instant a running one finishes.
+Number of concurrent jobs you wish to have running on this hpc from alomancy [20]:
+
 DFT code on this system? Options: qe / vasp / none
 DFT code [none]:
 
@@ -208,6 +215,7 @@ Setup complete! Use &#39;raven_gpu&#39; in your run YAML:
 <span class="w">    </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
 <span class="w">    </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">    </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120GB</span>
+<span class="w">  </span><span class="nt">max_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
 </pre></div>
 </div>
 <p>And this entry to <code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code>:</p>
@@ -263,7 +271,7 @@ because it is per-element and changes between projects.</p>
     <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/test_set.xyz&quot;</span><span class="p">,</span>
     <span class="n">jobs_dict</span><span class="o">=</span><span class="n">jobs_dict</span><span class="p">,</span>
     <span class="n">number_of_al_loops</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
-    <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>                        <span class="c1"># 0=silent, 1=INFO progress, 2=DEBUG</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># 0=silent, 1=INFO progress, 2=DEBUG</span>
     <span class="n">log_file</span><span class="o">=</span><span class="s2">&quot;results/alomancy.log&quot;</span><span class="p">,</span>  <span class="c1"># file always captures DEBUG</span>
     <span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
 <span class="p">)</span>
@@ -291,6 +299,8 @@ because it is per-element and changes between projects.</p>
 <span class="w">    </span><span class="nt">num_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
 <span class="w">    </span><span class="nt">num_stretch_compress_per_mp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 <span class="w">    </span><span class="nt">max_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">amorphous_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">mp_max_energy_above_hull</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_hpc&#39;</span>
 
 <span class="nt">mlip_committee</span><span class="p">:</span>
@@ -309,8 +319,7 @@ because it is per-element and changes between projects.</p>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
 <span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">   </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
-<span class="w">  </span><span class="nt">max_batch_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_cpu_hpc&#39;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_cpu_hpc&#39;</span><span class="w">   </span><span class="c1"># concurrency is set on the HPC profile, see max_concurrent_jobs above</span>
 </pre></div>
 </div>
 <section id="configuration-key-descriptions">
@@ -319,7 +328,7 @@ because it is per-element and changes between projects.</p>
 <li><p><strong>initialization</strong>: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures. The <code class="docutils literal notranslate"><span class="pre">test_to_train_ratio</span></code> determines the split between test and training data.</p></li>
 <li><p><strong>mlip_committee</strong>: Trains an ensemble (committee) of MACE interatomic potentials. The <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code> parameter determines how many committee members are trained in parallel.</p></li>
 <li><p><strong>structure_generation</strong>: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee.</p></li>
-<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">calculator</span></code> key selects the backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default) or <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>. The <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> controls how many structures are included in each batch submission. If QE-specific keys (e.g. <code class="docutils literal notranslate"><span class="pre">pwx_path</span></code>) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.</p></li>
+<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">calculator</span></code> key selects the backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default) or <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>. Submission concurrency (how many jobs run at once) is controlled by <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code> on the HPC profile (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>, default 20) — not a per-workflow-phase setting, since it’s a property of the HPC system/account. The older job-dict-level <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> key is deprecated and will be removed in 1.0.0; see <a class="reference internal" href="deprecations.html"><span class="std std-doc">Deprecations</span></a>. If QE-specific keys (e.g. <code class="docutils literal notranslate"><span class="pre">pwx_path</span></code>) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.</p></li>
 </ul>
 </section>
 </section>
@@ -330,7 +339,6 @@ because it is per-element and changes between projects.</p>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
 <span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;vasp&quot;</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
-<span class="w">  </span><span class="nt">max_batch_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
 <span class="w">  </span><span class="nt">vasp_input_kwargs</span><span class="p">:</span><span class="w">          </span><span class="c1"># INCAR overrides (optional)</span>
 <span class="w">    </span><span class="nt">encut</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
 <span class="w">    </span><span class="nt">ediff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0e-7</span>
@@ -346,6 +354,7 @@ because it is per-element and changes between projects.</p>
 <span class="w">      </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">36</span>
 <span class="w">      </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;90G&quot;</span>
+<span class="w">    </span><span class="nt">max_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">   </span><span class="c1"># jobs started at once on this HPC (default 20)</span>
 <span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;cpu&quot;</span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">vasp&quot;</span><span class="p p-Indicator">]</span>
 </pre></div>
@@ -368,52 +377,59 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.atoms</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 
+
 <span class="k">class</span><span class="w"> </span><span class="nc">MyCustomWorkflow</span><span class="p">(</span><span class="n">BaseActiveLearningWorkflow</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Generate initial training and test sets.</span>
-<span class="sd">        </span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            base_name: Name used for output directories</span>
 <span class="sd">            **kwargs: Additional configuration parameters</span>
-<span class="sd">            </span>
+
 <span class="sd">        Returns:</span>
 <span class="sd">            Tuple of (train_atoms_list, test_atoms_list)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Your custom initialization logic</span>
         <span class="n">train_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate training structures</span>
-        <span class="n">test_atoms</span> <span class="o">=</span> <span class="p">[]</span>   <span class="c1"># Load or generate test structures</span>
+        <span class="n">test_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate test structures</span>
         <span class="k">return</span> <span class="n">train_atoms</span><span class="p">,</span> <span class="n">test_atoms</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">train_mlip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Train the machine-learned interatomic potential (MLIP).</span>
-<span class="sd">        </span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            base_name: Name used for output directories</span>
 <span class="sd">            job_dict: Configuration dictionary for this job</span>
 <span class="sd">            **kwargs: Additional parameters</span>
-<span class="sd">            </span>
+
 <span class="sd">        Returns:</span>
 <span class="sd">            DataFrame with training metrics (MAE, RMSE, etc.)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Your custom MLIP training logic</span>
-        <span class="n">metrics</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
-            <span class="s1">&#39;train_mae&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.01</span><span class="p">],</span>
-            <span class="s1">&#39;test_mae&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">],</span>
-        <span class="p">})</span>
+        <span class="n">metrics</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;train_mae&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.01</span><span class="p">],</span>
+                <span class="s2">&quot;test_mae&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">],</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
         <span class="k">return</span> <span class="n">metrics</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">generate_structures</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">train_data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_structures</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">train_data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Generate candidate structures for labeling based on uncertainty.</span>
-<span class="sd">        </span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            base_name: Name used for output directories</span>
 <span class="sd">            job_dict: Configuration dictionary for this job</span>
 <span class="sd">            train_data: Current training set (list[Atoms])</span>
 <span class="sd">            **kwargs: Additional parameters</span>
-<span class="sd">            </span>
+
 <span class="sd">        Returns:</span>
 <span class="sd">            List of candidate Atoms objects</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -421,16 +437,18 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
         <span class="n">candidates</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Generate structures using MD or other methods</span>
         <span class="k">return</span> <span class="n">candidates</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">high_accuracy_evaluation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">structures</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">high_accuracy_evaluation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">structures</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Perform high-accuracy evaluation (e.g., DFT) on selected structures.</span>
-<span class="sd">        </span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            base_name: Name used for output directories</span>
 <span class="sd">            job_dict: Configuration dictionary for this job</span>
 <span class="sd">            structures: List of Atoms objects to evaluate</span>
 <span class="sd">            **kwargs: Additional parameters</span>
-<span class="sd">            </span>
+
 <span class="sd">        Returns:</span>
 <span class="sd">            List of Atoms objects with energy and force labels in:</span>
 <span class="sd">            - atoms.info[&quot;REF_energy&quot;]</span>

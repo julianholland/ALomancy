@@ -47,6 +47,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
 </ul>
 
         </div>
@@ -94,6 +95,7 @@
     <span class="n">selectable_configs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">atom_number_range</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
     <span class="n">enforce_chemical_diversity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">803</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;randomly selects structures from a train set based on a chemical formula or</span>
 <span class="sd">    max number of atoms and number of mds to run.</span>
@@ -192,9 +194,23 @@
             <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">selectable_configs</span>
         <span class="p">]</span>
 
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;Not enough structures to select </span><span class="si">{</span><span class="n">max_number_of_concurrent_jobs</span><span class="si">}</span><span class="s2"> from. Available: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;No structures available to select from after filtering &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;(chem_formula_list=</span><span class="si">{</span><span class="n">chem_formula_list</span><span class="si">}</span><span class="s2">, selectable_configs=&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">selectable_configs</span><span class="si">}</span><span class="s2">, atom_number_range=</span><span class="si">{</span><span class="n">atom_number_range</span><span class="si">}</span><span class="s2">).&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">reuse</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">max_number_of_concurrent_jobs</span>
+    <span class="k">if</span> <span class="n">reuse</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">&quot;Only </span><span class="si">%d</span><span class="s2"> structures available for </span><span class="si">%d</span><span class="s2"> concurrent structure_generation &quot;</span>
+            <span class="s2">&quot;jobs; reusing structures to fill the requested concurrency. Each &quot;</span>
+            <span class="s2">&quot;reused structure is assigned a distinct MD seed (atoms.info[&#39;md_seed&#39;]) &quot;</span>
+            <span class="s2">&quot;so its duplicate runs diverge into different trajectories.&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">),</span>
+            <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
+        <span class="p">)</span>
 
     <span class="k">if</span> <span class="ow">not</span> <span class="n">enforce_chemical_diversity</span><span class="p">:</span>
         <span class="n">initial_atoms</span> <span class="o">=</span> <span class="p">[</span>
@@ -202,9 +218,10 @@
             <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
                 <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">))),</span>
                 <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
-                <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">replace</span><span class="o">=</span><span class="n">reuse</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">]</span>
+        <span class="n">_assign_md_seeds</span><span class="p">(</span><span class="n">initial_atoms</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span>
         <span class="n">mark_structures_for_dft</span><span class="p">(</span>
             <span class="n">initial_atoms</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
         <span class="p">)</span>
@@ -252,6 +269,7 @@
         <span class="n">selected_structure</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">formula_structures</span><span class="p">))))</span>
         <span class="n">initial_atoms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">formula_structures</span><span class="p">[</span><span class="n">selected_structure</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
 
+    <span class="n">_assign_md_seeds</span><span class="p">(</span><span class="n">initial_atoms</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span>
     <span class="n">mark_structures_for_dft</span><span class="p">(</span>
         <span class="n">initial_atoms</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
     <span class="p">)</span>
@@ -263,6 +281,19 @@
 
     <span class="k">return</span> <span class="n">initial_atoms</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_assign_md_seeds</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Give each selected structure a distinct atoms.info[&#39;md_seed&#39;].</span>
+
+<span class="sd">    Needed because the same source structure can be selected more than once</span>
+<span class="sd">    (when max_number_of_concurrent_jobs exceeds the number of selectable</span>
+<span class="sd">    structures) — run_md seeds its stochastic dynamics from this value so</span>
+<span class="sd">    duplicate starting structures still diverge into different trajectories</span>
+<span class="sd">    instead of running identical MD.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">):</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;md_seed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">i</span>
 
 
 <div class="viewcode-block" id="mark_structures_for_dft">

@@ -15,7 +15,7 @@ workflow = ActiveLearningStandardMACE(
     initial_test_file_path="results/initialization/test_set.xyz",
     jobs_dict=jobs_dict,
     number_of_al_loops=5,
-    verbose=1,                        # 0=silent, 1=INFO, 2=DEBUG
+    verbose=1,  # 0=silent, 1=INFO, 2=DEBUG
     log_file="results/alomancy.log",  # debug logs always written here
     db_path="results/global_database",
 )

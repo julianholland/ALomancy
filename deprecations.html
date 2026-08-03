@@ -1,0 +1,152 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deprecations &amp; Planned Breaking Changes &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Contributing" href="contributing.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Deprecations &amp; Planned Breaking Changes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#targeting-1-0-0">Targeting 1.0.0</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#max-batch-size-job-dict-key-removal"><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removal</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Deprecations &amp; Planned Breaking Changes</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/deprecations.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="deprecations-planned-breaking-changes">
+<h1>Deprecations &amp; Planned Breaking Changes<a class="headerlink" href="#deprecations-planned-breaking-changes" title="Link to this heading"></a></h1>
+<p>This page tracks deprecated features and breaking changes planned for future
+ALomancy releases, so users can migrate ahead of time. See <code class="docutils literal notranslate"><span class="pre">CHANGELOG.md</span></code> for
+changes that have already shipped.</p>
+<section id="targeting-1-0-0">
+<h2>Targeting 1.0.0<a class="headerlink" href="#targeting-1-0-0" title="Link to this heading"></a></h2>
+<section id="max-batch-size-job-dict-key-removal">
+<h3><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removal<a class="headerlink" href="#max-batch-size-job-dict-key-removal" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Status</strong>: deprecated since v0.4.8 (still works via a fallback, logs a
+warning)</p></li>
+<li><p><strong>Removal target</strong>: 1.0.0</p></li>
+<li><p><strong>What’s changing</strong>: the <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> key on <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code>
+(and any other job-dict section) will no longer be read at all.</p></li>
+<li><p><strong>Why</strong>: <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> used to control how many structures were grouped
+into one remote-submission chunk, and indirectly how much submission
+concurrency you got, with the workflow waiting for an entire chunk to
+finish before submitting the next one. Chunking has been removed entirely
+— all remaining structures are submitted in a single call (geometry
+optimisation and single-point structures share one submission queue,
+distinguished only by which function each job runs) — and concurrency is
+now governed by <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code>, which lives on the <strong>HPC profile</strong>
+(<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>), not a per-workflow-phase job dict, since
+it’s a property of the HPC system/account, not of any one phase.</p></li>
+<li><p><strong>Migrate now</strong>: re-run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code> for each profile (or hand-edit
+<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>) to add <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs:</span> <span class="pre">&lt;N&gt;</span></code> under the
+relevant profile’s <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> dict, then delete <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> from your job
+YAML. Until 1.0.0, a <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> left on a job dict is used as a
+fallback source for the concurrency cap — but <em>only</em> when the HPC profile
+doesn’t already define <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code> — with a deprecation warning
+logged either way.</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="contributing.html" class="btn btn-neutral float-left" title="Contributing" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -47,6 +47,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
 </ul>
 
         </div>
@@ -76,7 +77,6 @@
   <h1>Source code for alomancy.core.standard_active_learning</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
@@ -303,6 +303,12 @@
                     <span class="n">deform_xyz</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;deform_xyz&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
                     <span class="n">max_deformation</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_deformation&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">),</span>
                     <span class="n">max_atom_number</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_atom_number&quot;</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+                    <span class="n">amorphous_atom_number</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="s2">&quot;amorphous_atom_number&quot;</span><span class="p">,</span> <span class="mi">20</span>
+                    <span class="p">),</span>
+                    <span class="n">mp_max_energy_above_hull</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="s2">&quot;mp_max_energy_above_hull&quot;</span><span class="p">,</span> <span class="mf">0.1</span>
+                    <span class="p">),</span>
                     <span class="n">composition_list</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;composition_list&quot;</span><span class="p">),</span>
                     <span class="n">seed</span><span class="o">=</span><span class="n">creation_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;seed&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">),</span>
                     <span class="n">isolated_atoms_override</span><span class="o">=</span><span class="n">needs</span><span class="p">[</span><span class="s2">&quot;isolated_atoms&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
@@ -584,6 +590,7 @@
                 <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
                 <span class="n">structure_generation_job_dict</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">],</span>
                 <span class="n">train_atoms_list</span><span class="o">=</span><span class="n">train_atoms_list</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+                <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
                 <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;structure_selection_kwargs&quot;</span><span class="p">],</span>
             <span class="p">)</span>
 
@@ -698,7 +705,6 @@
         <span class="n">allow_relaxation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">start_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-
         <span class="n">sentinel_results</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_eval_results.xyz&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_eval&quot;</span><span class="p">):</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
@@ -750,10 +756,6 @@
                     <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
                 <span class="p">)</span>
 
-        <span class="n">n_new_batches</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span> <span class="o">/</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">]</span>
-        <span class="p">)</span>
-
         <span class="n">current_batches</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
             <span class="mi">1</span>
             <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
@@ -762,90 +764,62 @@
         <span class="p">)</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">&quot;Structures to process: </span><span class="si">%d</span><span class="s2">, max batch size: </span><span class="si">%d</span><span class="s2">, new batches to submit: </span><span class="si">%d</span><span class="s2"> &quot;</span>
-            <span class="s2">&quot;(existing batch dirs: </span><span class="si">%d</span><span class="s2">)&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;Structures to process: </span><span class="si">%d</span><span class="s2"> (existing batch dirs: </span><span class="si">%d</span><span class="s2">)&quot;</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
-            <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">],</span>
-            <span class="n">n_new_batches</span><span class="p">,</span>
             <span class="n">current_batches</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># New GO batches are numbered [current_batches, current_batches + n_new_batches).</span>
-        <span class="c1"># SP batches start at current_batches + n_new_batches to avoid directory collision.</span>
-        <span class="c1"># Loop variable i indexes into the trimmed structures list; batch_num is the dir name.</span>
-        <span class="n">go_high_accuracy_eval_job_dict</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">allow_relaxation</span><span class="p">:</span>
-            <span class="n">go_max_time</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                <span class="s2">&quot;max_go_time&quot;</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]</span>
-            <span class="p">)</span>
-            <span class="n">go_high_accuracy_eval_job_dict</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">)</span>
-            <span class="n">go_high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">go_max_time</span>
-
-        <span class="n">sp_batch_num</span> <span class="o">=</span> <span class="n">current_batches</span> <span class="o">+</span> <span class="n">n_new_batches</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_new_batches</span><span class="p">):</span>
-            <span class="n">batch_num</span> <span class="o">=</span> <span class="n">current_batches</span> <span class="o">+</span> <span class="n">i</span>
-            <span class="n">batch_start</span> <span class="o">=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">]</span>
-            <span class="n">batch_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
-                <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">],</span>
-                <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
-            <span class="p">)</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;Submitting batch </span><span class="si">%d</span><span class="s2"> (structures </span><span class="si">%d</span><span class="s2">-</span><span class="si">%d</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> remaining)&quot;</span><span class="p">,</span>
-                <span class="n">batch_num</span><span class="p">,</span>
-                <span class="n">batch_start</span><span class="p">,</span>
-                <span class="n">batch_end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
-                <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
-            <span class="p">)</span>
-            <span class="n">batch_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">structures</span><span class="p">[</span><span class="n">batch_start</span><span class="p">:</span><span class="n">batch_end</span><span class="p">]</span>
-
+        <span class="c1"># All remaining structures are submitted in one call, sharing one</span>
+        <span class="c1"># RemoteJobExecutor pool bounded by max_concurrent_jobs -- no more</span>
+        <span class="c1"># chunking by max_batch_size, and GO/SP structures share the same</span>
+        <span class="c1"># queue (distinguished only by which function each job runs and a</span>
+        <span class="c1"># go_/sp_ job-name prefix) instead of running as separate batches.</span>
+        <span class="k">if</span> <span class="n">structures</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">allow_relaxation</span><span class="p">:</span>
-                <span class="n">batch_structures_to_relax</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="n">single_point_batch_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">batch_structures</span><span class="p">:</span>
-                    <span class="p">(</span>
-                        <span class="n">batch_structures_to_relax</span>
-                        <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;needs_relaxation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
-                        <span class="k">else</span> <span class="n">single_point_batch_structures</span>
-                    <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                    <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> GO structures, </span><span class="si">%d</span><span class="s2"> SP structures.&quot;</span><span class="p">,</span>
-                    <span class="nb">len</span><span class="p">(</span><span class="n">batch_structures_to_relax</span><span class="p">),</span>
-                    <span class="nb">len</span><span class="p">(</span><span class="n">single_point_batch_structures</span><span class="p">),</span>
+                <span class="n">needs_go</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+                    <span class="n">atom</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;needs_relaxation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span> <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">structures</span>
                 <span class="p">)</span>
-
-                <span class="k">if</span> <span class="n">batch_structures_to_relax</span><span class="p">:</span>
-                    <span class="n">ase_remote_submitter</span><span class="p">(</span>
-                        <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
-                            <span class="n">go_high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]</span>
-                        <span class="p">),</span>
-                        <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
-                        <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">batch_structures_to_relax</span><span class="p">,</span>
-                        <span class="n">function</span><span class="o">=</span><span class="n">run_go</span><span class="p">,</span>
-                        <span class="n">batch</span><span class="o">=</span><span class="n">batch_num</span><span class="p">,</span>
-                        <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+                <span class="n">submit_job_dict</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span>
+                <span class="k">if</span> <span class="n">needs_go</span><span class="p">:</span>
+                    <span class="n">go_max_time</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                        <span class="s2">&quot;max_go_time&quot;</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]</span>
                     <span class="p">)</span>
+                    <span class="n">submit_job_dict</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">)</span>
+                    <span class="n">submit_job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">go_max_time</span>
 
-                <span class="k">if</span> <span class="n">single_point_batch_structures</span><span class="p">:</span>
-                    <span class="n">ase_remote_submitter</span><span class="p">(</span>
-                        <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
-                            <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]</span>
-                        <span class="p">),</span>
-                        <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
-                        <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">single_point_batch_structures</span><span class="p">,</span>
-                        <span class="n">function</span><span class="o">=</span><span class="n">run_sp</span><span class="p">,</span>
-                        <span class="n">batch</span><span class="o">=</span><span class="n">sp_batch_num</span><span class="p">,</span>
-                        <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
-                    <span class="p">)</span>
-                    <span class="n">sp_batch_num</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">per_structure_function</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">run_go</span> <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;needs_relaxation&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span> <span class="k">else</span> <span class="n">run_sp</span>
+                    <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">structures</span>
+                <span class="p">]</span>
+                <span class="n">n_go</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">fn</span> <span class="ow">is</span> <span class="n">run_go</span> <span class="k">for</span> <span class="n">fn</span> <span class="ow">in</span> <span class="n">per_structure_function</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;Submitting batch </span><span class="si">%d</span><span class="s2">: </span><span class="si">%d</span><span class="s2"> GO + </span><span class="si">%d</span><span class="s2"> SP structures (shared queue)&quot;</span><span class="p">,</span>
+                    <span class="n">current_batches</span><span class="p">,</span>
+                    <span class="n">n_go</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span> <span class="o">-</span> <span class="n">n_go</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">ase_remote_submitter</span><span class="p">(</span>
+                    <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span><span class="n">submit_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]),</span>
+                    <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                    <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">structures</span><span class="p">,</span>
+                    <span class="n">per_structure_function</span><span class="o">=</span><span class="n">per_structure_function</span><span class="p">,</span>
+                    <span class="n">batch</span><span class="o">=</span><span class="n">current_batches</span><span class="p">,</span>
+                    <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+                <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;Submitting batch </span><span class="si">%d</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> structures)&quot;</span><span class="p">,</span>
+                    <span class="n">current_batches</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+                <span class="p">)</span>
                 <span class="n">ase_remote_submitter</span><span class="p">(</span>
                     <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
                         <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[]</span>
                     <span class="p">),</span>
                     <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
-                    <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">batch_structures</span><span class="p">,</span>
+                    <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">structures</span><span class="p">,</span>
                     <span class="n">function</span><span class="o">=</span><span class="n">run_sp</span><span class="p">,</span>
-                    <span class="n">batch</span><span class="o">=</span><span class="n">batch_num</span><span class="p">,</span>
+                    <span class="n">batch</span><span class="o">=</span><span class="n">current_batches</span><span class="p">,</span>
                     <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
                 <span class="p">)</span>
 
