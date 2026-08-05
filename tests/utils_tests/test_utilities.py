@@ -66,6 +66,8 @@ class _FakeExPyReJob:
         should_fail=False,
         event_tracker=None,
         concurrency_tracker=None,
+        start_duration=0.0,
+        start_concurrency_tracker=None,
     ):
         self.name = name
         self.stage_dir = stage_dir
@@ -74,14 +76,22 @@ class _FakeExPyReJob:
         self.should_fail = should_fail
         self._events = event_tracker
         self._concurrency = concurrency_tracker
+        self._start_duration = start_duration
+        self._start_concurrency = start_concurrency_tracker
 
     def start(self, **kwargs):
+        if self._start_concurrency is not None:
+            self._start_concurrency.on_start()
         self.stage_dir.mkdir(parents=True, exist_ok=True)
         (self.stage_dir / "_expyre_job_started").touch()
+        if self._start_duration:
+            time.sleep(self._start_duration)
         if self._events is not None:
             self._events.on_start(self.name)
         if self._concurrency is not None:
             self._concurrency.on_start()
+        if self._start_concurrency is not None:
+            self._start_concurrency.on_finish()
 
     def get_results(self, **kwargs):
         time.sleep(self.duration)
@@ -206,6 +216,80 @@ class TestRemoteJobExecutor:
 
         assert tracker.peak <= 3
         assert results == [f"job{i}" for i in range(8)]
+
+    @pytest.mark.unit
+    def test_job_start_is_serialized_while_monitoring_stays_concurrent(self, tmp_path):
+        """job.start() (the ssh-heavy staging/submission call) never overlaps
+        across threads even when max_concurrent_jobs lets many jobs be
+        monitored at once -- otherwise max_concurrent_jobs simultaneous ssh
+        sessions burst against one shared multiplexed control connection,
+        which is what caused jobs to hang indefinitely on an unattended
+        interactive-auth prompt in production. Monitoring (get_results) must
+        still run with real concurrency -- that's the entire point of the
+        rolling-window model over the old batch-and-wait-in-order code."""
+        # duration (get_results window) is an order of magnitude bigger than
+        # start_duration so each job's monitoring window comfortably outlasts
+        # the cumulative serialized-start delay of every job queued behind
+        # it, giving a wide, jitter-tolerant overlap margin rather than a
+        # tight race between real wall-clock windows.
+        start_tracker = _ConcurrencyTracker()
+        monitor_tracker = _ConcurrencyTracker()
+        jobs = [
+            _FakeExPyReJob(
+                f"job{i}",
+                tmp_path / f"job{i}",
+                duration=0.3,
+                start_duration=0.02,
+                start_concurrency_tracker=start_tracker,
+                concurrency_tracker=monitor_tracker,
+            )
+            for i in range(6)
+        ]
+        executor = _fake_executor(max_concurrent_jobs=6, jobs=jobs)
+        executor.run_all_jobs_bounded()
+
+        assert start_tracker.peak == 1
+        assert monitor_tracker.peak > 1
+
+    @pytest.mark.unit
+    def test_sync_remote_results_status_is_serialized(self, monkeypatch):
+        """get_results()'s polling loop calls sync_remote_results_status()
+        on its own independent per-job schedule to check remote status and
+        pull back files -- shelling out over ssh (squeue-equivalent + rsync)
+        exactly like job.start() does. Without serializing this too,
+        max_concurrent_jobs monitoring threads can trigger it simultaneously
+        and reproduce the same ssh-session-burst hang job.start()'s lock
+        alone doesn't cover -- observed in production as a stuck ``squeue``
+        subprocess."""
+        from expyre.func import ExPyRe
+
+        import alomancy.remote_submission.executor as executor_module
+
+        tracker = _ConcurrencyTracker()
+
+        def _fake_sync(self, *args, **kwargs):
+            tracker.on_start()
+            time.sleep(0.05)
+            tracker.on_finish()
+
+        monkeypatch.setattr(ExPyRe, "sync_remote_results_status", _fake_sync)
+        monkeypatch.setattr(executor_module, "_expyre_sync_patched", False)
+
+        executor_module._ensure_expyre_sync_serialized()
+
+        class _Dummy:
+            pass
+
+        threads = [
+            threading.Thread(target=lambda: ExPyRe.sync_remote_results_status(_Dummy()))
+            for _ in range(5)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert tracker.peak == 1
 
     @pytest.mark.unit
     def test_finishing_job_frees_slot_promptly(self, tmp_path):
