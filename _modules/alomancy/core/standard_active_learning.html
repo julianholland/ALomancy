@@ -375,11 +375,6 @@
                 <span class="k">else</span> <span class="n">always_train_structures</span>
             <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
 
-        <span class="n">desired_test_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">all_evaluated</span><span class="p">)</span> <span class="o">*</span> <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;test_to_train_ratio&quot;</span><span class="p">]</span>
-        <span class="p">)</span>
-        <span class="n">test_structure_count</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">desired_test_count</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">eligible_test_structures</span><span class="p">))</span>
-
         <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible_test_structures</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                 <span class="s2">&quot;No eligible test structures found for the specified &quot;</span>
@@ -388,19 +383,44 @@
             <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">all_evaluated</span>
             <span class="n">test_xyzs</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">test_structure_count</span> <span class="o">&lt;</span> <span class="n">desired_test_count</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;Not enough eligible structures for the test set. &quot;</span>
-                    <span class="s2">&quot;Found </span><span class="si">%d</span><span class="s2">, needed </span><span class="si">%d</span><span class="s2">. &quot;</span>
-                    <span class="s2">&quot;All eligible structures will go to the test set.&quot;</span><span class="p">,</span>
-                    <span class="nb">len</span><span class="p">(</span><span class="n">eligible_test_structures</span><span class="p">),</span>
-                    <span class="n">desired_test_count</span><span class="p">,</span>
-                <span class="p">)</span>
+            <span class="c1"># test_to_train_ratio applies only within the test_config_types</span>
+            <span class="c1"># pool, not against the whole DB. Dimers/trimers/stretch_compress/</span>
+            <span class="c1"># IsolatedAtom (always_train_structures) never count toward this</span>
+            <span class="c1"># ratio&#39;s denominator — with a small test_config_types pool and a</span>
+            <span class="c1"># much larger always-train pool, computing the quota against</span>
+            <span class="c1"># len(all_evaluated) could exceed the entire eligible pool,</span>
+            <span class="c1"># routing 100% of it to test and leaving train_xyzs with zero</span>
+            <span class="c1"># representatives of that config_type (e.g. init_amorphous),</span>
+            <span class="c1"># permanently once update_splits_post_hoc tags the DB.</span>
             <span class="n">eligible_train</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="n">split_atoms_list_into_test_and_train</span><span class="p">(</span>
                 <span class="n">eligible_test_structures</span><span class="p">,</span>
-                <span class="n">test_structure_count</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">eligible_test_structures</span><span class="p">),</span>
+                <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">&quot;test_to_train_ratio&quot;</span><span class="p">],</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
             <span class="p">)</span>
+
+            <span class="c1"># Guarantee every eligible config_type keeps at least one</span>
+            <span class="c1"># representative in train_xyzs, as a backstop against an unlucky</span>
+            <span class="c1"># shuffle leaving a low-count config_type entirely in test.</span>
+            <span class="n">train_config_types</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible_train</span><span class="p">}</span>
+            <span class="n">eligible_config_types</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible_test_structures</span>
+            <span class="p">}</span>
+            <span class="n">missing_types</span> <span class="o">=</span> <span class="n">eligible_config_types</span> <span class="o">-</span> <span class="n">train_config_types</span>
+            <span class="k">if</span> <span class="n">missing_types</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">config_type</span> <span class="ow">in</span> <span class="n">missing_types</span><span class="p">:</span>
+                    <span class="n">idx</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                        <span class="n">i</span>
+                        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">config_type</span>
+                    <span class="p">)</span>
+                    <span class="n">eligible_train</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">test_xyzs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Reserved one structure from each of </span><span class="si">%s</span><span class="s2"> for training &quot;</span>
+                    <span class="s2">&quot;to avoid entirely excluding these config_types from &quot;</span>
+                    <span class="s2">&quot;train_atoms_list.&quot;</span><span class="p">,</span>
+                    <span class="nb">sorted</span><span class="p">(</span><span class="n">missing_types</span><span class="p">),</span>
+                <span class="p">)</span>
+
             <span class="c1"># IsolatedAtom and other ineligible types always go to training so</span>
             <span class="c1"># MACE can read E0s for every element from the training file.</span>
             <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">always_train_structures</span> <span class="o">+</span> <span class="n">eligible_train</span>
@@ -467,17 +487,71 @@
                 <span class="p">},</span>
             <span class="p">)</span>
 
-        <span class="n">models_found</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
-            <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span>
-            <span class="p">)</span>
+        <span class="n">model_glob</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">models_found</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;train_mlip for </span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">: expected &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">&#39;size_of_committee&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> trained models but found &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">models_found</span><span class="p">)</span><span class="si">}</span><span class="s2">. Check remote job logs for failures.&quot;</span>
+        <span class="n">configured_size</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_found_fit_indices</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s2">&quot;fit_&quot;</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">model_glob</span><span class="p">)</span>
+            <span class="p">}</span>
+
+        <span class="n">found_fit_indices</span> <span class="o">=</span> <span class="n">_found_fit_indices</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">configured_size</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;train_mlip for </span><span class="si">%s</span><span class="s2">: expected </span><span class="si">%d</span><span class="s2"> trained models but found </span><span class="si">%d</span><span class="s2">. &quot;</span>
+                <span class="s2">&quot;Check remote job logs for failures.&quot;</span><span class="p">,</span>
+                <span class="n">base_name</span><span class="p">,</span>
+                <span class="n">configured_size</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">),</span>
             <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="c1"># 3 is the minimum committee size for a reasonable force</span>
+                <span class="c1"># std-dev across members; below that, uncertainty-based</span>
+                <span class="c1"># structure selection has too few members to be meaningful.</span>
+                <span class="n">missing_fit_indices</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+                    <span class="nb">set</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">configured_size</span><span class="p">))</span> <span class="o">-</span> <span class="n">found_fit_indices</span>
+                <span class="p">)[:</span> <span class="mi">3</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">)]</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;train_mlip for </span><span class="si">%s</span><span class="s2">: only found </span><span class="si">%d</span><span class="s2"> trained model(s). &quot;</span>
+                    <span class="s2">&quot;Retraining missing fit(s) </span><span class="si">%s</span><span class="s2"> to reach the minimum &quot;</span>
+                    <span class="s2">&quot;committee size of 3.&quot;</span><span class="p">,</span>
+                    <span class="n">base_name</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">),</span>
+                    <span class="n">missing_fit_indices</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">committee_remote_submitter</span><span class="p">(</span>
+                    <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                        <span class="n">mlip_committee_job_dict</span><span class="p">,</span>
+                        <span class="n">input_files</span><span class="o">=</span><span class="p">[</span>
+                            <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;train_set.xyz&quot;</span><span class="p">)),</span>
+                            <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;test_set.xyz&quot;</span><span class="p">)),</span>
+                        <span class="p">],</span>
+                    <span class="p">),</span>
+                    <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                    <span class="n">seed</span><span class="o">=</span><span class="mi">803</span><span class="p">,</span>
+                    <span class="n">function</span><span class="o">=</span><span class="n">mace_fit</span><span class="p">,</span>
+                    <span class="n">function_kwargs</span><span class="o">=</span><span class="p">{</span>
+                        <span class="s2">&quot;job_dict&quot;</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">,</span>
+                        <span class="s2">&quot;workdir_str&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">workdir</span><span class="p">),</span>
+                    <span class="p">},</span>
+                    <span class="n">fit_indices</span><span class="o">=</span><span class="n">missing_fit_indices</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">found_fit_indices</span> <span class="o">=</span> <span class="n">_found_fit_indices</span><span class="p">()</span>
+
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;train_mlip for </span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">: still only &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">found_fit_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> trained model(s) after &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;retrying the missing committee member(s) &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">missing_fit_indices</span><span class="si">}</span><span class="s2"> — need at least 3 for a &quot;</span>
+                        <span class="s2">&quot;usable committee std-dev. Check remote job logs &quot;</span>
+                        <span class="s2">&quot;for failures.&quot;</span>
+                    <span class="p">)</span>
 
         <span class="n">mae_avg_results</span> <span class="o">=</span> <span class="n">get_mace_eval_info</span><span class="p">(</span>
             <span class="n">mlip_committee_job_dict</span><span class="o">=</span><span class="n">mlip_committee_job_dict</span>
@@ -566,24 +640,42 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;generate_structures&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">high_sd_structures</span>
 
-        <span class="k">if</span> <span class="n">Path</span><span class="p">(</span>
+        <span class="n">input_structures_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span>
             <span class="n">operating_dir</span><span class="p">,</span>
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-            <span class="n">input_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span>
-                <span class="n">Path</span><span class="p">(</span>
-                    <span class="n">operating_dir</span><span class="p">,</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
-                <span class="p">),</span>
-                <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;Input structures for structure generation step loaded from file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
-                <span class="n">Path</span><span class="p">(</span>
-                    <span class="n">operating_dir</span><span class="p">,</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_input_structures.xyz&quot;</span><span class="p">,</span>
-                <span class="p">),</span>
-            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">expected_count</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span>
+            <span class="s2">&quot;structure_selection_kwargs&quot;</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_number_of_concurrent_jobs&quot;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">input_structures_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">input_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">input_structures_path</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">expected_count</span><span class="p">:</span>
+                <span class="c1"># A prior run&#39;s write() can leave a partial file behind (e.g. a</span>
+                <span class="c1"># full local disk truncating it mid-write, as happened on</span>
+                <span class="c1"># 2026-08-04 — see TODO.md). Trusting it silently starves</span>
+                <span class="c1"># find_high_sd_structures of candidates far downstream with a</span>
+                <span class="c1"># confusing error. Regenerate instead of reusing a short file.</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;Input structures file </span><span class="si">%s</span><span class="s2"> has only </span><span class="si">%d</span><span class="s2"> structure(s), expected &quot;</span>
+                    <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> — treating it as incomplete/corrupted and regenerating.&quot;</span><span class="p">,</span>
+                    <span class="n">input_structures_path</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+                    <span class="n">expected_count</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">input_structures</span> <span class="o">=</span> <span class="n">select_initial_structures</span><span class="p">(</span>
+                    <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                    <span class="n">structure_generation_job_dict</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">],</span>
+                    <span class="n">train_atoms_list</span><span class="o">=</span><span class="n">train_atoms_list</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+                    <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+                    <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;structure_selection_kwargs&quot;</span><span class="p">],</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;Input structures for structure generation step loaded &quot;</span>
+                    <span class="s2">&quot;from file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="n">input_structures_path</span><span class="p">,</span>
+                <span class="p">)</span>
 
         <span class="k">else</span><span class="p">:</span>
             <span class="n">input_structures</span> <span class="o">=</span> <span class="n">select_initial_structures</span><span class="p">(</span>

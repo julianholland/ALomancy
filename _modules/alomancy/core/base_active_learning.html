@@ -75,12 +75,17 @@
            <div itemprop="articleBody">
              
   <h1>Source code for alomancy.core.base_active_learning</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.error</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.request</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
 
@@ -94,8 +99,74 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_redundancy</span><span class="w"> </span><span class="kn">import</span> <span class="n">remove_redundancy_from_partition</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.test_train_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">split_atoms_list_into_test_and_train</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.version</span><span class="w"> </span><span class="kn">import</span> <span class="n">__version__</span><span class="p">,</span> <span class="n">__version_tuple__</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="n">_PHASE_LABELS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;initialization&quot;</span><span class="p">:</span> <span class="s2">&quot;Initialisation&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;mlip_committee&quot;</span><span class="p">:</span> <span class="s2">&quot;MLIP Committee Trainer&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;structure_generation&quot;</span><span class="p">:</span> <span class="s2">&quot;Structure Generation&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">:</span> <span class="s2">&quot;High-Accuracy Evaluation&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_flatten_settings</span><span class="p">(</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Flatten a job-dict phase into (dotted.key, value) pairs.</span>
+
+<span class="sd">    Skips `hpc` (reported separately in the HPC summary) and `name` (used as</span>
+<span class="sd">    the section heading). Nested dicts (e.g. `creation_kwargs`,</span>
+<span class="sd">    `mace_fit_kwargs`, `qe_input_kwargs`) are walked up to `max_depth` levels</span>
+<span class="sd">    so calculator/model-specific settings surface without hardcoding any</span>
+<span class="sd">    particular module&#39;s key names here.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">items</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">d</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">max_depth</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">items</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                <span class="n">_flatten_settings</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="n">max_depth</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">items</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">full_key</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">items</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fetch_latest_pypi_version</span><span class="p">(</span>
+    <span class="n">package</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;alomancy&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Best-effort lookup of the latest published version on PyPI.</span>
+
+<span class="sd">    Returns None (rather than raising) on any network/parse failure — HPC</span>
+<span class="sd">    compute nodes commonly have no outbound internet access, and a version</span>
+<span class="sd">    check must never block a run over that. Also skipped outright under</span>
+<span class="sd">    ALOMANCY_TEST_MODE/ALOMANCY_MOCK_EXTERNAL (set autouse for the whole</span>
+<span class="sd">    test suite, see tests/conftest.py) so tests never make a real PyPI call.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ALOMANCY_TEST_MODE&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ALOMANCY_MOCK_EXTERNAL&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;https://pypi.org/pypi/</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">/json&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span>
+        <span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;info&quot;</span><span class="p">][</span><span class="s2">&quot;version&quot;</span><span class="p">]</span>
+    <span class="k">except</span> <span class="p">(</span>
+        <span class="n">urllib</span><span class="o">.</span><span class="n">error</span><span class="o">.</span><span class="n">URLError</span><span class="p">,</span>
+        <span class="ne">TimeoutError</span><span class="p">,</span>
+        <span class="ne">OSError</span><span class="p">,</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span>
+        <span class="ne">KeyError</span><span class="p">,</span>
+    <span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Could not check PyPI for latest </span><span class="si">%s</span><span class="s2"> version: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">package</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="BaseActiveLearningWorkflow">
@@ -165,6 +236,121 @@
                 <span class="k">break</span>
         <span class="k">return</span> <span class="n">last</span>
 
+<div class="viewcode-block" id="BaseActiveLearningWorkflow.display_workflow_summary">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.display_workflow_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">display_workflow_summary</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Display a summary of the active learning workflow configuration:</span>
+<span class="sd">        one section per configured phase (name + major settings, flattened</span>
+<span class="sd">        from its job dict) and a table of the HPC profiles in use and which</span>
+<span class="sd">        job types run on each.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">lines</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">70</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;ALomancy Workflow Summary (v</span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">70</span><span class="p">,</span>
+        <span class="p">]</span>
+
+        <span class="n">hpc_usage</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">for</span> <span class="n">phase</span><span class="p">,</span> <span class="n">heading</span> <span class="ow">in</span> <span class="n">_PHASE_LABELS</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">phase_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">phase</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">phase_dict</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;--- </span><span class="si">{</span><span class="n">heading</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">phase</span><span class="p">)</span><span class="si">}</span><span class="s2">) ---&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">_flatten_settings</span><span class="p">(</span><span class="n">phase_dict</span><span class="p">):</span>
+                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="n">hpc</span> <span class="o">=</span> <span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">hpc</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;unnamed&gt;&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+                    <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">hpc</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="n">entry</span> <span class="o">=</span> <span class="n">hpc_usage</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+                    <span class="n">name</span><span class="p">,</span>
+                    <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="n">hpc</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{},</span> <span class="s2">&quot;phases&quot;</span><span class="p">:</span> <span class="p">[]},</span>
+                <span class="p">)</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;phases&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">heading</span><span class="p">)</span>
+
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;--- HPC Profiles ---&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">hpc_usage</span><span class="p">:</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">hpc_usage</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">profile</span> <span class="o">=</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;profile&quot;</span><span class="p">]</span>
+                <span class="n">node_info</span> <span class="o">=</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;node_info&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;hpc_name&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+                        <span class="s2">&quot;alomancy_version&quot;</span><span class="p">:</span> <span class="n">__version__</span><span class="p">,</span>
+                        <span class="s2">&quot;gpu&quot;</span><span class="p">:</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gpu&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
+                        <span class="s2">&quot;partitions&quot;</span><span class="p">:</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;partitions&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
+                        <span class="ow">or</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span>
+                        <span class="s2">&quot;ranks_per_node&quot;</span><span class="p">:</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ranks_per_node&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
+                        <span class="s2">&quot;max_mem_per_node&quot;</span><span class="p">:</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_mem_per_node&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
+                        <span class="s2">&quot;job_types&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">&quot;phases&quot;</span><span class="p">]),</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+            <span class="k">with</span> <span class="n">pl</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
+                <span class="n">fmt_str_lengths</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">tbl_width_chars</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">tbl_hide_dataframe_shape</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">):</span>
+                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;  No HPC profiles configured.&quot;</span><span class="p">)</span>
+
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">70</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="BaseActiveLearningWorkflow.pre_run_checks">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.pre_run_checks">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pre_run_checks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Display the workflow summary, then run pre-flight checks:</span>
+<span class="sd">        currently just the installed-vs-latest-published alomancy version.</span>
+<span class="sd">        Warns if behind by a minor release; raises if behind by a major</span>
+<span class="sd">        release (breaking changes are likely). Silently skipped if PyPI</span>
+<span class="sd">        can&#39;t be reached (e.g. no internet on an HPC compute node).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">display_workflow_summary</span><span class="p">()</span>
+
+        <span class="n">latest_version</span> <span class="o">=</span> <span class="n">_fetch_latest_pypi_version</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">latest_version</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">current_major</span><span class="p">,</span> <span class="n">current_minor</span> <span class="o">=</span> <span class="n">__version_tuple__</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">__version_tuple__</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">latest_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">part</span><span class="p">)</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">latest_version</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">&quot;Could not parse latest PyPI version </span><span class="si">%r</span><span class="s2">; skipping version check.&quot;</span><span class="p">,</span>
+                <span class="n">latest_version</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span>
+        <span class="n">latest_major</span><span class="p">,</span> <span class="n">latest_minor</span> <span class="o">=</span> <span class="n">latest_tuple</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">latest_tuple</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">latest_major</span> <span class="o">&gt;</span> <span class="n">current_major</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Installed alomancy version </span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2"> is a major release &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;behind the latest available version </span><span class="si">{</span><span class="n">latest_version</span><span class="si">}</span><span class="s2">. &quot;</span>
+                <span class="s2">&quot;Breaking changes are likely — please upgrade &quot;</span>
+                <span class="s2">&quot;(`pip install -U alomancy`) before running.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">latest_major</span> <span class="o">==</span> <span class="n">current_major</span> <span class="ow">and</span> <span class="n">latest_minor</span> <span class="o">&gt;</span> <span class="n">current_minor</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;Installed alomancy version </span><span class="si">%s</span><span class="s2"> is a minor release behind the &quot;</span>
+                <span class="s2">&quot;latest available version </span><span class="si">%s</span><span class="s2">. Consider upgrading &quot;</span>
+                <span class="s2">&quot;(`pip install -U alomancy`).&quot;</span><span class="p">,</span>
+                <span class="n">__version__</span><span class="p">,</span>
+                <span class="n">latest_version</span><span class="p">,</span>
+            <span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="BaseActiveLearningWorkflow.run">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.run">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -174,6 +360,8 @@
 <span class="sd">        This method defines the core AL loop and calls the abstract methods</span>
 <span class="sd">        that must be implemented by subclasses.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pre_run_checks</span><span class="p">()</span>
+
         <span class="n">last_complete</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_complete_loop</span><span class="p">()</span>
 
         <span class="k">if</span> <span class="n">last_complete</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
