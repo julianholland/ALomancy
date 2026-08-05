@@ -16,6 +16,49 @@ logger = logging.getLogger(__name__)
 _expyre_db_lock = threading.Lock()
 _expyre_db_patched = False
 
+# Shared across every RemoteJobExecutor instance in this process (not just
+# one instance's threads): guards every ssh-invoking call ExPyRe makes on a
+# job's behalf -- job.start() (mkdir/stage-input/sbatch submit) and
+# sync_remote_results_status() (squeue status + rsync results, called from
+# inside get_results()'s polling loop). Both shell out over the same shared
+# multiplexed control connection to a given HPC host; letting
+# max_concurrent_jobs threads hit either one simultaneously can exceed
+# whatever session/connection cap the remote sshd enforces, at which point
+# the excess sessions silently fall back to a fresh, separately-authenticated
+# connection that hangs forever if that auth needs interactive input nobody
+# is present to provide. The lock only wraps the brief moment of the actual
+# subprocess call, not get_results()'s check_interval sleeps, so each job's
+# own polling cadence -- and hence real completion order -- stays independent.
+_ssh_call_lock = threading.Lock()
+_expyre_sync_patched = False
+
+
+def _ensure_expyre_sync_serialized() -> None:
+    """Serialize ExPyRe's remote status/file sync calls behind _ssh_call_lock.
+
+    sync_remote_results_status() is where get_results()'s polling loop
+    actually shells out: system.scheduler.status(...) (ssh squeue-equivalent)
+    and system.get_remotes(...) (ssh/rsync). Every job being monitored runs
+    its own independent get_results() loop in its own thread, so without
+    this, up to max_concurrent_jobs threads can trigger these simultaneously
+    -- this was observed in production as a stuck ``squeue`` subprocess
+    exactly like the stuck job.start() calls this module already guards
+    against. Idempotent; patches the class once regardless of how many
+    ExPyRe instances/threads call it.
+    """
+    global _expyre_sync_patched
+    if _expyre_sync_patched:
+        return
+
+    orig_sync = ExPyRe.sync_remote_results_status
+
+    def _locked_sync(self, *args, **kwargs):
+        with _ssh_call_lock:
+            return orig_sync(self, *args, **kwargs)
+
+    ExPyRe.sync_remote_results_status = _locked_sync
+    _expyre_sync_patched = True
+
 
 def _ensure_expyre_db_thread_safe() -> None:
     """Make expyre's module-level JobsDB connection safe for concurrent threads.
@@ -148,17 +191,29 @@ class RemoteJobExecutor:
         """Start one job and block until it resolves. Runs inside a worker
         thread of run_all_jobs_bounded's pool -- never lets an exception
         propagate, so one job's failure frees its slot without blocking or
-        cancelling siblings."""
+        cancelling siblings.
+
+        job.start() is serialized across threads via the module-level
+        _ssh_call_lock (see its docstring); job.get_results()'s own
+        ssh-invoking calls are serialized the same way via the
+        sync_remote_results_status() monkeypatch, applied once by
+        _ensure_expyre_sync_serialized() in run_all_jobs_bounded(). The lock
+        is only held for the moment of each subprocess call, not for
+        get_results()'s check_interval sleeps in between, so each job's own
+        polling cadence -- and hence real completion order -- stays
+        independent: a fast job's result still becomes available immediately
+        rather than waiting behind an earlier-submitted, still-running one."""
         job_name = getattr(job, "name", f"job_{index}")
-        start_wall_time = time.time()
         try:
-            job.start(
-                resources=self.remote_info.resources,
-                system_name=self.remote_info.sys_name,
-                header_extra=getattr(self.remote_info, "header_extra", []),
-                exact_fit=getattr(self.remote_info, "exact_fit", True),
-                partial_node=getattr(self.remote_info, "partial_node", False),
-            )
+            with _ssh_call_lock:
+                start_wall_time = time.time()
+                job.start(
+                    resources=self.remote_info.resources,
+                    system_name=self.remote_info.sys_name,
+                    header_extra=getattr(self.remote_info, "header_extra", []),
+                    exact_fit=getattr(self.remote_info, "exact_fit", True),
+                    partial_node=getattr(self.remote_info, "partial_node", False),
+                )
             logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
 
             result, _stdout, _stderr = job.get_results(
@@ -187,11 +242,15 @@ class RemoteJobExecutor:
         fill its slot -- ThreadPoolExecutor provides this rolling-window
         scheduling for free. Returned results stay index-aligned with the
         job_configs passed to submit_multiple_jobs, regardless of the order
-        jobs actually complete in."""
+        jobs actually complete in. Every individual ssh-invoking call (job
+        start, and each job's own status/result sync while being monitored)
+        is serialized regardless of max_concurrent_jobs -- see _ssh_call_lock
+        -- but the surrounding wait/poll cadence keeps real concurrency."""
         if not self.jobs:
             return []
 
         _ensure_expyre_db_thread_safe()
+        _ensure_expyre_sync_serialized()
 
         max_concurrent_jobs = getattr(self.remote_info, "max_concurrent_jobs", 20)
         if not max_concurrent_jobs or max_concurrent_jobs < 1:
