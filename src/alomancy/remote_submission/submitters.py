@@ -156,19 +156,41 @@ def committee_remote_submitter(
     seed: int = 803,
     size_of_committee: int = 5,
     function_kwargs: dict[str, Any] | None = None,
+    fit_indices: list[int] | None = None,
 ) -> None:
+    """Submit `size_of_committee` committee training jobs, one per fit index.
+
+    fit_indices
+        Explicit committee-member indices to (re)train, e.g. to backfill only
+        the specific fits missing from a prior partial run. Defaults to
+        ``range(size_of_committee)`` (every member, indices 0..N-1).
+        Each job's output directory is keyed off its own index (not its
+        position in this list) so it matches the `fit_{fit_idx}` directory
+        `mace_fit` itself writes to (`mlip/mace_wfl.py`) — using the
+        shared `common_output_pattern`/positional `job_id` mechanism here
+        would stage/sync the wrong directory whenever fit_indices is a
+        non-contiguous subset (e.g. backfilling just fit_2 and fit_4).
+    """
     mace_dir = Path("results", base_name)
     mace_dir.mkdir(exist_ok=True, parents=True)
 
     executor = RemoteJobExecutor(remote_info)
 
+    indices = fit_indices if fit_indices is not None else list(range(size_of_committee))
+
     job_configs = [
-        {"function_kwargs": {"seed": seed + i, "fit_idx": i, **(function_kwargs or {})}}
-        for i in range(size_of_committee)
+        {
+            "function_kwargs": {
+                "seed": seed + i,
+                "fit_idx": i,
+                **(function_kwargs or {}),
+            },
+            "output_files": [str(Path(mace_dir, "mlip_committee", f"fit_{i}"))],
+        }
+        for i in indices
     ]
 
     executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
-        common_output_pattern=str(Path(mace_dir, "mlip_committee", "fit_{job_id}")),
     )
