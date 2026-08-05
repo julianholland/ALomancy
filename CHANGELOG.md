@@ -5,19 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2026-08-05
+## [0.5.1] - 2026-08-05
 
 ### Added
-- **`max_concurrent_jobs` HPC profile setting**: caps how many jobs a `RemoteJobExecutor` keeps started (occupying a scheduler slot) at once for a given HPC profile; the next queued job starts the instant a running one finishes instead of waiting for an entire submission group to resolve. Lives in `~/.alomancy/hpc_config.yaml` (default `20`), collected by the `alomancy add-hpc` wizard.
 - **`display_workflow_summary()` / `pre_run_checks()`** on `BaseActiveLearningWorkflow`, run automatically at the start of `run()`: prints a per-phase settings summary (initialization/mlip_committee/structure_generation/high_accuracy_evaluation, flattened from each job dict) and a table of HPC profiles in use — GPU/partitions/node stats/job types/installed alomancy version. `pre_run_checks()` also compares the installed version against the latest published PyPI release: warns if behind by a minor release, raises if behind by a major release. Skipped gracefully with no internet access, and skipped outright under `ALOMANCY_TEST_MODE`/`ALOMANCY_MOCK_EXTERNAL` so it never makes a real network call in tests.
-
-### Changed
-- **Remote job submission is now bounded-concurrency and rolling, not batch-and-wait**: `RemoteJobExecutor.run_and_wait` submits and waits for jobs through a `ThreadPoolExecutor` sized by `max_concurrent_jobs` instead of starting every job up front and then waiting for results strictly in submission order. `high_accuracy_evaluation` no longer chunks structures into `max_batch_size`-sized groups submitted one after another; all remaining structures go through a single submission call per invocation. Geometry-optimisation (GO) and single-point (SP) structures now share one submission pool instead of running as two fully sequential batches, distinguished only by which function each job runs and a `go_`/`sp_` job-name prefix.
 
 ### Fixed
 - **`test_to_train_ratio` computed against the whole DB instead of just the eligible `test_config_types` pool**: with a small `test_config_types` pool (e.g. `init_amorphous`) dwarfed by the rest of the DB, the quota could exceed the entire pool and route 100% of it to test — permanently, once `update_splits_post_hoc` tags the DB, since it skips already-tagged containers. The ratio now applies only within the `test_config_types` pool itself; dimers/trimers/stretch_compress/`IsolatedAtom` never count toward it. A backstop still reserves one structure per config_type against an unlucky shuffle leaving one out entirely.
 - **`train_mlip` committee backfill retrained the wrong fit indices**: when fewer than 3 committee models were found, the retry always resubmitted starting at `fit_0` (`committee_remote_submitter` built `fit_idx`/output paths from `range(size_of_committee)`), silently overwriting already-successful low-index fits instead of retraining the ones that actually failed. `committee_remote_submitter` now accepts explicit `fit_indices` so retries target the real gaps, with each job's output path keyed by its own index rather than its position in the retry list. The phase is now only marked done if at least 3 models exist after retrying — previously it proceeded regardless of outcome, permanently locking in an unusable committee size.
 - **`generate_structures` could silently reuse a truncated `structure_generation_input_structures.xyz`**: a full local disk mid-write can leave this file with far fewer structures than selected (observed after an HPC filesystem filled up during a run); separately, the reload path read it without `index=":"`, which would return only the last structure even from a fully intact file. Both fixed — reload now passes `index=":"`, and a reloaded count below the configured `max_number_of_concurrent_jobs` now triggers regeneration via `select_initial_structures` instead of silently proceeding with too few candidates for `find_high_sd_structures` downstream.
+
+## [0.5.0] - 2026-08-03
+
+### Added
+- **`max_concurrent_jobs` HPC profile setting**: caps how many jobs a `RemoteJobExecutor` keeps started (occupying a scheduler slot) at once for a given HPC profile; the next queued job starts the instant a running one finishes instead of waiting for an entire submission group to resolve. Lives in `~/.alomancy/hpc_config.yaml` (default `20`), collected by the `alomancy add-hpc` wizard.
+
+### Changed
+- **Remote job submission is now bounded-concurrency and rolling, not batch-and-wait**: `RemoteJobExecutor.run_and_wait` submits and waits for jobs through a `ThreadPoolExecutor` sized by `max_concurrent_jobs` instead of starting every job up front and then waiting for results strictly in submission order. `high_accuracy_evaluation` no longer chunks structures into `max_batch_size`-sized groups submitted one after another; all remaining structures go through a single submission call per invocation. Geometry-optimisation (GO) and single-point (SP) structures now share one submission pool instead of running as two fully sequential batches, distinguished only by which function each job runs and a `go_`/`sp_` job-name prefix.
 
 ### Deprecated
 - **`max_batch_size`** (job-dict key on `high_accuracy_evaluation`): no longer read for chunking (chunking has been removed entirely). Still honoured as a fallback source for `max_concurrent_jobs` when the HPC profile doesn't define it, with a deprecation warning either way. Will be removed in 1.0.0 — see `docs/deprecations.md`.
