@@ -294,11 +294,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 else always_train_structures
             ).append(atoms)
 
-        desired_test_count = int(
-            len(all_evaluated) * init_job_dict["test_to_train_ratio"]
-        )
-        test_structure_count = min(desired_test_count, len(eligible_test_structures))
-
         if not eligible_test_structures:
             logger.warning(
                 "No eligible test structures found for the specified "
@@ -307,19 +302,44 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             train_xyzs = all_evaluated
             test_xyzs = []
         else:
-            if test_structure_count < desired_test_count:
-                logger.warning(
-                    "Not enough eligible structures for the test set. "
-                    "Found %d, needed %d. "
-                    "All eligible structures will go to the test set.",
-                    len(eligible_test_structures),
-                    desired_test_count,
-                )
+            # test_to_train_ratio applies only within the test_config_types
+            # pool, not against the whole DB. Dimers/trimers/stretch_compress/
+            # IsolatedAtom (always_train_structures) never count toward this
+            # ratio's denominator — with a small test_config_types pool and a
+            # much larger always-train pool, computing the quota against
+            # len(all_evaluated) could exceed the entire eligible pool,
+            # routing 100% of it to test and leaving train_xyzs with zero
+            # representatives of that config_type (e.g. init_amorphous),
+            # permanently once update_splits_post_hoc tags the DB.
             eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
                 eligible_test_structures,
-                test_structure_count / len(eligible_test_structures),
+                init_job_dict["test_to_train_ratio"],
                 self.seed,
             )
+
+            # Guarantee every eligible config_type keeps at least one
+            # representative in train_xyzs, as a backstop against an unlucky
+            # shuffle leaving a low-count config_type entirely in test.
+            train_config_types = {a.info.get("config_type", "") for a in eligible_train}
+            eligible_config_types = {
+                a.info.get("config_type", "") for a in eligible_test_structures
+            }
+            missing_types = eligible_config_types - train_config_types
+            if missing_types:
+                for config_type in missing_types:
+                    idx = next(
+                        i
+                        for i, a in enumerate(test_xyzs)
+                        if a.info.get("config_type", "") == config_type
+                    )
+                    eligible_train.append(test_xyzs.pop(idx))
+                logger.warning(
+                    "Reserved one structure from each of %s for training "
+                    "to avoid entirely excluding these config_types from "
+                    "train_atoms_list.",
+                    sorted(missing_types),
+                )
+
             # IsolatedAtom and other ineligible types always go to training so
             # MACE can read E0s for every element from the training file.
             train_xyzs = always_train_structures + eligible_train
@@ -383,17 +403,71 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 },
             )
 
-        models_found = list(
-            Path(f"results/{base_name}").glob(
-                f"{mlip_committee_job_dict['name']}/fit_*/{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
-            )
+        model_glob = (
+            f"{mlip_committee_job_dict['name']}/fit_*/"
+            f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
         )
-        if len(models_found) < mlip_committee_job_dict["size_of_committee"]:
-            raise RuntimeError(
-                f"train_mlip for {base_name}: expected "
-                f"{mlip_committee_job_dict['size_of_committee']} trained models but found "
-                f"{len(models_found)}. Check remote job logs for failures."
+        configured_size = mlip_committee_job_dict["size_of_committee"]
+
+        def _found_fit_indices() -> set[int]:
+            return {
+                int(p.parent.name.removeprefix("fit_"))
+                for p in Path(f"results/{base_name}").glob(model_glob)
+            }
+
+        found_fit_indices = _found_fit_indices()
+
+        if len(found_fit_indices) < configured_size:
+            logger.warning(
+                "train_mlip for %s: expected %d trained models but found %d. "
+                "Check remote job logs for failures.",
+                base_name,
+                configured_size,
+                len(found_fit_indices),
             )
+            if len(found_fit_indices) < 3:
+                # 3 is the minimum committee size for a reasonable force
+                # std-dev across members; below that, uncertainty-based
+                # structure selection has too few members to be meaningful.
+                missing_fit_indices = sorted(
+                    set(range(configured_size)) - found_fit_indices
+                )[: 3 - len(found_fit_indices)]
+                logger.info(
+                    "train_mlip for %s: only found %d trained model(s). "
+                    "Retraining missing fit(s) %s to reach the minimum "
+                    "committee size of 3.",
+                    base_name,
+                    len(found_fit_indices),
+                    missing_fit_indices,
+                )
+                committee_remote_submitter(
+                    remote_info=get_remote_info(
+                        mlip_committee_job_dict,
+                        input_files=[
+                            str(Path(workdir, "train_set.xyz")),
+                            str(Path(workdir, "test_set.xyz")),
+                        ],
+                    ),
+                    base_name=base_name,
+                    seed=803,
+                    function=mace_fit,
+                    function_kwargs={
+                        "job_dict": job_dict,
+                        "workdir_str": str(workdir),
+                    },
+                    fit_indices=missing_fit_indices,
+                )
+                found_fit_indices = _found_fit_indices()
+
+                if len(found_fit_indices) < 3:
+                    raise RuntimeError(
+                        f"train_mlip for {base_name}: still only "
+                        f"{len(found_fit_indices)} trained model(s) after "
+                        f"retrying the missing committee member(s) "
+                        f"{missing_fit_indices} — need at least 3 for a "
+                        "usable committee std-dev. Check remote job logs "
+                        "for failures."
+                    )
 
         mae_avg_results = get_mace_eval_info(
             mlip_committee_job_dict=mlip_committee_job_dict
@@ -476,24 +550,42 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             self._mark_phase_done(base_name, "generate_structures")
             return high_sd_structures
 
-        if Path(
+        input_structures_path = Path(
             operating_dir,
             f"{job_dict['structure_generation']['name']}_input_structures.xyz",
-        ).exists():
-            input_structures = read(
-                Path(
-                    operating_dir,
-                    f"{job_dict['structure_generation']['name']}_input_structures.xyz",
-                ),
-                format="extxyz",
-            )
-            logger.info(
-                "Input structures for structure generation step loaded from file: %s",
-                Path(
-                    operating_dir,
-                    f"{job_dict['structure_generation']['name']}_input_structures.xyz",
-                ),
-            )
+        )
+        expected_count = job_dict["structure_generation"][
+            "structure_selection_kwargs"
+        ].get("max_number_of_concurrent_jobs", 5)
+
+        if input_structures_path.exists():
+            input_structures = read(input_structures_path, ":", format="extxyz")
+            if len(input_structures) < expected_count:
+                # A prior run's write() can leave a partial file behind (e.g. a
+                # full local disk truncating it mid-write, as happened on
+                # 2026-08-04 — see TODO.md). Trusting it silently starves
+                # find_high_sd_structures of candidates far downstream with a
+                # confusing error. Regenerate instead of reusing a short file.
+                logger.warning(
+                    "Input structures file %s has only %d structure(s), expected "
+                    "%d — treating it as incomplete/corrupted and regenerating.",
+                    input_structures_path,
+                    len(input_structures),
+                    expected_count,
+                )
+                input_structures = select_initial_structures(
+                    base_name=base_name,
+                    structure_generation_job_dict=job_dict["structure_generation"],
+                    train_atoms_list=train_atoms_list,  # type: ignore
+                    seed=self.seed,
+                    **job_dict["structure_generation"]["structure_selection_kwargs"],
+                )
+            else:
+                logger.info(
+                    "Input structures for structure generation step loaded "
+                    "from file: %s",
+                    input_structures_path,
+                )
 
         else:
             input_structures = select_initial_structures(

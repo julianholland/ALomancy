@@ -1248,6 +1248,15 @@ class TestGenerateStructures:
         """When input structures xyz exists but high_sd doesn't, load input and run MD."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict.copy()
+        # This fixture file deliberately holds exactly 1 structure; tell
+        # generate_structures that 1 is the expected count so its
+        # incomplete-file sanity check (added after a full-disk event
+        # truncated a real input_structures.xyz to 1 of 20 structures)
+        # doesn't mistake it for a truncated file and regenerate instead.
+        job_dict["structure_generation"] = {
+            **job_dict["structure_generation"],
+            "structure_selection_kwargs": {"max_number_of_concurrent_jobs": 1},
+        }
         sg_name = job_dict["structure_generation"]["name"]
         sg_dir = tmp_path / "results" / "test_base" / sg_name
         sg_dir.mkdir(parents=True)

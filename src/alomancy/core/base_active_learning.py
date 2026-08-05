@@ -1,9 +1,14 @@
+import json
 import logging
+import os
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 from ase import Atoms
 from ase.io import read, write
 
@@ -17,8 +22,74 @@ from alomancy.utils.remove_high_force_structures import (
 )
 from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
+from alomancy.version import __version__, __version_tuple__
 
 logger = logging.getLogger(__name__)
+
+_PHASE_LABELS: dict[str, str] = {
+    "initialization": "Initialisation",
+    "mlip_committee": "MLIP Committee Trainer",
+    "structure_generation": "Structure Generation",
+    "high_accuracy_evaluation": "High-Accuracy Evaluation",
+}
+
+
+def _flatten_settings(
+    d: dict, prefix: str = "", max_depth: int = 2
+) -> list[tuple[str, object]]:
+    """Flatten a job-dict phase into (dotted.key, value) pairs.
+
+    Skips `hpc` (reported separately in the HPC summary) and `name` (used as
+    the section heading). Nested dicts (e.g. `creation_kwargs`,
+    `mace_fit_kwargs`, `qe_input_kwargs`) are walked up to `max_depth` levels
+    so calculator/model-specific settings surface without hardcoding any
+    particular module's key names here.
+    """
+    items: list[tuple[str, object]] = []
+    for key, value in d.items():
+        if key in ("hpc", "name"):
+            continue
+        full_key = f"{prefix}{key}"
+        if isinstance(value, dict) and max_depth > 0:
+            items.extend(
+                _flatten_settings(value, prefix=f"{full_key}.", max_depth=max_depth - 1)
+            )
+        else:
+            items.append((full_key, value))
+    return items
+
+
+def _fetch_latest_pypi_version(
+    package: str = "alomancy", timeout: float = 3.0
+) -> str | None:
+    """Best-effort lookup of the latest published version on PyPI.
+
+    Returns None (rather than raising) on any network/parse failure — HPC
+    compute nodes commonly have no outbound internet access, and a version
+    check must never block a run over that. Also skipped outright under
+    ALOMANCY_TEST_MODE/ALOMANCY_MOCK_EXTERNAL (set autouse for the whole
+    test suite, see tests/conftest.py) so tests never make a real PyPI call.
+    """
+    if (
+        os.getenv("ALOMANCY_TEST_MODE") == "1"
+        or os.getenv("ALOMANCY_MOCK_EXTERNAL") == "1"
+    ):
+        return None
+    try:
+        with urllib.request.urlopen(
+            f"https://pypi.org/pypi/{package}/json", timeout=timeout
+        ) as response:
+            data = json.loads(response.read())
+        return data["info"]["version"]
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+    ) as exc:
+        logger.debug("Could not check PyPI for latest %s version: %s", package, exc)
+        return None
 
 
 class BaseActiveLearningWorkflow(ABC):
@@ -86,6 +157,115 @@ class BaseActiveLearningWorkflow(ABC):
                 break
         return last
 
+    def display_workflow_summary(self) -> None:
+        """
+        Display a summary of the active learning workflow configuration:
+        one section per configured phase (name + major settings, flattened
+        from its job dict) and a table of the HPC profiles in use and which
+        job types run on each.
+        """
+        lines: list[str] = [
+            "",
+            "=" * 70,
+            f"ALomancy Workflow Summary (v{__version__})",
+            "=" * 70,
+        ]
+
+        hpc_usage: dict[str, dict] = {}
+
+        for phase, heading in _PHASE_LABELS.items():
+            phase_dict = self.jobs_dict.get(phase)
+            if not phase_dict:
+                continue
+
+            lines.append("")
+            lines.append(f"--- {heading} ({phase_dict.get('name', phase)}) ---")
+            for key, value in _flatten_settings(phase_dict):
+                lines.append(f"  {key}: {value}")
+
+            hpc = phase_dict.get("hpc")
+            if hpc:
+                name = (
+                    hpc.get("hpc_name", "<unnamed>")
+                    if isinstance(hpc, dict)
+                    else str(hpc)
+                )
+                entry = hpc_usage.setdefault(
+                    name,
+                    {"profile": hpc if isinstance(hpc, dict) else {}, "phases": []},
+                )
+                entry["phases"].append(heading)
+
+        lines.append("")
+        lines.append("--- HPC Profiles ---")
+        if hpc_usage:
+            rows = []
+            for name, entry in hpc_usage.items():
+                profile = entry["profile"]
+                node_info = profile.get("node_info", {})
+                rows.append(
+                    {
+                        "hpc_name": name,
+                        "alomancy_version": __version__,
+                        "gpu": profile.get("gpu", "?"),
+                        "partitions": ", ".join(profile.get("partitions", []) or [])
+                        or "?",
+                        "ranks_per_node": node_info.get("ranks_per_node", "?"),
+                        "max_mem_per_node": node_info.get("max_mem_per_node", "?"),
+                        "job_types": "\n".join(entry["phases"]),
+                    }
+                )
+            with pl.Config(
+                fmt_str_lengths=200, tbl_width_chars=200, tbl_hide_dataframe_shape=True
+            ):
+                lines.append(str(pl.DataFrame(rows)))
+        else:
+            lines.append("  No HPC profiles configured.")
+
+        lines.append("=" * 70)
+        logger.info("\n".join(lines))
+
+    def pre_run_checks(self) -> None:
+        """
+        Display the workflow summary, then run pre-flight checks:
+        currently just the installed-vs-latest-published alomancy version.
+        Warns if behind by a minor release; raises if behind by a major
+        release (breaking changes are likely). Silently skipped if PyPI
+        can't be reached (e.g. no internet on an HPC compute node).
+        """
+        self.display_workflow_summary()
+
+        latest_version = _fetch_latest_pypi_version()
+        if latest_version is None:
+            return
+
+        current_major, current_minor = __version_tuple__[0], __version_tuple__[1]
+        try:
+            latest_tuple = tuple(int(part) for part in latest_version.split(".")[:3])
+        except ValueError:
+            logger.debug(
+                "Could not parse latest PyPI version %r; skipping version check.",
+                latest_version,
+            )
+            return
+        latest_major, latest_minor = latest_tuple[0], latest_tuple[1]
+
+        if latest_major > current_major:
+            raise RuntimeError(
+                f"Installed alomancy version {__version__} is a major release "
+                f"behind the latest available version {latest_version}. "
+                "Breaking changes are likely — please upgrade "
+                "(`pip install -U alomancy`) before running."
+            )
+        if latest_major == current_major and latest_minor > current_minor:
+            logger.warning(
+                "Installed alomancy version %s is a minor release behind the "
+                "latest available version %s. Consider upgrading "
+                "(`pip install -U alomancy`).",
+                __version__,
+                latest_version,
+            )
+
     def run(self, **kwargs) -> None:
         """
         Run the active learning workflow.
@@ -93,6 +273,8 @@ class BaseActiveLearningWorkflow(ABC):
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
+        self.pre_run_checks()
+
         last_complete = self._last_complete_loop()
 
         if last_complete >= 0:
