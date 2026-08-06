@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-08-06
+
+### Fixed
+- **Concurrent remote jobs on the same HPC host could exceed the sshd session cap and hang forever**: `job.start()` and each job's own status/result sync (`sync_remote_results_status()`, called from `get_results()`'s polling loop) both shell out over a host's shared multiplexed ssh control connection; running these simultaneously from `max_concurrent_jobs` worker threads could exceed the remote sshd's session cap, silently falling back to a fresh connection that hangs forever if it needs interactive auth nobody is present to provide. Both call sites are now serialized behind a per-HPC-host lock (`executor._get_ssh_call_lock`, keyed by `system_name`), replacing an earlier single process-wide lock so unrelated HPC hosts no longer serialize against each other's ssh traffic. The lock only wraps the brief moment of the actual subprocess call, not `get_results()`'s polling sleeps, so each job's own polling cadence — and real completion order — stays independent.
+- **A stuck ssh call could silently freeze every other job on the same host indefinitely**: acquiring the per-host ssh-call lock is now bounded by a timeout (`RemoteInfo.lock_timeout`, set from the job's own `max_time`/`max_go_time` by `get_remote_info`) rather than waiting forever. A wait longer than the job's entire expected walltime just to get a turn to touch ssh means the lock holder is genuinely stuck (e.g. the shared control connection died and a fresh one needs interactive auth); the waiting job now fails loudly with `TimeoutError` instead of hanging alongside it.
+- **`md_remote_submitter` staging out MD results from the wrong directory when resuming a partially-completed run**: `submit_multiple_jobs` derives each job's `output_files` glob from its *position* in `job_configs` (`0..len-1`) by default, which only matches the real `md_output_{n_existing + i}` directory name when `n_existing == 0`. Whenever some MD runs already existed and were skipped before submission, that positional index silently diverged from the directory the remote job actually wrote to, causing ExPyRe's stage-out step to fail with "does not match any files" even though the job succeeded. `md_remote_submitter` now sets `output_files` explicitly per job, keyed by the real output directory name.
+
 ## [0.5.1] - 2026-08-05
 
 ### Added
