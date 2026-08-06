@@ -5,7 +5,26 @@ from unittest import mock
 
 import pytest
 
-from alomancy.cli.nuke import nuke_expyre_results
+from alomancy.cli.nuke import nuke_expyre_results, resolve_default_expyre_dir
+
+
+@pytest.mark.unit
+class TestResolveDefaultExpyreDir:
+    def test_uses_resolved_local_stage_dir_when_available(self, tmp_path, monkeypatch):
+        from expyre import config as expyre_config
+
+        run_local = tmp_path / "run" / ".expyre"
+        monkeypatch.setattr(expyre_config, "local_stage_dir", run_local)
+
+        assert resolve_default_expyre_dir() == run_local
+
+    def test_falls_back_to_home_expyre_when_unresolved(self, tmp_path, monkeypatch):
+        from expyre import config as expyre_config
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(expyre_config, "local_stage_dir", None)
+
+        assert resolve_default_expyre_dir() == tmp_path / ".expyre"
 
 
 def _make_expyre_dir(tmp_path: Path) -> Path:
@@ -81,6 +100,19 @@ class TestNukeExpyreResults:
         assert not (expyre_dir / "link_to_outside").exists()
         assert target.exists()
 
+    def test_none_default_resolves_via_resolve_default_expyre_dir(
+        self, tmp_path, monkeypatch
+    ):
+        expyre_dir = _make_expyre_dir(tmp_path)
+        monkeypatch.setattr(
+            "alomancy.cli.nuke.resolve_default_expyre_dir", lambda: expyre_dir
+        )
+        monkeypatch.setattr("builtins.input", lambda: "y")
+
+        nuke_expyre_results()
+
+        assert not (expyre_dir / "jobs.db").exists()
+
 
 @pytest.mark.unit
 def test_cli_entrypoint_nuke(tmp_path):
@@ -102,10 +134,15 @@ def test_cli_entrypoint_nuke(tmp_path):
 
 
 @pytest.mark.unit
-def test_cli_entrypoint_nuke_default_dir(tmp_path, monkeypatch):
+def test_cli_entrypoint_nuke_default_dir_falls_back_to_home(tmp_path, monkeypatch):
+    """With no local_stage_dir resolved (e.g. no HPC configured yet), the
+    default target is still the legacy ~/.expyre."""
+    from expyre import config as expyre_config
+
     from alomancy.cli.main import main
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(expyre_config, "local_stage_dir", None)
     fake_home_expyre = tmp_path / ".expyre"
 
     with (
@@ -115,3 +152,27 @@ def test_cli_entrypoint_nuke_default_dir(tmp_path, monkeypatch):
         main()
 
     m_nuke.assert_called_once_with(fake_home_expyre.resolve())
+
+
+@pytest.mark.unit
+def test_cli_entrypoint_nuke_default_dir_uses_resolved_local_stage_dir(
+    tmp_path, monkeypatch
+):
+    """When expyre has resolved a (run-local) local_stage_dir, nuke targets
+    that instead of ~/.expyre, so it only ever clears this run's own job
+    state -- not every other alomancy run sharing the same home directory."""
+    from expyre import config as expyre_config
+
+    from alomancy.cli.main import main
+
+    run_local_expyre = tmp_path / "some_run" / ".expyre"
+    run_local_expyre.mkdir(parents=True)
+    monkeypatch.setattr(expyre_config, "local_stage_dir", run_local_expyre)
+
+    with (
+        mock.patch("sys.argv", ["alomancy", "nuke"]),
+        mock.patch("alomancy.cli.nuke.nuke_expyre_results") as m_nuke,
+    ):
+        main()
+
+    m_nuke.assert_called_once_with(run_local_expyre.resolve())

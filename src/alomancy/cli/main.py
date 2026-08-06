@@ -33,6 +33,11 @@ def main() -> None:
         help="Interactive wizard to add an HPC system to ALomancy",
     )
 
+    sub.add_parser(
+        "upgrade-hpc",
+        help="Upgrade the alomancy package on one or more configured HPC systems",
+    )
+
     nuke = sub.add_parser(
         "nuke",
         help="Delete local ExPyRe job state (job cache, unsynced stage dirs)",
@@ -40,9 +45,14 @@ def main() -> None:
     nuke.add_argument(
         "--expyre-dir",
         type=Path,
-        default=Path("~/.expyre").expanduser(),
+        default=None,
         metavar="PATH",
-        help="Path to the ExPyRe local directory (default: ~/.expyre)",
+        help=(
+            "Path to the ExPyRe local directory to nuke (default: this "
+            "run's resolved local_stage_dir, i.e. wherever expyre.config "
+            "resolves to from the current directory -- falls back to "
+            "~/.expyre if expyre has no HPC configured yet)"
+        ),
     )
 
     args = parser.parse_args()
@@ -51,6 +61,10 @@ def main() -> None:
         from alomancy.cli.add_hpc import add_hpc_wizard
 
         add_hpc_wizard()
+    elif args.command == "upgrade-hpc":
+        from alomancy.cli.upgrade_hpc import upgrade_hpc_wizard
+
+        upgrade_hpc_wizard()
     elif args.command == "results":
         if args.replot:
             from alomancy.cli.replot import replot_results
@@ -59,6 +73,7 @@ def main() -> None:
         else:
             res.print_help()
     elif args.command == "nuke":
-        from alomancy.cli.nuke import nuke_expyre_results
+        from alomancy.cli.nuke import nuke_expyre_results, resolve_default_expyre_dir
 
-        nuke_expyre_results(args.expyre_dir.resolve())
+        expyre_dir = args.expyre_dir or resolve_default_expyre_dir()
+        nuke_expyre_results(expyre_dir.resolve())

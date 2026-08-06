@@ -210,6 +210,67 @@ class TestSeedDbFromExtraDataset:
         assert wf.db.size == 1
 
 
+class TestDisplayWorkflowSummary:
+    """Tests for the HPC-profiles table's remote alomancy_version column."""
+
+    def _collect_logs(self, wf, call) -> str:
+        """Attach a handler to the "alomancy" logger (propagate=False means
+        caplog can't see it, see CLAUDE.md's Testing logs note) and return
+        the concatenated messages logged during `call()`."""
+        import logging
+
+        al_logger = logging.getLogger("alomancy")
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        al_logger.addHandler(handler)
+        try:
+            call()
+        finally:
+            al_logger.removeHandler(handler)
+        return " ".join(r.getMessage() for r in records)
+
+    @pytest.mark.unit
+    def test_shows_remote_version_from_helper(self, tmp_path, minimal_jobs_dict):
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+            log_file=None,
+        )
+
+        with patch(
+            "alomancy.core.base_active_learning.get_alomancy_version_for_profile",
+            return_value="0.9.9",
+        ):
+            messages = self._collect_logs(wf, wf.display_workflow_summary)
+
+        assert "0.9.9" in messages
+
+    @pytest.mark.unit
+    def test_falls_back_to_placeholder_when_version_unknown(
+        self, tmp_path, minimal_jobs_dict
+    ):
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+            log_file=None,
+        )
+
+        # Default autouse env (ALOMANCY_TEST_MODE=1) already makes
+        # get_alomancy_version_for_profile return None with no mocking.
+        messages = self._collect_logs(wf, wf.display_workflow_summary)
+
+        assert "test-hpc" in messages
+
+
 class TestRunWorkflowStructure:
     """Tests for run() method structure and execution flow."""
 
