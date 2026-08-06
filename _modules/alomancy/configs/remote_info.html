@@ -81,6 +81,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">expyre.resources</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resources</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">expyre.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">time_to_sec</span>
 
 <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="s2">&quot;pathlib._local&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pathlib</span>
 
@@ -136,6 +137,15 @@
 <span class="sd">        ~/.alomancy/hpc_config.yaml (see get_remote_info) -- unrelated to</span>
 <span class="sd">        structure_generation&#39;s max_number_of_concurrent_jobs, which controls how many seed</span>
 <span class="sd">        structures are selected for MD, not scheduler concurrency.</span>
+<span class="sd">    lock_timeout: float or None, default None</span>
+<span class="sd">        max seconds a RemoteJobExecutor worker thread will wait to acquire the</span>
+<span class="sd">        per-host ssh-call lock (see executor._get_ssh_call_lock) before giving</span>
+<span class="sd">        up on its own job rather than waiting forever. None waits indefinitely</span>
+<span class="sd">        (matches the old, unbounded behavior). get_remote_info sets this from</span>
+<span class="sd">        the job&#39;s own max_time -- if a thread has waited longer than the job&#39;s</span>
+<span class="sd">        entire expected walltime just for a turn to touch ssh, something is</span>
+<span class="sd">        stuck (e.g. the shared control connection died and a fresh connection</span>
+<span class="sd">        needs interactive auth nobody can provide), not merely busy.</span>
 <span class="sd">    hash_ignore: list(str), default []</span>
 <span class="sd">        list of arguments to ignore when doing hash of remote function arguments to determine if it&#39;s already been done</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -159,6 +169,7 @@
         <span class="n">ignore_failed_jobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">resubmit_killed_jobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">max_concurrent_jobs</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
+        <span class="n">lock_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">hash_ignore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="k">if</span> <span class="n">hash_ignore</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -193,6 +204,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">ignore_failed_jobs</span> <span class="o">=</span> <span class="n">ignore_failed_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">resubmit_killed_jobs</span> <span class="o">=</span> <span class="n">resubmit_killed_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">max_concurrent_jobs</span> <span class="o">=</span> <span class="n">max_concurrent_jobs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock_timeout</span> <span class="o">=</span> <span class="n">lock_timeout</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hash_ignore</span> <span class="o">=</span> <span class="n">hash_ignore</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -277,6 +289,7 @@
             <span class="n">partitions</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;partitions&quot;</span><span class="p">],</span>
         <span class="p">),</span>
         <span class="n">max_concurrent_jobs</span><span class="o">=</span><span class="n">_resolve_max_concurrent_jobs</span><span class="p">(</span><span class="n">job_dict</span><span class="p">),</span>
+        <span class="n">lock_timeout</span><span class="o">=</span><span class="n">time_to_sec</span><span class="p">(</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]),</span>
     <span class="p">)</span></div>
 
 </pre></div>
