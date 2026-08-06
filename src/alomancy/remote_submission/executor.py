@@ -16,25 +16,88 @@ logger = logging.getLogger(__name__)
 _expyre_db_lock = threading.Lock()
 _expyre_db_patched = False
 
-# Shared across every RemoteJobExecutor instance in this process (not just
-# one instance's threads): guards every ssh-invoking call ExPyRe makes on a
-# job's behalf -- job.start() (mkdir/stage-input/sbatch submit) and
+# One lock per HPC system_name (not one global lock): guards every
+# ssh-invoking call ExPyRe makes on a job's behalf for that host --
+# job.start() (mkdir/stage-input/sbatch submit) and
 # sync_remote_results_status() (squeue status + rsync results, called from
-# inside get_results()'s polling loop). Both shell out over the same shared
-# multiplexed control connection to a given HPC host; letting
-# max_concurrent_jobs threads hit either one simultaneously can exceed
-# whatever session/connection cap the remote sshd enforces, at which point
-# the excess sessions silently fall back to a fresh, separately-authenticated
-# connection that hangs forever if that auth needs interactive input nobody
-# is present to provide. The lock only wraps the brief moment of the actual
-# subprocess call, not get_results()'s check_interval sleeps, so each job's
-# own polling cadence -- and hence real completion order -- stays independent.
-_ssh_call_lock = threading.Lock()
+# inside get_results()'s polling loop). Both shell out over that host's own
+# shared multiplexed control connection; letting max_concurrent_jobs threads
+# hit either one simultaneously can exceed whatever session/connection cap
+# the remote sshd enforces, at which point the excess sessions silently fall
+# back to a fresh, separately-authenticated connection that hangs forever if
+# that auth needs interactive input nobody is present to provide. Scoping per
+# system_name (rather than one lock shared process-wide) means two
+# RemoteJobExecutors targeting different, unrelated HPC hosts never serialize
+# against each other's ssh traffic -- only calls that actually share one
+# host's connection contend for the same lock. Each lock only wraps the brief
+# moment of the actual subprocess call, not get_results()'s check_interval
+# sleeps, so each job's own polling cadence -- and hence real completion
+# order -- stays independent.
+_ssh_call_locks: dict[str, threading.Lock] = {}
+_ssh_call_locks_guard = threading.Lock()
 _expyre_sync_patched = False
+
+# Per-host counters used to coalesce redundant sync_remote_results_status()
+# calls -- see _ensure_expyre_sync_serialized.
+_sync_generations: dict[str, int] = {}
+
+
+def _get_ssh_call_lock(sys_name: str) -> threading.Lock:
+    """Return the shared ssh-call lock for one HPC system, creating it on
+    first use (double-checked under _ssh_call_locks_guard, which is only
+    ever held for the instant of a dict lookup/insert -- never for the ssh
+    call itself)."""
+    lock = _ssh_call_locks.get(sys_name)
+    if lock is not None:
+        return lock
+    with _ssh_call_locks_guard:
+        lock = _ssh_call_locks.get(sys_name)
+        if lock is None:
+            lock = threading.Lock()
+            _ssh_call_locks[sys_name] = lock
+        return lock
+
+
+def _acquire_ssh_call_lock_or_raise(
+    sys_name: str, timeout: float | None, description: str
+) -> threading.Lock:
+    """Acquire the per-host ssh-call lock, raising TimeoutError rather than
+    blocking forever if it isn't free within `timeout` seconds (None blocks
+    indefinitely -- Lock.acquire's own default). Caller must release() the
+    returned lock, typically via try/finally.
+
+    A wait this long means the thread currently holding the lock isn't just
+    busy -- it's been longer than this job's own expected total runtime
+    (get_remote_info sets `timeout` from the job's max_time/max_go_time) just
+    to get a turn to touch ssh at all. That points at the lock holder being
+    genuinely stuck: most likely the shared multiplexed control connection
+    to this host died (network blip, remote sshd restart, ServerAliveCountMax
+    teardown) and the next ssh call fell back to a fresh connection needing
+    interactive auth (password/OTP) that nobody is present to provide -- see
+    executor.py's module docstring comment above _ssh_call_locks. Giving up
+    here can't un-stick that original hung ssh subprocess (this lock timeout
+    doesn't touch it), but it stops every *other* job on the host from
+    silently hanging alongside it: they fail loudly and promptly instead,
+    matching how a mid-run hang would have surfaced before ssh calls were
+    serialized at all -- one stuck job, not the whole host.
+    """
+    lock = _get_ssh_call_lock(sys_name)
+    effective_timeout = -1 if timeout is None else timeout
+    if not lock.acquire(timeout=effective_timeout):
+        raise TimeoutError(
+            f"Timed out after {effective_timeout:.0f}s waiting for the "
+            f"ssh-call lock for host '{sys_name}' ({description}). Another "
+            "job's ssh call on this host appears stuck -- most likely the "
+            "shared control connection died and a fresh connection needs "
+            "interactive auth (password/OTP) nobody is present to provide. "
+            "Treating this job as failed rather than waiting indefinitely."
+        )
+    return lock
 
 
 def _ensure_expyre_sync_serialized() -> None:
-    """Serialize ExPyRe's remote status/file sync calls behind _ssh_call_lock.
+    """Serialize ExPyRe's remote status/file sync calls behind a per-host
+    lock from _get_ssh_call_lock, and coalesce redundant calls.
 
     sync_remote_results_status() is where get_results()'s polling loop
     actually shells out: system.scheduler.status(...) (ssh squeue-equivalent)
@@ -43,8 +106,25 @@ def _ensure_expyre_sync_serialized() -> None:
     this, up to max_concurrent_jobs threads can trigger these simultaneously
     -- this was observed in production as a stuck ``squeue`` subprocess
     exactly like the stuck job.start() calls this module already guards
-    against. Idempotent; patches the class once regardless of how many
-    ExPyRe instances/threads call it.
+    against.
+
+    The calls this codebase makes always use sync_all=True (ExPyRe's
+    default, never overridden here), meaning one call already syncs every
+    job on that host, not just the caller's own. So once a thread has waited
+    for the lock, another thread may have already done a full sync for that
+    host in the meantime, making its own call redundant -- purely wasted
+    ssh/rsync round-trips, and enough of them queued up can push a polling
+    round past check_interval. _sync_generations makes each thread check,
+    right after acquiring the lock, whether a sync has completed since it
+    decided it needed one; if so, it skips its own call rather than
+    repeating an already-fresh result.
+
+    Lock acquisition is bounded by the job's own _alomancy_lock_timeout
+    (stashed on the ExPyRe instance by _run_single_job right after start(),
+    from remote_info.lock_timeout) -- see _acquire_ssh_call_lock_or_raise.
+
+    Idempotent; patches the class once regardless of how many ExPyRe
+    instances/threads call it.
     """
     global _expyre_sync_patched
     if _expyre_sync_patched:
@@ -53,8 +133,23 @@ def _ensure_expyre_sync_serialized() -> None:
     orig_sync = ExPyRe.sync_remote_results_status
 
     def _locked_sync(self, *args, **kwargs):
-        with _ssh_call_lock:
-            return orig_sync(self, *args, **kwargs)
+        sys_name = self.system_name
+        seen_generation = _sync_generations.get(sys_name, 0)
+        lock = _acquire_ssh_call_lock_or_raise(
+            sys_name,
+            getattr(self, "_alomancy_lock_timeout", None),
+            f"sync_remote_results_status() for job {getattr(self, 'id', '?')}",
+        )
+        try:
+            if _sync_generations.get(sys_name, 0) != seen_generation:
+                # Another thread already ran a full sync for this host
+                # while we waited for the lock -- nothing left to do.
+                return None
+            result = orig_sync(self, *args, **kwargs)
+            _sync_generations[sys_name] = _sync_generations.get(sys_name, 0) + 1
+            return result
+        finally:
+            lock.release()
 
     ExPyRe.sync_remote_results_status = _locked_sync
     _expyre_sync_patched = True
@@ -193,8 +288,8 @@ class RemoteJobExecutor:
         propagate, so one job's failure frees its slot without blocking or
         cancelling siblings.
 
-        job.start() is serialized across threads via the module-level
-        _ssh_call_lock (see its docstring); job.get_results()'s own
+        job.start() is serialized across threads via the per-host lock from
+        _get_ssh_call_lock (see its docstring); job.get_results()'s own
         ssh-invoking calls are serialized the same way via the
         sync_remote_results_status() monkeypatch, applied once by
         _ensure_expyre_sync_serialized() in run_all_jobs_bounded(). The lock
@@ -202,10 +297,24 @@ class RemoteJobExecutor:
         get_results()'s check_interval sleeps in between, so each job's own
         polling cadence -- and hence real completion order -- stays
         independent: a fast job's result still becomes available immediately
-        rather than waiting behind an earlier-submitted, still-running one."""
+        rather than waiting behind an earlier-submitted, still-running one.
+
+        Lock acquisition is bounded by remote_info.lock_timeout (see
+        _acquire_ssh_call_lock_or_raise) rather than waiting forever, so one
+        job stuck on an unattended interactive-auth prompt can't silently
+        freeze every other job on the same host indefinitely. The same
+        timeout is stashed on the job instance for sync_remote_results_status
+        to reuse later, since that call only has `self` to work with, not
+        this RemoteJobExecutor."""
         job_name = getattr(job, "name", f"job_{index}")
+        lock_timeout = getattr(self.remote_info, "lock_timeout", None)
         try:
-            with _ssh_call_lock:
+            lock = _acquire_ssh_call_lock_or_raise(
+                self.remote_info.sys_name,
+                lock_timeout,
+                f"job.start() for job {index + 1} ({job_name})",
+            )
+            try:
                 start_wall_time = time.time()
                 job.start(
                     resources=self.remote_info.resources,
@@ -214,6 +323,9 @@ class RemoteJobExecutor:
                     exact_fit=getattr(self.remote_info, "exact_fit", True),
                     partial_node=getattr(self.remote_info, "partial_node", False),
                 )
+                job._alomancy_lock_timeout = lock_timeout
+            finally:
+                lock.release()
             logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
 
             result, _stdout, _stderr = job.get_results(
@@ -244,8 +356,9 @@ class RemoteJobExecutor:
         job_configs passed to submit_multiple_jobs, regardless of the order
         jobs actually complete in. Every individual ssh-invoking call (job
         start, and each job's own status/result sync while being monitored)
-        is serialized regardless of max_concurrent_jobs -- see _ssh_call_lock
-        -- but the surrounding wait/poll cadence keeps real concurrency."""
+        is serialized per HPC host regardless of max_concurrent_jobs -- see
+        _get_ssh_call_lock -- but the surrounding wait/poll cadence keeps
+        real concurrency."""
         if not self.jobs:
             return []
 

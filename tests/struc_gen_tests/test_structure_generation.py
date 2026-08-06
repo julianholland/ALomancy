@@ -1187,6 +1187,65 @@ class TestMolecularDynamics:
         assert all("md_output_" in path for path in result)
         mock_md_submitter.assert_called_once()
 
+    @pytest.mark.unit
+    def test_md_remote_submission_offsets_output_dirs_past_existing_runs(
+        self, tmp_path, monkeypatch
+    ):
+        """When some structure-generation runs already exist and are
+        reused (skipped), each remaining job's registered output_files
+        must match the real out_dir the remote MD function writes to
+        (n_existing + i) rather than the job's position within the
+        sliced remaining-jobs list (i alone) -- otherwise ExPyRe's
+        stage-out step globs for the wrong directory and raises even
+        though the job succeeded remotely. Regression test for a bug
+        invisible whenever n_existing == 0 (the two indices coincide by
+        luck on a fresh run), only surfacing on a restart that reuses
+        prior runs."""
+        from alomancy.remote_submission.submitters import md_remote_submitter
+
+        monkeypatch.chdir(tmp_path)
+        md_dir = Path("results", "test_al_loop", "structure_generation")
+        md_dir.mkdir(parents=True)
+
+        n_existing = 2
+        for i in range(n_existing):
+            out_dir = md_dir / f"md_output_{i}"
+            out_dir.mkdir()
+            (out_dir / "trajectory.xyz").touch()
+
+        n_remaining = 3
+        input_atoms_list = [
+            Atoms(symbols=["H"], positions=[[0, 0, 0]])
+            for _ in range(n_existing + n_remaining)
+        ]
+
+        captured = {}
+
+        def _fake_run_and_wait(self, function, job_configs, **kwargs):
+            captured["job_configs"] = job_configs
+            return [None] * len(job_configs)
+
+        monkeypatch.setattr(
+            "alomancy.remote_submission.executor.RemoteJobExecutor.run_and_wait",
+            _fake_run_and_wait,
+        )
+
+        md_remote_submitter(
+            remote_info=MagicMock(),
+            base_name="test_al_loop",
+            target_file="trajectory.xyz",
+            input_atoms_list=input_atoms_list,
+            function=MagicMock(),
+            function_kwargs={},
+        )
+
+        job_configs = captured["job_configs"]
+        assert len(job_configs) == n_remaining
+        for i, config in enumerate(job_configs):
+            expected_dir = str(md_dir / f"md_output_{n_existing + i}")
+            assert config["function_kwargs"]["out_dir"] == expected_dir
+            assert config["output_files"] == [expected_dir]
+
 
 class TestStructureSelection:
     """Test structure selection functionality."""

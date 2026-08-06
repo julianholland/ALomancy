@@ -4,6 +4,7 @@ import pathlib  # wizadry to solve pickle problem
 import sys
 
 from expyre.resources import Resources
+from expyre.units import time_to_sec
 
 sys.modules["pathlib._local"] = pathlib
 
@@ -57,6 +58,15 @@ class RemoteInfo:
         ~/.alomancy/hpc_config.yaml (see get_remote_info) -- unrelated to
         structure_generation's max_number_of_concurrent_jobs, which controls how many seed
         structures are selected for MD, not scheduler concurrency.
+    lock_timeout: float or None, default None
+        max seconds a RemoteJobExecutor worker thread will wait to acquire the
+        per-host ssh-call lock (see executor._get_ssh_call_lock) before giving
+        up on its own job rather than waiting forever. None waits indefinitely
+        (matches the old, unbounded behavior). get_remote_info sets this from
+        the job's own max_time -- if a thread has waited longer than the job's
+        entire expected walltime just for a turn to touch ssh, something is
+        stuck (e.g. the shared control connection died and a fresh connection
+        needs interactive auth nobody can provide), not merely busy.
     hash_ignore: list(str), default []
         list of arguments to ignore when doing hash of remote function arguments to determine if it's already been done
     """
@@ -80,6 +90,7 @@ class RemoteInfo:
         ignore_failed_jobs=False,
         resubmit_killed_jobs=False,
         max_concurrent_jobs=20,
+        lock_timeout=None,
         hash_ignore=None,
     ):
         if hash_ignore is None:
@@ -114,6 +125,7 @@ class RemoteInfo:
         self.ignore_failed_jobs = ignore_failed_jobs
         self.resubmit_killed_jobs = resubmit_killed_jobs
         self.max_concurrent_jobs = max_concurrent_jobs
+        self.lock_timeout = lock_timeout
         self.hash_ignore = hash_ignore.copy()
 
     def __str__(self):
@@ -195,4 +207,5 @@ def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInf
             partitions=job_dict["hpc"]["partitions"],
         ),
         max_concurrent_jobs=_resolve_max_concurrent_jobs(job_dict),
+        lock_timeout=time_to_sec(job_dict["max_time"]),
     )

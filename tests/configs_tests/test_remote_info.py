@@ -28,6 +28,20 @@ def test_default_when_nothing_set():
 
 
 @pytest.mark.unit
+def test_lock_timeout_derived_from_max_time():
+    """lock_timeout (the cap on how long a RemoteJobExecutor worker waits
+    for the per-host ssh-call lock, see remote_submission/executor.py) is
+    sourced from the same max_time string Resources() uses for the actual
+    Slurm walltime request -- so a job that's waited longer than its own
+    expected total runtime just for a turn to touch ssh is treated as stuck
+    rather than merely busy."""
+    from alomancy.configs.remote_info import get_remote_info
+
+    info = get_remote_info(_job_dict())
+    assert info.lock_timeout == 600  # "10m" from _job_dict()
+
+
+@pytest.mark.unit
 def test_hpc_profile_value_used():
     from alomancy.configs.remote_info import get_remote_info
 
@@ -67,3 +81,4 @@ def test_remote_info_default_constructor_arg():
 
     info = RemoteInfo(sys_name="s", job_name="j", resources={})
     assert info.max_concurrent_jobs == 20
+    assert info.lock_timeout is None

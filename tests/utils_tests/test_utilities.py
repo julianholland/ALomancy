@@ -107,16 +107,17 @@ class _FakeExPyReJob:
         pass
 
 
-def _fake_executor(max_concurrent_jobs, jobs):
+def _fake_executor(max_concurrent_jobs, jobs, sys_name="test-hpc", lock_timeout=None):
     remote_info = SimpleNamespace(
         resources={},
-        sys_name="test-hpc",
+        sys_name=sys_name,
         timeout=10,
         check_interval=0.001,
         header_extra=[],
         exact_fit=True,
         partial_node=False,
         max_concurrent_jobs=max_concurrent_jobs,
+        lock_timeout=lock_timeout,
     )
     executor = RemoteJobExecutor(remote_info)
     executor.jobs = jobs
@@ -260,7 +261,9 @@ class TestRemoteJobExecutor:
         max_concurrent_jobs monitoring threads can trigger it simultaneously
         and reproduce the same ssh-session-burst hang job.start()'s lock
         alone doesn't cover -- observed in production as a stuck ``squeue``
-        subprocess."""
+        subprocess. Two calls for the same host must never run at once, even
+        though the redundant-call coalescing (see the next test) means not
+        every thread necessarily reaches the real call at all."""
         from expyre.func import ExPyRe
 
         import alomancy.remote_submission.executor as executor_module
@@ -278,7 +281,7 @@ class TestRemoteJobExecutor:
         executor_module._ensure_expyre_sync_serialized()
 
         class _Dummy:
-            pass
+            system_name = "test-hpc-serialized"
 
         threads = [
             threading.Thread(target=lambda: ExPyRe.sync_remote_results_status(_Dummy()))
@@ -290,6 +293,111 @@ class TestRemoteJobExecutor:
             t.join()
 
         assert tracker.peak == 1
+
+    @pytest.mark.unit
+    def test_sync_remote_results_status_coalesces_concurrent_calls(self, monkeypatch):
+        """sync_remote_results_status() is always called with sync_all=True
+        in this codebase, meaning one call already refreshes every job on
+        that host -- not just the caller's own. If several monitoring
+        threads for the same host queue up behind the lock at once, only
+        the first should make the real call; the rest, finding the host's
+        sync generation already advanced past what they saw before they
+        started waiting, should skip rather than repeat an already-fresh
+        squeue/rsync round-trip. Without this, N threads piling up behind
+        the lock cost N real calls instead of 1, and enough of them can push
+        a polling round past check_interval."""
+        from expyre.func import ExPyRe
+
+        import alomancy.remote_submission.executor as executor_module
+
+        call_count = _ConcurrencyTracker()
+
+        def _fake_sync(self, *args, **kwargs):
+            call_count.on_start()
+            time.sleep(0.05)
+
+        monkeypatch.setattr(ExPyRe, "sync_remote_results_status", _fake_sync)
+        monkeypatch.setattr(executor_module, "_expyre_sync_patched", False)
+        monkeypatch.setattr(executor_module, "_sync_generations", {})
+
+        executor_module._ensure_expyre_sync_serialized()
+
+        class _Dummy:
+            system_name = "test-hpc-coalesce"
+
+        threads = [
+            threading.Thread(target=lambda: ExPyRe.sync_remote_results_status(_Dummy()))
+            for _ in range(5)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert call_count.active == 1
+
+    @pytest.mark.unit
+    def test_ssh_call_lock_is_scoped_per_host(self, monkeypatch):
+        """Two RemoteJobExecutors targeting different HPC hosts (different
+        remote_info.sys_name) share no ssh connection at all, so their
+        job.start() calls must not serialize against each other -- only
+        calls that genuinely share one host's multiplexed connection should
+        contend for the same lock."""
+        import alomancy.remote_submission.executor as executor_module
+
+        monkeypatch.setattr(executor_module, "_ssh_call_locks", {})
+
+        tracker = _ConcurrencyTracker()
+
+        def _hold_lock(sys_name):
+            with executor_module._get_ssh_call_lock(sys_name):
+                tracker.on_start()
+                time.sleep(0.1)
+                tracker.on_finish()
+
+        threads = [
+            threading.Thread(target=_hold_lock, args=(sys_name,))
+            for sys_name in ["host-a", "host-b"]
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert tracker.peak == 2
+
+    @pytest.mark.unit
+    def test_job_start_gives_up_after_lock_timeout_instead_of_hanging_forever(
+        self, tmp_path
+    ):
+        """If the ssh-call lock for a host is held by something that never
+        releases it -- e.g. another job's ssh call is genuinely stuck on an
+        unattended interactive-auth prompt after the shared control
+        connection died -- a job with a bounded lock_timeout must fail
+        promptly and let siblings proceed, rather than wait forever. This is
+        the mitigation for the wider blast radius the per-host lock itself
+        introduces: before it existed, a stuck ssh call only stranded its
+        own job; now every job sharing that lock would otherwise wait on it
+        indefinitely too."""
+        from alomancy.remote_submission.executor import _get_ssh_call_lock
+
+        sys_name = "test-hpc-stuck"
+        stuck_lock = _get_ssh_call_lock(sys_name)
+        stuck_lock.acquire()  # simulate another job's ssh call stuck holding it
+        try:
+            jobs = [_FakeExPyReJob("job0", tmp_path / "job0")]
+            executor = _fake_executor(
+                max_concurrent_jobs=1,
+                jobs=jobs,
+                sys_name=sys_name,
+                lock_timeout=0.05,
+            )
+
+            results = executor.run_all_jobs_bounded()
+
+            assert results == [None]
+        finally:
+            stuck_lock.release()
 
     @pytest.mark.unit
     def test_finishing_job_frees_slot_promptly(self, tmp_path):

@@ -108,13 +108,23 @@ def md_remote_submitter(
 
     executor = RemoteJobExecutor(remote_info)
 
+    # output_files is set explicitly per job (keyed by the real n_existing + i
+    # directory name) rather than via common_output_pattern's positional
+    # job_id: submit_multiple_jobs derives job_id from each job's *position*
+    # in job_configs (0..len-1), which only matches n_existing + i when
+    # n_existing == 0. Whenever some structure-generation runs already exist
+    # and get skipped above, that positional index silently diverges from
+    # the directory the remote MD job actually writes to (out_dir), causing
+    # ExPyRe's stage-out step to glob for the wrong directory and fail with
+    # "does not match any files" even though the job succeeded.
     job_configs = [
         {
             "function_kwargs": {
                 "initial_structure": atoms,
                 "out_dir": str(Path(f"{md_dir}/md_output_{n_existing + i}")),
                 **(function_kwargs or {}),
-            }
+            },
+            "output_files": [str(Path(f"{md_dir}/md_output_{n_existing + i}"))],
         }
         for i, atoms in enumerate(input_atoms_list)
     ]
@@ -127,7 +137,6 @@ def md_remote_submitter(
     executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
-        common_output_pattern=str(Path(md_dir, "md_output_{job_id}")),
     )
 
     return find_target_files()
