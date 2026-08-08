@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-08-09
 
 ### Added
+- **`structure_generation`'s MACE committee evaluation job now gets its own unique name**: `all_maces_remote_submitter` previously reused the bare `structure_generation` phase name, identical to the MD trajectory jobs submitted just before it in the same phase, making the two indistinguishable in ExPyRe's job state and logs. It now defaults to `f"mace_eval_{remote_info.job_name}"`, and `generate_structures` logs each stage of structure generation (which committee fit is used as the MD base model, MD submission/completion counts, and the committee-evaluation submission) at INFO level for clearer progress visibility.
 - **`ensemble` option for `structure_generation`'s MD step** (`run_md` in `structure_generation/md/md_wfl.py`, set via `run_md_kwargs.ensemble`): `"nvt"` (default, unchanged) runs fixed-cell `ase.md.langevin.Langevin`; `"npt"` runs `ase.md.langevinbaoab.LangevinBAOAB` with a variable cell targeting `run_md_kwargs.pressure` (GPa, default `0.0`), letting candidate structures sample compressed/expanded cells instead of only the seed structure's fixed volume. An unrecognized `ensemble` value raises `ValueError` immediately instead of failing later with an unrelated `NameError`.
 
 ### Fixed
