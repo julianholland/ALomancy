@@ -5,8 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<<<<<<< Updated upstream
-=======
 ## [Unreleased]
 
 ### Fixed
@@ -35,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A stuck ssh call could silently freeze every other job on the same host indefinitely**: acquiring the per-host ssh-call lock is now bounded by a timeout (`RemoteInfo.lock_timeout`, set from the job's own `max_time`/`max_go_time` by `get_remote_info`) rather than waiting forever. A wait longer than the job's entire expected walltime just to get a turn to touch ssh means the lock holder is genuinely stuck (e.g. the shared control connection died and a fresh one needs interactive auth); the waiting job now fails loudly with `TimeoutError` instead of hanging alongside it.
 - **`md_remote_submitter` staging out MD results from the wrong directory when resuming a partially-completed run**: `submit_multiple_jobs` derives each job's `output_files` glob from its *position* in `job_configs` (`0..len-1`) by default, which only matches the real `md_output_{n_existing + i}` directory name when `n_existing == 0`. Whenever some MD runs already existed and were skipped before submission, that positional index silently diverged from the directory the remote job actually wrote to, causing ExPyRe's stage-out step to fail with "does not match any files" even though the job succeeded. `md_remote_submitter` now sets `output_files` explicitly per job, keyed by the real output directory name.
 
->>>>>>> Stashed changes
 ## [0.5.1] - 2026-08-05
 
 ### Added
