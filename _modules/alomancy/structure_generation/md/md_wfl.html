@@ -83,7 +83,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">write</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.langevin</span><span class="w"> </span><span class="kn">import</span> <span class="n">Langevin</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">ase.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">fs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.langevinbaoab</span><span class="w"> </span><span class="kn">import</span> <span class="n">LangevinBAOAB</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPa</span><span class="p">,</span> <span class="n">fs</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">mace.calculators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MACECalculator</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
 
@@ -102,7 +103,22 @@
     <span class="n">temperature</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
     <span class="n">timestep_fs</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
     <span class="n">friction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.002</span><span class="p">,</span>
+    <span class="n">ensemble</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;nvt&quot;</span><span class="p">,</span>
+    <span class="n">pressure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
 <span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ensemble : {&quot;nvt&quot;, &quot;npt&quot;}</span>
+<span class="sd">        &quot;nvt&quot; runs fixed-cell Langevin dynamics. &quot;npt&quot; runs LangevinBAOAB</span>
+<span class="sd">        with a barostat targeting `pressure` (GPa); the cell is free to</span>
+<span class="sd">        fluctuate in shape and volume.</span>
+<span class="sd">    pressure : float</span>
+<span class="sd">        Target external pressure in GPa, only used when ensemble=&quot;npt&quot;.</span>
+<span class="sd">        ASE&#39;s externalstress is the negative of pressure (positive pressure</span>
+<span class="sd">        compresses), so it is derived here as -pressure * ase.units.GPa.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">ensemble</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;nvt&quot;</span><span class="p">,</span> <span class="s2">&quot;npt&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown ensemble </span><span class="si">{</span><span class="n">ensemble</span><span class="si">!r}</span><span class="s2">; must be &#39;nvt&#39; or &#39;npt&#39;.&quot;</span><span class="p">)</span>
+
     <span class="k">assert</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">&quot;desired_number_of_structures&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="p">(</span>
         <span class="s2">&quot;Number of structures must be greater than 0&quot;</span>
     <span class="p">)</span>
@@ -137,20 +153,43 @@
     <span class="n">md_seed</span> <span class="o">=</span> <span class="n">md_structure</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;md_seed&quot;</span><span class="p">)</span>
     <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">md_seed</span><span class="p">)</span> <span class="k">if</span> <span class="n">md_seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
 
-    <span class="n">dyn</span> <span class="o">=</span> <span class="n">Langevin</span><span class="p">(</span>
-        <span class="n">atoms</span><span class="o">=</span><span class="n">md_structure</span><span class="p">,</span>
-        <span class="n">timestep</span><span class="o">=</span><span class="n">timestep_fs</span> <span class="o">*</span> <span class="n">fs</span><span class="p">,</span>
-        <span class="n">temperature_K</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
-        <span class="n">friction</span><span class="o">=</span><span class="n">friction</span><span class="p">,</span>
-        <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
-        <span class="n">logfile</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span>
-            <span class="n">Path</span><span class="p">(</span>
-                <span class="n">out_dir</span><span class="p">,</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">md_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;job_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.log&quot;</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="p">),</span>
+    <span class="n">logfile</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span>
+            <span class="n">out_dir</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">md_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">&#39;job_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.log&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="p">)</span>
 
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+        <span class="s2">&quot;MD run </span><span class="si">%s</span><span class="s2">: ensemble=</span><span class="si">%s%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+        <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
+        <span class="n">ensemble</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+        <span class="sa">f</span><span class="s2">&quot;, target pressure=</span><span class="si">{</span><span class="n">pressure</span><span class="si">}</span><span class="s2"> GPa&quot;</span> <span class="k">if</span> <span class="n">ensemble</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;npt&quot;</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">dyn</span><span class="p">:</span> <span class="n">Langevin</span> <span class="o">|</span> <span class="n">LangevinBAOAB</span>
+    <span class="k">if</span> <span class="n">ensemble</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;nvt&quot;</span><span class="p">:</span>
+        <span class="n">dyn</span> <span class="o">=</span> <span class="n">Langevin</span><span class="p">(</span>
+            <span class="n">atoms</span><span class="o">=</span><span class="n">md_structure</span><span class="p">,</span>
+            <span class="n">timestep</span><span class="o">=</span><span class="n">timestep_fs</span> <span class="o">*</span> <span class="n">fs</span><span class="p">,</span>
+            <span class="n">temperature_K</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+            <span class="n">friction</span><span class="o">=</span><span class="n">friction</span><span class="p">,</span>
+            <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+            <span class="n">logfile</span><span class="o">=</span><span class="n">logfile</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>  <span class="c1"># &quot;npt&quot;, validated above</span>
+        <span class="n">dyn</span> <span class="o">=</span> <span class="n">LangevinBAOAB</span><span class="p">(</span>
+            <span class="n">atoms</span><span class="o">=</span><span class="n">md_structure</span><span class="p">,</span>
+            <span class="n">timestep</span><span class="o">=</span><span class="n">timestep_fs</span> <span class="o">*</span> <span class="n">fs</span><span class="p">,</span>
+            <span class="n">temperature_K</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+            <span class="c1"># externalstress is the negative of pressure (see ASE docstring);</span>
+            <span class="c1"># must not be None, or LangevinBAOAB never activates the</span>
+            <span class="c1"># barostat and silently runs fixed-cell dynamics instead of NPT.</span>
+            <span class="n">externalstress</span><span class="o">=-</span><span class="n">pressure</span> <span class="o">*</span> <span class="n">GPa</span><span class="p">,</span>
+            <span class="n">hydrostatic</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+            <span class="n">logfile</span><span class="o">=</span><span class="n">logfile</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="n">snapshot_interval</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">steps</span>
         <span class="o">*</span> <span class="n">total_md_runs</span>
@@ -277,6 +316,14 @@
     <span class="k">if</span> <span class="n">fits_to_use</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">fits_to_use</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;MACE evaluation: scoring </span><span class="si">%d</span><span class="s2"> structure(s) against the base model plus &quot;</span>
+        <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> committee fit(s) </span><span class="si">%s</span><span class="s2"> to compute per-structure force std dev.&quot;</span><span class="p">,</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
+        <span class="n">fits_to_use</span><span class="p">,</span>
+    <span class="p">)</span>
+
     <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span><span class="n">model_paths</span><span class="o">=</span><span class="n">base_mlip</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">default_dtype</span><span class="o">=</span><span class="s2">&quot;float64&quot;</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">structure_list</span><span class="p">:</span>
@@ -290,6 +337,9 @@
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
         <span class="p">}</span>
     <span class="p">}</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;MACE evaluation: base model done (</span><span class="si">%d</span><span class="s2"> structures).&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span>
+    <span class="p">)</span>
 
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">fits_to_use</span><span class="p">:</span>
         <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span>
@@ -314,6 +364,19 @@
             <span class="p">}</span>
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
         <span class="p">}</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;MACE evaluation: fit_</span><span class="si">%d</span><span class="s2"> done (</span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> committee fit(s) complete).&quot;</span><span class="p">,</span>
+            <span class="n">i</span><span class="p">,</span>
+            <span class="n">fits_to_use</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;MACE evaluation complete: forces collected from </span><span class="si">%d</span><span class="s2"> model(s) for </span><span class="si">%d</span><span class="s2"> &quot;</span>
+        <span class="s2">&quot;structure(s).&quot;</span><span class="p">,</span>
+        <span class="mi">1</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+    <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">structure_forces_dict</span></div>
 

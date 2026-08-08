@@ -715,6 +715,15 @@
         <span class="n">committee_size</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]</span>
         <span class="n">fits_to_use</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">committee_size</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">best_fit_idx</span><span class="p">]</span>
 
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Structure generation: MD will run with fit_</span><span class="si">%d</span><span class="s2"> (lowest test-set force &quot;</span>
+            <span class="s2">&quot;MAE) as the base model; the remaining </span><span class="si">%d</span><span class="s2"> committee member(s) </span><span class="si">%s</span><span class="s2"> will &quot;</span>
+            <span class="s2">&quot;be used afterwards to score MD-generated structures by force std dev.&quot;</span><span class="p">,</span>
+            <span class="n">best_fit_idx</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
+            <span class="n">fits_to_use</span><span class="p">,</span>
+        <span class="p">)</span>
+
         <span class="k">if</span> <span class="s2">&quot;run_md_kwargs&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">]:</span>
             <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;run_md_kwargs&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
@@ -726,6 +735,13 @@
             <span class="p">],</span>  <span class="c1"># need to pass model path to preserve consistent dtype</span>
             <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;run_md_kwargs&quot;</span><span class="p">],</span>
         <span class="p">}</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Structure generation: submitting </span><span class="si">%d</span><span class="s2"> MD run(s) from </span><span class="si">%d</span><span class="s2"> seed &quot;</span>
+            <span class="s2">&quot;structure(s) to generate candidate structures.&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+        <span class="p">)</span>
 
         <span class="n">md_trajectory_paths</span> <span class="o">=</span> <span class="n">md_remote_submitter</span><span class="p">(</span>
             <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
@@ -743,13 +759,25 @@
             <span class="n">structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">md_trajectory_path</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
             <span class="n">structure_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span>
 
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> structures found from trajectory files.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Structure generation: MD produced </span><span class="si">%d</span><span class="s2"> candidate structure(s) across &quot;</span>
+            <span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> trajectory file(s).&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">md_trajectory_paths</span><span class="p">),</span>
+        <span class="p">)</span>
 
         <span class="n">model_paths_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
             <span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
                 <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]),</span>
                 <span class="sa">f</span><span class="s2">&quot;fit_*/</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;mlip_committee&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo.model&quot;</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Structure generation: evaluating </span><span class="si">%d</span><span class="s2"> candidate structure(s) against &quot;</span>
+            <span class="s2">&quot;the full </span><span class="si">%d</span><span class="s2">-member committee to select the most uncertain ones.&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">model_paths_list</span><span class="p">),</span>
         <span class="p">)</span>
 
         <span class="n">structure_forces_dict</span> <span class="o">=</span> <span class="n">all_maces_remote_submitter</span><span class="p">(</span>
@@ -765,6 +793,7 @@
                 <span class="s2">&quot;base_mlip&quot;</span><span class="p">:</span> <span class="n">base_mace_model_path</span><span class="p">,</span>
                 <span class="s2">&quot;fits_to_use&quot;</span><span class="p">:</span> <span class="n">fits_to_use</span><span class="p">,</span>
             <span class="p">},</span>
+            <span class="n">job_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;mace_eval_</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">&#39;structure_generation&#39;</span><span class="p">][</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">find_high_sd_structures</span><span class="p">(</span>
