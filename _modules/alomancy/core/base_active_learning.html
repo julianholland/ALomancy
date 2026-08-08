@@ -91,9 +91,11 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.plotting</span><span class="w"> </span><span class="kn">import</span> <span class="n">mae_al_loop_plot</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.database.global_database</span><span class="w"> </span><span class="kn">import</span> <span class="n">GlobalDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">acquire_local_expyre_lock</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">clean_structures</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.file_saving_and_parsing</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_atoms_file_if_enabled</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.logging_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remote_ssh</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_alomancy_version_for_profile</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_high_force_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">remove_high_force_structures_from_partition</span><span class="p">,</span>
 <span class="p">)</span>
@@ -287,7 +289,8 @@
                 <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="p">{</span>
                         <span class="s2">&quot;hpc_name&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
-                        <span class="s2">&quot;alomancy_version&quot;</span><span class="p">:</span> <span class="n">__version__</span><span class="p">,</span>
+                        <span class="s2">&quot;alomancy_version&quot;</span><span class="p">:</span> <span class="n">get_alomancy_version_for_profile</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span>
                         <span class="s2">&quot;gpu&quot;</span><span class="p">:</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gpu&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
                         <span class="s2">&quot;partitions&quot;</span><span class="p">:</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;partitions&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
                         <span class="ow">or</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span>
@@ -311,12 +314,18 @@
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.pre_run_checks">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">pre_run_checks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Display the workflow summary, then run pre-flight checks:</span>
-<span class="sd">        currently just the installed-vs-latest-published alomancy version.</span>
-<span class="sd">        Warns if behind by a minor release; raises if behind by a major</span>
-<span class="sd">        release (breaking changes are likely). Silently skipped if PyPI</span>
-<span class="sd">        can&#39;t be reached (e.g. no internet on an HPC compute node).</span>
+<span class="sd">        Run pre-flight checks before any remote submission occurs: first</span>
+<span class="sd">        that no other alomancy process already holds this run&#39;s ExPyRe</span>
+<span class="sd">        local_stage_dir (see acquire_local_expyre_lock -- raises</span>
+<span class="sd">        immediately on conflict rather than letting a second process</span>
+<span class="sd">        silently corrupt shared job-tracking state hours into a run), then</span>
+<span class="sd">        display the workflow summary, then check the installed-vs-latest-</span>
+<span class="sd">        published alomancy version. Warns if behind by a minor release;</span>
+<span class="sd">        raises if behind by a major release (breaking changes are likely).</span>
+<span class="sd">        The version check is silently skipped if PyPI can&#39;t be reached</span>
+<span class="sd">        (e.g. no internet on an HPC compute node).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">acquire_local_expyre_lock</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">display_workflow_summary</span><span class="p">()</span>
 
         <span class="n">latest_version</span> <span class="o">=</span> <span class="n">_fetch_latest_pypi_version</span><span class="p">()</span>
