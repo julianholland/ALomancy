@@ -147,11 +147,19 @@ class TestPlotSave:
 
 
 @pytest.mark.unit
-class TestPlotShow:
-    @patch("alomancy.analysis.plotting.plt")
-    def test_show_calls_plt_show(self, mock_plt, tmp_path):
+class TestPlotNoInteractive:
+    def test_no_show_method(self, tmp_path):
+        """Plotting must never open an interactive window -- create an image and close."""
         from alomancy.analysis.plotting import Plot
 
+        assert not hasattr(Plot, "show")
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_save_closes_figure_after_create(self, mock_plt, tmp_path):
+        from alomancy.analysis.plotting import Plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
         p = Plot(
             data=_make_df(),
             title="Test",
@@ -159,8 +167,10 @@ class TestPlotShow:
             ylabel="Y",
             directory=str(tmp_path),
         )
-        p.show()
-        mock_plt.show.assert_called_once()
+        p.create()
+        p.save()
+        mock_plt.savefig.assert_called_once_with(p.filename)
+        mock_plt.close.assert_called_once_with(mock_fig)
 
 
 @pytest.mark.unit

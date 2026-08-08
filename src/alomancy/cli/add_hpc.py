@@ -1,12 +1,15 @@
 import json
-import re
-import subprocess
 from pathlib import Path
 
 from expyre.units import mem_to_kB
 from yaml import safe_dump, safe_load
 
-from alomancy.configs.global_config import ALOMANCY_HPC_CONFIG, EXPYRE_CONFIG
+from alomancy.configs.global_config import (
+    ALOMANCY_HPC_CONFIG,
+    EXPYRE_CONFIG,
+    LEGACY_EXPYRE_CONFIG,
+)
+from alomancy.utils.remote_ssh import derive_python_from_venv, run_ssh_command
 
 # ---------------------------------------------------------------------------
 # Pure data builders (testable without mocking input())
@@ -158,9 +161,22 @@ def build_alomancy_profile(
 
 
 def write_expyre_config(
-    system_name: str, entry: dict, path: Path = EXPYRE_CONFIG
+    system_name: str,
+    entry: dict,
+    path: Path = EXPYRE_CONFIG,
+    legacy_path: Path = LEGACY_EXPYRE_CONFIG,
 ) -> None:
-    """Add or overwrite a system entry in the ExPyRe config JSON."""
+    """Add or overwrite a system entry in ALomancy's canonical ExPyRe
+    systems config (~/.alomancy/expyre_config.json by default). This is the
+    master copy that alomancy/__init__.py's per-run isolation copies into
+    each new run's own <rundir>/.expyre/config.json going forward -- see
+    that module's docstring.
+
+    One-time migration: if `path` doesn't exist yet but `legacy_path` (the
+    pre-isolation "~/.expyre/config.json" location) does, seed the new file
+    from it first so systems added before this split aren't lost on
+    upgrade.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         try:
@@ -170,6 +186,15 @@ def write_expyre_config(
             raise ValueError(
                 f"{path} is not valid JSON. Fix or delete it before running the wizard.\n"
                 f"Parse error: {exc}"
+            ) from exc
+    elif legacy_path.exists():
+        try:
+            with open(legacy_path) as f:
+                config = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{legacy_path} is not valid JSON. Fix or delete it before "
+                f"running the wizard.\nParse error: {exc}"
             ) from exc
     else:
         config = {"systems": {}}
@@ -193,12 +218,13 @@ def write_alomancy_hpc_config(
         safe_dump(config, f, default_flow_style=False, sort_keys=False)
 
 
-def run_remote_install(host: str, python_path: str) -> None:
+def run_remote_install(host: str, python_path: str, timeout: float = 300.0) -> None:
     """Run ``pip install alomancy`` on the remote system over SSH."""
-    subprocess.run(
-        ["ssh", host, f"{python_path} -m pip install alomancy"],
-        check=True,
+    success, stdout, stderr = run_ssh_command(
+        host, f"{python_path} -m pip install alomancy", timeout=timeout
     )
+    if not success:
+        raise RuntimeError(stderr.strip() or stdout.strip() or "remote install failed")
 
 
 # ---------------------------------------------------------------------------
@@ -245,17 +271,6 @@ def _read_ssh_hosts() -> list[str]:
                     if "*" not in alias and "?" not in alias:
                         hosts.append(alias)
     return hosts
-
-
-def _derive_python_from_venv(venv_cmd: str) -> str | None:
-    """Extract the python executable path from a venv activation command.
-
-    Handles: source /path/to/venv/bin/activate → /path/to/venv/bin/python
-    """
-    m = re.search(r"source\s+(.+)/bin/activate", venv_cmd)
-    if m:
-        return f"{m.group(1)}/bin/python"
-    return None
 
 
 def _pick_ssh_host() -> str:
@@ -481,7 +496,7 @@ def add_hpc_wizard() -> None:
     print("\n--- Remote Installation ---")
     do_install = _yes_no("Install alomancy on this system now?", default=False)
     if do_install:
-        derived_python = _derive_python_from_venv(venv_cmd) or ""
+        derived_python = derive_python_from_venv(venv_cmd) or ""
         python_path = _prompt(
             "Python executable path on remote",
             default=derived_python,

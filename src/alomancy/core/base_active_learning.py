@@ -14,9 +14,11 @@ from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.database.global_database import GlobalDatabase
+from alomancy.remote_submission.executor import acquire_local_expyre_lock
 from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 from alomancy.utils.logging_config import setup_logging
+from alomancy.utils.remote_ssh import get_alomancy_version_for_profile
 from alomancy.utils.remove_high_force_structures import (
     remove_high_force_structures_from_partition,
 )
@@ -206,7 +208,8 @@ class BaseActiveLearningWorkflow(ABC):
                 rows.append(
                     {
                         "hpc_name": name,
-                        "alomancy_version": __version__,
+                        "alomancy_version": get_alomancy_version_for_profile(profile)
+                        or "?",
                         "gpu": profile.get("gpu", "?"),
                         "partitions": ", ".join(profile.get("partitions", []) or [])
                         or "?",
@@ -227,12 +230,18 @@ class BaseActiveLearningWorkflow(ABC):
 
     def pre_run_checks(self) -> None:
         """
-        Display the workflow summary, then run pre-flight checks:
-        currently just the installed-vs-latest-published alomancy version.
-        Warns if behind by a minor release; raises if behind by a major
-        release (breaking changes are likely). Silently skipped if PyPI
-        can't be reached (e.g. no internet on an HPC compute node).
+        Run pre-flight checks before any remote submission occurs: first
+        that no other alomancy process already holds this run's ExPyRe
+        local_stage_dir (see acquire_local_expyre_lock -- raises
+        immediately on conflict rather than letting a second process
+        silently corrupt shared job-tracking state hours into a run), then
+        display the workflow summary, then check the installed-vs-latest-
+        published alomancy version. Warns if behind by a minor release;
+        raises if behind by a major release (breaking changes are likely).
+        The version check is silently skipped if PyPI can't be reached
+        (e.g. no internet on an HPC compute node).
         """
+        acquire_local_expyre_lock()
         self.display_workflow_summary()
 
         latest_version = _fetch_latest_pypi_version()

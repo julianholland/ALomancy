@@ -1,9 +1,12 @@
+import fcntl
 import logging
 import os
+import socket
 import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Union
 
@@ -15,6 +18,101 @@ logger = logging.getLogger(__name__)
 
 _expyre_db_lock = threading.Lock()
 _expyre_db_patched = False
+
+# Kept open for the lifetime of this process once acquired -- see
+# acquire_local_expyre_lock. A plain reference (rather than closing it) is
+# what keeps the OS-level flock held.
+_expyre_root_lock_handle = None
+_expyre_root_lock_guard = threading.Lock()
+
+
+def acquire_local_expyre_lock() -> None:
+    """Exclusively lock this process's resolved ExPyRe local_stage_dir,
+    raising immediately if another alomancy process already holds it.
+
+    _ensure_expyre_db_thread_safe/_get_ssh_call_lock above only serialize
+    *threads within this one process* -- a plain threading.Lock gives zero
+    protection between two separate alomancy processes (e.g. concurrent AL
+    runs on different machines) that resolve to the same local_stage_dir,
+    which happens whenever they share a jobs.db over a shared home
+    directory (see alomancy/__init__.py's _ensure_local_expyre_root, which
+    gives each run its own local_stage_dir by default and makes this a
+    last-resort guard rather than the primary defense). A second process
+    mutating that same sqlite file/job-stage-dir tree outside this
+    process's control can make a job's row vanish out from under this
+    process's poll loop, surfacing as a bare IndexError deep in expyre
+    (func.py's "list(config.db.jobs(id=...))[0]" pattern) with no
+    indication of why -- exactly the failure mode this guard exists to
+    turn into an immediate, actionable error instead.
+
+    fcntl.flock (not a hand-rolled PID file) is used because the OS
+    releases it automatically the moment this process's file descriptor
+    closes -- including on a crash or kill -9 -- so a dead process can
+    never leave a stale lock blocking a legitimate restart. POSIX-only,
+    which matches this codebase's Linux/HPC-only environment.
+
+    Call once, early (pre_run_checks, before any remote submission); the
+    lock is held for the rest of this process's lifetime by keeping the
+    open file handle referenced in _expyre_root_lock_handle. A no-op if
+    this process already holds it, or if expyre has no local_stage_dir
+    resolved yet (e.g. no HPC configured) -- nothing to guard in that case.
+
+    The check-and-set of _expyre_root_lock_handle is itself guarded by
+    _expyre_root_lock_guard (double-checked locking, matching
+    _get_ssh_call_lock's pattern above): fcntl.flock is scoped per *open
+    file description*, not per-process, so if this function ever ran from
+    two threads in the same process at once, both could see the handle as
+    unset and each open() a fresh file description to the same lock_path --
+    the second would then fail to flock() against the first and raise
+    "another alomancy process already holds the lock" against its own
+    process. In current usage pre_run_checks() only ever calls this once
+    from the main thread before any worker threads start, so this can't
+    actually happen today, but the guard costs nothing and keeps this
+    function safe under any future call pattern.
+    """
+    global _expyre_root_lock_handle
+    if _expyre_root_lock_handle is not None:
+        return
+
+    with _expyre_root_lock_guard:
+        if _expyre_root_lock_handle is not None:
+            return
+
+        from expyre import config as expyre_config
+
+        local_stage_dir = expyre_config.local_stage_dir
+        if local_stage_dir is None:
+            return
+
+        lock_path = Path(local_stage_dir) / "alomancy.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(lock_path, "a+")  # noqa: SIM115 -- must outlive this function to hold the lock
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            fh.seek(0)
+            holder = (
+                fh.read().strip() or "<unknown, lock held before this field existed>"
+            )
+            fh.close()
+            raise RuntimeError(
+                f"Another alomancy process already holds the lock on "
+                f"{local_stage_dir} (recorded holder: {holder}). Running two "
+                "alomancy processes against the same ExPyRe local_stage_dir/"
+                "jobs.db at once can corrupt job-tracking state. If that "
+                f"process has genuinely exited without cleaning up, delete "
+                f"{lock_path} and retry."
+            ) from None
+
+        fh.seek(0)
+        fh.truncate()
+        fh.write(
+            f"pid={os.getpid()} host={socket.gethostname()} "
+            f"started={datetime.now().isoformat()}\n"
+        )
+        fh.flush()
+        _expyre_root_lock_handle = fh
+
 
 # One lock per HPC system_name (not one global lock): guards every
 # ssh-invoking call ExPyRe makes on a job's behalf for that host --
@@ -345,6 +443,7 @@ class RemoteJobExecutor:
             return index, result
         except Exception as exc:
             logger.warning("Job %d failed: %s", index + 1, exc)
+            logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)
             return index, None
 
     def run_all_jobs_bounded(self) -> list[Any]:

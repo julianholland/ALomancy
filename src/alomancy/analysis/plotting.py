@@ -33,6 +33,8 @@ class Plot:
         self.filename = str(
             Path(self.directory, f"{title.replace(' ', '_').lower()}_plot.png")
         )
+        self.fig = None
+        self.ax = None
 
     def find_data(self, data_name):
         if isinstance(self.data, pd.DataFrame):
@@ -72,13 +74,13 @@ class Plot:
         ax.grid(True)
         ax.legend()
         add_logo_watermark(fig)
-
-    def show(self):
-        plt.show()
+        self.fig, self.ax = fig, ax
 
     def save(self):
         logger.debug("Saving plot to %s", self.filename)
         plt.savefig(self.filename)
+        if self.fig is not None:
+            plt.close(self.fig)
 
     def clear(self):
         logger.debug("Clearing plot data")

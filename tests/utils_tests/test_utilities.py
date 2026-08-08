@@ -4,6 +4,8 @@ Tests for utility functions and modules.
 This module tests various utility functions used throughout the alomancy package.
 """
 
+import fcntl
+import os
 import tempfile
 import threading
 import time
@@ -461,6 +463,128 @@ class TestRemoteJobExecutor:
         results = executor.run_all_jobs_bounded()
 
         assert results == [0, 1, 2]
+
+
+@pytest.mark.unit
+class TestAcquireLocalExpyreLock:
+    """acquire_local_expyre_lock guards against two separate alomancy
+    *processes* racing the same resolved ExPyRe local_stage_dir -- the
+    thread-scoped locks above (_get_ssh_call_lock etc.) give no protection
+    across process boundaries. fcntl.flock locks are scoped per *open file
+    description*, not per-process, so opening the same lock path a second
+    time within this test process still faithfully exercises the
+    cross-process-contention path these tests are actually about."""
+
+    def _reset(self, monkeypatch):
+        import alomancy.remote_submission.executor as executor_module
+
+        monkeypatch.setattr(executor_module, "_expyre_root_lock_handle", None)
+        return executor_module
+
+    def test_noop_when_no_local_stage_dir_resolved(self, tmp_path, monkeypatch):
+        from expyre import config as expyre_config
+
+        executor_module = self._reset(monkeypatch)
+        monkeypatch.setattr(expyre_config, "local_stage_dir", None)
+
+        executor_module.acquire_local_expyre_lock()
+
+        assert executor_module._expyre_root_lock_handle is None
+        assert not (tmp_path / "alomancy.lock").exists()
+
+    def test_acquires_lock_and_records_holder_metadata(self, tmp_path, monkeypatch):
+        from expyre import config as expyre_config
+
+        executor_module = self._reset(monkeypatch)
+        monkeypatch.setattr(expyre_config, "local_stage_dir", tmp_path)
+
+        executor_module.acquire_local_expyre_lock()
+
+        assert executor_module._expyre_root_lock_handle is not None
+        lock_path = tmp_path / "alomancy.lock"
+        assert lock_path.exists()
+        assert f"pid={os.getpid()}" in lock_path.read_text()
+
+    def test_reentrant_call_in_same_process_is_a_noop(self, tmp_path, monkeypatch):
+        from expyre import config as expyre_config
+
+        executor_module = self._reset(monkeypatch)
+        monkeypatch.setattr(expyre_config, "local_stage_dir", tmp_path)
+
+        executor_module.acquire_local_expyre_lock()
+        first_handle = executor_module._expyre_root_lock_handle
+        executor_module.acquire_local_expyre_lock()  # must not raise or reopen
+
+        assert executor_module._expyre_root_lock_handle is first_handle
+
+    def test_concurrent_threads_in_same_process_do_not_race(
+        self, tmp_path, monkeypatch
+    ):
+        """fcntl.flock is scoped per *open file description*, not per
+        process: without _expyre_root_lock_guard, two threads could both
+        see the handle as unset and each open() a fresh file description
+        to the same lock_path, so the second would fail to flock() against
+        the first's already-held lock and incorrectly raise "another
+        alomancy process already holds the lock" against its own process.
+        Exactly one open()+flock() must happen; every thread must return
+        cleanly with the same handle set."""
+        from expyre import config as expyre_config
+
+        executor_module = self._reset(monkeypatch)
+        monkeypatch.setattr(expyre_config, "local_stage_dir", tmp_path)
+
+        errors: list[Exception] = []
+        errors_lock = threading.Lock()
+
+        def _call():
+            try:
+                executor_module.acquire_local_expyre_lock()
+            except Exception as exc:
+                with errors_lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=_call) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        assert executor_module._expyre_root_lock_handle is not None
+
+    def test_raises_when_already_held_by_another_process(self, tmp_path, monkeypatch):
+        from expyre import config as expyre_config
+
+        executor_module = self._reset(monkeypatch)
+        monkeypatch.setattr(expyre_config, "local_stage_dir", tmp_path)
+
+        lock_path = tmp_path / "alomancy.lock"
+        with open(lock_path, "a+") as holder_fh:
+            fcntl.flock(holder_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            holder_fh.write(
+                "pid=999999 host=other-machine started=2026-01-01T00:00:00\n"
+            )
+            holder_fh.flush()
+
+            with pytest.raises(RuntimeError, match="already holds the lock"):
+                executor_module.acquire_local_expyre_lock()
+            assert executor_module._expyre_root_lock_handle is None
+
+    def test_second_open_fd_to_same_path_cannot_also_acquire(
+        self, tmp_path, monkeypatch
+    ):
+        from expyre import config as expyre_config
+
+        executor_module = self._reset(monkeypatch)
+        monkeypatch.setattr(expyre_config, "local_stage_dir", tmp_path)
+
+        executor_module.acquire_local_expyre_lock()
+
+        with (
+            open(tmp_path / "alomancy.lock", "a+") as second_fh,
+            pytest.raises(OSError),
+        ):
+            fcntl.flock(second_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 class TestConfigurationUtils:

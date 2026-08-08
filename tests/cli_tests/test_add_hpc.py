@@ -395,6 +395,88 @@ class TestWriteExpyreConfig:
         with pytest.raises(ValueError, match="not valid JSON"):
             write_expyre_config("myhost", entry, path=cfg)
 
+    @pytest.mark.unit
+    def test_malformed_legacy_json_raises_value_error(self, tmp_path):
+        """A corrupt legacy file must fail loudly, the same as a corrupt
+        canonical one -- silently falling back to an empty config would
+        permanently and silently drop every system it contained."""
+        from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
+
+        legacy = tmp_path / "legacy_config.json"
+        legacy.write_text("{not valid json")
+        cfg = tmp_path / "canonical_config.json"
+
+        entry = build_expyre_entry(
+            host="h", gpu=False, partitions={}, commands=[], rundir="/s"
+        )
+        with pytest.raises(ValueError, match="not valid JSON"):
+            write_expyre_config("myhost", entry, path=cfg, legacy_path=legacy)
+        assert not cfg.exists()
+
+    @pytest.mark.unit
+    def test_migrates_from_legacy_path_when_canonical_missing(self, tmp_path):
+        """First write after upgrading: the new canonical file doesn't
+        exist yet, but the pre-isolation "~/.expyre/config.json" does --
+        its systems must be carried over, not silently dropped."""
+        from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
+
+        legacy = tmp_path / "legacy_config.json"
+        legacy.write_text(json.dumps({"systems": {"existing": {"host": "old"}}}))
+        cfg = tmp_path / "canonical_config.json"
+
+        entry = build_expyre_entry(
+            host="new", gpu=False, partitions={}, commands=[], rundir="/s"
+        )
+        write_expyre_config("new_system", entry, path=cfg, legacy_path=legacy)
+
+        with open(cfg) as f:
+            data = json.load(f)
+        assert "existing" in data["systems"]
+        assert "new_system" in data["systems"]
+        # migration must not mutate the legacy file itself
+        assert json.loads(legacy.read_text()) == {
+            "systems": {"existing": {"host": "old"}}
+        }
+
+    @pytest.mark.unit
+    def test_ignores_legacy_path_once_canonical_exists(self, tmp_path):
+        """Once the canonical file exists, it's the sole source of truth --
+        the legacy file (which may still have stale content, or may have
+        been deleted) is never consulted again."""
+        from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
+
+        legacy = tmp_path / "legacy_config.json"
+        legacy.write_text(json.dumps({"systems": {"stale": {"host": "stale"}}}))
+        cfg = tmp_path / "canonical_config.json"
+        cfg.write_text(json.dumps({"systems": {"current": {"host": "current"}}}))
+
+        entry = build_expyre_entry(
+            host="new", gpu=False, partitions={}, commands=[], rundir="/s"
+        )
+        write_expyre_config("new_system", entry, path=cfg, legacy_path=legacy)
+
+        with open(cfg) as f:
+            data = json.load(f)
+        assert "current" in data["systems"]
+        assert "new_system" in data["systems"]
+        assert "stale" not in data["systems"]
+
+    @pytest.mark.unit
+    def test_creates_fresh_config_when_neither_path_exists(self, tmp_path):
+        from alomancy.cli.add_hpc import build_expyre_entry, write_expyre_config
+
+        cfg = tmp_path / "canonical_config.json"
+        legacy = tmp_path / "does_not_exist" / "config.json"
+
+        entry = build_expyre_entry(
+            host="h", gpu=False, partitions={}, commands=[], rundir="/s"
+        )
+        write_expyre_config("myhost", entry, path=cfg, legacy_path=legacy)
+
+        with open(cfg) as f:
+            data = json.load(f)
+        assert list(data["systems"].keys()) == ["myhost"]
+
 
 class TestWriteAlomancyHpcConfig:
     @pytest.mark.unit
@@ -431,3 +513,47 @@ class TestWriteAlomancyHpcConfig:
             data = safe_load(f)
         assert "existing_profile" in data
         assert "new_profile" in data
+
+
+class TestRunRemoteInstall:
+    @pytest.mark.unit
+    def test_success_no_exception(self):
+        from unittest import mock
+
+        from alomancy.cli.add_hpc import run_remote_install
+
+        with mock.patch(
+            "alomancy.cli.add_hpc.run_ssh_command",
+            return_value=(True, "Successfully installed alomancy\n", ""),
+        ):
+            run_remote_install("raven", "/venv/bin/python")
+
+    @pytest.mark.unit
+    def test_failure_raises_runtime_error(self):
+        from unittest import mock
+
+        from alomancy.cli.add_hpc import run_remote_install
+
+        with (
+            mock.patch(
+                "alomancy.cli.add_hpc.run_ssh_command",
+                return_value=(False, "", "permission denied"),
+            ),
+            pytest.raises(RuntimeError, match="permission denied"),
+        ):
+            run_remote_install("raven", "/venv/bin/python")
+
+    @pytest.mark.unit
+    def test_timeout_forwarded(self):
+        from unittest import mock
+
+        from alomancy.cli.add_hpc import run_remote_install
+
+        with mock.patch(
+            "alomancy.cli.add_hpc.run_ssh_command",
+            return_value=(True, "ok", ""),
+        ) as mock_run:
+            run_remote_install("raven", "/venv/bin/python", timeout=42.0)
+
+        _args, kwargs = mock_run.call_args
+        assert kwargs["timeout"] == 42.0
