@@ -264,6 +264,28 @@ def _ensure_expyre_db_thread_safe() -> None:
     serializing just that call behind one lock makes concurrent access safe
     without giving up real wall-clock concurrency of the blocking waits
     between checks. Idempotent; a no-op if expyre hasn't been configured yet.
+
+    `_execute` returns a live sqlite3.Cursor, not fetched rows -- and every
+    caller in jobsdb.py only ever consumes it as an iterable afterward
+    (`list(self._execute(...))` in add/remove/update, `for row in
+    self._execute(...)` in jobs()), never touching cursor-specific methods.
+    The first version of this lock released `_expyre_db_lock` the instant
+    `self.db.execute(cmd)` returned the cursor -- *before* the caller
+    actually iterated it. Because check_same_thread=False only disables
+    sqlite3's same-thread assertion, not genuine thread-safety of
+    concurrent cursor use on one shared connection, a second thread's own
+    `execute()` call on that same connection could land in the gap between
+    "cursor returned" and "cursor iterated", corrupting the first thread's
+    still-pending read and making it silently yield zero rows. That is
+    exactly what surfaced in production, from a single process with many
+    concurrent job-monitoring threads, as a bare
+    `list(config.db.jobs(id=...))[0]` -> IndexError deep in expyre's
+    get_results() (func.py) -- with no relation to cross-process
+    contention. `_locked_execute` below fully materializes the cursor into
+    a list *before* releasing the lock, so by the time any other thread can
+    touch the shared connection again, this thread's rows are already
+    safely in a plain Python list with no further dependency on shared
+    connection state.
     """
     global _expyre_db_patched
     if _expyre_db_patched:
@@ -281,7 +303,7 @@ def _ensure_expyre_db_thread_safe() -> None:
 
     def _locked_execute(cmd, *args, **kwargs):
         with _expyre_db_lock:
-            return orig_execute(cmd, *args, **kwargs)
+            return list(orig_execute(cmd, *args, **kwargs))
 
     db._execute = _locked_execute
     _expyre_db_patched = True

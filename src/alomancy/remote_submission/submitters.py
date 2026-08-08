@@ -146,14 +146,42 @@ def all_maces_remote_submitter(
     remote_info: RemoteInfo,
     function: Callable | None = None,
     function_kwargs: dict[str, Any] | None = None,
+    job_name: str | None = None,
 ) -> dict:
+    """Submit the single job that evaluates every committee MACE model on a
+    batch of candidate structures (the "mace evaluation" step of
+    structure_generation), producing the per-structure force std-dev used
+    to select high-uncertainty structures for DFT.
+
+    job_name defaults to ``f"mace_eval_{remote_info.job_name}"`` rather than
+    the bare ``remote_info.job_name`` used by the MD jobs submitted just
+    before this in the same structure_generation phase — without an
+    explicit override, both would land in ExPyRe's job state under the
+    identical name (job_dict["structure_generation"]["name"]), making them
+    indistinguishable in logs and queue listings.
+    """
+    if job_name is None:
+        job_name = f"mace_eval_{remote_info.job_name}"
+
+    n_structures = len((function_kwargs or {}).get("structure_list", []))
+    logger.info(
+        "Submitting MACE committee evaluation job '%s' to score %d candidate "
+        "structure(s) for uncertainty.",
+        job_name,
+        n_structures,
+    )
+
     executor = RemoteJobExecutor(remote_info)
-    job_configs = [{"function_kwargs": {**(function_kwargs or {})}}]
+    job_configs = [
+        {"function_kwargs": {**(function_kwargs or {})}, "job_name": job_name}
+    ]
 
     forces_dict = executor.run_and_wait(
         function=(function or _noop),
         job_configs=job_configs,
     )[0]
+
+    logger.info("MACE committee evaluation job '%s' finished.", job_name)
 
     return forces_dict
 

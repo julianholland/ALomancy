@@ -69,6 +69,8 @@ structure_generation:
     temperature: 1200
     timestep_fs: 0.5
     friction: 0.002
+    ensemble: "nvt"   # "nvt" (fixed cell, default) or "npt" (variable cell)
+    # pressure: 0.0   # GPa; only used when ensemble is "npt"
   hpc: 'raccoon_small'
 
 high_accuracy_evaluation:

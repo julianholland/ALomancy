@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`ensemble` option for `structure_generation`'s MD step** (`run_md` in `structure_generation/md/md_wfl.py`, set via `run_md_kwargs.ensemble`): `"nvt"` (default, unchanged) runs fixed-cell `ase.md.langevin.Langevin`; `"npt"` runs `ase.md.langevinbaoab.LangevinBAOAB` with a variable cell targeting `run_md_kwargs.pressure` (GPa, default `0.0`), letting candidate structures sample compressed/expanded cells instead of only the seed structure's fixed volume. An unrecognized `ensemble` value raises `ValueError` immediately instead of failing later with an unrelated `NameError`.
+
+### Fixed
+- **Root-caused and fixed the `IndexError: list index out of range` from job polling** (`func.py`'s `list(config.db.jobs(id=...))[0]`), confirmed in production via the traceback logging added in 0.5.3, occurring from a *single* alomancy process — not cross-process `jobs.db` contention as previously suspected. `_ensure_expyre_db_thread_safe`'s `_locked_execute` (`remote_submission/executor.py`) released `_expyre_db_lock` the instant `self.db.execute(cmd)` returned — but that call returns a live, unfetched `sqlite3.Cursor`, not fetched rows, and every caller in `expyre`'s `jobsdb.py` only consumes it *afterward* (`list(self._execute(...))`, `for row in self._execute(...)`). `check_same_thread=False` only disables sqlite3's same-thread assertion, not genuine thread-safety of concurrent cursor use on one shared connection: a second thread's own `execute()` call landing in the gap between "cursor returned" and "cursor iterated" could corrupt the first thread's still-pending read, making it silently yield zero rows for a row that genuinely existed — reproducible on demand with many threads (e.g. `structure_generation` monitoring ~20 concurrent MD jobs, exactly the scenario in the reported traceback) and now covered by a regression test that reliably fails against the old code and passes against the fix. `_locked_execute` now fully materializes the cursor into a list *inside* the lock before releasing it, so no caller ever touches the shared connection state after another thread could have moved it.
+
 ## [0.5.3] - 2026-08-08
 
 ### Added

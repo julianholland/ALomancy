@@ -587,6 +587,82 @@ class TestAcquireLocalExpyreLock:
             fcntl.flock(second_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
+@pytest.mark.unit
+class TestEnsureExpyreDbThreadSafe:
+    """_ensure_expyre_db_thread_safe patches JobsDB._execute to be safe for
+    concurrent threads sharing one sqlite3 connection. Regression coverage
+    for the production bug where `list(config.db.jobs(id=...))[0])` raised
+    IndexError from a single process running many concurrent job-monitoring
+    threads (structure_generation submitting ~20 MD jobs at once) -- not
+    cross-process contention. Root cause: the lock originally wrapped only
+    `self.db.execute(cmd)` (which returns a live, unfetched sqlite3.Cursor),
+    releasing before the caller iterated it -- leaving a window where a
+    second thread's own execute() call on the same shared connection could
+    corrupt the first thread's still-pending cursor, making it yield zero
+    rows even though the row genuinely existed."""
+
+    def _patched_db(self, monkeypatch, tmp_path):
+        from expyre import config as expyre_config
+        from expyre.jobsdb import JobsDB
+
+        import alomancy.remote_submission.executor as executor_module
+
+        monkeypatch.setattr(executor_module, "_expyre_db_patched", False)
+        db = JobsDB(str(tmp_path / "jobs.db"))
+        monkeypatch.setattr(expyre_config, "db", db)
+        executor_module._ensure_expyre_db_thread_safe()
+        return db
+
+    def test_execute_returns_a_list_not_a_live_cursor(self, tmp_path, monkeypatch):
+        """The fetch must happen *inside* the lock: a caller must never be
+        handed a live cursor to iterate after the lock is already released,
+        since that's precisely the gap the production race lived in."""
+        import sqlite3
+
+        db = self._patched_db(monkeypatch, tmp_path)
+
+        result = db._execute("SELECT * FROM jobs")
+
+        assert isinstance(result, list)
+        assert not isinstance(result, sqlite3.Cursor)
+
+    def test_add_then_immediate_jobs_lookup_never_empty_under_concurrency(
+        self, tmp_path, monkeypatch
+    ):
+        """Stress-reproduction of the production failure: many threads each
+        add their own job then immediately look it up by id, while every
+        other thread is doing the same thing concurrently against the one
+        shared connection. Every thread's own lookup of its own
+        just-added, never-removed row must find exactly one match, every
+        single time -- a single miss reproduces the "list index out of
+        range" IndexError seen in production."""
+        db = self._patched_db(monkeypatch, tmp_path)
+
+        n_threads = 16
+        n_rounds = 25
+        errors: list[str] = []
+        errors_lock = threading.Lock()
+
+        def _worker(worker_idx):
+            for round_idx in range(n_rounds):
+                job_id = f"job-{worker_idx}-{round_idx}"
+                db.add(job_id, name="n", from_dir="/tmp", status="created")
+                rows = list(db.jobs(id=job_id))
+                if len(rows) != 1:
+                    with errors_lock:
+                        errors.append(f"{job_id}: expected 1 row, got {len(rows)}")
+
+        threads = [
+            threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+
+
 class TestConfigurationUtils:
     """Test configuration utility functions."""
 

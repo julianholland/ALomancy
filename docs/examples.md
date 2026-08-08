@@ -238,7 +238,24 @@ high_accuracy_evaluation:
 
 - **mlip_committee**: Trains an ensemble (committee) of MACE interatomic potentials. The `size_of_committee` parameter determines how many committee members are trained in parallel.
 
-- **structure_generation**: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee.
+- **structure_generation**: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `run_md_kwargs`:
+
+  ```yaml
+  structure_generation:
+    name: "structure_generation"
+    desired_number_of_structures: 50
+    max_time: "10H"
+    run_md_kwargs:
+      steps: 20000
+      temperature: 1200
+      timestep_fs: 0.5
+      friction: 0.002
+      ensemble: "npt"   # "nvt" (default, fixed cell) or "npt" (variable cell)
+      pressure: 0.0      # GPa; only used when ensemble is "npt"
+    hpc: 'my_gpu_hpc'
+  ```
+
+  `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
 - **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `calculator` key selects the backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — not a per-workflow-phase setting, since it's a property of the HPC system/account. The older job-dict-level `max_batch_size` key is deprecated and will be removed in 1.0.0; see [Deprecations](deprecations.md). If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
 
