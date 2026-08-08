@@ -625,6 +625,15 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         committee_size = job_dict["mlip_committee"]["size_of_committee"]
         fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
 
+        logger.info(
+            "Structure generation: MD will run with fit_%d (lowest test-set force "
+            "MAE) as the base model; the remaining %d committee member(s) %s will "
+            "be used afterwards to score MD-generated structures by force std dev.",
+            best_fit_idx,
+            len(fits_to_use),
+            fits_to_use,
+        )
+
         if "run_md_kwargs" not in job_dict["structure_generation"]:
             job_dict["structure_generation"]["run_md_kwargs"] = {}
 
@@ -636,6 +645,13 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             ],  # need to pass model path to preserve consistent dtype
             **job_dict["structure_generation"]["run_md_kwargs"],
         }
+
+        logger.info(
+            "Structure generation: submitting %d MD run(s) from %d seed "
+            "structure(s) to generate candidate structures.",
+            len(input_structures),
+            len(input_structures),
+        )
 
         md_trajectory_paths = md_remote_submitter(
             remote_info=get_remote_info(
@@ -653,13 +669,25 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             structures = read(md_trajectory_path, ":", format="extxyz")
             structure_list.extend(structures)
 
-        logger.debug("%d structures found from trajectory files.", len(structure_list))
+        logger.info(
+            "Structure generation: MD produced %d candidate structure(s) across "
+            "%d trajectory file(s).",
+            len(structure_list),
+            len(md_trajectory_paths),
+        )
 
         model_paths_list = list(
             Path.glob(
                 Path("results", base_name, job_dict["mlip_committee"]["name"]),
                 f"fit_*/{job_dict['mlip_committee']['name']}_stagetwo.model",
             )
+        )
+
+        logger.info(
+            "Structure generation: evaluating %d candidate structure(s) against "
+            "the full %d-member committee to select the most uncertain ones.",
+            len(structure_list),
+            len(model_paths_list),
         )
 
         structure_forces_dict = all_maces_remote_submitter(
@@ -675,6 +703,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "base_mlip": base_mace_model_path,
                 "fits_to_use": fits_to_use,
             },
+            job_name=f"mace_eval_{job_dict['structure_generation']['name']}",
         )
 
         high_sd_structures = find_high_sd_structures(

@@ -30,6 +30,7 @@ def get_structures_for_dft(
     temperature: float = 300.0,
     steps: int = 100,
     timestep_fs: float = 0.5,
+    ensemble: str = "nvt",
 ) -> list[Atoms]:
     """
     Select structures for DFT calculations based on the standard deviation of forces.
@@ -70,6 +71,7 @@ def get_structures_for_dft(
             "temperature": temperature,
             "number_of_structures": number_of_structures,
             "timestep_fs": timestep_fs,
+            "ensemble": ensemble,
         }
 
         remote_info.input_files = ["md_wfl.py", "al_wfl.py", base_mace]

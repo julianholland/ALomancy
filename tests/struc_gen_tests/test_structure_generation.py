@@ -1154,6 +1154,166 @@ class TestMolecularDynamics:
         _, kwargs = mock_langevin_cls.call_args
         assert kwargs["rng"] is None
 
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.Langevin")
+    def test_run_md_default_ensemble_uses_langevin(
+        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """ensemble defaults to 'nvt', which must still dispatch to the
+        plain fixed-cell Langevin integrator (pre-existing behavior)."""
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+        mock_langevin_cls.side_effect = RuntimeError("stop after Langevin call")
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(RuntimeError, match="stop after Langevin call"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+            )
+
+        mock_langevin_cls.assert_called_once()
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.LangevinBAOAB")
+    def test_run_md_npt_dispatches_to_langevin_baoab(
+        self, mock_baoab_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """ensemble='npt' must run LangevinBAOAB rather than plain Langevin."""
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+        mock_baoab_cls.side_effect = RuntimeError("stop after LangevinBAOAB call")
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(RuntimeError, match="stop after LangevinBAOAB call"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+                ensemble="npt",
+            )
+
+        mock_baoab_cls.assert_called_once()
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.LangevinBAOAB")
+    def test_run_md_npt_externalstress_never_none(
+        self, mock_baoab_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """LangevinBAOAB only activates its barostat when externalstress is
+        not None (see ase.md.langevinbaoab.LangevinBAOAB.step, gated on
+        `self.externalstress is not None`). Passing None here would silently
+        degrade 'npt' to fixed-cell dynamics — this must never happen, even
+        at the default pressure=0.0."""
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+        mock_baoab_cls.side_effect = RuntimeError("stop after LangevinBAOAB call")
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(RuntimeError, match="stop after LangevinBAOAB call"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+                ensemble="npt",
+            )
+
+        _, kwargs = mock_baoab_cls.call_args
+        assert kwargs["externalstress"] is not None
+        assert kwargs["externalstress"] == pytest.approx(0.0)
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.LangevinBAOAB")
+    def test_run_md_npt_pressure_maps_to_negative_externalstress(
+        self, mock_baoab_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """ASE's externalstress convention is the negative of pressure
+        (positive pressure -> compression), so a positive `pressure` kwarg
+        must be converted to a negative externalstress in ase.units.GPa."""
+        from ase.units import GPa
+
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+        mock_baoab_cls.side_effect = RuntimeError("stop after LangevinBAOAB call")
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(RuntimeError, match="stop after LangevinBAOAB call"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+                ensemble="npt",
+                pressure=2.0,
+            )
+
+        _, kwargs = mock_baoab_cls.call_args
+        assert kwargs["externalstress"] == pytest.approx(-2.0 * GPa)
+
+    @pytest.mark.unit
+    def test_run_md_unknown_ensemble_raises_value_error(self, tmp_path):
+        """An unrecognized ensemble string must fail fast with a clear
+        ValueError rather than leaving `dyn` unset and raising a confusing
+        NameError later in the function."""
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        with pytest.raises(ValueError, match="nph"):
+            run_md(
+                structure_generation_job_dict={
+                    "name": "test",
+                    "desired_number_of_structures": 1,
+                },
+                initial_structure=initial_structure,
+                total_md_runs=1,
+                out_dir=str(tmp_path),
+                model_path=["fake.pt"],
+                steps=10,
+                ensemble="nph",
+            )
+
     @patch("alomancy.remote_submission.md_remote_submitter")
     def test_md_remote_submission(self, mock_md_submitter):
         """Test MD remote submission."""

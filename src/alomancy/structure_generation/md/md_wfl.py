@@ -6,7 +6,8 @@ import pandas as pd
 from ase import Atoms
 from ase.io import write
 from ase.md.langevin import Langevin
-from ase.units import fs
+from ase.md.langevinbaoab import LangevinBAOAB
+from ase.units import GPa, fs
 from mace.calculators import MACECalculator
 from tqdm import tqdm
 
@@ -23,7 +24,22 @@ def run_md(
     temperature=300,
     timestep_fs: float = 0.5,
     friction: float = 0.002,
+    ensemble: str = "nvt",
+    pressure: float = 0.0,
 ):
+    """
+    ensemble : {"nvt", "npt"}
+        "nvt" runs fixed-cell Langevin dynamics. "npt" runs LangevinBAOAB
+        with a barostat targeting `pressure` (GPa); the cell is free to
+        fluctuate in shape and volume.
+    pressure : float
+        Target external pressure in GPa, only used when ensemble="npt".
+        ASE's externalstress is the negative of pressure (positive pressure
+        compresses), so it is derived here as -pressure * ase.units.GPa.
+    """
+    if ensemble.lower() not in ("nvt", "npt"):
+        raise ValueError(f"Unknown ensemble {ensemble!r}; must be 'nvt' or 'npt'.")
+
     assert structure_generation_job_dict["desired_number_of_structures"] > 0, (
         "Number of structures must be greater than 0"
     )
@@ -58,20 +74,43 @@ def run_md(
     md_seed = md_structure.info.get("md_seed")
     rng = np.random.default_rng(md_seed) if md_seed is not None else None
 
-    dyn = Langevin(
-        atoms=md_structure,
-        timestep=timestep_fs * fs,
-        temperature_K=temperature,
-        friction=friction,
-        rng=rng,
-        logfile=str(
-            Path(
-                out_dir,
-                f"{structure_generation_job_dict['name']}_{md_structure.info['job_id']}.log",
-            )
-        ),
+    logfile = str(
+        Path(
+            out_dir,
+            f"{structure_generation_job_dict['name']}_{md_structure.info['job_id']}.log",
+        )
     )
 
+    logger.debug(
+        "MD run %s: ensemble=%s%s.",
+        structure_generation_job_dict["name"],
+        ensemble.upper(),
+        f", target pressure={pressure} GPa" if ensemble.lower() == "npt" else "",
+    )
+
+    dyn: Langevin | LangevinBAOAB
+    if ensemble.lower() == "nvt":
+        dyn = Langevin(
+            atoms=md_structure,
+            timestep=timestep_fs * fs,
+            temperature_K=temperature,
+            friction=friction,
+            rng=rng,
+            logfile=logfile,
+        )
+    else:  # "npt", validated above
+        dyn = LangevinBAOAB(
+            atoms=md_structure,
+            timestep=timestep_fs * fs,
+            temperature_K=temperature,
+            # externalstress is the negative of pressure (see ASE docstring);
+            # must not be None, or LangevinBAOAB never activates the
+            # barostat and silently runs fixed-cell dynamics instead of NPT.
+            externalstress=-pressure * GPa,
+            hydrostatic=False,
+            rng=rng,
+            logfile=logfile,
+        )
     snapshot_interval = (
         steps
         * total_md_runs
@@ -189,6 +228,14 @@ def get_forces_for_all_maces(
     if fits_to_use is None:
         fits_to_use = [0]
 
+    logger.info(
+        "MACE evaluation: scoring %d structure(s) against the base model plus "
+        "%d committee fit(s) %s to compute per-structure force std dev.",
+        len(structure_list),
+        len(fits_to_use),
+        fits_to_use,
+    )
+
     calc = MACECalculator(model_paths=base_mlip, device="cuda", default_dtype="float64")
 
     for atoms in structure_list:
@@ -202,6 +249,9 @@ def get_forces_for_all_maces(
             for i in range(len(structure_list))
         }
     }
+    logger.info(
+        "MACE evaluation: base model done (%d structures).", len(structure_list)
+    )
 
     for i in fits_to_use:
         calc = MACECalculator(
@@ -226,5 +276,18 @@ def get_forces_for_all_maces(
             }
             for i in range(len(structure_list))
         }
+        logger.info(
+            "MACE evaluation: fit_%d done (%d/%d committee fit(s) complete).",
+            i,
+            fits_to_use.index(i) + 1,
+            len(fits_to_use),
+        )
+
+    logger.info(
+        "MACE evaluation complete: forces collected from %d model(s) for %d "
+        "structure(s).",
+        1 + len(fits_to_use),
+        len(structure_list),
+    )
 
     return structure_forces_dict
