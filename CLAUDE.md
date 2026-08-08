@@ -119,6 +119,8 @@ All results land under `results/<base_name>/` with a fixed subdirectory layout. 
 | `configs/global_config.py` | Path constants (`ALOMANCY_HPC_CONFIG`, `EXPYRE_CONFIG`) and `_load_global_hpc_config()` — reads `~/.alomancy/hpc_config.yaml` |
 | `cli/add_hpc.py` | `add_hpc_wizard()` interactive setup wizard; pure builders `build_expyre_entry`, `build_alomancy_profile`, `write_expyre_config`, `write_alomancy_hpc_config`, `run_remote_install` |
 | `cli/nuke.py` | `nuke_expyre_results()` deletes local ExPyRe job state (job cache, unsynced stage dirs) under `~/.expyre`, preserving `config.json`; prompts for confirmation |
+| `cli/upgrade_hpc.py` | `upgrade_hpc_wizard()` interactive wizard: lists profiles from `~/.alomancy/hpc_config.yaml`, lets the user pick one/several/`all`, runs `pip install --upgrade alomancy` over ssh on each via `utils/remote_ssh.py`'s `run_ssh_command`; reports per-host success/failure without aborting the batch over one bad profile. Pure builder `_parse_hpc_selection` parses the comma-separated/`all` selection string; `_upgrade_one_host` does the resolve-host → derive-python-path → ssh-install sequence for one profile |
+| `utils/remote_ssh.py` | Shared ssh helpers used by both the workflow-startup remote-version check (`get_alomancy_version_for_profile`) and `cli/upgrade_hpc.py`: `resolve_hpc_host` (looks up a system's ssh host from `EXPYRE_CONFIG`, falling back to `LEGACY_EXPYRE_CONFIG`), `run_ssh_command` (bounded-timeout ssh subprocess, never raises), `derive_python_from_venv` (extracts a venv's python path from its activation command) |
 
 ### Key conventions
 
