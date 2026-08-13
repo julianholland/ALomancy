@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-08-13
 
 ### Added
 - **`pre_run_checks()` now checks ssh connectivity to every distinct HPC host configured in the run, once, before any remote submission begins** (`ensure_ssh_connectivity`, `utils/remote_ssh.py`). Runs a bare `ssh <host> true` per host with no `timeout=`/`capture_output=`, so a password/OTP prompt prints to and reads from the real terminal — while whoever launched the run is presumably still watching, instead of hours later when a background `RemoteJobExecutor` worker thread first happens to touch that host unattended. If the host's ssh config uses connection multiplexing, this establishes the shared control connection once so every later call reuses it silently. Never raises; an unreachable host is logged as a warning and left for the real remote submission to fail loudly on later.
