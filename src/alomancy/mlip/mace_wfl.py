@@ -67,15 +67,58 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
             continue
 
         out = []
+        n_ok = 0
+        n_failed = 0
         for atoms in atoms_list:
             a = atoms.copy()
             a.calc = calc
             try:
                 a.info["mace_energy"] = float(a.get_potential_energy())
                 a.arrays["mace_forces"] = a.get_forces()
+                n_ok += 1
             except Exception as exc:
-                logger.debug("Prediction failed for one structure: %s", exc)
+                n_failed += 1
+                # Only the first failure gets a full traceback -- this loop
+                # runs once per structure (hundreds to thousands per AL
+                # loop) and a repeated failure mode logs the same
+                # traceback every time; the summary line below still
+                # reports the total count. Was previously logger.debug,
+                # which silently produced nothing at all: this function
+                # runs in a freshly spawned remote process where
+                # setup_logging() is never called, so there was no handler
+                # for DEBUG-level records, and RemoteJobExecutor discarded
+                # a successful job's stdout/stderr entirely -- meaning a
+                # near-total prediction failure (e.g. 1 success out of
+                # 1405 structures, previously observed) was completely
+                # invisible, silently degrading parity plots to a single
+                # trivial point (the one structure whose prediction
+                # happened to succeed) with no error anywhere.
+                if n_failed == 1:
+                    logger.warning(
+                        "Prediction failed for structure %d/%d (config_type=%s): %s",
+                        n_ok + n_failed,
+                        len(atoms_list),
+                        atoms.info.get("config_type"),
+                        exc,
+                        exc_info=True,
+                    )
+                else:
+                    logger.debug(
+                        "Prediction failed for structure %d/%d: %s",
+                        n_ok + n_failed,
+                        len(atoms_list),
+                        exc,
+                    )
             out.append(a)
+
+        if n_failed:
+            logger.warning(
+                "%s predictions: %d succeeded, %d failed out of %d structures.",
+                tag,
+                n_ok,
+                n_failed,
+                len(atoms_list),
+            )
 
         try:
             write(f"{tag}_pred.xyz", out, format="extxyz")

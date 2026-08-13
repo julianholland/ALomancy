@@ -448,11 +448,23 @@ class RemoteJobExecutor:
                 lock.release()
             logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
 
-            result, _stdout, _stderr = job.get_results(
+            result, stdout, stderr = job.get_results(
                 timeout=self.remote_info.timeout,
                 check_interval=getattr(self.remote_info, "check_interval", 10),
             )
             logger.info("Job %d completed successfully.", index + 1)
+            # A job "succeeding" only means the remote function returned
+            # without raising -- it can still have logged warnings (e.g. a
+            # near-total silent prediction-failure rate, previously
+            # invisible because this stdout/stderr was captured into
+            # _stdout/_stderr and immediately discarded) to its own
+            # stdout/stderr. Log it at DEBUG, matching the failure path
+            # below, so results/alomancy.log (which always captures DEBUG
+            # regardless of console verbosity) has it for postmortem.
+            if stdout:
+                logger.debug("Job %d stdout:\n%s", index + 1, stdout)
+            if stderr:
+                logger.debug("Job %d stderr:\n%s", index + 1, stderr)
             try:
                 started_file = job.stage_dir / "_expyre_job_started"
                 if started_file.exists():
@@ -466,7 +478,63 @@ class RemoteJobExecutor:
         except Exception as exc:
             logger.warning("Job %d failed: %s", index + 1, exc)
             logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)
+            self._salvage_partial_output(index, job)
             return index, None
+
+    @staticmethod
+    def _salvage_partial_output(index: int, job: ExPyRe) -> None:
+        """Best-effort recovery of a died/failed job's on-disk output.
+
+        ExPyRe's own output_files stage-out (the "if self.status ==
+        'succeeded'" block in expyre's get_results()) only runs for jobs
+        that finish cleanly. A job that dies -- e.g. ExPyReJobDiedError, a
+        hard crash (segfault, missing GPU driver, OOM-kill) with no
+        _succeeded/_error sentinel ever written -- never reaches that code,
+        so its output is discarded even when the data genuinely exists:
+        get_remotes() (called by sync_remote_results_status() on every
+        get_results() polling iteration while remote status isn't yet
+        'done', including the final iteration where it transitions to
+        'done') rsyncs the job's *entire* remote stage directory back into
+        its local stage_dir regardless of eventual success -- unconditional,
+        not filtered by output_files. Whatever a crashing remote process
+        managed to write before dying (e.g. run_md's MD trajectory, flushed
+        to disk on every snapshot) is therefore usually already sitting in
+        job.stage_dir; this just performs the same local-to-cwd copy
+        ExPyRe's own succeeded path would have done (ExPyRe._copy, reusing
+        the same output_files list ExPyRe itself already recorded in
+        job.stage_dir/_expyre_output_files at job construction time), for
+        whichever output files actually exist.
+
+        This matters most for structure_generation: a hard crash mid-MD-run
+        (e.g. a numerically unstable structure from a gap in the
+        committee's PES -- exactly the kind of structure active learning
+        most needs) would otherwise silently drop that run's entire
+        trajectory, discarding the most informative candidate along with
+        it. Never raises: a failed salvage attempt (nothing was written
+        yet, or the glob doesn't match) is logged at DEBUG and ignored, so
+        it can never mask or replace the original job failure above.
+        """
+        marker = job.stage_dir / "_expyre_output_files"
+        if not marker.exists():
+            return
+        output_files = [
+            line.strip() for line in marker.read_text().splitlines() if line.strip()
+        ]
+        for out_file in output_files:
+            try:
+                ExPyRe._copy(job.stage_dir, Path.cwd(), out_file)
+                logger.info(
+                    "Job %d died/failed but salvaged partial output: %s",
+                    index + 1,
+                    out_file,
+                )
+            except Exception as copy_exc:
+                logger.debug(
+                    "Job %d: nothing to salvage for output %s (%s).",
+                    index + 1,
+                    out_file,
+                    copy_exc,
+                )
 
     def run_all_jobs_bounded(self) -> list[Any]:
         """Start and wait for all submitted jobs, keeping at most

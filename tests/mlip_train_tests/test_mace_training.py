@@ -1,4 +1,5 @@
 import json
+import logging
 import typing
 from pathlib import Path
 
@@ -437,3 +438,136 @@ class TestSelectBestCommitteeModel:
 
         best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
         assert best_idx == 2
+
+
+class TestSaveMaceEvalPredictions:
+    """_save_mace_eval_predictions runs on the remote GPU node right after
+    training, evaluating the trained model on every train/test structure.
+    Regression coverage for a bug where a near-total per-structure
+    prediction failure (e.g. 1 succeeding out of 1405 structures, observed
+    in production) was completely invisible: the per-structure exception
+    was only logger.debug'd inside a freshly spawned remote process where
+    setup_logging() is never called (so there's no handler for DEBUG-level
+    records), and RemoteJobExecutor discarded a successful job's
+    stdout/stderr entirely -- so nothing ever reached results/alomancy.log.
+    That silently degraded parity plots to a single trivial (0, 0) point
+    (whichever one structure's prediction happened to succeed) with no
+    error anywhere to explain why."""
+
+    @staticmethod
+    def _collect_alomancy_logs():
+        """setup_logging sets propagate=False on the root "alomancy" logger
+        elsewhere in the process, so pytest's caplog can't reliably see
+        these records -- attach a handler directly, matching the pattern in
+        test_base_active_learning.py's test_seed_logs_message."""
+        al_logger = logging.getLogger("alomancy")
+        al_logger.setLevel(logging.DEBUG)
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        handler.setLevel(logging.DEBUG)
+        al_logger.addHandler(handler)
+        return al_logger, handler, records
+
+    def _write_structures(self, path: Path, n: int) -> None:
+        from ase.io import write
+
+        structures = []
+        for i in range(n):
+            a = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+            a.info["config_type"] = f"s{i}"
+            a.info["REF_energy"] = 1.0
+            structures.append(a)
+        write(str(path), structures, format="extxyz")
+
+    @pytest.mark.unit
+    def test_first_failure_gets_warning_with_traceback_rest_are_debug(
+        self, tmp_path, monkeypatch
+    ):
+        from unittest.mock import MagicMock, patch
+
+        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        self._write_structures(tmp_path / "train.xyz", 3)
+
+        call_count = {"n": 0}
+
+        def fake_get_potential_energy(self):
+            call_count["n"] += 1
+            if call_count["n"] <= 2:
+                raise RuntimeError(f"boom {call_count['n']}")
+            return 1.23
+
+        monkeypatch.setattr(Atoms, "get_potential_energy", fake_get_potential_energy)
+        monkeypatch.setattr(
+            Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
+        )
+
+        al_logger, handler, records = self._collect_alomancy_logs()
+        try:
+            with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+                mock_calc_cls.return_value = MagicMock()
+                _save_mace_eval_predictions("test_name", "train.xyz")
+        finally:
+            al_logger.removeHandler(handler)
+
+        warning_failures = [
+            r
+            for r in records
+            if r.levelno == logging.WARNING
+            and "Prediction failed for structure" in r.getMessage()
+        ]
+        debug_failures = [
+            r
+            for r in records
+            if r.levelno == logging.DEBUG
+            and "Prediction failed for structure" in r.getMessage()
+        ]
+        summary = [
+            r
+            for r in records
+            if "predictions:" in r.getMessage() and "succeeded" in r.getMessage()
+        ]
+
+        # Only the first failure gets a WARNING-level, full-traceback log;
+        # subsequent identical failures drop to DEBUG so 1000+ structures
+        # failing the same way doesn't flood the log.
+        assert len(warning_failures) == 1
+        assert warning_failures[0].exc_info is not None
+        assert len(debug_failures) == 1
+
+        assert len(summary) == 1
+        assert "1 succeeded, 2 failed out of 3 structures" in summary[0].getMessage()
+
+    @pytest.mark.unit
+    def test_no_failure_logs_when_all_predictions_succeed(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock, patch
+
+        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        self._write_structures(tmp_path / "train.xyz", 3)
+
+        monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.23)
+        monkeypatch.setattr(
+            Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
+        )
+
+        al_logger, handler, records = self._collect_alomancy_logs()
+        try:
+            with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+                mock_calc_cls.return_value = MagicMock()
+                _save_mace_eval_predictions("test_name", "train.xyz")
+        finally:
+            al_logger.removeHandler(handler)
+
+        failure_records = [r for r in records if "Prediction failed" in r.getMessage()]
+        assert failure_records == []
+        assert (tmp_path / "train_pred.xyz").exists()

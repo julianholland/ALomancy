@@ -1,6 +1,7 @@
 """Tests for alomancy/__init__.py's per-run ExPyRe isolation setup."""
 
 import json
+import warnings
 
 import pytest
 
@@ -125,3 +126,69 @@ class TestSeedLocalExpyreRoot:
         run_dir.mkdir()
 
         _seed_local_expyre_root(run_dir)  # must not raise
+
+
+@pytest.mark.unit
+class TestRsyncRetryWarningFilter:
+    """`alomancy.__init__._register_rsync_retry_warning_filter` silences
+    expyre's per-retry-attempt FailedSubprocessWarning specifically for the
+    known, harmless race between mid-training rsync (get_remotes(), polled
+    every check_interval while an mlip_committee job is still running) and
+    MACE's checkpoint housekeeping (CheckpointIO.save deletes the previous
+    checkpoint right after writing the new one, which a mid-sync rsync can
+    catch mid-delete). See that function's docstring for the full
+    mechanism. It's called once at import time; each test re-applies it
+    inside its own warnings.catch_warnings() block since pytest's warnings
+    plugin resets the filter list to "always" around every test."""
+
+    def test_rsync_retry_warning_is_silenced(self):
+        from expyre.subprocess import FailedSubprocessWarning
+
+        from alomancy import _register_rsync_retry_warning_filter
+
+        with warnings.catch_warnings(record=True) as caught:
+            _register_rsync_retry_warning_filter()
+            warnings.warn(
+                'Succeeded to run "bash -c rsync -e ssh -a host:/remote/dir '
+                '/local/.expyre" on attempt 1 after failure(s), trying again',
+                category=FailedSubprocessWarning,
+                stacklevel=2,
+            )
+            assert caught == []
+
+    def test_final_giveup_warning_still_surfaces(self):
+        """The terminal 'giving up' warning (which precedes expyre raising a
+        real RuntimeError) must never be silenced -- only the in-progress
+        retry chatter is."""
+        from expyre.subprocess import FailedSubprocessWarning
+
+        from alomancy import _register_rsync_retry_warning_filter
+
+        with warnings.catch_warnings(record=True) as caught:
+            _register_rsync_retry_warning_filter()
+            warnings.warn(
+                'Failed to run "bash -c rsync -e ssh -a host:/remote/dir '
+                '/local/.expyre" on attempt 2 for the last time, giving up.\n'
+                "STDERR\nrsync: stale file handle",
+                category=FailedSubprocessWarning,
+                stacklevel=2,
+            )
+            assert len(caught) == 1
+
+    def test_unrelated_subprocess_retry_warning_still_surfaces(self):
+        """Only rsync retry chatter is filtered -- an unrelated transient
+        subprocess retry (e.g. ssh during job submission/status polling)
+        must stay visible, since it isn't the known checkpoint-race noise."""
+        from expyre.subprocess import FailedSubprocessWarning
+
+        from alomancy import _register_rsync_retry_warning_filter
+
+        with warnings.catch_warnings(record=True) as caught:
+            _register_rsync_retry_warning_filter()
+            warnings.warn(
+                'Failed to run "ssh headnode squeue" on attempt 0, trying '
+                "again.\nSTDERR\nconnection reset",
+                category=FailedSubprocessWarning,
+                stacklevel=2,
+            )
+            assert len(caught) == 1

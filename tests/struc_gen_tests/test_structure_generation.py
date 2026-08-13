@@ -1157,6 +1157,132 @@ class TestMolecularDynamics:
     @pytest.mark.unit
     @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
+    def test_run_md_survives_force_evaluation_exception(
+        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """A crash while evaluating forces (e.g. MACE raising on a
+        numerically unstable structure -- exactly what a gap in the
+        committee's PES looks like) must not propagate and kill the whole
+        remote job. run_md should log a warning and return normally,
+        keeping the structure that was already written to the trajectory
+        before the crash -- that structure is the most informative
+        candidate active learning could get from this run."""
+        from ase.io import read
+
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+
+        atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10, 10, 10])
+        mock_dyn = MagicMock()
+        mock_dyn.atoms = atoms
+        atoms.get_forces = MagicMock(side_effect=RuntimeError("PES hole"))
+        mock_langevin_cls.return_value = mock_dyn
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        # must not raise
+        run_md(
+            structure_generation_job_dict={
+                "name": "test",
+                "desired_number_of_structures": 1,
+            },
+            initial_structure=initial_structure,
+            total_md_runs=1,
+            out_dir=str(tmp_path),
+            model_path=["fake.pt"],
+            steps=10,
+        )
+
+        mock_dyn.run.assert_not_called()
+        traj = read(tmp_path / "test.xyz", ":", format="extxyz")
+        assert len(traj) == 1
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.Langevin")
+    def test_run_md_survives_dynamics_step_exception(
+        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """An exception raised mid-integration (dyn.run(), e.g. the
+        integrator numerically diverging between recorded snapshots) must
+        also be caught, not just a force-evaluation exception -- the
+        structures already written to the trajectory must be retained."""
+        from ase.io import read
+
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+
+        atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10, 10, 10])
+        mock_dyn = MagicMock()
+        mock_dyn.atoms = atoms
+        atoms.get_forces = MagicMock(return_value=np.array([[0.1, 0.0, 0.0]]))
+        mock_dyn.run = MagicMock(side_effect=RuntimeError("integrator diverged"))
+        mock_langevin_cls.return_value = mock_dyn
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        # must not raise
+        run_md(
+            structure_generation_job_dict={
+                "name": "test",
+                "desired_number_of_structures": 1,
+            },
+            initial_structure=initial_structure,
+            total_md_runs=1,
+            out_dir=str(tmp_path),
+            model_path=["fake.pt"],
+            steps=10,
+        )
+
+        mock_dyn.run.assert_called_once()
+        traj = read(tmp_path / "test.xyz", ":", format="extxyz")
+        assert len(traj) == 1
+
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.Langevin")
+    def test_run_md_stops_on_nan_forces(
+        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+    ):
+        """NaN forces must stop the run just like forces > 1000 eV/A do --
+        `np.nan > 1000` is False, so a bare ">" comparison would silently
+        let a numerically unstable run keep going and pollute the
+        trajectory with garbage structures instead of stopping cleanly."""
+        from ase.io import read
+
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        mock_mace_calc_cls.return_value = MagicMock()
+
+        atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10, 10, 10])
+        mock_dyn = MagicMock()
+        mock_dyn.atoms = atoms
+        atoms.get_forces = MagicMock(return_value=np.array([[np.nan, 0.0, 0.0]]))
+        mock_langevin_cls.return_value = mock_dyn
+
+        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
+        initial_structure.info["job_id"] = 0
+
+        run_md(
+            structure_generation_job_dict={
+                "name": "test",
+                "desired_number_of_structures": 1,
+            },
+            initial_structure=initial_structure,
+            total_md_runs=1,
+            out_dir=str(tmp_path),
+            model_path=["fake.pt"],
+            steps=10,
+        )
+
+        mock_dyn.run.assert_not_called()
+        traj = read(tmp_path / "test.xyz", ":", format="extxyz")
+        assert len(traj) == 1
+
     def test_run_md_default_ensemble_uses_langevin(
         self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
     ):

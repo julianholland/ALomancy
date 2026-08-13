@@ -4,7 +4,6 @@ import pathlib  # wizadry to solve pickle problem
 import sys
 
 from expyre.resources import Resources
-from expyre.units import time_to_sec
 
 sys.modules["pathlib._local"] = pathlib
 
@@ -207,5 +206,20 @@ def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInf
             partitions=job_dict["hpc"]["partitions"],
         ),
         max_concurrent_jobs=_resolve_max_concurrent_jobs(job_dict),
-        lock_timeout=time_to_sec(job_dict["max_time"]),
+        # lock_timeout intentionally left at RemoteInfo's own default (None
+        # -- wait indefinitely for the per-host ssh-call lock). This used
+        # to be set to time_to_sec(job_dict["max_time"]), so a job queued
+        # behind one stuck on an interactive password/OTP prompt would
+        # give up and fail loudly after its own max_time elapsed rather
+        # than just waiting -- the actual stuck call was, and still is,
+        # never bounded either way, so that revert didn't make the stuck
+        # call itself succeed any faster, it only turned "everything
+        # waits quietly for you to type the password" into "everything
+        # else fails around the one call that's waiting for you to type
+        # the password." Restored to match the pre-0.5.2 behavior by
+        # request. pre_run_checks()'s ensure_ssh_connectivity call is the
+        # real fix for the underlying problem this was trying to guard
+        # against -- it authenticates every HPC host up front, before any
+        # remote submission begins, while a person is presumably still at
+        # the terminal to answer a prompt.
     )

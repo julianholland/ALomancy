@@ -115,6 +115,83 @@ def get_remote_alomancy_version(
     return None
 
 
+def ensure_ssh_connectivity(hpc_profiles: dict[str, dict]) -> None:
+    """Establish (and, if needed, interactively authenticate) an ssh
+    connection to every distinct HPC host used by this run, once, up
+    front -- called from pre_run_checks() before any remote submission
+    begins, while whoever launched the run is presumably still watching
+    the terminal to answer a password/OTP prompt if one appears.
+
+    Deliberately unbounded and non-captured, unlike every other ssh call
+    in this module: `subprocess.run(["ssh", host, "true"])` with no
+    `timeout=` and no `capture_output=`, so a password/OTP prompt prints
+    to the real terminal and reads the real stdin, and this simply blocks
+    until the user answers it (or the connection succeeds/fails outright).
+    That is the exact interactive-prompt-and-wait experience this
+    function exists to move to start-of-run: without it, the first ssh
+    call needing auth happens whenever a background RemoteJobExecutor
+    thread first touches that host, possibly hours into an unattended
+    run with nobody present to answer -- see remote_submission/
+    executor.py's _get_ssh_call_lock docstring for that failure mode.
+
+    If the host's ssh config uses connection multiplexing (ControlMaster/
+    ControlPersist), authenticating here establishes the shared control
+    connection once; every later ssh call from RemoteJobExecutor then
+    reuses it silently for as long as it stays alive, instead of each one
+    risking its own fresh, potentially-blocking connection attempt.
+
+    Never raises: a host that's unreachable for a reason other than
+    pending auth (bad hostname, network down) is logged as a warning and
+    left for the actual remote submission to fail loudly on later --
+    this is a best-effort convenience, not a hard gate on startup.
+    Skipped outright under ALOMANCY_TEST_MODE/ALOMANCY_MOCK_EXTERNAL
+    (set autouse for the whole test suite, see tests/conftest.py), same
+    as every other real-network call in this module and in
+    core/base_active_learning.py -- tests must never shell out to ssh or
+    block waiting on a password prompt.
+    """
+    if (
+        os.getenv("ALOMANCY_TEST_MODE") == "1"
+        or os.getenv("ALOMANCY_MOCK_EXTERNAL") == "1"
+    ):
+        return
+
+    seen_hosts: set[str] = set()
+    for hpc_name in hpc_profiles:
+        host = resolve_hpc_host(hpc_name)
+        if not host or host in seen_hosts:
+            continue
+        seen_hosts.add(host)
+
+        logger.info(
+            "Checking ssh connectivity to '%s' (%s) -- if prompted, enter your "
+            "password/OTP now.",
+            hpc_name,
+            host,
+        )
+        try:
+            proc = subprocess.run(["ssh", host, "true"])
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.warning(
+                "Could not check ssh connectivity to '%s' (%s): %s. Remote "
+                "submission to this host may fail later.",
+                hpc_name,
+                host,
+                exc,
+            )
+            continue
+        if proc.returncode != 0:
+            logger.warning(
+                "ssh connectivity check for '%s' (%s) exited %d. Remote "
+                "submission to this host may fail later.",
+                hpc_name,
+                host,
+                proc.returncode,
+            )
+        else:
+            logger.info("ssh connectivity to '%s' (%s) OK.", hpc_name, host)
+
+
 def get_alomancy_version_for_profile(profile: dict) -> str | None:
     """Best-effort remote-installed-version lookup for one HPC profile dict.
 

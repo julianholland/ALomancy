@@ -28,17 +28,22 @@ def test_default_when_nothing_set():
 
 
 @pytest.mark.unit
-def test_lock_timeout_derived_from_max_time():
+def test_lock_timeout_defaults_to_none():
     """lock_timeout (the cap on how long a RemoteJobExecutor worker waits
     for the per-host ssh-call lock, see remote_submission/executor.py) is
-    sourced from the same max_time string Resources() uses for the actual
-    Slurm walltime request -- so a job that's waited longer than its own
-    expected total runtime just for a turn to touch ssh is treated as stuck
-    rather than merely busy."""
+    left at RemoteInfo's own default of None -- wait indefinitely --
+    rather than being derived from the job's max_time. A prior version
+    set it from max_time, so a job queued behind one stuck on an
+    interactive ssh password/OTP prompt would give up and fail loudly
+    instead of just waiting for the prompt to be answered, which is not
+    the desired behavior: pre_run_checks()'s ensure_ssh_connectivity
+    authenticates every HPC host up front instead, while a person is
+    presumably still at the terminal to answer a prompt, rather than
+    guessing at how long a wait is "too long" mid-run."""
     from alomancy.configs.remote_info import get_remote_info
 
     info = get_remote_info(_job_dict())
-    assert info.lock_timeout == 600  # "10m" from _job_dict()
+    assert info.lock_timeout is None
 
 
 @pytest.mark.unit

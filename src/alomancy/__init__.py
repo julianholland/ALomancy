@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import warnings
 from pathlib import Path
 
 import matplotlib
@@ -81,6 +82,52 @@ def _seed_local_expyre_root(cwd: Path) -> None:
 
 
 _ensure_local_expyre_root()
+
+# Import expyre only after the local .expyre root is seeded above: any
+# import touching the expyre namespace (even a submodule) first runs
+# expyre/__init__.py, which does "from .config import systems" and
+# eagerly resolves expyre's own config -- importing this any earlier would
+# resolve against a pre-isolation config, defeating the seeding above.
+from expyre.subprocess import FailedSubprocessWarning  # noqa: E402
+
+_RSYNC_RETRY_WARNING_PATTERN = (
+    r'(Failed|Succeeded) to run "[^"]*\brsync\b.*on attempt \d+.*trying again'
+)
+
+
+def _register_rsync_retry_warning_filter() -> None:
+    """Silence expyre's per-retry-attempt subprocess warnings for a known,
+    harmless race: while an mlip_committee job is still 'running', ExPyRe's
+    get_results() polls sync_remote_results_status() every check_interval,
+    which rsyncs the job's entire remote stage directory back -- including
+    checkpoints/ -- regardless of what output_files ALomancy requested
+    (that list is only consulted once, locally, after the job succeeds).
+    MACE's own checkpoint housekeeping (mace/tools/checkpoint.py's
+    CheckpointIO.save) deletes the previous checkpoint file right after
+    writing the new one, so a mid-training sync can catch a checkpoint file
+    mid-delete, surfacing as rsync "Stale file handle"/"file has vanished"
+    errors. expyre's own subprocess retry (subprocess_run, 3 attempts/5s
+    apart by default) already recovers from this transparently; only the
+    retry-in-progress warnings are filtered here -- a genuine, unrecoverable
+    subprocess failure still raises a RuntimeError after exhausting all
+    retries, so no real failure is hidden by this filter. Scoped to rsync
+    specifically so unrelated subprocess retries (e.g. flaky ssh during job
+    submission/status polling) stay visible.
+
+    Split out from module level (rather than a bare warnings.filterwarnings
+    call at import time) so tests can re-apply it inside their own
+    warnings.catch_warnings() block -- pytest's warnings plugin resets the
+    filter list to "always" around each test, which would otherwise wipe
+    out the filter this registers at import time.
+    """
+    warnings.filterwarnings(
+        "ignore",
+        message=_RSYNC_RETRY_WARNING_PATTERN,
+        category=FailedSubprocessWarning,
+    )
+
+
+_register_rsync_retry_warning_filter()
 
 # Force the non-interactive Agg backend before any submodule can import
 # matplotlib.pyplot. Without this, matplotlib auto-selects an interactive

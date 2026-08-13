@@ -1,6 +1,7 @@
 """Tests for alomancy.utils.remote_ssh."""
 
 import json
+import logging
 import subprocess
 from unittest.mock import patch
 
@@ -276,3 +277,123 @@ class TestGetAlomancyVersionForProfile:
                 {"hpc_name": "raven", "pre_cmds": []}
             )
         assert result is None
+
+
+class TestEnsureSshConnectivity:
+    """ensure_ssh_connectivity is the pre_run_checks() step that
+    authenticates every HPC host up front, before any remote submission
+    begins, so a password/OTP prompt has a chance to be answered while
+    whoever launched the run is presumably still at the terminal."""
+
+    @pytest.mark.unit
+    def test_skipped_under_test_mode(self):
+        """Default autouse env (ALOMANCY_TEST_MODE=1) must short-circuit
+        without calling any real ssh-invoking helper -- tests must never
+        shell out to ssh or block on a password prompt."""
+        from alomancy.utils.remote_ssh import ensure_ssh_connectivity
+
+        with patch("subprocess.run") as mock_run:
+            ensure_ssh_connectivity({"raven": {"hpc_name": "raven"}})
+
+        mock_run.assert_not_called()
+
+    @pytest.mark.unit
+    def test_calls_ssh_true_per_distinct_host_unbounded_uncaptured(self, monkeypatch):
+        """The actual subprocess call must have no timeout= and no
+        capture_output=, unlike every other ssh call in this module --
+        this one is deliberately allowed to block on, and print, an
+        interactive password/OTP prompt on the real terminal."""
+        from alomancy.utils.remote_ssh import ensure_ssh_connectivity
+
+        monkeypatch.setenv("ALOMANCY_TEST_MODE", "0")
+        monkeypatch.setenv("ALOMANCY_MOCK_EXTERNAL", "0")
+
+        completed = subprocess.CompletedProcess(args=["ssh"], returncode=0)
+        with (
+            patch(
+                "alomancy.utils.remote_ssh.resolve_hpc_host",
+                return_value="raven-alias",
+            ),
+            patch("subprocess.run", return_value=completed) as mock_run,
+        ):
+            ensure_ssh_connectivity({"raven": {"hpc_name": "raven"}})
+
+        mock_run.assert_called_once_with(["ssh", "raven-alias", "true"])
+
+    @pytest.mark.unit
+    def test_deduplicates_profiles_resolving_to_the_same_host(self, monkeypatch):
+        from alomancy.utils.remote_ssh import ensure_ssh_connectivity
+
+        monkeypatch.setenv("ALOMANCY_TEST_MODE", "0")
+        monkeypatch.setenv("ALOMANCY_MOCK_EXTERNAL", "0")
+
+        completed = subprocess.CompletedProcess(args=["ssh"], returncode=0)
+        with (
+            patch(
+                "alomancy.utils.remote_ssh.resolve_hpc_host",
+                return_value="shared-alias",
+            ),
+            patch("subprocess.run", return_value=completed) as mock_run,
+        ):
+            ensure_ssh_connectivity(
+                {
+                    "profile_a": {"hpc_name": "profile_a"},
+                    "profile_b": {"hpc_name": "profile_b"},
+                }
+            )
+
+        mock_run.assert_called_once()
+
+    @pytest.mark.unit
+    def test_unresolvable_host_skipped_without_raising(self, monkeypatch):
+        from alomancy.utils.remote_ssh import ensure_ssh_connectivity
+
+        monkeypatch.setenv("ALOMANCY_TEST_MODE", "0")
+        monkeypatch.setenv("ALOMANCY_MOCK_EXTERNAL", "0")
+
+        with (
+            patch("alomancy.utils.remote_ssh.resolve_hpc_host", return_value=None),
+            patch("subprocess.run") as mock_run,
+        ):
+            ensure_ssh_connectivity({"raven": {"hpc_name": "raven"}})  # must not raise
+
+        mock_run.assert_not_called()
+
+    @pytest.mark.unit
+    def test_nonzero_exit_logged_but_does_not_raise(self, monkeypatch, caplog):
+        from alomancy.utils.remote_ssh import ensure_ssh_connectivity
+
+        monkeypatch.setenv("ALOMANCY_TEST_MODE", "0")
+        monkeypatch.setenv("ALOMANCY_MOCK_EXTERNAL", "0")
+
+        completed = subprocess.CompletedProcess(args=["ssh"], returncode=255)
+        with (
+            patch(
+                "alomancy.utils.remote_ssh.resolve_hpc_host",
+                return_value="raven-alias",
+            ),
+            patch("subprocess.run", return_value=completed),
+            caplog.at_level(logging.WARNING, logger="alomancy.utils.remote_ssh"),
+        ):
+            ensure_ssh_connectivity({"raven": {"hpc_name": "raven"}})  # must not raise
+
+        assert any("255" in r.message for r in caplog.records)
+
+    @pytest.mark.unit
+    def test_subprocess_error_logged_but_does_not_raise(self, monkeypatch, caplog):
+        from alomancy.utils.remote_ssh import ensure_ssh_connectivity
+
+        monkeypatch.setenv("ALOMANCY_TEST_MODE", "0")
+        monkeypatch.setenv("ALOMANCY_MOCK_EXTERNAL", "0")
+
+        with (
+            patch(
+                "alomancy.utils.remote_ssh.resolve_hpc_host",
+                return_value="raven-alias",
+            ),
+            patch("subprocess.run", side_effect=OSError("no ssh binary")),
+            caplog.at_level(logging.WARNING, logger="alomancy.utils.remote_ssh"),
+        ):
+            ensure_ssh_connectivity({"raven": {"hpc_name": "raven"}})  # must not raise
+
+        assert any("no ssh binary" in r.message for r in caplog.records)

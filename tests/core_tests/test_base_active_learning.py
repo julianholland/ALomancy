@@ -271,6 +271,122 @@ class TestDisplayWorkflowSummary:
         assert "test-hpc" in messages
 
 
+class TestCollectHpcProfiles:
+    """_collect_hpc_profiles feeds pre_run_checks()'s ensure_ssh_connectivity
+    call -- it must gather every distinct HPC profile actually configured
+    across phases, deduplicated by hpc_name."""
+
+    @pytest.mark.unit
+    def test_collects_profile_from_minimal_jobs_dict(self, minimal_jobs_dict):
+        from alomancy.core.base_active_learning import _collect_hpc_profiles
+
+        profiles = _collect_hpc_profiles(minimal_jobs_dict)
+
+        assert set(profiles) == {"test-hpc"}
+        assert profiles["test-hpc"]["hpc_name"] == "test-hpc"
+
+    @pytest.mark.unit
+    def test_deduplicates_by_hpc_name_across_phases(self, minimal_jobs_dict):
+        from alomancy.core.base_active_learning import _collect_hpc_profiles
+
+        # All four phases in minimal_jobs_dict already share "test-hpc";
+        # give two phases genuinely distinct hosts instead.
+        minimal_jobs_dict["structure_generation"]["hpc"] = {
+            "hpc_name": "gpu-hpc",
+            "pre_cmds": [],
+            "partitions": ["gpu"],
+        }
+
+        profiles = _collect_hpc_profiles(minimal_jobs_dict)
+
+        assert set(profiles) == {"test-hpc", "gpu-hpc"}
+
+    @pytest.mark.unit
+    def test_skips_phase_missing_from_jobs_dict(self, minimal_jobs_dict):
+        from alomancy.core.base_active_learning import _collect_hpc_profiles
+
+        del minimal_jobs_dict["high_accuracy_evaluation"]
+
+        profiles = _collect_hpc_profiles(minimal_jobs_dict)  # must not raise
+
+        assert set(profiles) == {"test-hpc"}
+
+    @pytest.mark.unit
+    def test_skips_non_dict_hpc_value(self, minimal_jobs_dict):
+        """By run() time, load_dictionaries has already resolved a string
+        hpc: reference into a full dict, but this must degrade gracefully
+        (rather than crash pre_run_checks) if that hasn't happened."""
+        from alomancy.core.base_active_learning import _collect_hpc_profiles
+
+        minimal_jobs_dict["initialization"]["hpc"] = "unresolved-string-name"
+
+        profiles = _collect_hpc_profiles(minimal_jobs_dict)
+
+        assert "unresolved-string-name" not in profiles
+
+
+class TestPreRunChecksSshConnectivity:
+    """pre_run_checks() must check ssh connectivity to every configured HPC
+    host before any remote submission begins -- so a password/OTP prompt
+    can be answered up front, before the run goes unattended for hours."""
+
+    @pytest.mark.unit
+    def test_ensure_ssh_connectivity_called_with_collected_profiles(
+        self, tmp_path, minimal_jobs_dict
+    ):
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+            log_file=None,
+        )
+
+        with (
+            patch("alomancy.core.base_active_learning.acquire_local_expyre_lock"),
+            patch(
+                "alomancy.core.base_active_learning.ensure_ssh_connectivity"
+            ) as mock_ensure,
+        ):
+            wf.pre_run_checks()
+
+        mock_ensure.assert_called_once()
+        (profiles,), _kwargs = mock_ensure.call_args
+        assert set(profiles) == {"test-hpc"}
+
+    @pytest.mark.unit
+    def test_ssh_connectivity_checked_before_pypi_fetch(
+        self, tmp_path, minimal_jobs_dict
+    ):
+        """Ordering matters: the ssh check must happen before the PyPI
+        version check, not after -- a slow/blocked PyPI call must not
+        delay the point at which a person can be prompted for a
+        password/OTP."""
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+            log_file=None,
+        )
+
+        call_order: list[str] = []
+        with (
+            patch("alomancy.core.base_active_learning.acquire_local_expyre_lock"),
+            patch(
+                "alomancy.core.base_active_learning.ensure_ssh_connectivity",
+                side_effect=lambda *_a, **_kw: call_order.append("ssh"),
+            ),
+            patch(
+                "alomancy.core.base_active_learning._fetch_latest_pypi_version",
+                side_effect=lambda *_a, **_kw: call_order.append("pypi"),
+            ),
+        ):
+            wf.pre_run_checks()
+
+        assert call_order == ["ssh", "pypi"]
+
+
 class TestRunWorkflowStructure:
     """Tests for run() method structure and execution flow."""
 
