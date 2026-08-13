@@ -464,6 +464,139 @@ class TestRemoteJobExecutor:
 
         assert results == [0, 1, 2]
 
+    @pytest.mark.unit
+    def test_successful_job_stdout_stderr_are_logged_not_discarded(self, tmp_path):
+        """job.get_results() returns (result, stdout, stderr) even for a
+        job that completes without raising -- a "successful" job can still
+        have logged a near-total silent failure to its own stdout/stderr
+        (e.g. the mace eval prediction loop). This used to be captured
+        into _stdout/_stderr and immediately discarded, making that class
+        of failure invisible in results/alomancy.log."""
+        import logging
+
+        al_logger = logging.getLogger("alomancy")
+        al_logger.setLevel(logging.DEBUG)
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        handler = _Collector()
+        handler.setLevel(logging.DEBUG)
+        al_logger.addHandler(handler)
+        try:
+            jobs = [_FakeExPyReJob("job0", tmp_path / "job0", duration=0.0)]
+            executor = _fake_executor(max_concurrent_jobs=1, jobs=jobs)
+            executor.run_all_jobs_bounded()
+        finally:
+            al_logger.removeHandler(handler)
+
+        messages = " ".join(r.getMessage() for r in records)
+        assert "stdout" in messages
+        assert "stderr" in messages
+
+
+@pytest.mark.unit
+class TestSalvagePartialOutput:
+    """A died/failed job's on-disk output must still be salvaged into cwd
+    when possible: expyre's own output_files stage-out only runs for
+    'succeeded' jobs, but the periodic mid-run sync already pulls a died
+    job's entire remote stage directory into its local stage_dir regardless
+    -- see RemoteJobExecutor._salvage_partial_output's docstring. Without
+    this, a hard crash (e.g. a numerically unstable MD structure from a gap
+    in the committee's PES -- exactly the structure active learning most
+    needs) would silently discard everything that job produced."""
+
+    def test_copies_existing_output_into_cwd(self, tmp_path, monkeypatch):
+        stage_dir = tmp_path / "stage"
+        stage_dir.mkdir()
+        (stage_dir / "_expyre_output_files").write_text(
+            "results/loop_0/structure_generation/md_output_3\n"
+        )
+        remote_output = stage_dir / "results/loop_0/structure_generation/md_output_3"
+        remote_output.mkdir(parents=True)
+        (remote_output / "structure_generation.xyz").write_text("fake trajectory data")
+
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+
+        job = SimpleNamespace(stage_dir=stage_dir)
+        RemoteJobExecutor._salvage_partial_output(0, job)
+
+        salvaged = cwd / "results/loop_0/structure_generation/md_output_3"
+        assert (salvaged / "structure_generation.xyz").read_text() == (
+            "fake trajectory data"
+        )
+
+    def test_noop_when_no_output_files_marker(self, tmp_path, monkeypatch):
+        """A job that died before ExPyRe even got to write
+        _expyre_output_files (or one submitted with no output_files at all)
+        must not raise -- there is nothing to salvage."""
+        stage_dir = tmp_path / "stage"
+        stage_dir.mkdir()
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+
+        job = SimpleNamespace(stage_dir=stage_dir)
+        RemoteJobExecutor._salvage_partial_output(0, job)  # must not raise
+
+        assert list(cwd.iterdir()) == []
+
+    def test_noop_when_referenced_output_never_materialized(
+        self, tmp_path, monkeypatch
+    ):
+        """A crash early enough that the output directory was never even
+        created remotely must not raise -- ExPyRe._copy raises RuntimeError
+        on an empty glob match, which this must swallow rather than let
+        propagate and mask the original job failure."""
+        stage_dir = tmp_path / "stage"
+        stage_dir.mkdir()
+        (stage_dir / "_expyre_output_files").write_text(
+            "results/loop_0/structure_generation/md_output_3\n"
+        )
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+
+        job = SimpleNamespace(stage_dir=stage_dir)
+        RemoteJobExecutor._salvage_partial_output(0, job)  # must not raise
+
+        assert list(cwd.iterdir()) == []
+
+    def test_run_single_job_failure_still_salvages_output(self, tmp_path, monkeypatch):
+        """End-to-end: _run_single_job's failure path (not just the salvage
+        helper in isolation) actually triggers the salvage for a job that
+        dies during get_results()."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+
+        job = _FakeExPyReJob(
+            "job0", tmp_path / "stage" / "job0", duration=0.0, should_fail=True
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+
+        # job.start() (called inside _run_single_job) creates stage_dir;
+        # populate the salvageable output only after that so it mimics data
+        # that arrived via the periodic mid-run sync, not something present
+        # from the start.
+        orig_start = job.start
+
+        def _start_then_populate(**kwargs):
+            orig_start(**kwargs)
+            (job.stage_dir / "_expyre_output_files").write_text("out.xyz\n")
+            (job.stage_dir / "out.xyz").write_text("partial trajectory")
+
+        job.start = _start_then_populate
+
+        _index, result = executor._run_single_job(0, job)
+
+        assert result is None
+        assert (cwd / "out.xyz").read_text() == "partial trajectory"
+
 
 @pytest.mark.unit
 class TestAcquireLocalExpyreLock:

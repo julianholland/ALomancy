@@ -118,7 +118,15 @@ def run_md(
     )
 
     for _ in range(steps // snapshot_interval):
-        # recording
+        # recording -- happens before any force check/dynamics step below,
+        # so whatever triggers a stop (excessive forces, non-finite forces,
+        # or an outright exception) still leaves the structure that
+        # triggered it captured in the trajectory. That structure -- right
+        # at the edge of what the committee can currently describe -- is
+        # exactly the kind active learning most needs; silently discarding
+        # it (e.g. by letting an exception propagate and kill the whole
+        # remote job with nothing recovered) would throw away the most
+        # informative candidate this run produced.
         write(
             str(Path(out_dir, f"{structure_generation_job_dict['name']}.xyz")),
             dyn.atoms.copy(),
@@ -126,15 +134,45 @@ def run_md(
         )
         atom_traj_list.append(dyn.atoms.copy())
 
-        # force check
-        max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
-        if np.any(max_forces > 1000):
+        # force check -- also catches non-finite (NaN/Inf) forces, which a
+        # bare ">" comparison silently lets through (e.g. `np.nan > 1000`
+        # is False), letting an unstable run keep going and pollute the
+        # trajectory with garbage structures instead of stopping cleanly.
+        try:
+            max_forces = np.max(np.abs(dyn.atoms.get_forces()), axis=0)
+            unstable = not np.all(np.isfinite(max_forces)) or np.any(max_forces > 1000)
+        except Exception:
             logger.warning(
-                f"Stopping MD run {structure_generation_job_dict['name']} due to excessive forces: {max_forces}"
+                "Stopping MD run %s: force evaluation raised an exception "
+                "(likely a numerically unstable structure, e.g. a gap in "
+                "the committee's PES). The structure just recorded is "
+                "retained.",
+                structure_generation_job_dict["name"],
+                exc_info=True,
             )
             break
-        # run
-        dyn.run(steps=snapshot_interval)
+        if unstable:
+            logger.warning(
+                "Stopping MD run %s due to unstable forces: %s",
+                structure_generation_job_dict["name"],
+                max_forces,
+            )
+            break
+
+        # run -- also guarded: an exception raised mid-integration (e.g.
+        # the integrator numerically diverging between recorded snapshots)
+        # must not discard the structures already written above.
+        try:
+            dyn.run(steps=snapshot_interval)
+        except Exception:
+            logger.warning(
+                "Stopping MD run %s: dynamics step raised an exception "
+                "mid-integration (likely numerical instability). "
+                "Structures recorded so far are retained.",
+                structure_generation_job_dict["name"],
+                exc_info=True,
+            )
+            break
 
     logger.debug(
         f"MD run {structure_generation_job_dict['name']} completed, {len(atom_traj_list)} structures generated."

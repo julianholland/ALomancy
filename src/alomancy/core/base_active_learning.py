@@ -18,7 +18,10 @@ from alomancy.remote_submission.executor import acquire_local_expyre_lock
 from alomancy.utils.clean_structures import clean_structures
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 from alomancy.utils.logging_config import setup_logging
-from alomancy.utils.remote_ssh import get_alomancy_version_for_profile
+from alomancy.utils.remote_ssh import (
+    ensure_ssh_connectivity,
+    get_alomancy_version_for_profile,
+)
 from alomancy.utils.remove_high_force_structures import (
     remove_high_force_structures_from_partition,
 )
@@ -59,6 +62,28 @@ def _flatten_settings(
         else:
             items.append((full_key, value))
     return items
+
+
+def _collect_hpc_profiles(jobs_dict: dict) -> dict[str, dict]:
+    """Collect the distinct HPC profiles referenced across configured
+    phases, keyed by hpc_name. By the time run() executes, load_dictionaries
+    has already resolved any string `hpc:` references into full profile
+    dicts (see configs/global_config.py), but a phase's `hpc` is still
+    skipped here if it isn't a dict -- matching display_workflow_summary's
+    identical defensive handling -- since there's no profile to connect to
+    in that case.
+    """
+    profiles: dict[str, dict] = {}
+    for phase in _PHASE_LABELS:
+        phase_dict = jobs_dict.get(phase)
+        if not phase_dict:
+            continue
+        hpc = phase_dict.get("hpc")
+        if not isinstance(hpc, dict):
+            continue
+        name = hpc.get("hpc_name", "<unnamed>")
+        profiles.setdefault(name, hpc)
+    return profiles
 
 
 def _fetch_latest_pypi_version(
@@ -235,14 +260,21 @@ class BaseActiveLearningWorkflow(ABC):
         local_stage_dir (see acquire_local_expyre_lock -- raises
         immediately on conflict rather than letting a second process
         silently corrupt shared job-tracking state hours into a run), then
-        display the workflow summary, then check the installed-vs-latest-
-        published alomancy version. Warns if behind by a minor release;
-        raises if behind by a major release (breaking changes are likely).
-        The version check is silently skipped if PyPI can't be reached
-        (e.g. no internet on an HPC compute node).
+        display the workflow summary, then check ssh connectivity to
+        every distinct HPC host this run will use (see
+        ensure_ssh_connectivity -- gives any needed password/OTP prompt a
+        chance to be answered right now, while whoever launched the run
+        is presumably still watching, rather than hours later inside an
+        unattended background job.start() call with nobody present), then
+        check the installed-vs-latest-published alomancy version. Warns
+        if behind by a minor release; raises if behind by a major release
+        (breaking changes are likely). The version check is silently
+        skipped if PyPI can't be reached (e.g. no internet on an HPC
+        compute node).
         """
         acquire_local_expyre_lock()
         self.display_workflow_summary()
+        ensure_ssh_connectivity(_collect_hpc_profiles(self.jobs_dict))
 
         latest_version = _fetch_latest_pypi_version()
         if latest_version is None:
