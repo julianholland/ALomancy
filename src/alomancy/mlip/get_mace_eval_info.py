@@ -90,17 +90,40 @@ def select_best_committee_model(
     training run, picks the fit with the lowest value of *metric* on the held-
     out test set, and returns ``(best_fit_index, stagetwo_model_path)``.
 
-    Falls back to ``(0, fit_0_path)`` if test metrics cannot be read for any
-    committee member.
+    Only considers fits whose stagetwo model file actually exists on disk --
+    a fit can be missing readable test metrics while ALSO genuinely having
+    no model at all, e.g. a committee member whose training job was
+    abandoned after a sustained remote-communication failure (see
+    remote_submission/executor.py's _get_results_with_resume) or never
+    retried after train_mlip's backfill. Falls back to the lowest-indexed
+    fit that HAS a model on disk if no committee member has readable test
+    metrics -- previously this defaulted to fit_0 unconditionally, which
+    crashed a downstream consumer (structure_generation trying to stage a
+    nonexistent model file as an MD job input) the one time fit_0 itself was
+    the fit with no model. Raises ValueError if literally none of the
+    committee's fits have a model file (train_mlip guarantees at least 3
+    before calling this, so this should only fire if that invariant is ever
+    broken).
     """
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["size_of_committee"]
     committee_dir = Path("results", base_name, name)
 
-    best_fit = 0
+    def _model_path(i: int) -> Path:
+        return committee_dir / f"fit_{i}" / f"{name}_stagetwo.model"
+
+    fits_with_model = [i for i in range(n_fits) if _model_path(i).exists()]
+    if not fits_with_model:
+        raise ValueError(
+            f"select_best_committee_model for {base_name!r}: none of the "
+            f"{n_fits} committee fit(s) have a {name}_stagetwo.model file "
+            "on disk. Check remote job logs for failures."
+        )
+
+    best_fit: int | None = None
     best_score = float("inf")
 
-    for i in range(n_fits):
+    for i in fits_with_model:
         fit_dir = committee_dir / f"fit_{i}"
         results_dir = fit_dir / "results"
         fit_seed = seed + i
@@ -132,10 +155,13 @@ def select_best_committee_model(
             best_score = score
             best_fit = i
 
-    if best_score == float("inf"):
+    if best_fit is None:
+        best_fit = fits_with_model[0]
         logger.warning(
-            "Could not read test %r for any committee member; defaulting to fit_0.",
+            "Could not read test %r for any committee member; defaulting to "
+            "fit_%d (lowest-indexed fit with a model on disk).",
             metric,
+            best_fit,
         )
     else:
         logger.info(
@@ -145,5 +171,4 @@ def select_best_committee_model(
             best_score,
         )
 
-    model_path = committee_dir / f"fit_{best_fit}" / f"{name}_stagetwo.model"
-    return best_fit, model_path
+    return best_fit, _model_path(best_fit)

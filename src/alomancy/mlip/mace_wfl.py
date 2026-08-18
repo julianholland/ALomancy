@@ -1,7 +1,9 @@
 import importlib.util
 import logging
 import os
+import shutil
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -35,9 +37,37 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
     and mace_forces keys so store_mlip_predictions can read them locally without
     re-running inference.
     """
-    model_path = Path(f"{name}_stagetwo_compiled.model")
+    # Deliberately load the UNCOMPILED model (plain torch.save'd nn.Module)
+    # rather than the TorchScript-compiled one used for production
+    # MD/DFT-adjacent inference. Observed in production: the compiled
+    # model's force evaluation (torch.autograd.grad through the TorchScript
+    # interpreter) raised "RuntimeError: The following operation failed in
+    # the TorchScript interpreter. ... RuntimeError: Global alloc not
+    # supported yet" for every multi-atom structure, every loop, on this
+    # cluster's GPU/CUDA/PyTorch combination -- only the trivial
+    # single-atom case (whose autograd graph apparently sidesteps whatever
+    # op triggers it) ever succeeded, silently degrading every parity plot
+    # in the run's history to one point. Eager-mode (uncompiled) execution
+    # doesn't go through the TorchScript interpreter's op dispatch at all,
+    # so it isn't subject to this failure mode. This function runs a few
+    # thousand single-point evaluations once per fit per loop, not a
+    # performance-critical hot path, so trading compiled inference speed
+    # for eager-mode correctness here is the right call.
+    #
+    # Gate on the uncompiled model's own existence, not the compiled one's:
+    # MACE (mace/cli/run_train.py) writes the uncompiled model via a bare
+    # torch.save() unconditionally, then attempts jit.compile()+
+    # torch.jit.save() for the compiled variant inside a bare
+    # `except Exception: pass` -- a silent swallow on MACE's side. Gating
+    # on the compiled file's existence would skip valid, usable predictions
+    # whenever that compile step happens to fail for reasons unrelated to
+    # training itself, even though the model this function actually needs
+    # saved successfully.
+    model_path = Path(f"{name}_stagetwo.model")
     if not model_path.exists():
-        logger.warning("Stagetwo compiled model not found; skipping eval predictions.")
+        logger.warning(
+            "Stagetwo (uncompiled) model not found; skipping eval predictions."
+        )
         return
 
     try:
@@ -125,6 +155,85 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
             logger.info("Saved %d %s prediction(s) to %s_pred.xyz.", len(out), tag, tag)
         except Exception as exc:
             logger.warning("Failed to write %s_pred.xyz: %s", tag, exc)
+
+
+def _remove_checkpoints_dir_if_model_exists(
+    model_path: Path, checkpoints_dir: Path, location: str = ""
+) -> None:
+    """Delete checkpoints_dir once model_path exists; leave it alone
+    (with a warning) if the model is missing, so a checkpoint is never
+    deleted out from under a fit that hasn't actually finished training.
+
+    Shared by _cleanup_committee_checkpoints (remote) and
+    cleanup_local_committee_checkpoints (local) below -- `location` only
+    distinguishes their log messages ("local " vs "").
+    """
+    if not model_path.exists():
+        logger.warning(
+            "Stagetwo compiled model not found; leaving %s%s in place.",
+            location,
+            checkpoints_dir,
+        )
+        return
+    if not checkpoints_dir.exists():
+        return
+    try:
+        shutil.rmtree(checkpoints_dir)
+        logger.info("Removed %s%s after successful fit.", location, checkpoints_dir)
+    except OSError as exc:
+        logger.warning("Failed to remove %s%s: %s", location, checkpoints_dir, exc)
+
+
+def _cleanup_committee_checkpoints(name: str) -> None:
+    """Delete this fit's checkpoint directory once its compiled model exists.
+
+    Called from inside mace_fit while os.chdir'd into mlip_dir, after run() and
+    _save_mace_eval_predictions. MACE only needs the checkpoint internally, to
+    restore the best-validation-loss state before writing the compiled model
+    (mace/cli/run_train.py); ALomancy never reads checkpoints itself, and
+    restart_latest stays off (mace_fit_params above), so once the compiled model
+    exists the checkpoint is pure storage cost -- one file per fit, per committee
+    member, per AL loop, otherwise left behind forever.
+    """
+    _remove_checkpoints_dir_if_model_exists(
+        Path(f"{name}_stagetwo_compiled.model"), Path("checkpoints")
+    )
+
+
+def cleanup_local_committee_checkpoints(
+    base_name: str, name: str, fit_indices: Iterable[int]
+) -> None:
+    """Delete the LOCAL copy of each fit's checkpoints/ directory once its
+    compiled model exists locally.
+
+    _cleanup_committee_checkpoints (above) only removes the REMOTE
+    checkpoints/ directory, on the remote node, right after that fit's own
+    training finishes -- it cannot help with local disk usage. expyre's
+    periodic mid-training sync (get_remotes(), called from
+    sync_remote_results_status() on every get_results() polling iteration
+    while a job isn't yet 'done') pulls the *entire* remote stage directory
+    back to local disk with delete=False (confirmed in expyre/func.py:
+    _sync_remote_results_status_ll's delete parameter defaults to False and
+    is never overridden by anything in this codebase) -- i.e. additive-only,
+    never mirroring remote deletions. MACE's own checkpoint rotation keeps
+    only the current epoch's file on the remote side at any moment, but each
+    one has a distinct, epoch-numbered filename
+    (mlip_committee_run-<id>_epoch-<N>.pt) -- so every sync poll across a
+    multi-hour training run adds one more such file locally that never gets
+    removed, even though the remote side never had more than one or two at
+    once. Observed in production: a single fit's local checkpoints/
+    directory reaching 5-7GB (20+ per-epoch .pt files) despite the
+    remote-side cleanup above having already run successfully for that same
+    fit. Called from train_mlip once a batch of committee jobs finishes, for
+    whichever fit indices now have a compiled model on disk locally.
+    """
+    for i in fit_indices:
+        fit_dir = Path("results", base_name, name, f"fit_{i}")
+        _remove_checkpoints_dir_if_model_exists(
+            fit_dir / f"{name}_stagetwo_compiled.model",
+            fit_dir / "checkpoints",
+            location="local ",
+        )
 
 
 def _select_validation_split(
@@ -307,6 +416,7 @@ def mace_fit(
         os.chdir(mlip_dir)
         run(args)
         _save_mace_eval_predictions(mlip_committee_job_dict["name"], train_filename)
+        _cleanup_committee_checkpoints(mlip_committee_job_dict["name"])
     finally:
         os.chdir(orig_dir)
 

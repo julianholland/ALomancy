@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 from ase import Atoms
 
 logger = logging.getLogger(__name__)
@@ -59,3 +60,43 @@ def clean_structures(
         cleaned_structures.append(structure_copy)
 
     return cleaned_structures
+
+
+def filter_structures_by_min_bond_distance(
+    structures: list[Atoms], min_distance: float = 0.5
+) -> list[Atoms]:
+    """Exclude structures with any pairwise atomic distance below min_distance (Å).
+
+    Guards against submitting an unphysical/exploded structure (e.g. an MD
+    instability, or a badly-generated dimer/trimer/stretch-compress
+    structure) to expensive DFT. `get_all_distances(mic=True)` is safe to
+    call unconditionally: it uses the minimum-image convention for
+    periodic structures and falls back to plain distances for non-periodic
+    ones, correctly covering every config_type this codebase produces.
+    Single-atom structures always pass through unfiltered — there is no
+    pairwise distance to check, and `np.triu_indices(1, k=1)` correctly
+    returns an empty index set rather than raising.
+    """
+    filtered = []
+    n_excluded = 0
+    for structure in structures:
+        if len(structure) < 2:
+            filtered.append(structure)
+            continue
+        distance_matrix = structure.get_all_distances(mic=True)
+        upper = distance_matrix[np.triu_indices(len(structure), k=1)]
+        if upper.min() >= min_distance:
+            filtered.append(structure)
+        else:
+            n_excluded += 1
+
+    if n_excluded:
+        logger.warning(
+            "Excluded %d/%d structure(s) with a bond shorter than %.2f Å "
+            "from DFT submission.",
+            n_excluded,
+            len(structures),
+            min_distance,
+        )
+
+    return filtered

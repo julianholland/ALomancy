@@ -113,6 +113,25 @@ def plot_training_curves(
         )
         return
 
+    # --- Raw metrics, alongside the plots rendered from the same data ---
+    # The PNGs above are the only durable record of loss/MAE today; the
+    # per-epoch numbers behind them are discarded once plotting finishes.
+    # Writing them out lets downstream analysis (or re-plotting with
+    # different styling) work from the actual numbers instead of having to
+    # re-parse *_train.txt files directly.
+    metrics_dir = plots_dir / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    for i, df, _used_ep in fit_data:
+        cols = [c for c in ("loss", "mae_e_per_atom", "mae_f") if c in df.columns]
+        if not cols:
+            continue
+        metrics_path = metrics_dir / f"{base_name}_fit_{i}_training_metrics.csv"
+        df[cols].to_csv(metrics_path)
+    logger.info(
+        "Saved per-fit training metrics (loss, mae_e_per_atom, mae_f) to %s",
+        metrics_dir,
+    )
+
     # --- Plot 2: MAE curves ---
     fig_mae, (ax_e, ax_f) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
     fig_mae.suptitle(f"{name} — Training MAE  [{base_name}]")
