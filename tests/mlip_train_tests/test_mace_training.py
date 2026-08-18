@@ -359,11 +359,22 @@ class TestSelectBestCommitteeModel:
             / "results"
         )
 
+    def _touch_model(self, base: Path, fit_idx: int) -> None:
+        """select_best_committee_model only considers fits with a
+        {name}_stagetwo.model file on disk (see its docstring) -- tests
+        that aren't specifically exercising that existence check need to
+        create this file for every fit they expect to be considered."""
+        fit_dir = self._fit_dir(base, fit_idx).parent
+        fit_dir.mkdir(parents=True, exist_ok=True)
+        (fit_dir / "mlip_committee_stagetwo.model").touch()
+
     @pytest.mark.unit
     def test_selects_fit_with_lowest_mae_f(self, tmp_path, monkeypatch):
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
+        for i in range(3):
+            self._touch_model(tmp_path, i)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 0), mae_f=0.30)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.10)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.20)
@@ -376,6 +387,8 @@ class TestSelectBestCommitteeModel:
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
+        for i in range(3):
+            self._touch_model(tmp_path, i)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 0), mae_f=0.30)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.05)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.20)
@@ -391,6 +404,9 @@ class TestSelectBestCommitteeModel:
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
+        for i in range(3):
+            self._touch_model(tmp_path, i)
+
         best_idx, model_path = select_best_committee_model(
             "al_loop_0", self.JOB_DICT, seed=803
         )
@@ -398,11 +414,43 @@ class TestSelectBestCommitteeModel:
         assert "fit_0" in str(model_path)
 
     @pytest.mark.unit
+    def test_falls_back_to_lowest_indexed_fit_with_model_when_fit_0_has_none(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression test for the crash this guards against in production:
+        fit_0 failed (no model at all) while fit_1/fit_2 trained fine but
+        neither wrote a readable test-metrics file. The old unconditional
+        'default to fit_0' fallback would have returned fit_0's (nonexistent)
+        model path here."""
+        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+
+        monkeypatch.chdir(tmp_path)
+        self._touch_model(tmp_path, 1)
+        self._touch_model(tmp_path, 2)
+        # fit_0 deliberately has no model file at all.
+
+        best_idx, model_path = select_best_committee_model(
+            "al_loop_0", self.JOB_DICT, seed=803
+        )
+        assert best_idx == 1
+        assert "fit_1" in str(model_path)
+
+    @pytest.mark.unit
+    def test_raises_when_no_fit_has_a_model(self, tmp_path, monkeypatch):
+        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+
+        monkeypatch.chdir(tmp_path)
+
+        with pytest.raises(ValueError, match="none of the 3 committee fit"):
+            select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+
+    @pytest.mark.unit
     def test_falls_back_to_fit_0_when_metric_missing(self, tmp_path, monkeypatch):
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
+            self._touch_model(tmp_path, i)
             d = self._fit_dir(tmp_path, i)
             d.mkdir(parents=True, exist_ok=True)
             # Write a file with a different metric key — no 'mae_f'
@@ -418,6 +466,8 @@ class TestSelectBestCommitteeModel:
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
+        for i in range(3):
+            self._touch_model(tmp_path, i)
         self._write_test_txt_json_format(self._fit_dir(tmp_path, 0), mae_f=0.25)
         self._write_test_txt_json_format(self._fit_dir(tmp_path, 1), mae_f=0.08)
         self._write_test_txt_json_format(self._fit_dir(tmp_path, 2), mae_f=0.15)
@@ -432,7 +482,10 @@ class TestSelectBestCommitteeModel:
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
-        # fit_0 has no test file; fit_1 and fit_2 do
+        # fit_0 has a model but no test file; fit_1 and fit_2 have both.
+        self._touch_model(tmp_path, 0)
+        self._touch_model(tmp_path, 1)
+        self._touch_model(tmp_path, 2)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.12)
         self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.08)
 
@@ -494,6 +547,7 @@ class TestSaveMaceEvalPredictions:
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        (tmp_path / "test_name_stagetwo.model").touch()
         self._write_structures(tmp_path / "train.xyz", 3)
 
         call_count = {"n": 0}
@@ -553,6 +607,7 @@ class TestSaveMaceEvalPredictions:
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        (tmp_path / "test_name_stagetwo.model").touch()
         self._write_structures(tmp_path / "train.xyz", 3)
 
         monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.23)
@@ -571,3 +626,116 @@ class TestSaveMaceEvalPredictions:
         failure_records = [r for r in records if "Prediction failed" in r.getMessage()]
         assert failure_records == []
         assert (tmp_path / "train_pred.xyz").exists()
+
+
+class TestCleanupCommitteeCheckpoints:
+    """_cleanup_committee_checkpoints runs on the remote GPU node right after
+    training, once the compiled model exists. MACE only needs its checkpoint
+    internally (to restore the best-validation-loss state before writing the
+    compiled model); ALomancy never reads checkpoints itself and
+    restart_latest stays off, so a fit's checkpoints/ directory is pure
+    storage cost once the compiled model is on disk."""
+
+    @pytest.mark.unit
+    def test_removes_checkpoints_dir_when_compiled_model_exists(
+        self, tmp_path, monkeypatch
+    ):
+        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir()
+        (checkpoints_dir / "test_name_run-1_epoch-42.pt").touch()
+
+        _cleanup_committee_checkpoints("test_name")
+
+        assert not checkpoints_dir.exists()
+
+    @pytest.mark.unit
+    def test_leaves_checkpoints_dir_when_compiled_model_missing(
+        self, tmp_path, monkeypatch
+    ):
+        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+
+        monkeypatch.chdir(tmp_path)
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir()
+        (checkpoints_dir / "test_name_run-1_epoch-42.pt").touch()
+
+        _cleanup_committee_checkpoints("test_name")
+
+        assert checkpoints_dir.exists()
+
+    @pytest.mark.unit
+    def test_no_error_when_checkpoints_dir_absent(self, tmp_path, monkeypatch):
+        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+
+        _cleanup_committee_checkpoints("test_name")
+
+
+class TestCleanupLocalCommitteeCheckpoints:
+    """cleanup_local_committee_checkpoints removes the LOCAL copy of a fit's
+    checkpoints/ directory -- separate from _cleanup_committee_checkpoints,
+    which only ever touches the REMOTE copy and cannot address local disk
+    usage accumulated via expyre's additive-only mid-training sync (see the
+    function's own docstring, and docs/remote_submission_architecture.md
+    section 6.3, for the full mechanism)."""
+
+    def _fit_dir(self, base: Path, fit_idx: int) -> Path:
+        return base / "results" / "al_loop_6" / "mlip_committee" / f"fit_{fit_idx}"
+
+    @pytest.mark.unit
+    def test_removes_local_checkpoints_for_fits_with_compiled_model(
+        self, tmp_path, monkeypatch
+    ):
+        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+
+        monkeypatch.chdir(tmp_path)
+        for i in (1, 3, 4):
+            fit_dir = self._fit_dir(tmp_path, i)
+            checkpoints_dir = fit_dir / "checkpoints"
+            checkpoints_dir.mkdir(parents=True)
+            (checkpoints_dir / f"mlip_committee_run-{i}_epoch-107.pt").touch()
+            (fit_dir / "mlip_committee_stagetwo_compiled.model").touch()
+
+        cleanup_local_committee_checkpoints("al_loop_6", "mlip_committee", [1, 3, 4])
+
+        for i in (1, 3, 4):
+            assert not (self._fit_dir(tmp_path, i) / "checkpoints").exists()
+
+    @pytest.mark.unit
+    def test_leaves_checkpoints_for_fit_without_compiled_model(
+        self, tmp_path, monkeypatch
+    ):
+        """A fit that never finished (e.g. abandoned after exhausting
+        transport-failure resume retries) has no compiled model locally --
+        its checkpoints/, if any partial sync left one, must be left alone
+        for postmortem, matching _cleanup_committee_checkpoints' own
+        existence-gated behavior."""
+        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+
+        monkeypatch.chdir(tmp_path)
+        fit_dir = self._fit_dir(tmp_path, 0)
+        checkpoints_dir = fit_dir / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        (checkpoints_dir / "mlip_committee_run-0_epoch-6.pt").touch()
+        # Deliberately no compiled model for fit_0.
+
+        cleanup_local_committee_checkpoints("al_loop_6", "mlip_committee", [0])
+
+        assert checkpoints_dir.exists()
+
+    @pytest.mark.unit
+    def test_noop_for_fit_dir_with_no_checkpoints(self, tmp_path, monkeypatch):
+        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+
+        monkeypatch.chdir(tmp_path)
+        fit_dir = self._fit_dir(tmp_path, 2)
+        fit_dir.mkdir(parents=True)
+        (fit_dir / "mlip_committee_stagetwo_compiled.model").touch()
+
+        cleanup_local_committee_checkpoints("al_loop_6", "mlip_committee", [2])

@@ -4,13 +4,14 @@ import os
 import socket
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Union, cast
 
-from expyre.func import ExPyRe
+from expyre.func import ExPyRe, ExPyReJobDiedError, ExPyReTimeoutError
 
 from alomancy.configs.remote_info import RemoteInfo
 
@@ -18,6 +19,29 @@ logger = logging.getLogger(__name__)
 
 _expyre_db_lock = threading.Lock()
 _expyre_db_patched = False
+
+# Matches expyre's own JobsDB.status_group["ongoing"] (jobsdb.py) -- a job in
+# one of these statuses has neither reached a terminal status nor produced
+# usable results yet, but it also hasn't been declared dead. Used by
+# cleanup_jobs (to avoid mark_processed()-ing a job that might still be
+# genuinely running remotely) and folded into _RESUMABLE_JOB_STATUSES below.
+_ONGOING_JOB_STATUSES = frozenset({"created", "submitted", "started"})
+
+# Statuses for which a get_results() exception is safe to resume rather than
+# treat as terminal. Deliberately wider than _ONGOING_JOB_STATUSES: reading
+# expyre/func.py shows self.status is set to 'succeeded' (in memory and in
+# the DB) *before* it attempts to copy output files back to cwd
+# (ExPyRe._copy, inside the `if self.status == 'succeeded':` block) -- so a
+# local failure during that copy-out (e.g. "No space left on device", the
+# same class of transient issue this module already resumes) raises with
+# status already 'succeeded'. That's the remote computation having
+# genuinely finished, with only the local copy left to retry -- re-entering
+# get_results() is safe and effective here too: remote status is already
+# 'done', so the loop skips straight back to re-attempting the copy. Only
+# 'failed'/'died' (expyre's other two terminal statuses, both also set
+# before raising) are excluded -- those are the only two cases where
+# retrying is actually pointless.
+_RESUMABLE_JOB_STATUSES = _ONGOING_JOB_STATUSES | {"succeeded"}
 
 # Kept open for the lifetime of this process once acquired -- see
 # acquire_local_expyre_lock. A plain reference (rather than closing it) is
@@ -193,6 +217,21 @@ def _acquire_ssh_call_lock_or_raise(
     return lock
 
 
+@contextmanager
+def _ssh_call_lock(
+    sys_name: str, timeout: float | None, description: str
+) -> Iterator[None]:
+    """Acquire the per-host ssh-call lock for the duration of the with-block,
+    always releasing it on exit. Thin wrapper around
+    _acquire_ssh_call_lock_or_raise so every call site doesn't repeat the
+    same acquire/try/finally-release triplet."""
+    lock = _acquire_ssh_call_lock_or_raise(sys_name, timeout, description)
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 def _ensure_expyre_sync_serialized() -> None:
     """Serialize ExPyRe's remote status/file sync calls behind a per-host
     lock from _get_ssh_call_lock, and coalesce redundant calls.
@@ -233,12 +272,11 @@ def _ensure_expyre_sync_serialized() -> None:
     def _locked_sync(self, *args, **kwargs):
         sys_name = self.system_name
         seen_generation = _sync_generations.get(sys_name, 0)
-        lock = _acquire_ssh_call_lock_or_raise(
+        with _ssh_call_lock(
             sys_name,
             getattr(self, "_alomancy_lock_timeout", None),
             f"sync_remote_results_status() for job {getattr(self, 'id', '?')}",
-        )
-        try:
+        ):
             if _sync_generations.get(sys_name, 0) != seen_generation:
                 # Another thread already ran a full sync for this host
                 # while we waited for the lock -- nothing left to do.
@@ -246,8 +284,6 @@ def _ensure_expyre_sync_serialized() -> None:
             result = orig_sync(self, *args, **kwargs)
             _sync_generations[sys_name] = _sync_generations.get(sys_name, 0) + 1
             return result
-        finally:
-            lock.release()
 
     ExPyRe.sync_remote_results_status = _locked_sync
     _expyre_sync_patched = True
@@ -307,6 +343,92 @@ def _ensure_expyre_db_thread_safe() -> None:
 
     db._execute = _locked_execute
     _expyre_db_patched = True
+
+
+_TRANSPORT_RETRY_LIMIT = 5
+_TIMEOUT_RETRY_LIMIT = 1
+_TRANSPORT_RETRY_BACKOFF_SECONDS = 5.0
+
+
+def _get_results_with_resume(
+    job: ExPyRe, timeout: float, check_interval: float, job_display_index: int
+) -> tuple[Any, str, str]:
+    """Call job.get_results(), resuming on the SAME job (never resubmitting)
+    when the failure is transport-only rather than a genuine remote failure.
+
+    expyre's get_results() is a poll loop that is safe to re-enter: reading
+    its source (expyre/func.py) shows that a transport-level exception --
+    e.g. the RuntimeError subprocess_run raises after exhausting its own
+    internal retries when rsync hits "No space left on device", observed in
+    production -- is raised from inside sync_remote_results_status() *before*
+    job.status is ever updated for that poll iteration, leaving it at
+    whatever it was already (created/submitted/started). By contrast, both
+    of expyre's own terminal-failure paths (ExPyReJobDiedError, and a
+    re-raised pickled remote exception) set job.status to 'died'/'failed'
+    *before* raising. That status -- not the exception type -- is what
+    reliably distinguishes "the remote Slurm job is still alive and this was
+    just a local/network hiccup" from "expyre has already concluded this job
+    is genuinely done for" (see _ONGOING_JOB_STATUSES).
+
+    Previously, ANY exception from get_results() -- including this class of
+    transient, self-resolving failure -- permanently abandoned the job after
+    a single attempt (see git history / CHANGELOG for the incident this
+    caused: a committee member's training job was abandoned 6 epochs into a
+    200-epoch run over one rsync hiccup, with nothing to salvage yet, never
+    retried, and its committee slot silently missing for the rest of that AL
+    loop). Resuming on the same job costs nothing but the wait -- unlike a
+    resubmit, no compute is duplicated and no in-progress remote work is
+    lost.
+
+    A distinct, tighter bound applies to ExPyReTimeoutError (the local wait
+    timed out; the remote job's own status is simply unknown, could still be
+    queued/running) vs. any other transport exception (bounded, exponential
+    backoff) -- both only while job.status stays in _RESUMABLE_JOB_STATUSES.
+    Once status leaves that set (job.status == 'failed' or 'died'), the
+    exception is re-raised immediately on the first occurrence, matching
+    the pre-retry behavior exactly for genuinely terminal failures.
+
+    Timeout and non-timeout exceptions are tracked with separate attempt
+    counters, not one shared counter: an interleaved sequence (e.g. a
+    transport RuntimeError, then later an ExPyReTimeoutError) must not let
+    an already-elevated shared count cause the *other* exception type to
+    exhaust its own, independent budget prematurely.
+    """
+    transport_attempts = 0
+    timeout_attempts = 0
+    while True:
+        try:
+            # job.get_results() is untyped third-party code (returns Any);
+            # cast() documents the actual contract without runtime cost.
+            return cast(
+                "tuple[Any, str, str]",
+                job.get_results(timeout=timeout, check_interval=check_interval),
+            )
+        except Exception as exc:
+            status = getattr(job, "status", None)
+            if status not in _RESUMABLE_JOB_STATUSES:
+                raise
+            if isinstance(exc, ExPyReTimeoutError):
+                timeout_attempts += 1
+                attempt, retry_limit = timeout_attempts, _TIMEOUT_RETRY_LIMIT
+            else:
+                transport_attempts += 1
+                attempt, retry_limit = transport_attempts, _TRANSPORT_RETRY_LIMIT
+            if attempt > retry_limit:
+                raise
+            backoff = _TRANSPORT_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
+            logger.warning(
+                "Job %d: %s while polling for results (attempt %d/%d); job "
+                "status is '%s' (not failed/died), resuming polling on the "
+                "same job in %.0fs rather than abandoning it.",
+                job_display_index + 1,
+                exc,
+                attempt,
+                retry_limit,
+                status,
+                backoff,
+            )
+            time.sleep(backoff)
 
 
 class RemoteJobExecutor:
@@ -425,16 +547,34 @@ class RemoteJobExecutor:
         freeze every other job on the same host indefinitely. The same
         timeout is stashed on the job instance for sync_remote_results_status
         to reuse later, since that call only has `self` to work with, not
-        this RemoteJobExecutor."""
+        this RemoteJobExecutor.
+
+        get_results() itself goes through _get_results_with_resume, which
+        resumes polling on this same job (not a fresh submission) when a
+        failure turns out to be transport-only rather than a genuine remote
+        failure -- see that function's docstring.
+
+        If _get_results_with_resume ultimately raises ExPyReJobDiedError --
+        expyre itself has concluded, after giving the job one extra chance,
+        that it is genuinely gone (no _succeeded/_error file and remote
+        status is no longer queued/held/running) -- and
+        remote_info.resubmit_killed_jobs is True (default False), this
+        submits ONE fresh replacement via job.start(force_rerun=True) and
+        waits on that instead. Off by default: a killed job (OOM-killed,
+        walltime exceeded, node failure) often needs different resources or
+        settings to succeed on retry, not just a second identical attempt --
+        this is a deliberate opt-in, unlike the transport-failure resume
+        above which is always safe."""
         job_name = getattr(job, "name", f"job_{index}")
         lock_timeout = getattr(self.remote_info, "lock_timeout", None)
-        try:
-            lock = _acquire_ssh_call_lock_or_raise(
+        resubmit_killed_jobs = getattr(self.remote_info, "resubmit_killed_jobs", False)
+
+        def _start_and_wait(force_rerun: bool) -> tuple[Any, str, str]:
+            with _ssh_call_lock(
                 self.remote_info.sys_name,
                 lock_timeout,
                 f"job.start() for job {index + 1} ({job_name})",
-            )
-            try:
+            ):
                 start_wall_time = time.time()
                 job.start(
                     resources=self.remote_info.resources,
@@ -442,16 +582,50 @@ class RemoteJobExecutor:
                     header_extra=getattr(self.remote_info, "header_extra", []),
                     exact_fit=getattr(self.remote_info, "exact_fit", True),
                     partial_node=getattr(self.remote_info, "partial_node", False),
+                    force_rerun=force_rerun,
                 )
                 job._alomancy_lock_timeout = lock_timeout
-            finally:
-                lock.release()
             logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
 
-            result, stdout, stderr = job.get_results(
-                timeout=self.remote_info.timeout,
-                check_interval=getattr(self.remote_info, "check_interval", 10),
+            result, stdout, stderr = _get_results_with_resume(
+                job,
+                self.remote_info.timeout,
+                getattr(self.remote_info, "check_interval", 10),
+                index,
             )
+            try:
+                started_file = job.stage_dir / "_expyre_job_started"
+                if started_file.exists():
+                    queue_s = max(0.0, started_file.stat().st_mtime - start_wall_time)
+                    logger.info("Job %d queue_time=%.1f s.", index + 1, queue_s)
+            except Exception as _qe:
+                logger.debug(
+                    "Could not compute queue time for job %d: %s", index + 1, _qe
+                )
+            return result, stdout, stderr
+
+        try:
+            try:
+                result, stdout, stderr = _start_and_wait(force_rerun=False)
+            except ExPyReJobDiedError:
+                if not resubmit_killed_jobs:
+                    raise
+                logger.warning(
+                    "Job %d died (no _succeeded/_error file; remote job is "
+                    "gone). resubmit_killed_jobs is enabled -- submitting "
+                    "one fresh replacement instead of giving up.",
+                    index + 1,
+                )
+                # Salvage whatever the dead attempt already produced BEFORE
+                # resubmitting: force_rerun=True only wipes the *remote*
+                # stage dir (expyre's start() calls
+                # self.clean(wipe=True, remote_only=True)) and reuses this
+                # same local stage_dir for the replacement job, so anything
+                # not salvaged now risks being overwritten as the new
+                # attempt's own output syncs in over it.
+                self._salvage_partial_output(index, job)
+                result, stdout, stderr = _start_and_wait(force_rerun=True)
+
             logger.info("Job %d completed successfully.", index + 1)
             # A job "succeeding" only means the remote function returned
             # without raising -- it can still have logged warnings (e.g. a
@@ -465,15 +639,6 @@ class RemoteJobExecutor:
                 logger.debug("Job %d stdout:\n%s", index + 1, stdout)
             if stderr:
                 logger.debug("Job %d stderr:\n%s", index + 1, stderr)
-            try:
-                started_file = job.stage_dir / "_expyre_job_started"
-                if started_file.exists():
-                    queue_s = max(0.0, started_file.stat().st_mtime - start_wall_time)
-                    logger.info("Job %d queue_time=%.1f s.", index + 1, queue_s)
-            except Exception as _qe:
-                logger.debug(
-                    "Could not compute queue time for job %d: %s", index + 1, _qe
-                )
             return index, result
         except Exception as exc:
             logger.warning("Job %d failed: %s", index + 1, exc)
@@ -583,7 +748,77 @@ class RemoteJobExecutor:
         return results
 
     def cleanup_jobs(self) -> None:
+        """Mark every job processed, and wipe the local (and remote) stage
+        directory for jobs that succeeded.
+
+        ExPyRe's own mark_processed() is pure DB bookkeeping -- it never
+        touches the stage directory, which for a succeeded job already has
+        its useful output safely copied out to cwd (ExPyRe's own
+        "if self.status == 'succeeded'" copy-out block inside get_results(),
+        which runs before this method is ever reached). Left unwiped, every
+        job's full stage directory -- for mlip_committee jobs, this includes
+        every checkpoint file rsynced during training -- accumulates on
+        local disk forever. Observed in production: 297 leftover
+        run_mlip_committee_* stage directories, 249GB, going back to a run's
+        very first loop, repeatedly triggering "No space left on device"
+        during later jobs' mid-training syncs -- which in turn caused at
+        least one job's get_results() to fail outright and its local
+        prediction-eval output to end up corrupted/stale rather than the
+        successful run's actual data.
+
+        Failed/died jobs are deliberately left alone: _salvage_partial_output
+        (called from _run_single_job's except block) may already have
+        recovered what it could, but the stage directory itself can still be
+        useful for manual postmortem, so only a job that actually finished
+        (status == 'succeeded') gets wiped here.
+
+        job.clean(wipe=True) shells out over ssh to also delete the remote
+        stage directory, so each call is serialized through the same
+        per-host lock every other ssh-invoking call in this module uses
+        (_get_ssh_call_lock) -- this runs in the main thread after
+        run_all_jobs_bounded() returns, so there's no cross-thread race to
+        guard against, just avoiding an unbounded flurry of concurrent ssh
+        sessions to one host.
+
+        mark_processed() is skipped for jobs still in an "ongoing" status
+        (created/submitted/started -- matching expyre's own JobsDB.status_group
+        definition) rather than called unconditionally: this is the case
+        where _run_single_job exhausted its resume-on-transport-failure
+        retries (see _get_results_with_resume) and gave up while the remote
+        Slurm job may still genuinely be running. expyre's own
+        can_produce_results status group (jobsdb.py) -- consulted by
+        try_restart_from_prev when a later ExPyRe(...) call with the same
+        name/args is constructed -- excludes 'processed', so marking one of
+        these processed here would make it permanently unreattachable on a
+        restart even though the underlying Slurm job might finish
+        successfully on its own a few minutes later. 'failed'/'died' jobs
+        (definitively terminal) are still marked processed as before.
+        """
         for job in self.jobs:
+            status = getattr(job, "status", None)
+            if status == "succeeded":
+                job_name = getattr(job, "name", str(job))
+                try:
+                    with _ssh_call_lock(
+                        self.remote_info.sys_name,
+                        getattr(self.remote_info, "lock_timeout", None),
+                        f"cleanup of job {job_name}",
+                    ):
+                        job.clean(wipe=True)
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to wipe stage directory for job %s: %s",
+                        job_name,
+                        exc,
+                    )
+            if status in _ONGOING_JOB_STATUSES:
+                logger.debug(
+                    "Job %s still has ongoing status %r after giving up on it; "
+                    "leaving unprocessed so a future run can reattach to it.",
+                    getattr(job, "name", str(job)),
+                    status,
+                )
+                continue
             job.mark_processed()
 
     def run_and_wait(

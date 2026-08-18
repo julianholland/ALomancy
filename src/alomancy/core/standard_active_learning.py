@@ -22,7 +22,7 @@ from alomancy.mlip.get_mace_eval_info import (
     get_mace_eval_info,
     select_best_committee_model,
 )
-from alomancy.mlip.mace_wfl import mace_fit
+from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints, mace_fit
 from alomancy.remote_submission import (
     all_maces_remote_submitter,
     ase_remote_submitter,
@@ -37,7 +37,10 @@ from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, ru
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
-from alomancy.utils.clean_structures import clean_structures
+from alomancy.utils.clean_structures import (
+    clean_structures,
+    filter_structures_by_min_bond_distance,
+)
 from alomancy.utils.file_saving_and_parsing import (
     read_atoms_file_if_enabled,
 )
@@ -425,49 +428,60 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 configured_size,
                 len(found_fit_indices),
             )
+            # Retrain every missing fit, not just enough to reach the
+            # minimum-viable size of 3 below -- previously this sliced
+            # missing_fit_indices to [:3 - len(found_fit_indices)], so once 3
+            # fits existed the remaining missing ones (e.g. a fit lost to a
+            # transient sync failure -- see _get_results_with_resume) were
+            # never retried again and the committee silently ran under its
+            # configured size for the rest of that AL loop. 3 remains the
+            # floor for whether a usable committee std-dev exists at all
+            # (checked below after retrying), not the target to stop at.
+            missing_fit_indices = sorted(
+                set(range(configured_size)) - found_fit_indices
+            )
+            logger.info(
+                "train_mlip for %s: only found %d trained model(s). "
+                "Retraining missing fit(s) %s.",
+                base_name,
+                len(found_fit_indices),
+                missing_fit_indices,
+            )
+            committee_remote_submitter(
+                remote_info=get_remote_info(
+                    mlip_committee_job_dict,
+                    input_files=[
+                        str(Path(workdir, "train_set.xyz")),
+                        str(Path(workdir, "test_set.xyz")),
+                    ],
+                ),
+                base_name=base_name,
+                seed=803,
+                function=mace_fit,
+                function_kwargs={
+                    "job_dict": job_dict,
+                    "workdir_str": str(workdir),
+                },
+                fit_indices=missing_fit_indices,
+            )
+            found_fit_indices = _found_fit_indices()
+
             if len(found_fit_indices) < 3:
                 # 3 is the minimum committee size for a reasonable force
                 # std-dev across members; below that, uncertainty-based
                 # structure selection has too few members to be meaningful.
-                missing_fit_indices = sorted(
-                    set(range(configured_size)) - found_fit_indices
-                )[: 3 - len(found_fit_indices)]
-                logger.info(
-                    "train_mlip for %s: only found %d trained model(s). "
-                    "Retraining missing fit(s) %s to reach the minimum "
-                    "committee size of 3.",
-                    base_name,
-                    len(found_fit_indices),
-                    missing_fit_indices,
+                raise RuntimeError(
+                    f"train_mlip for {base_name}: still only "
+                    f"{len(found_fit_indices)} trained model(s) after "
+                    f"retrying the missing committee member(s) "
+                    f"{missing_fit_indices} — need at least 3 for a "
+                    "usable committee std-dev. Check remote job logs "
+                    "for failures."
                 )
-                committee_remote_submitter(
-                    remote_info=get_remote_info(
-                        mlip_committee_job_dict,
-                        input_files=[
-                            str(Path(workdir, "train_set.xyz")),
-                            str(Path(workdir, "test_set.xyz")),
-                        ],
-                    ),
-                    base_name=base_name,
-                    seed=803,
-                    function=mace_fit,
-                    function_kwargs={
-                        "job_dict": job_dict,
-                        "workdir_str": str(workdir),
-                    },
-                    fit_indices=missing_fit_indices,
-                )
-                found_fit_indices = _found_fit_indices()
 
-                if len(found_fit_indices) < 3:
-                    raise RuntimeError(
-                        f"train_mlip for {base_name}: still only "
-                        f"{len(found_fit_indices)} trained model(s) after "
-                        f"retrying the missing committee member(s) "
-                        f"{missing_fit_indices} — need at least 3 for a "
-                        "usable committee std-dev. Check remote job logs "
-                        "for failures."
-                    )
+        cleanup_local_committee_checkpoints(
+            base_name, mlip_committee_job_dict["name"], found_fit_indices
+        )
 
         mae_avg_results = get_mace_eval_info(
             mlip_committee_job_dict=mlip_committee_job_dict
@@ -683,6 +697,15 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
         )
 
+        # Drop candidates with an unphysically short bond (e.g. an MD
+        # instability) before spending a MACE committee evaluation on them,
+        # let alone DFT — see filter_structures_by_min_bond_distance's
+        # docstring for why get_all_distances(mic=True) is safe across
+        # every config_type here. Filtering before the log below (rather
+        # than after) keeps the logged count matching what's actually
+        # submitted just afterward.
+        structure_list = filter_structures_by_min_bond_distance(structure_list)
+
         logger.info(
             "Structure generation: evaluating %d candidate structure(s) against "
             "the full %d-member committee to select the most uncertain ones.",
@@ -783,6 +806,13 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     "No previous results found. Submitting all %d structures.",
                     len(structures),
                 )
+
+        # Final safety net before any DFT is attempted: covers both callers
+        # of this method (the per-loop generate_structures path, which
+        # already filters earlier to avoid wasting a MACE eval too, and the
+        # initialization bootstrap path at the other call site, which has
+        # no equivalent upstream filter of its own).
+        structures = filter_structures_by_min_bond_distance(structures)
 
         current_batches = sum(
             1

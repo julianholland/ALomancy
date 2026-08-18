@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from ase import Atoms
+from expyre.func import ExPyReJobDiedError, ExPyReTimeoutError
 
 from alomancy.remote_submission.executor import RemoteJobExecutor
 
@@ -70,6 +71,7 @@ class _FakeExPyReJob:
         concurrency_tracker=None,
         start_duration=0.0,
         start_concurrency_tracker=None,
+        get_results_side_effects=None,
     ):
         self.name = name
         self.stage_dir = stage_dir
@@ -80,8 +82,17 @@ class _FakeExPyReJob:
         self._concurrency = concurrency_tracker
         self._start_duration = start_duration
         self._start_concurrency = start_concurrency_tracker
+        self.status = "created"
+        self.clean_calls: list[bool] = []
+        # Queue of exceptions (or None for "succeed") get_results() raises/
+        # returns on successive calls, for testing _get_results_with_resume
+        # -- e.g. [RuntimeError("transient"), None] raises once then
+        # succeeds on the second call, simulating a transport blip.
+        self._get_results_side_effects = list(get_results_side_effects or [])
+        self.start_calls: list[bool] = []
 
     def start(self, **kwargs):
+        self.start_calls.append(kwargs.get("force_rerun", False))
         if self._start_concurrency is not None:
             self._start_concurrency.on_start()
         self.stage_dir.mkdir(parents=True, exist_ok=True)
@@ -94,22 +105,54 @@ class _FakeExPyReJob:
             self._concurrency.on_start()
         if self._start_concurrency is not None:
             self._start_concurrency.on_finish()
+        self.status = "submitted"
 
     def get_results(self, **kwargs):
         time.sleep(self.duration)
+        if self._get_results_side_effects:
+            effect = self._get_results_side_effects.pop(0)
+            if effect is not None:
+                # A plain exception (class or instance) simulates a
+                # transport-only failure: expyre raises it from inside
+                # sync_remote_results_status() *before* touching job.status,
+                # so status stays whatever it already was (e.g. "submitted").
+                # A (exception, status) tuple simulates a definitive expyre
+                # conclusion (ExPyReJobDiedError/'failed'), which sets
+                # status *before* raising -- matching expyre/func.py's real
+                # get_results() control flow exactly.
+                if isinstance(effect, tuple):
+                    exc, new_status = effect
+                    self.status = new_status
+                    raise exc
+                if isinstance(effect, type) and issubclass(effect, BaseException):
+                    raise effect(f"{self.name} transient failure")
+                raise effect
         if self._events is not None:
             self._events.on_finish(self.name)
         if self._concurrency is not None:
             self._concurrency.on_finish()
         if self.should_fail:
+            self.status = "failed"
             raise RuntimeError(f"{self.name} failed")
+        self.status = "succeeded"
         return self.result, "stdout", "stderr"
 
     def mark_processed(self):
-        pass
+        self.status = "processed"
+
+    def clean(self, wipe=False):
+        self.clean_calls.append(wipe)
+        if wipe:
+            self.status = "cleaned"
 
 
-def _fake_executor(max_concurrent_jobs, jobs, sys_name="test-hpc", lock_timeout=None):
+def _fake_executor(
+    max_concurrent_jobs,
+    jobs,
+    sys_name="test-hpc",
+    lock_timeout=None,
+    resubmit_killed_jobs=False,
+):
     remote_info = SimpleNamespace(
         resources={},
         sys_name=sys_name,
@@ -120,6 +163,7 @@ def _fake_executor(max_concurrent_jobs, jobs, sys_name="test-hpc", lock_timeout=
         partial_node=False,
         max_concurrent_jobs=max_concurrent_jobs,
         lock_timeout=lock_timeout,
+        resubmit_killed_jobs=resubmit_killed_jobs,
     )
     executor = RemoteJobExecutor(remote_info)
     executor.jobs = jobs
@@ -495,6 +539,221 @@ class TestRemoteJobExecutor:
         messages = " ".join(r.getMessage() for r in records)
         assert "stdout" in messages
         assert "stderr" in messages
+
+    @pytest.mark.unit
+    def test_transport_failure_resumes_on_same_job_and_succeeds(self, tmp_path):
+        """A transient exception that leaves job.status in the ongoing set
+        (simulating e.g. the "No space left on device" rsync failure during
+        a mid-training sync -- observed in production, see
+        docs/remote_submission_architecture.md section 6) must be resumed
+        on the SAME job object, not treated as a permanent failure. Exactly
+        one job.start() call proves no resubmission happened."""
+        import alomancy.remote_submission.executor as executor_module
+
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            result="the real result",
+            get_results_side_effects=[RuntimeError, RuntimeError, None],
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+
+        with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
+            results = executor.run_all_jobs_bounded()
+
+        assert results == ["the real result"]
+        assert job.status == "succeeded"
+        assert job.start_calls == [False]
+
+    @pytest.mark.unit
+    def test_transport_failure_gives_up_after_retry_limit(self, tmp_path):
+        """More transient failures than the retry limit must still
+        eventually give up (not retry forever) and behave like the
+        pre-existing single-attempt failure path: result is None, the job
+        is left in its ongoing status (not force-marked failed)."""
+        import alomancy.remote_submission.executor as executor_module
+
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            get_results_side_effects=[RuntimeError] * 10,
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+
+        with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
+            results = executor.run_all_jobs_bounded()
+
+        assert results == [None]
+        assert job.status == "submitted"
+        assert job.start_calls == [False]
+
+    @pytest.mark.unit
+    def test_timeout_exception_only_gets_one_resume_attempt(self, tmp_path):
+        """ExPyReTimeoutError gets a tighter retry bound than a generic
+        transport exception (1 extra attempt, not the full transport-retry
+        limit) -- the local wait expired, but the remote job's own status is
+        simply unknown rather than definitely still alive."""
+        import alomancy.remote_submission.executor as executor_module
+
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            get_results_side_effects=[ExPyReTimeoutError, ExPyReTimeoutError],
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+
+        with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
+            results = executor.run_all_jobs_bounded()
+
+        # First ExPyReTimeoutError consumed by the initial call, second by
+        # the single allowed resume attempt -- then gives up.
+        assert results == [None]
+        assert not job._get_results_side_effects
+
+    @pytest.mark.unit
+    def test_terminal_failure_status_is_not_retried(self, tmp_path):
+        """Once expyre itself has set job.status to a terminal value
+        ('failed') before raising, that's a genuine remote failure, not a
+        transport blip -- must fail on the very first attempt, matching
+        pre-resume behavior exactly, with no wasted retry/backoff."""
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            get_results_side_effects=[
+                (RuntimeError("remote function raised"), "failed")
+            ],
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+
+        results = executor.run_all_jobs_bounded()
+
+        assert results == [None]
+        assert job.status == "failed"
+        assert job.start_calls == [False]
+
+    @pytest.mark.unit
+    def test_died_job_resubmitted_when_resubmit_killed_jobs_enabled(self, tmp_path):
+        """A definitively died job (ExPyReJobDiedError, status='died') gets
+        exactly one fresh replacement submission (force_rerun=True) when
+        resubmit_killed_jobs is on, and the executor waits on that
+        replacement instead of giving up."""
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            result="result from the replacement job",
+            get_results_side_effects=[(ExPyReJobDiedError("gone"), "died")],
+        )
+        executor = _fake_executor(
+            max_concurrent_jobs=1, jobs=[job], resubmit_killed_jobs=True
+        )
+
+        results = executor.run_all_jobs_bounded()
+
+        assert results == ["result from the replacement job"]
+        assert job.status == "succeeded"
+        assert job.start_calls == [False, True]
+
+    @pytest.mark.unit
+    def test_died_job_not_resubmitted_by_default(self, tmp_path):
+        """resubmit_killed_jobs defaults to False -- a died job must fail
+        outright with no resubmission, exactly matching pre-existing
+        behavior."""
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            get_results_side_effects=[(ExPyReJobDiedError("gone"), "died")],
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+
+        results = executor.run_all_jobs_bounded()
+
+        assert results == [None]
+        assert job.status == "died"
+        assert job.start_calls == [False]
+
+    @pytest.mark.unit
+    def test_cleanup_wipes_succeeded_job_stage_dir(self, tmp_path):
+        """A succeeded job's stage directory is wiped after cleanup_jobs --
+        by the time it's called, ExPyRe's own get_results() has already
+        copied the job's useful output out to cwd, so the full stage dir
+        (for mlip_committee jobs: every checkpoint synced during training)
+        is pure leftover storage cost from then on."""
+        jobs = [_FakeExPyReJob("job0", tmp_path / "job0", duration=0.0)]
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=jobs)
+        executor.run_all_jobs_bounded()
+
+        executor.cleanup_jobs()
+
+        assert jobs[0].clean_calls == [True]
+        assert jobs[0].status == "processed"
+
+    @pytest.mark.unit
+    def test_cleanup_leaves_failed_job_stage_dir_untouched(self, tmp_path):
+        """A failed/died job's stage directory is never wiped -- it may
+        still hold data _salvage_partial_output could recover, or be useful
+        for manual postmortem, so cleanup_jobs must not delete it."""
+        jobs = [
+            _FakeExPyReJob("job0", tmp_path / "job0", duration=0.0, should_fail=True)
+        ]
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=jobs)
+        executor.run_all_jobs_bounded()
+
+        executor.cleanup_jobs()
+
+        assert jobs[0].clean_calls == []
+        assert jobs[0].status == "processed"
+
+    @pytest.mark.unit
+    def test_cleanup_marks_terminal_status_jobs_processed(self, tmp_path):
+        """succeeded and failed are both terminal -- mark_processed() runs
+        for both, matching the original unconditional behavior for any job
+        that has actually finished one way or the other."""
+        jobs = [
+            _FakeExPyReJob("job0", tmp_path / "job0", duration=0.0),
+            _FakeExPyReJob("job1", tmp_path / "job1", duration=0.0, should_fail=True),
+        ]
+        executor = _fake_executor(max_concurrent_jobs=2, jobs=jobs)
+        executor.run_all_jobs_bounded()
+
+        executor.cleanup_jobs()
+
+        assert all(job.status == "processed" for job in jobs)
+
+    @pytest.mark.unit
+    def test_cleanup_skips_mark_processed_for_still_ongoing_job(self, tmp_path):
+        """A job _run_single_job gave up on after exhausting transport-retry
+        resume attempts (see _get_results_with_resume) can still be
+        genuinely running remotely -- job.status stays in the "ongoing" set
+        (created/submitted/started) rather than being set to
+        'failed'/'died'. mark_processed() must be skipped for it: expyre's
+        own can_produce_results status group excludes 'processed', so
+        marking it processed here would make a still-alive remote job
+        permanently unreattachable on a future restart."""
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            get_results_side_effects=[RuntimeError] * 10,
+        )
+        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor.remote_info.check_interval = 0.001
+        import alomancy.remote_submission.executor as executor_module
+
+        with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
+            executor.run_all_jobs_bounded()
+
+        assert job.status == "submitted"
+        executor.cleanup_jobs()
+
+        # mark_processed() would have set status to "processed" -- it
+        # staying "submitted" proves cleanup_jobs skipped it.
+        assert job.status == "submitted"
 
 
 @pytest.mark.unit
@@ -1233,6 +1492,143 @@ class TestCleanStructures:
         result = clean_structures([atoms], config_type="test", already_computed=False)
         assert len(result) == 1
         assert "REF_energy" not in result[0].info
+
+
+class TestFilterStructuresByMinBondDistance:
+    """filter_structures_by_min_bond_distance excludes unphysical/exploded
+    structures (e.g. an MD instability) from ever reaching DFT."""
+
+    @pytest.mark.unit
+    def test_keeps_structure_with_normal_bond_lengths(self):
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        atoms = Atoms(
+            symbols=["O", "H", "H"],
+            positions=[[0, 0, 0], [0.757, 0.586, 0], [-0.757, 0.586, 0]],
+            cell=[10, 10, 10],
+            pbc=True,
+        )
+        result = filter_structures_by_min_bond_distance([atoms])
+        assert len(result) == 1
+
+    @pytest.mark.unit
+    def test_excludes_structure_with_bond_below_threshold(self):
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        atoms = Atoms(
+            symbols=["H", "H"],
+            positions=[[0, 0, 0], [0.1, 0, 0]],
+            cell=[10, 10, 10],
+            pbc=True,
+        )
+        result = filter_structures_by_min_bond_distance([atoms])
+        assert result == []
+
+    @pytest.mark.unit
+    def test_boundary_distance_exactly_at_threshold_is_kept(self):
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        atoms = Atoms(
+            symbols=["H", "H"],
+            positions=[[0, 0, 0], [0.5, 0, 0]],
+            cell=[10, 10, 10],
+            pbc=True,
+        )
+        result = filter_structures_by_min_bond_distance([atoms], min_distance=0.5)
+        assert len(result) == 1
+
+    @pytest.mark.unit
+    def test_single_atom_structure_always_kept(self):
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        atoms = Atoms(symbols=["H"], positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+        result = filter_structures_by_min_bond_distance([atoms])
+        assert len(result) == 1
+
+    @pytest.mark.unit
+    def test_non_periodic_structure_supported(self):
+        """Dimers/trimers/isolated atoms are pbc=False -- get_all_distances(mic=True)
+        must not raise for these, and should filter on plain distances."""
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        close = Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [0.2, 0, 0]])
+        far = Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [1.0, 0, 0]])
+        result = filter_structures_by_min_bond_distance([close, far])
+        assert len(result) == 1
+        assert result[0] is far
+
+    @pytest.mark.unit
+    def test_mixed_batch_only_excludes_bad_structures(self):
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        good = Atoms(
+            symbols=["H", "H"], positions=[[0, 0, 0], [1.0, 0, 0]], cell=[10, 10, 10]
+        )
+        bad = Atoms(
+            symbols=["H", "H"], positions=[[0, 0, 0], [0.05, 0, 0]], cell=[10, 10, 10]
+        )
+        result = filter_structures_by_min_bond_distance([good, bad, good])
+        assert len(result) == 2
+        assert all(r is good for r in result)
+
+    @pytest.mark.unit
+    def test_custom_min_distance_threshold(self):
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        atoms = Atoms(
+            symbols=["H", "H"], positions=[[0, 0, 0], [0.8, 0, 0]], cell=[10, 10, 10]
+        )
+        assert (
+            len(filter_structures_by_min_bond_distance([atoms], min_distance=0.5)) == 1
+        )
+        assert filter_structures_by_min_bond_distance([atoms], min_distance=1.0) == []
+
+    @pytest.mark.unit
+    def test_logs_warning_with_exclusion_count(self):
+        import logging
+
+        from alomancy.utils.clean_structures import (
+            filter_structures_by_min_bond_distance,
+        )
+
+        al_logger = logging.getLogger("alomancy")
+        al_logger.setLevel(logging.DEBUG)
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        handler = _Collector()
+        handler.setLevel(logging.DEBUG)
+        al_logger.addHandler(handler)
+        try:
+            bad = Atoms(
+                symbols=["H", "H"],
+                positions=[[0, 0, 0], [0.1, 0, 0]],
+                cell=[10, 10, 10],
+            )
+            filter_structures_by_min_bond_distance([bad, bad])
+        finally:
+            al_logger.removeHandler(handler)
+
+        warnings = [r for r in records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "2/2" in warnings[0].getMessage()
 
 
 @pytest.mark.unit
