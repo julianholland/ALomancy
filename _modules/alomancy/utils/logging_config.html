@@ -83,9 +83,9 @@
 <div class="viewcode-block" id="setup_logging">
 <a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.logging_config.setup_logging">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">setup_logging</span><span class="p">(</span>
-    <span class="n">verbose</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">log_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;results/alomancy.log&quot;</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">log_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">"results/alomancy.log"</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configure the alomancy logger hierarchy.</span>
+<span class="w">    </span><span class="sd">"""Configure the alomancy logger hierarchy.</span>
 
 <span class="sd">    verbose=0 → console shows WARNING+  (silent during normal runs)</span>
 <span class="sd">    verbose=1 → console shows INFO      (step-level progress)</span>
@@ -93,8 +93,8 @@
 
 <span class="sd">    The file handler always captures DEBUG regardless of verbose, so every</span>
 <span class="sd">    run produces a complete timestamped record even when the console is quiet.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">root</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;alomancy&quot;</span><span class="p">)</span>
+<span class="sd">    """</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"alomancy"</span><span class="p">)</span>
     <span class="n">root</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
     <span class="n">root</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
 
@@ -106,8 +106,8 @@
         <span class="k">else</span> <span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span>
     <span class="p">)</span>
     <span class="n">fmt</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span>
-        <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2"> [</span><span class="si">%(levelname)-8s</span><span class="s2">] </span><span class="si">%(name)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">,</span>
+        <span class="s2">"</span><span class="si">%(asctime)s</span><span class="s2"> [</span><span class="si">%(levelname)-8s</span><span class="s2">] </span><span class="si">%(name)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">datefmt</span><span class="o">=</span><span class="s2">"%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S"</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="n">ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
@@ -117,14 +117,14 @@
 
     <span class="k">if</span> <span class="n">log_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">Path</span><span class="p">(</span><span class="n">log_file</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">fh</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">FileHandler</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;a&quot;</span><span class="p">)</span>
+        <span class="n">fh</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">FileHandler</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"a"</span><span class="p">)</span>
         <span class="n">fh</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
         <span class="n">fh</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
         <span class="n">root</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
 
-    <span class="c1"># Route expyre&#39;s own logging through our handlers so HPC job events</span>
+    <span class="c1"># Route expyre's own logging through our handlers so HPC job events</span>
     <span class="c1"># appear in the same log file.</span>
-    <span class="n">expyre_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;expyre&quot;</span><span class="p">)</span>
+    <span class="n">expyre_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"expyre"</span><span class="p">)</span>
     <span class="n">expyre_logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span> <span class="k">if</span> <span class="n">verbose</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARNING</span><span class="p">)</span>
     <span class="n">expyre_logger</span><span class="o">.</span><span class="n">propagate</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">expyre_logger</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>

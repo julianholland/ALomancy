@@ -81,9 +81,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">expyre.resources</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resources</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">expyre.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">time_to_sec</span>
 
-<span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="s2">&quot;pathlib._local&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pathlib</span>
+<span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="s2">"pathlib._local"</span><span class="p">]</span> <span class="o">=</span> <span class="n">pathlib</span>
 
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -92,7 +91,7 @@
 <div class="viewcode-block" id="RemoteInfo">
 <a class="viewcode-back" href="../../../api/configs.html#alomancy.configs.remote_info.RemoteInfo">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">RemoteInfo</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a RemoteInfo object</span>
+<span class="w">    </span><span class="sd">"""Create a RemoteInfo object</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
@@ -126,29 +125,35 @@
 <span class="sd">    check_interval: int</span>
 <span class="sd">        check_interval arg to pass to get_results</span>
 <span class="sd">    ignore_failed_jobs: bool, default False</span>
-<span class="sd">        skip failures in remote jobs</span>
+<span class="sd">        currently unused by RemoteJobExecutor -- accepted for backwards compatibility</span>
 <span class="sd">    resubmit_killed_jobs: bool, default False</span>
-<span class="sd">        resubmit jobs that were killed without an exit status (out of walltime or crashed),</span>
-<span class="sd">        hoping that other parameters such as walltime or memory have been changed to make run complete this time</span>
+<span class="sd">        when a RemoteJobExecutor job is declared definitively dead (ExPyReJobDiedError --</span>
+<span class="sd">        no _succeeded/_error file and the remote scheduler no longer shows it queued/held/</span>
+<span class="sd">        running), submit ONE fresh replacement (job.start(force_rerun=True)) instead of</span>
+<span class="sd">        giving up immediately. Distinct from and unrelated to the always-on resume behavior</span>
+<span class="sd">        for transient transport failures (see executor._get_results_with_resume) -- this is</span>
+<span class="sd">        specifically for a job the scheduler itself killed (OOM, walltime, node failure).</span>
+<span class="sd">        Off by default because a killed job often needs different resources to succeed on</span>
+<span class="sd">        retry, not just a second identical attempt.</span>
 <span class="sd">    max_concurrent_jobs: int, default 20</span>
 <span class="sd">        cap on how many jobs a RemoteJobExecutor keeps started (occupying a scheduler slot)</span>
 <span class="sd">        at once; the next queued job starts the instant a running one finishes. This is a</span>
 <span class="sd">        property of the HPC system/account, sourced from the HPC profile in</span>
 <span class="sd">        ~/.alomancy/hpc_config.yaml (see get_remote_info) -- unrelated to</span>
-<span class="sd">        structure_generation&#39;s max_number_of_concurrent_jobs, which controls how many seed</span>
+<span class="sd">        structure_generation's max_number_of_concurrent_jobs, which controls how many seed</span>
 <span class="sd">        structures are selected for MD, not scheduler concurrency.</span>
 <span class="sd">    lock_timeout: float or None, default None</span>
 <span class="sd">        max seconds a RemoteJobExecutor worker thread will wait to acquire the</span>
 <span class="sd">        per-host ssh-call lock (see executor._get_ssh_call_lock) before giving</span>
 <span class="sd">        up on its own job rather than waiting forever. None waits indefinitely</span>
 <span class="sd">        (matches the old, unbounded behavior). get_remote_info sets this from</span>
-<span class="sd">        the job&#39;s own max_time -- if a thread has waited longer than the job&#39;s</span>
+<span class="sd">        the job's own max_time -- if a thread has waited longer than the job's</span>
 <span class="sd">        entire expected walltime just for a turn to touch ssh, something is</span>
 <span class="sd">        stuck (e.g. the shared control connection died and a fresh connection</span>
 <span class="sd">        needs interactive auth nobody can provide), not merely busy.</span>
 <span class="sd">    hash_ignore: list(str), default []</span>
-<span class="sd">        list of arguments to ignore when doing hash of remote function arguments to determine if it&#39;s already been done</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">        list of arguments to ignore when doing hash of remote function arguments to determine if it's already been done</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -209,8 +214,8 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sys_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">resources</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">num_inputs_per_queued_job</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exact_fit</span><span class="si">}</span><span class="s2"> &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">partial_node</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">check_interval</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sys_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">resources</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">num_inputs_per_queued_job</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exact_fit</span><span class="si">}</span><span class="s2"> "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">partial_node</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">check_interval</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span></div>
 
 
@@ -219,44 +224,44 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_max_concurrent_jobs</span><span class="p">(</span><span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve the concurrency cap for a job dict.</span>
+<span class="w">    </span><span class="sd">"""Resolve the concurrency cap for a job dict.</span>
 
 <span class="sd">    Precedence: an explicit ``max_concurrent_jobs`` on the HPC profile</span>
-<span class="sd">    (``job_dict[&quot;hpc&quot;]``) always wins when present -- it is the sole</span>
+<span class="sd">    (``job_dict["hpc"]``) always wins when present -- it is the sole</span>
 <span class="sd">    authoritative, current-format home for this setting. The legacy</span>
 <span class="sd">    job-dict-level ``max_batch_size`` key is only consulted as a fallback</span>
-<span class="sd">    when the profile doesn&#39;t define the new key, so a leftover key a user</span>
-<span class="sd">    forgot to delete can&#39;t silently override a value they&#39;ve since migrated</span>
+<span class="sd">    when the profile doesn't define the new key, so a leftover key a user</span>
+<span class="sd">    forgot to delete can't silently override a value they've since migrated</span>
 <span class="sd">    into their HPC profile. ``max_batch_size`` is deprecated and will be</span>
 <span class="sd">    removed in ALomancy 1.0.0 -- see docs/deprecations.md.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">hpc</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span>
-    <span class="n">explicit_cap</span> <span class="o">=</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_concurrent_jobs&quot;</span><span class="p">)</span>
-    <span class="n">legacy_cap</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_batch_size&quot;</span><span class="p">)</span>
+<span class="sd">    """</span>
+    <span class="n">hpc</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span>
+    <span class="n">explicit_cap</span> <span class="o">=</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_concurrent_jobs"</span><span class="p">)</span>
+    <span class="n">legacy_cap</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_batch_size"</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">legacy_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">explicit_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;&#39;max_batch_size&#39; on job &#39;</span><span class="si">%s</span><span class="s2">&#39; is deprecated and ignored because &quot;</span>
-                <span class="s2">&quot;HPC profile &#39;</span><span class="si">%s</span><span class="s2">&#39; already defines max_concurrent_jobs=</span><span class="si">%s</span><span class="s2">. Remove &quot;</span>
-                <span class="s2">&quot;&#39;max_batch_size&#39; from your job config -- it will be removed &quot;</span>
-                <span class="s2">&quot;entirely in ALomancy 1.0.0. See docs/deprecations.md.&quot;</span><span class="p">,</span>
-                <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">),</span>
-                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">),</span>
+                <span class="s2">"'max_batch_size' on job '</span><span class="si">%s</span><span class="s2">' is deprecated and ignored because "</span>
+                <span class="s2">"HPC profile '</span><span class="si">%s</span><span class="s2">' already defines max_concurrent_jobs=</span><span class="si">%s</span><span class="s2">. Remove "</span>
+                <span class="s2">"'max_batch_size' from your job config -- it will be removed "</span>
+                <span class="s2">"entirely in ALomancy 1.0.0. See docs/deprecations.md."</span><span class="p">,</span>
+                <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
+                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
                 <span class="n">explicit_cap</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;&#39;max_batch_size&#39; on job &#39;</span><span class="si">%s</span><span class="s2">&#39; is deprecated. Using its value &quot;</span>
-                <span class="s2">&quot;(</span><span class="si">%s</span><span class="s2">) as max_concurrent_jobs because HPC profile &#39;</span><span class="si">%s</span><span class="s2">&#39; does not &quot;</span>
-                <span class="s2">&quot;define max_concurrent_jobs. Move this setting into &quot;</span>
-                <span class="s2">&quot;~/.alomancy/hpc_config.yaml under the &#39;</span><span class="si">%s</span><span class="s2">&#39; profile&#39;s hpc dict &quot;</span>
-                <span class="s2">&quot;instead; &#39;max_batch_size&#39; will be removed entirely in &quot;</span>
-                <span class="s2">&quot;ALomancy 1.0.0. See docs/deprecations.md.&quot;</span><span class="p">,</span>
-                <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">),</span>
+                <span class="s2">"'max_batch_size' on job '</span><span class="si">%s</span><span class="s2">' is deprecated. Using its value "</span>
+                <span class="s2">"(</span><span class="si">%s</span><span class="s2">) as max_concurrent_jobs because HPC profile '</span><span class="si">%s</span><span class="s2">' does not "</span>
+                <span class="s2">"define max_concurrent_jobs. Move this setting into "</span>
+                <span class="s2">"~/.alomancy/hpc_config.yaml under the '</span><span class="si">%s</span><span class="s2">' profile's hpc dict "</span>
+                <span class="s2">"instead; 'max_batch_size' will be removed entirely in "</span>
+                <span class="s2">"ALomancy 1.0.0. See docs/deprecations.md."</span><span class="p">,</span>
+                <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
                 <span class="n">legacy_cap</span><span class="p">,</span>
-                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">),</span>
-                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">),</span>
+                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
+                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
             <span class="p">)</span>
 
     <span class="k">if</span> <span class="n">explicit_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -269,27 +274,42 @@
 <div class="viewcode-block" id="get_remote_info">
 <a class="viewcode-back" href="../../../api/configs.html#alomancy.configs.remote_info.get_remote_info">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_remote_info</span><span class="p">(</span><span class="n">job_dict</span><span class="p">,</span> <span class="n">input_files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RemoteInfo</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Returns a RemoteInfo object for running MACE fits on a GPU cluster.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="n">input_files</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">input_files</span> <span class="o">=</span> <span class="p">[]</span>
 
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;HPC: </span><span class="si">%s</span><span class="s2">, Job: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">],</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"HPC: </span><span class="si">%s</span><span class="s2">, Job: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"hpc_name"</span><span class="p">],</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">RemoteInfo</span><span class="p">(</span>
-        <span class="n">sys_name</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">],</span>
-        <span class="n">job_name</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
+        <span class="n">sys_name</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"hpc_name"</span><span class="p">],</span>
+        <span class="n">job_name</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span>
         <span class="n">num_inputs_per_queued_job</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
         <span class="n">timeout</span><span class="o">=</span><span class="mi">36000</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>
         <span class="n">input_files</span><span class="o">=</span><span class="n">input_files</span><span class="p">,</span>
-        <span class="n">pre_cmds</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pre_cmds&quot;</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="n">pre_cmds</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pre_cmds"</span><span class="p">,</span> <span class="p">[]),</span>
         <span class="n">resources</span><span class="o">=</span><span class="n">Resources</span><span class="p">(</span>
-            <span class="n">max_time</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">],</span>
+            <span class="n">max_time</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"max_time"</span><span class="p">],</span>
             <span class="n">num_nodes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-            <span class="n">partitions</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;partitions&quot;</span><span class="p">],</span>
+            <span class="n">partitions</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"partitions"</span><span class="p">],</span>
         <span class="p">),</span>
         <span class="n">max_concurrent_jobs</span><span class="o">=</span><span class="n">_resolve_max_concurrent_jobs</span><span class="p">(</span><span class="n">job_dict</span><span class="p">),</span>
-        <span class="n">lock_timeout</span><span class="o">=</span><span class="n">time_to_sec</span><span class="p">(</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;max_time&quot;</span><span class="p">]),</span>
+        <span class="c1"># lock_timeout intentionally left at RemoteInfo's own default (None</span>
+        <span class="c1"># -- wait indefinitely for the per-host ssh-call lock). This used</span>
+        <span class="c1"># to be set to time_to_sec(job_dict["max_time"]), so a job queued</span>
+        <span class="c1"># behind one stuck on an interactive password/OTP prompt would</span>
+        <span class="c1"># give up and fail loudly after its own max_time elapsed rather</span>
+        <span class="c1"># than just waiting -- the actual stuck call was, and still is,</span>
+        <span class="c1"># never bounded either way, so that revert didn't make the stuck</span>
+        <span class="c1"># call itself succeed any faster, it only turned "everything</span>
+        <span class="c1"># waits quietly for you to type the password" into "everything</span>
+        <span class="c1"># else fails around the one call that's waiting for you to type</span>
+        <span class="c1"># the password." Restored to match the pre-0.5.2 behavior by</span>
+        <span class="c1"># request. pre_run_checks()'s ensure_ssh_connectivity call is the</span>
+        <span class="c1"># real fix for the underlying problem this was trying to guard</span>
+        <span class="c1"># against -- it authenticates every HPC host up front, before any</span>
+        <span class="c1"># remote submission begins, while a person is presumably still at</span>
+        <span class="c1"># the terminal to answer a prompt.</span>
     <span class="p">)</span></div>
 
 </pre></div>

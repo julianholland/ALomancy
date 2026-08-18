@@ -77,6 +77,7 @@
   <h1>Source code for alomancy.utils.clean_structures</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -91,9 +92,9 @@
     <span class="n">already_computed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">extra_metadata</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    adds DFT results to copy of structures info dictionary.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">cleaned_structures</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">structures</span><span class="p">:</span>
         <span class="c1"># copy structure with just the right information</span>
@@ -113,31 +114,74 @@
 
         <span class="k">if</span> <span class="n">already_computed</span><span class="p">:</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="s2">&quot;REF_energy&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span>
-                <span class="ow">or</span> <span class="s2">&quot;REF_forces&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">arrays</span>
+                <span class="s2">"REF_energy"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span>
+                <span class="ow">or</span> <span class="s2">"REF_forces"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">arrays</span>
             <span class="p">):</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="n">energy</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
                     <span class="n">forces</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
                 <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                        <span class="s2">&quot;Structure is marked as already_computed but is missing REF_energy or REF_forces, and they could not be computed. Original error: &quot;</span>
+                        <span class="s2">"Structure is marked as already_computed but is missing REF_energy or REF_forces, and they could not be computed. Original error: "</span>
                         <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
                     <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">energy</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;REF_energy&quot;</span><span class="p">]</span>
-                <span class="n">forces</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">&quot;REF_forces&quot;</span><span class="p">]</span>
+                <span class="n">energy</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span>
+                <span class="n">forces</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span>
 
-            <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;REF_energy&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
-            <span class="n">structure_copy</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">&quot;REF_forces&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
+            <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
+            <span class="n">structure_copy</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
 
-        <span class="k">if</span> <span class="n">override_config_type</span> <span class="ow">or</span> <span class="s2">&quot;config_type&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Setting config_type to &#39;</span><span class="si">%s</span><span class="s2">&#39;.&quot;</span><span class="p">,</span> <span class="n">config_type</span><span class="p">)</span>
-            <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;config_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">config_type</span>
+        <span class="k">if</span> <span class="n">override_config_type</span> <span class="ow">or</span> <span class="s2">"config_type"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Setting config_type to '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span> <span class="n">config_type</span><span class="p">)</span>
+            <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"config_type"</span><span class="p">]</span> <span class="o">=</span> <span class="n">config_type</span>
 
         <span class="n">cleaned_structures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">structure_copy</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">cleaned_structures</span></div>
+
+
+
+<div class="viewcode-block" id="filter_structures_by_min_bond_distance">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.filter_structures_by_min_bond_distance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">filter_structures_by_min_bond_distance</span><span class="p">(</span>
+    <span class="n">structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">min_distance</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Exclude structures with any pairwise atomic distance below min_distance (Å).</span>
+
+<span class="sd">    Guards against submitting an unphysical/exploded structure (e.g. an MD</span>
+<span class="sd">    instability, or a badly-generated dimer/trimer/stretch-compress</span>
+<span class="sd">    structure) to expensive DFT. `get_all_distances(mic=True)` is safe to</span>
+<span class="sd">    call unconditionally: it uses the minimum-image convention for</span>
+<span class="sd">    periodic structures and falls back to plain distances for non-periodic</span>
+<span class="sd">    ones, correctly covering every config_type this codebase produces.</span>
+<span class="sd">    Single-atom structures always pass through unfiltered — there is no</span>
+<span class="sd">    pairwise distance to check, and `np.triu_indices(1, k=1)` correctly</span>
+<span class="sd">    returns an empty index set rather than raising.</span>
+<span class="sd">    """</span>
+    <span class="n">filtered</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">n_excluded</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">structures</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">filtered</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">distance_matrix</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_all_distances</span><span class="p">(</span><span class="n">mic</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">upper</span> <span class="o">=</span> <span class="n">distance_matrix</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">triu_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">upper</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">min_distance</span><span class="p">:</span>
+            <span class="n">filtered</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">n_excluded</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="n">n_excluded</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Excluded </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> structure(s) with a bond shorter than </span><span class="si">%.2f</span><span class="s2"> Å "</span>
+            <span class="s2">"from DFT submission."</span><span class="p">,</span>
+            <span class="n">n_excluded</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+            <span class="n">min_distance</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">filtered</span></div>
 
 </pre></div>
 

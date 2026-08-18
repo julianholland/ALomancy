@@ -141,17 +141,17 @@
     <span class="n">ndiag</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">ntg</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EspressoProfile</span><span class="p">:</span>
-    <span class="n">flags</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;-nk </span><span class="si">{</span><span class="n">npool</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"-nk </span><span class="si">{</span><span class="n">npool</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span>
 
     <span class="k">if</span> <span class="n">ndiag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ndiag</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;-nd </span><span class="si">{</span><span class="n">ndiag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"-nd </span><span class="si">{</span><span class="n">ndiag</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">ntg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ntg</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;-nt </span><span class="si">{</span><span class="n">ntg</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"-nt </span><span class="si">{</span><span class="n">ntg</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-    <span class="n">flag_str</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">flags</span><span class="p">)</span>
+    <span class="n">flag_str</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">flags</span><span class="p">)</span>
 
-    <span class="n">command</span> <span class="o">=</span> <span class="n">_build_srun_command</span><span class="p">(</span><span class="n">para_info_dict</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">pwx_path</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">flag_str</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">command</span> <span class="o">=</span> <span class="n">_build_srun_command</span><span class="p">(</span><span class="n">para_info_dict</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">pwx_path</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">flag_str</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">EspressoProfile</span><span class="p">(</span>
         <span class="n">command</span><span class="o">=</span><span class="n">command</span><span class="p">,</span>
@@ -164,39 +164,39 @@
 <a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_qe_input_data</span><span class="p">(</span><span class="n">calculation_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">qe_input_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
     <span class="k">return</span> <span class="p">{</span>
-        <span class="s2">&quot;control&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;calculation&quot;</span><span class="p">:</span> <span class="n">calculation_type</span><span class="p">,</span>
-            <span class="s2">&quot;verbosity&quot;</span><span class="p">:</span> <span class="s2">&quot;high&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;qe&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;nstep&quot;</span><span class="p">:</span> <span class="mi">999</span><span class="p">,</span>
-            <span class="s2">&quot;tstress&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
-            <span class="s2">&quot;tprnfor&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-            <span class="s2">&quot;disk_io&quot;</span><span class="p">:</span> <span class="s2">&quot;none&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;etot_conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-5</span><span class="p">,</span>
-            <span class="s2">&quot;forc_conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-5</span><span class="p">,</span>
+        <span class="s2">"control"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"calculation"</span><span class="p">:</span> <span class="n">calculation_type</span><span class="p">,</span>
+            <span class="s2">"verbosity"</span><span class="p">:</span> <span class="s2">"high"</span><span class="p">,</span>
+            <span class="s2">"prefix"</span><span class="p">:</span> <span class="s2">"qe"</span><span class="p">,</span>
+            <span class="s2">"nstep"</span><span class="p">:</span> <span class="mi">999</span><span class="p">,</span>
+            <span class="s2">"tstress"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+            <span class="s2">"tprnfor"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"disk_io"</span><span class="p">:</span> <span class="s2">"none"</span><span class="p">,</span>
+            <span class="s2">"etot_conv_thr"</span><span class="p">:</span> <span class="mf">1.0e-5</span><span class="p">,</span>
+            <span class="s2">"forc_conv_thr"</span><span class="p">:</span> <span class="mf">1.0e-5</span><span class="p">,</span>
         <span class="p">},</span>
-        <span class="s2">&quot;system&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-            <span class="s2">&quot;tot_charge&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
-            <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="mf">40.0</span><span class="p">,</span>
-            <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
-            <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;smearing&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">,</span>
-            <span class="s2">&quot;smearing&quot;</span><span class="p">:</span> <span class="s2">&quot;cold&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;input_dft&quot;</span><span class="p">:</span> <span class="s2">&quot;pbe&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;nspin&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">"system"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"ibrav"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"tot_charge"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="s2">"ecutwfc"</span><span class="p">:</span> <span class="mf">40.0</span><span class="p">,</span>
+            <span class="s2">"ecutrho"</span><span class="p">:</span> <span class="mi">600</span><span class="p">,</span>
+            <span class="s2">"occupations"</span><span class="p">:</span> <span class="s2">"smearing"</span><span class="p">,</span>
+            <span class="s2">"degauss"</span><span class="p">:</span> <span class="mf">0.01</span><span class="p">,</span>
+            <span class="s2">"smearing"</span><span class="p">:</span> <span class="s2">"cold"</span><span class="p">,</span>
+            <span class="s2">"input_dft"</span><span class="p">:</span> <span class="s2">"pbe"</span><span class="p">,</span>
+            <span class="s2">"nspin"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
         <span class="p">},</span>
-        <span class="s2">&quot;electrons&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;electron_maxstep&quot;</span><span class="p">:</span> <span class="mi">999</span><span class="p">,</span>
-            <span class="s2">&quot;scf_must_converge&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-            <span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-12</span><span class="p">,</span>
-            <span class="s2">&quot;mixing_mode&quot;</span><span class="p">:</span> <span class="s2">&quot;local-TF&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
-            <span class="s2">&quot;startingwfc&quot;</span><span class="p">:</span> <span class="s2">&quot;random&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;diagonalization&quot;</span><span class="p">:</span> <span class="s2">&quot;david&quot;</span><span class="p">,</span>
+        <span class="s2">"electrons"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"electron_maxstep"</span><span class="p">:</span> <span class="mi">999</span><span class="p">,</span>
+            <span class="s2">"scf_must_converge"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"conv_thr"</span><span class="p">:</span> <span class="mf">1.0e-12</span><span class="p">,</span>
+            <span class="s2">"mixing_mode"</span><span class="p">:</span> <span class="s2">"local-TF"</span><span class="p">,</span>
+            <span class="s2">"mixing_beta"</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
+            <span class="s2">"startingwfc"</span><span class="p">:</span> <span class="s2">"random"</span><span class="p">,</span>
+            <span class="s2">"diagonalization"</span><span class="p">:</span> <span class="s2">"david"</span><span class="p">,</span>
         <span class="p">},</span>
-        <span class="s2">&quot;ions&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ion_dynamics&quot;</span><span class="p">:</span> <span class="s2">&quot;bfgs&quot;</span><span class="p">,</span> <span class="s2">&quot;upscale&quot;</span><span class="p">:</span> <span class="mf">1e8</span><span class="p">,</span> <span class="s2">&quot;bfgs_ndim&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">},</span>
-        <span class="s2">&quot;cell&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;press_conv_thr&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span> <span class="s2">&quot;cell_dofree&quot;</span><span class="p">:</span> <span class="s2">&quot;all&quot;</span><span class="p">},</span>
+        <span class="s2">"ions"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"ion_dynamics"</span><span class="p">:</span> <span class="s2">"bfgs"</span><span class="p">,</span> <span class="s2">"upscale"</span><span class="p">:</span> <span class="mf">1e8</span><span class="p">,</span> <span class="s2">"bfgs_ndim"</span><span class="p">:</span> <span class="mi">6</span><span class="p">},</span>
+        <span class="s2">"cell"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"press_conv_thr"</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span> <span class="s2">"cell_dofree"</span><span class="p">:</span> <span class="s2">"all"</span><span class="p">},</span>
         <span class="o">**</span><span class="n">qe_input_kwargs</span><span class="p">,</span>
     <span class="p">}</span></div>
 
@@ -210,23 +210,23 @@
     <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">generate_kpts</span><span class="p">(</span><span class="n">cell</span><span class="o">=</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="n">periodic_3d</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kspacing</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
     <span class="n">npool</span> <span class="o">=</span> <span class="n">find_optimal_npool</span><span class="p">(</span>
         <span class="n">total_kpoints</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">)),</span>
-        <span class="n">ranks_per_system</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;node_info&quot;</span><span class="p">][</span>
-            <span class="s2">&quot;ranks_per_system&quot;</span>
+        <span class="n">ranks_per_system</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"node_info"</span><span class="p">][</span>
+            <span class="s2">"ranks_per_system"</span>
         <span class="p">],</span>
         <span class="n">min_ranks_per_pool</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">return</span> <span class="n">Espresso</span><span class="p">(</span>
         <span class="n">profile</span><span class="o">=</span><span class="n">create_espresso_profile</span><span class="p">(</span>
-            <span class="n">para_info_dict</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;node_info&quot;</span><span class="p">],</span>
+            <span class="n">para_info_dict</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"node_info"</span><span class="p">],</span>
             <span class="n">npool</span><span class="o">=</span><span class="n">npool</span><span class="p">,</span>
-            <span class="n">pwx_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;pwx_path&quot;</span><span class="p">],</span>
-            <span class="n">pp_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;pp_path&quot;</span><span class="p">],</span>
+            <span class="n">pwx_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"pwx_path"</span><span class="p">],</span>
+            <span class="n">pp_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"pp_path"</span><span class="p">],</span>
         <span class="p">),</span>
         <span class="n">input_data</span><span class="o">=</span><span class="n">get_qe_input_data</span><span class="p">(</span>
-            <span class="s2">&quot;scf&quot;</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;qe_input_kwargs&quot;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="s2">"scf"</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"qe_input_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
         <span class="p">),</span>
         <span class="n">kpts</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">),</span>
-        <span class="n">pseudopotentials</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">][</span><span class="s2">&quot;pseudo_dict&quot;</span><span class="p">],</span>
+        <span class="n">pseudopotentials</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"pseudo_dict"</span><span class="p">],</span>
         <span class="n">directory</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
     <span class="p">)</span></div>
 
@@ -257,7 +257,7 @@
         <span class="n">out_dir</span><span class="p">,</span>
         <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
         <span class="n">create_qe_calc_object</span><span class="p">,</span>
-        <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">&quot;qe_opt&quot;</span><span class="p">,</span>
+        <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">"qe_opt"</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 </pre></div>

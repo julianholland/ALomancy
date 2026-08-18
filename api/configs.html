@@ -131,9 +131,15 @@ num_inputs_per_python_subprocess</p></li>
 <li><p><strong>partial_node</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default True</em>) – allow jobs that take less than a whole node, overrides exact_fit</p></li>
 <li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – time to wait in get_results before giving up</p></li>
 <li><p><strong>check_interval</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – check_interval arg to pass to get_results</p></li>
-<li><p><strong>ignore_failed_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default False</em>) – skip failures in remote jobs</p></li>
-<li><p><strong>resubmit_killed_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default False</em>) – resubmit jobs that were killed without an exit status (out of walltime or crashed),
-hoping that other parameters such as walltime or memory have been changed to make run complete this time</p></li>
+<li><p><strong>ignore_failed_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default False</em>) – currently unused by RemoteJobExecutor – accepted for backwards compatibility</p></li>
+<li><p><strong>resubmit_killed_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>default False</em>) – when a RemoteJobExecutor job is declared definitively dead (ExPyReJobDiedError –
+no _succeeded/_error file and the remote scheduler no longer shows it queued/held/
+running), submit ONE fresh replacement (job.start(force_rerun=True)) instead of
+giving up immediately. Distinct from and unrelated to the always-on resume behavior
+for transient transport failures (see executor._get_results_with_resume) – this is
+specifically for a job the scheduler itself killed (OOM, walltime, node failure).
+Off by default because a killed job often needs different resources to succeed on
+retry, not just a second identical attempt.</p></li>
 <li><p><strong>max_concurrent_jobs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>default 20</em>) – cap on how many jobs a RemoteJobExecutor keeps started (occupying a scheduler slot)
 at once; the next queued job starts the instant a running one finishes. This is a
 property of the HPC system/account, sourced from the HPC profile in

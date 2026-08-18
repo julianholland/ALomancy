@@ -95,7 +95,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">clean_structures</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.file_saving_and_parsing</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_atoms_file_if_enabled</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.logging_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_logging</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remote_ssh</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_alomancy_version_for_profile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remote_ssh</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ensure_ssh_connectivity</span><span class="p">,</span>
+    <span class="n">get_alomancy_version_for_profile</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_high_force_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">remove_high_force_structures_from_partition</span><span class="p">,</span>
 <span class="p">)</span>
@@ -106,60 +109,82 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 <span class="n">_PHASE_LABELS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;initialization&quot;</span><span class="p">:</span> <span class="s2">&quot;Initialisation&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;mlip_committee&quot;</span><span class="p">:</span> <span class="s2">&quot;MLIP Committee Trainer&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;structure_generation&quot;</span><span class="p">:</span> <span class="s2">&quot;Structure Generation&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">:</span> <span class="s2">&quot;High-Accuracy Evaluation&quot;</span><span class="p">,</span>
+    <span class="s2">"initialization"</span><span class="p">:</span> <span class="s2">"Initialisation"</span><span class="p">,</span>
+    <span class="s2">"mlip_committee"</span><span class="p">:</span> <span class="s2">"MLIP Committee Trainer"</span><span class="p">,</span>
+    <span class="s2">"structure_generation"</span><span class="p">:</span> <span class="s2">"Structure Generation"</span><span class="p">,</span>
+    <span class="s2">"high_accuracy_evaluation"</span><span class="p">:</span> <span class="s2">"High-Accuracy Evaluation"</span><span class="p">,</span>
 <span class="p">}</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_flatten_settings</span><span class="p">(</span>
-    <span class="n">d</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">d</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Flatten a job-dict phase into (dotted.key, value) pairs.</span>
+<span class="w">    </span><span class="sd">"""Flatten a job-dict phase into (dotted.key, value) pairs.</span>
 
 <span class="sd">    Skips `hpc` (reported separately in the HPC summary) and `name` (used as</span>
 <span class="sd">    the section heading). Nested dicts (e.g. `creation_kwargs`,</span>
 <span class="sd">    `mace_fit_kwargs`, `qe_input_kwargs`) are walked up to `max_depth` levels</span>
 <span class="sd">    so calculator/model-specific settings surface without hardcoding any</span>
-<span class="sd">    particular module&#39;s key names here.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    particular module's key names here.</span>
+<span class="sd">    """</span>
     <span class="n">items</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">d</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"hpc"</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">):</span>
             <span class="k">continue</span>
-        <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">full_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">prefix</span><span class="si">}{</span><span class="n">key</span><span class="si">}</span><span class="s2">"</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">max_depth</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">items</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
-                <span class="n">_flatten_settings</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="n">max_depth</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">_flatten_settings</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">full_key</span><span class="si">}</span><span class="s2">."</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="n">max_depth</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">items</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">full_key</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">items</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_collect_hpc_profiles</span><span class="p">(</span><span class="n">jobs_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Collect the distinct HPC profiles referenced across configured</span>
+<span class="sd">    phases, keyed by hpc_name. By the time run() executes, load_dictionaries</span>
+<span class="sd">    has already resolved any string `hpc:` references into full profile</span>
+<span class="sd">    dicts (see configs/global_config.py), but a phase's `hpc` is still</span>
+<span class="sd">    skipped here if it isn't a dict -- matching display_workflow_summary's</span>
+<span class="sd">    identical defensive handling -- since there's no profile to connect to</span>
+<span class="sd">    in that case.</span>
+<span class="sd">    """</span>
+    <span class="n">profiles</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">phase</span> <span class="ow">in</span> <span class="n">_PHASE_LABELS</span><span class="p">:</span>
+        <span class="n">phase_dict</span> <span class="o">=</span> <span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">phase</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">phase_dict</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">hpc</span> <span class="o">=</span> <span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">,</span> <span class="s2">"&lt;unnamed&gt;"</span><span class="p">)</span>
+        <span class="n">profiles</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">hpc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">profiles</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_latest_pypi_version</span><span class="p">(</span>
-    <span class="n">package</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;alomancy&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span>
+    <span class="n">package</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"alomancy"</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Best-effort lookup of the latest published version on PyPI.</span>
+<span class="w">    </span><span class="sd">"""Best-effort lookup of the latest published version on PyPI.</span>
 
 <span class="sd">    Returns None (rather than raising) on any network/parse failure — HPC</span>
 <span class="sd">    compute nodes commonly have no outbound internet access, and a version</span>
 <span class="sd">    check must never block a run over that. Also skipped outright under</span>
 <span class="sd">    ALOMANCY_TEST_MODE/ALOMANCY_MOCK_EXTERNAL (set autouse for the whole</span>
 <span class="sd">    test suite, see tests/conftest.py) so tests never make a real PyPI call.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="p">(</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ALOMANCY_TEST_MODE&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span>
-        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ALOMANCY_MOCK_EXTERNAL&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">"ALOMANCY_TEST_MODE"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"1"</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">"ALOMANCY_MOCK_EXTERNAL"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"1"</span>
     <span class="p">):</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="k">with</span> <span class="n">urllib</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;https://pypi.org/pypi/</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">/json&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span>
+            <span class="sa">f</span><span class="s2">"https://pypi.org/pypi/</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">/json"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span>
         <span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
             <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
-        <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;info&quot;</span><span class="p">][</span><span class="s2">&quot;version&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="s2">"info"</span><span class="p">][</span><span class="s2">"version"</span><span class="p">]</span>
     <span class="k">except</span> <span class="p">(</span>
         <span class="n">urllib</span><span class="o">.</span><span class="n">error</span><span class="o">.</span><span class="n">URLError</span><span class="p">,</span>
         <span class="ne">TimeoutError</span><span class="p">,</span>
@@ -167,14 +192,14 @@
         <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span>
         <span class="ne">KeyError</span><span class="p">,</span>
     <span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Could not check PyPI for latest </span><span class="si">%s</span><span class="s2"> version: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">package</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Could not check PyPI for latest </span><span class="si">%s</span><span class="s2"> version: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">package</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="BaseActiveLearningWorkflow">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">BaseActiveLearningWorkflow</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Abstract base class for active learning workflows.</span>
 
 <span class="sd">    This class provides the core AL loop structure while requiring</span>
@@ -186,7 +211,7 @@
 <span class="sd">    - `high_accuracy_evaluation`</span>
 <span class="sd">    - `train_mlip`</span>
 <span class="sd">    - `generate_structures`</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -195,11 +220,11 @@
         <span class="n">jobs_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
         <span class="n">number_of_al_loops</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-        <span class="n">log_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">&quot;results/alomancy.log&quot;</span><span class="p">,</span>
+        <span class="n">log_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">"results/alomancy.log"</span><span class="p">,</span>
         <span class="n">start_loop</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
         <span class="n">plots</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">803</span><span class="p">,</span>
-        <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
+        <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"results/global_database"</span><span class="p">,</span>
         <span class="n">remove_redundancy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">high_force_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span>
         <span class="n">skip_initialization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -220,19 +245,19 @@
         <span class="n">setup_logging</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">log_file</span><span class="o">=</span><span class="n">log_file</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_phase_done</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">phase</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">phase</span><span class="si">}</span><span class="s2">.done&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">phase</span><span class="si">}</span><span class="s2">.done"</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_mark_phase_done</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">phase</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">sentinel</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">phase</span><span class="si">}</span><span class="s2">.done&quot;</span><span class="p">)</span>
-        <span class="n">sentinel</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">sentinel</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Phase </span><span class="si">%s</span><span class="s2"> marked complete for </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">phase</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
+        <span class="nb">sentinel</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">phase</span><span class="si">}</span><span class="s2">.done"</span><span class="p">)</span>
+        <span class="nb">sentinel</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="nb">sentinel</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Phase </span><span class="si">%s</span><span class="s2"> marked complete for </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span> <span class="n">phase</span><span class="p">,</span> <span class="n">base_name</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_last_complete_loop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return index of last consecutive completed loop (has loop.done), or -1.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Return index of last consecutive completed loop (has loop.done), or -1."""</span>
         <span class="n">last</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
         <span class="k">for</span> <span class="n">loop</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">number_of_al_loops</span><span class="p">):</span>
-            <span class="k">if</span> <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;loop.done&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span> <span class="o">/</span> <span class="s2">"loop.done"</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
                 <span class="n">last</span> <span class="o">=</span> <span class="n">loop</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">break</span>
@@ -241,17 +266,17 @@
 <div class="viewcode-block" id="BaseActiveLearningWorkflow.display_workflow_summary">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.display_workflow_summary">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">display_workflow_summary</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Display a summary of the active learning workflow configuration:</span>
 <span class="sd">        one section per configured phase (name + major settings, flattened</span>
 <span class="sd">        from its job dict) and a table of the HPC profiles in use and which</span>
 <span class="sd">        job types run on each.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">lines</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="s2">&quot;&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">70</span><span class="p">,</span>
-            <span class="sa">f</span><span class="s2">&quot;ALomancy Workflow Summary (v</span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">70</span><span class="p">,</span>
+            <span class="s2">""</span><span class="p">,</span>
+            <span class="s2">"="</span> <span class="o">*</span> <span class="mi">70</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">"ALomancy Workflow Summary (v</span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2">)"</span><span class="p">,</span>
+            <span class="s2">"="</span> <span class="o">*</span> <span class="mi">70</span><span class="p">,</span>
         <span class="p">]</span>
 
         <span class="n">hpc_usage</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -261,42 +286,42 @@
             <span class="k">if</span> <span class="ow">not</span> <span class="n">phase_dict</span><span class="p">:</span>
                 <span class="k">continue</span>
 
-            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
-            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;--- </span><span class="si">{</span><span class="n">heading</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">phase</span><span class="p">)</span><span class="si">}</span><span class="s2">) ---&quot;</span><span class="p">)</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">""</span><span class="p">)</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"--- </span><span class="si">{</span><span class="n">heading</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'name'</span><span class="p">,</span><span class="w"> </span><span class="n">phase</span><span class="p">)</span><span class="si">}</span><span class="s2">) ---"</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">_flatten_settings</span><span class="p">(</span><span class="n">phase_dict</span><span class="p">):</span>
-                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-            <span class="n">hpc</span> <span class="o">=</span> <span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">)</span>
+            <span class="n">hpc</span> <span class="o">=</span> <span class="n">phase_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">hpc</span><span class="p">:</span>
                 <span class="n">name</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc_name&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;unnamed&gt;&quot;</span><span class="p">)</span>
+                    <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">,</span> <span class="s2">"&lt;unnamed&gt;"</span><span class="p">)</span>
                     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
                     <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">hpc</span><span class="p">)</span>
                 <span class="p">)</span>
                 <span class="n">entry</span> <span class="o">=</span> <span class="n">hpc_usage</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
                     <span class="n">name</span><span class="p">,</span>
-                    <span class="p">{</span><span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="n">hpc</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{},</span> <span class="s2">&quot;phases&quot;</span><span class="p">:</span> <span class="p">[]},</span>
+                    <span class="p">{</span><span class="s2">"profile"</span><span class="p">:</span> <span class="n">hpc</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{},</span> <span class="s2">"phases"</span><span class="p">:</span> <span class="p">[]},</span>
                 <span class="p">)</span>
-                <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;phases&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">heading</span><span class="p">)</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">"phases"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">heading</span><span class="p">)</span>
 
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;--- HPC Profiles ---&quot;</span><span class="p">)</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">""</span><span class="p">)</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"--- HPC Profiles ---"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">hpc_usage</span><span class="p">:</span>
             <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">hpc_usage</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="n">profile</span> <span class="o">=</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;profile&quot;</span><span class="p">]</span>
-                <span class="n">node_info</span> <span class="o">=</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;node_info&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                <span class="n">profile</span> <span class="o">=</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"profile"</span><span class="p">]</span>
+                <span class="n">node_info</span> <span class="o">=</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"node_info"</span><span class="p">,</span> <span class="p">{})</span>
                 <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="p">{</span>
-                        <span class="s2">&quot;hpc_name&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
-                        <span class="s2">&quot;alomancy_version&quot;</span><span class="p">:</span> <span class="n">get_alomancy_version_for_profile</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
-                        <span class="ow">or</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span>
-                        <span class="s2">&quot;gpu&quot;</span><span class="p">:</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gpu&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
-                        <span class="s2">&quot;partitions&quot;</span><span class="p">:</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;partitions&quot;</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
-                        <span class="ow">or</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span>
-                        <span class="s2">&quot;ranks_per_node&quot;</span><span class="p">:</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ranks_per_node&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
-                        <span class="s2">&quot;max_mem_per_node&quot;</span><span class="p">:</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max_mem_per_node&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">),</span>
-                        <span class="s2">&quot;job_types&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">&quot;phases&quot;</span><span class="p">]),</span>
+                        <span class="s2">"hpc_name"</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+                        <span class="s2">"alomancy_version"</span><span class="p">:</span> <span class="n">get_alomancy_version_for_profile</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="s2">"?"</span><span class="p">,</span>
+                        <span class="s2">"gpu"</span><span class="p">:</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gpu"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">),</span>
+                        <span class="s2">"partitions"</span><span class="p">:</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"partitions"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
+                        <span class="ow">or</span> <span class="s2">"?"</span><span class="p">,</span>
+                        <span class="s2">"ranks_per_node"</span><span class="p">:</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ranks_per_node"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">),</span>
+                        <span class="s2">"max_mem_per_node"</span><span class="p">:</span> <span class="n">node_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_mem_per_node"</span><span class="p">,</span> <span class="s2">"?"</span><span class="p">),</span>
+                        <span class="s2">"job_types"</span><span class="p">:</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">"phases"</span><span class="p">]),</span>
                     <span class="p">}</span>
                 <span class="p">)</span>
             <span class="k">with</span> <span class="n">pl</span><span class="o">.</span><span class="n">Config</span><span class="p">(</span>
@@ -304,29 +329,36 @@
             <span class="p">):</span>
                 <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)))</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;  No HPC profiles configured.&quot;</span><span class="p">)</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"  No HPC profiles configured."</span><span class="p">)</span>
 
-        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">70</span><span class="p">)</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span></div>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"="</span> <span class="o">*</span> <span class="mi">70</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="BaseActiveLearningWorkflow.pre_run_checks">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.pre_run_checks">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">pre_run_checks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Run pre-flight checks before any remote submission occurs: first</span>
-<span class="sd">        that no other alomancy process already holds this run&#39;s ExPyRe</span>
+<span class="sd">        that no other alomancy process already holds this run's ExPyRe</span>
 <span class="sd">        local_stage_dir (see acquire_local_expyre_lock -- raises</span>
 <span class="sd">        immediately on conflict rather than letting a second process</span>
 <span class="sd">        silently corrupt shared job-tracking state hours into a run), then</span>
-<span class="sd">        display the workflow summary, then check the installed-vs-latest-</span>
-<span class="sd">        published alomancy version. Warns if behind by a minor release;</span>
-<span class="sd">        raises if behind by a major release (breaking changes are likely).</span>
-<span class="sd">        The version check is silently skipped if PyPI can&#39;t be reached</span>
-<span class="sd">        (e.g. no internet on an HPC compute node).</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        display the workflow summary, then check ssh connectivity to</span>
+<span class="sd">        every distinct HPC host this run will use (see</span>
+<span class="sd">        ensure_ssh_connectivity -- gives any needed password/OTP prompt a</span>
+<span class="sd">        chance to be answered right now, while whoever launched the run</span>
+<span class="sd">        is presumably still watching, rather than hours later inside an</span>
+<span class="sd">        unattended background job.start() call with nobody present), then</span>
+<span class="sd">        check the installed-vs-latest-published alomancy version. Warns</span>
+<span class="sd">        if behind by a minor release; raises if behind by a major release</span>
+<span class="sd">        (breaking changes are likely). The version check is silently</span>
+<span class="sd">        skipped if PyPI can't be reached (e.g. no internet on an HPC</span>
+<span class="sd">        compute node).</span>
+<span class="sd">        """</span>
         <span class="n">acquire_local_expyre_lock</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">display_workflow_summary</span><span class="p">()</span>
+        <span class="n">ensure_ssh_connectivity</span><span class="p">(</span><span class="n">_collect_hpc_profiles</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">))</span>
 
         <span class="n">latest_version</span> <span class="o">=</span> <span class="n">_fetch_latest_pypi_version</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">latest_version</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -334,10 +366,10 @@
 
         <span class="n">current_major</span><span class="p">,</span> <span class="n">current_minor</span> <span class="o">=</span> <span class="n">__version_tuple__</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">__version_tuple__</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">latest_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">part</span><span class="p">)</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">latest_version</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
+            <span class="n">latest_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">part</span><span class="p">)</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">latest_version</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"."</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
         <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                <span class="s2">&quot;Could not parse latest PyPI version </span><span class="si">%r</span><span class="s2">; skipping version check.&quot;</span><span class="p">,</span>
+                <span class="s2">"Could not parse latest PyPI version </span><span class="si">%r</span><span class="s2">; skipping version check."</span><span class="p">,</span>
                 <span class="n">latest_version</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span>
@@ -345,16 +377,16 @@
 
         <span class="k">if</span> <span class="n">latest_major</span> <span class="o">&gt;</span> <span class="n">current_major</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Installed alomancy version </span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2"> is a major release &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;behind the latest available version </span><span class="si">{</span><span class="n">latest_version</span><span class="si">}</span><span class="s2">. &quot;</span>
-                <span class="s2">&quot;Breaking changes are likely — please upgrade &quot;</span>
-                <span class="s2">&quot;(`pip install -U alomancy`) before running.&quot;</span>
+                <span class="sa">f</span><span class="s2">"Installed alomancy version </span><span class="si">{</span><span class="n">__version__</span><span class="si">}</span><span class="s2"> is a major release "</span>
+                <span class="sa">f</span><span class="s2">"behind the latest available version </span><span class="si">{</span><span class="n">latest_version</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="s2">"Breaking changes are likely — please upgrade "</span>
+                <span class="s2">"(`pip install -U alomancy`) before running."</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">latest_major</span> <span class="o">==</span> <span class="n">current_major</span> <span class="ow">and</span> <span class="n">latest_minor</span> <span class="o">&gt;</span> <span class="n">current_minor</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;Installed alomancy version </span><span class="si">%s</span><span class="s2"> is a minor release behind the &quot;</span>
-                <span class="s2">&quot;latest available version </span><span class="si">%s</span><span class="s2">. Consider upgrading &quot;</span>
-                <span class="s2">&quot;(`pip install -U alomancy`).&quot;</span><span class="p">,</span>
+                <span class="s2">"Installed alomancy version </span><span class="si">%s</span><span class="s2"> is a minor release behind the "</span>
+                <span class="s2">"latest available version </span><span class="si">%s</span><span class="s2">. Consider upgrading "</span>
+                <span class="s2">"(`pip install -U alomancy`)."</span><span class="p">,</span>
                 <span class="n">__version__</span><span class="p">,</span>
                 <span class="n">latest_version</span><span class="p">,</span>
             <span class="p">)</span></div>
@@ -363,12 +395,12 @@
 <div class="viewcode-block" id="BaseActiveLearningWorkflow.run">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.run">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Run the active learning workflow.</span>
 
 <span class="sd">        This method defines the core AL loop and calls the abstract methods</span>
 <span class="sd">        that must be implemented by subclasses.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">pre_run_checks</span><span class="p">()</span>
 
         <span class="n">last_complete</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_complete_loop</span><span class="p">()</span>
@@ -378,7 +410,7 @@
             <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
             <span class="n">effective_start</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_loop</span><span class="p">,</span> <span class="n">last_complete</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;Resuming from loop </span><span class="si">%d</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> train / </span><span class="si">%d</span><span class="s2"> test from DB).&quot;</span><span class="p">,</span>
+                <span class="s2">"Resuming from loop </span><span class="si">%d</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> train / </span><span class="si">%d</span><span class="s2"> test from DB)."</span><span class="p">,</span>
                 <span class="n">effective_start</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">),</span>
@@ -388,19 +420,19 @@
             <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
             <span class="n">effective_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_loop</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;skip_initialization=True: loading </span><span class="si">%d</span><span class="s2"> train / </span><span class="si">%d</span><span class="s2"> test from DB, &quot;</span>
-                <span class="s2">&quot;starting at loop </span><span class="si">%d</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="s2">"skip_initialization=True: loading </span><span class="si">%d</span><span class="s2"> train / </span><span class="si">%d</span><span class="s2"> test from DB, "</span>
+                <span class="s2">"starting at loop </span><span class="si">%d</span><span class="s2">."</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">),</span>
                 <span class="n">effective_start</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initialize_training_set</span><span class="p">(</span>
-                <span class="s2">&quot;initialization&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+                <span class="s2">"initialization"</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
             <span class="p">)</span>
             <span class="n">n_tagged</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">update_splits_post_hoc</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span><span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;Initialized training set with </span><span class="si">%d</span><span class="s2"> structures; tagged </span><span class="si">%d</span><span class="s2"> in DB.&quot;</span><span class="p">,</span>
+                <span class="s2">"Initialized training set with </span><span class="si">%d</span><span class="s2"> structures; tagged </span><span class="si">%d</span><span class="s2"> in DB."</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
                 <span class="n">n_tagged</span><span class="p">,</span>
             <span class="p">)</span>
@@ -409,8 +441,8 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
             <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
-                <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">]</span>
-                <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;high_sd&quot;</span><span class="p">],</span>
+                <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"initialization"</span><span class="p">][</span><span class="s2">"test_config_types"</span><span class="p">]</span>
+                <span class="o">+</span> <span class="p">[</span><span class="s2">"high_sd"</span><span class="p">],</span>
             <span class="p">)</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -424,40 +456,40 @@
             <span class="n">train_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_train_atoms</span><span class="p">()</span>
             <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
 
-            <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">workdir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not create directory </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">workdir</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Could not create directory </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">workdir</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
 
-            <span class="n">train_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;train_set.xyz&quot;</span><span class="p">)</span>
-            <span class="n">test_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;test_set.xyz&quot;</span><span class="p">)</span>
+            <span class="n">train_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">"train_set.xyz"</span><span class="p">)</span>
+            <span class="n">test_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">"test_set.xyz"</span><span class="p">)</span>
 
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">write</span><span class="p">(</span><span class="n">train_file</span><span class="p">,</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
-                <span class="n">write</span><span class="p">(</span><span class="n">test_file</span><span class="p">,</span> <span class="n">test_xyzs</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+                <span class="n">write</span><span class="p">(</span><span class="n">train_file</span><span class="p">,</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+                <span class="n">write</span><span class="p">(</span><span class="n">test_file</span><span class="p">,</span> <span class="n">test_xyzs</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="k">if</span> <span class="s2">&quot;test&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="k">if</span> <span class="s2">"test"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
                     <span class="k">raise</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not write files (test environment): </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Could not write files (test environment): </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
 
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Starting AL loop </span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">loop</span><span class="p">)</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;  Training set size: </span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">))</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;  Test set size: </span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">))</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Starting AL loop </span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span> <span class="n">loop</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"  Training set size: </span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">))</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"  Test set size: </span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">))</span>
 
             <span class="n">evaluation_results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_mlip</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">store_mlip_predictions</span><span class="p">(</span><span class="n">loop</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">)</span>
 
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;AL Loop </span><span class="si">%d</span><span class="s2"> evaluation results:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">loop</span><span class="p">,</span> <span class="n">evaluation_results</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"AL Loop </span><span class="si">%d</span><span class="s2"> evaluation results:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">loop</span><span class="p">,</span> <span class="n">evaluation_results</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span><span class="p">:</span>
-                <span class="n">plots_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="s2">&quot;current_plots&quot;</span><span class="p">)</span>
+                <span class="n">plots_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="s2">"current_plots"</span><span class="p">)</span>
                 <span class="n">plots_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
                 <span class="n">mae_al_loop_plot</span><span class="p">(</span>
                     <span class="n">evaluation_results</span><span class="p">,</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span>
                     <span class="n">directory</span><span class="o">=</span><span class="n">plots_dir</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.mlip_plots</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -466,11 +498,11 @@
                 <span class="p">)</span>
 
                 <span class="n">plot_training_curves</span><span class="p">(</span>
-                    <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span> <span class="n">plots_dir</span>
+                    <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span> <span class="n">plots_dir</span>
                 <span class="p">)</span>
                 <span class="n">plot_dft_vs_model</span><span class="p">(</span>
                     <span class="n">base_name</span><span class="p">,</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
                     <span class="n">plots_dir</span><span class="p">,</span>
                     <span class="n">db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
@@ -483,38 +515,38 @@
 
             <span class="n">new_training_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_accuracy_evaluation</span><span class="p">(</span>
                 <span class="n">base_name</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"high_accuracy_evaluation"</span><span class="p">],</span>
                 <span class="n">generated_structures</span><span class="p">,</span>
                 <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;High-accuracy evaluation completed for </span><span class="si">%d</span><span class="s2"> structures.&quot;</span><span class="p">,</span>
+                <span class="s2">"High-accuracy evaluation completed for </span><span class="si">%d</span><span class="s2"> structures."</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">new_training_data</span><span class="p">),</span>
             <span class="p">)</span>
 
             <span class="n">new_training_data</span> <span class="o">=</span> <span class="n">clean_structures</span><span class="p">(</span>
                 <span class="n">new_training_data</span><span class="p">,</span>
-                <span class="n">config_type</span><span class="o">=</span><span class="s2">&quot;high_sd&quot;</span><span class="p">,</span>
+                <span class="n">config_type</span><span class="o">=</span><span class="s2">"high_sd"</span><span class="p">,</span>
                 <span class="n">override_config_type</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="n">already_computed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                <span class="n">extra_metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;al_loop&quot;</span><span class="p">:</span> <span class="n">loop</span><span class="p">},</span>
+                <span class="n">extra_metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"al_loop"</span><span class="p">:</span> <span class="n">loop</span><span class="p">},</span>
             <span class="p">)</span>
 
             <span class="n">new_train_data</span><span class="p">,</span> <span class="n">new_test_data</span> <span class="o">=</span> <span class="n">split_atoms_list_into_test_and_train</span><span class="p">(</span>
                 <span class="n">new_training_data</span><span class="p">,</span>
-                <span class="n">test_fraction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_to_train_ratio&quot;</span><span class="p">],</span>
+                <span class="n">test_fraction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"initialization"</span><span class="p">][</span><span class="s2">"test_to_train_ratio"</span><span class="p">],</span>
                 <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
             <span class="p">)</span>
 
             <span class="c1"># Add AL loop structures to DB with split tags; DB is the restart source.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_train_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_test_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_train_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"train"</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_test_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"test"</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
                 <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
-                    <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">]</span>
-                    <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;high_sd&quot;</span><span class="p">],</span>
+                    <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"initialization"</span><span class="p">][</span><span class="s2">"test_config_types"</span><span class="p">]</span>
+                    <span class="o">+</span> <span class="p">[</span><span class="s2">"high_sd"</span><span class="p">],</span>
                 <span class="p">)</span>
 
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -523,10 +555,10 @@
                     <span class="n">force_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span><span class="p">,</span>
                 <span class="p">)</span>
 
-            <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">&quot;loop&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">"loop"</span><span class="p">)</span>
 
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-                <span class="s2">&quot;Completed AL loop </span><span class="si">%d</span><span class="s2">, retraining with </span><span class="si">%d</span><span class="s2"> structures.&quot;</span><span class="p">,</span>
+                <span class="s2">"Completed AL loop </span><span class="si">%d</span><span class="s2">, retraining with </span><span class="si">%d</span><span class="s2"> structures."</span><span class="p">,</span>
                 <span class="n">loop</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
             <span class="p">)</span>
@@ -534,11 +566,11 @@
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.timing_plots</span><span class="w"> </span><span class="kn">import</span> <span class="n">timing_plots</span>
 
-                <span class="n">timing_plots</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="s2">&quot;current_plots&quot;</span><span class="p">))</span></div>
+                <span class="n">timing_plots</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="s2">"current_plots"</span><span class="p">))</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_seed_db_from_extra_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">extra_dataset</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Read an extra dataset file and add its structures to the global DB.</span>
 
 <span class="sd">        Called before initialize_training_set so compute_initialization_needs</span>
@@ -549,17 +581,17 @@
 <span class="sd">        All other config_types (dimers, trimers, amorphous, etc.) are added</span>
 <span class="sd">        without exact dedup — they are counted by compute_initialization_needs</span>
 <span class="sd">        and the existing count reduces the generation target accordingly.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">all_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">extra_dataset</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+<span class="sd">        """</span>
+        <span class="n">all_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">extra_dataset</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">all_atoms</span><span class="p">,</span> <span class="n">Atoms</span><span class="p">):</span>
             <span class="n">all_atoms</span> <span class="o">=</span> <span class="p">[</span><span class="n">all_atoms</span><span class="p">]</span>
 
         <span class="n">added</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">all_atoms</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">skipped</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_atoms</span><span class="p">)</span> <span class="o">-</span> <span class="n">added</span>
-        <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Seeded DB from </span><span class="si">{</span><span class="n">extra_dataset</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">added</span><span class="si">}</span><span class="s2"> structure(s) added&quot;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"Seeded DB from </span><span class="si">{</span><span class="n">extra_dataset</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">added</span><span class="si">}</span><span class="s2"> structure(s) added"</span>
         <span class="k">if</span> <span class="n">skipped</span><span class="p">:</span>
-            <span class="n">msg</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;, </span><span class="si">{</span><span class="n">skipped</span><span class="si">}</span><span class="s2"> duplicate(s) skipped&quot;</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">", </span><span class="si">{</span><span class="n">skipped</span><span class="si">}</span><span class="s2"> duplicate(s) skipped"</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"</span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span> <span class="n">msg</span><span class="p">)</span>
 
 <div class="viewcode-block" id="BaseActiveLearningWorkflow.load_initial_train_test_sets">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.load_initial_train_test_sets">[docs]</a>
@@ -572,22 +604,22 @@
 
         <span class="k">if</span> <span class="n">train_xyzs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">test_xyzs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span>
-                <span class="s2">&quot;Initial training or test file not found. Please provide valid file paths.&quot;</span>
+                <span class="s2">"Initial training or test file not found. Please provide valid file paths."</span>
             <span class="p">)</span>
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;Only </span><span class="si">%d</span><span class="s2"> structure(s) found in the training set. &quot;</span>
-                <span class="s2">&quot;More than one structure is recommended to start active learning. &quot;</span>
-                <span class="s2">&quot;Consider adding more structures to </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> structure(s) found in the training set. "</span>
+                <span class="s2">"More than one structure is recommended to start active learning. "</span>
+                <span class="s2">"Consider adding more structures to </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">train_xyzs</span><span class="p">),</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;Only </span><span class="si">%d</span><span class="s2"> structure(s) found in the test set. &quot;</span>
-                <span class="s2">&quot;More than one structure is recommended to start active learning. &quot;</span>
-                <span class="s2">&quot;Consider adding more structures to </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> structure(s) found in the test set. "</span>
+                <span class="s2">"More than one structure is recommended to start active learning. "</span>
+                <span class="s2">"Consider adding more structures to </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">),</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span><span class="p">,</span>
             <span class="p">)</span>
@@ -603,8 +635,8 @@
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.process_structure">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">process_structure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
         <span class="n">new_structure</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-        <span class="n">new_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;REF_energy&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
-        <span class="n">new_structure</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">&quot;REF_forces&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+        <span class="n">new_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
+        <span class="n">new_structure</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">new_structure</span></div>
 
 
@@ -614,14 +646,14 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Initialize the training and test sets.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        Tuple[List[Atoms], List[Atoms]]</span>
 <span class="sd">            Initial training and test structures.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 
 
@@ -635,14 +667,14 @@
         <span class="n">structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Run high-accuracy calculations on selected structures.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        List[Atoms]</span>
 <span class="sd">            Structures with high-accuracy results (energy, forces, etc.)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 
 
@@ -651,24 +683,24 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">store_mlip_predictions</span><span class="p">(</span>  <span class="c1"># noqa: B027</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">loop_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Store per-structure MLIP predictions in the DB after training.</span>
+<span class="w">        </span><span class="sd">"""Store per-structure MLIP predictions in the DB after training.</span>
 
 <span class="sd">        Default is a no-op. Override in subclasses that support prediction storage.</span>
-<span class="sd">        &quot;&quot;&quot;</span></div>
+<span class="sd">        """</span></div>
 
 
 <div class="viewcode-block" id="BaseActiveLearningWorkflow.train_mlip">
 <a class="viewcode-back" href="../../../api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.train_mlip">[docs]</a>
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">train_mlip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Train machine learning interatomic potential.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        pd.DataFrame</span>
 <span class="sd">            Evaluation metrics (MAE, RMSE, etc.) for the trained committee.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 
 
@@ -682,14 +714,14 @@
         <span class="n">train_data</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Generate structures for active learning selection.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        List[Atoms]</span>
 <span class="sd">            Generated structures for high-accuracy evaluation.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">pass</span></div>
 </div>
 

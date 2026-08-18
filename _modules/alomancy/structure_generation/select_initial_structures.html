@@ -97,7 +97,7 @@
     <span class="n">enforce_chemical_diversity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">803</span><span class="p">,</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;randomly selects structures from a train set based on a chemical formula or</span>
+<span class="w">    </span><span class="sd">"""randomly selects structures from a train set based on a chemical formula or</span>
 <span class="sd">    max number of atoms and number of mds to run.</span>
 
 <span class="sd">    Probably should be moved to its own file.</span>
@@ -112,12 +112,12 @@
 
 <span class="sd">    Returns:</span>
 <span class="sd">        list[Atoms]: Selected Atoms objects for structure generation.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># Handle None default for mutable argument</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-        <span class="s2">&quot;Selecting initial structures with parameters: base_name=</span><span class="si">%s</span><span class="s2">, structure_generation_job_dict=</span><span class="si">%s</span><span class="s2">, &quot;</span>
-        <span class="s2">&quot;max_number_of_concurrent_jobs=</span><span class="si">%d</span><span class="s2">, chem_formula_list=</span><span class="si">%s</span><span class="s2">, selectable_configs=</span><span class="si">%s</span><span class="s2">, &quot;</span>
-        <span class="s2">&quot;atom_number_range=</span><span class="si">%s</span><span class="s2">, enforce_chemical_diversity=</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="s2">"Selecting initial structures with parameters: base_name=</span><span class="si">%s</span><span class="s2">, structure_generation_job_dict=</span><span class="si">%s</span><span class="s2">, "</span>
+        <span class="s2">"max_number_of_concurrent_jobs=</span><span class="si">%d</span><span class="s2">, chem_formula_list=</span><span class="si">%s</span><span class="s2">, selectable_configs=</span><span class="si">%s</span><span class="s2">, "</span>
+        <span class="s2">"atom_number_range=</span><span class="si">%s</span><span class="s2">, enforce_chemical_diversity=</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
         <span class="n">base_name</span><span class="p">,</span>
         <span class="n">structure_generation_job_dict</span><span class="p">,</span>
         <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
@@ -127,36 +127,36 @@
         <span class="n">enforce_chemical_diversity</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">selectable_configs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">selectable_configs</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">selectable_configs</span><span class="p">,</span> <span class="s2">&quot;high_sd&quot;</span><span class="p">]</span>
+        <span class="n">selectable_configs</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">selectable_configs</span><span class="p">,</span> <span class="s2">"high_sd"</span><span class="p">]</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-        <span class="s2">&quot;available config_types: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="p">{</span><span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">train_atoms_list</span><span class="p">},</span>
+        <span class="s2">"available config_types: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+        <span class="p">{</span><span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">train_atoms_list</span><span class="p">},</span>
     <span class="p">)</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">&quot;Selecting initial structures from </span><span class="si">%d</span><span class="s2"> available structures.&quot;</span><span class="p">,</span>
+        <span class="s2">"Selecting initial structures from </span><span class="si">%d</span><span class="s2"> available structures."</span><span class="p">,</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">train_atoms_list</span><span class="p">),</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">selectable_configs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">&quot;Structures available with correct config_type: </span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">"Structures available with correct config_type: </span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span>
                 <span class="p">[</span>
                     <span class="n">s</span>
                     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">train_atoms_list</span>
-                    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">selectable_configs</span>
+                    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">selectable_configs</span>
                 <span class="p">]</span>
             <span class="p">),</span>
         <span class="p">)</span>
     <span class="n">atom_number_range</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">atom_number_range</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">atom_number_range</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
         <span class="k">assert</span> <span class="n">atom_number_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">atom_number_range</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">(</span>
-            <span class="s2">&quot;atom_number_range must be a tuple of two integers where the first is less than or equal to the second&quot;</span>
+            <span class="s2">"atom_number_range must be a tuple of two integers where the first is less than or equal to the second"</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">atom_number_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;atom_number_range minimum value is </span><span class="si">{</span><span class="n">atom_number_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">, which allows single-atom structures. &quot;</span>
-                <span class="s2">&quot;This can lead to problems with some structure generators like MD simulations, as single atoms &quot;</span>
-                <span class="s2">&quot;cannot form proper molecular dynamics trajectories. Consider setting the minimum to 2 or higher.&quot;</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"atom_number_range minimum value is </span><span class="si">{</span><span class="n">atom_number_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">, which allows single-atom structures. "</span>
+                <span class="s2">"This can lead to problems with some structure generators like MD simulations, as single atoms "</span>
+                <span class="s2">"cannot form proper molecular dynamics trajectories. Consider setting the minimum to 2 or higher."</span><span class="p">,</span>
                 <span class="ne">UserWarning</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
             <span class="p">)</span>
@@ -191,23 +191,23 @@
         <span class="n">filtered_structures</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">s</span>
             <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">filtered_structures</span>
-            <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">selectable_configs</span>
+            <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">selectable_configs</span>
         <span class="p">]</span>
 
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;No structures available to select from after filtering &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;(chem_formula_list=</span><span class="si">{</span><span class="n">chem_formula_list</span><span class="si">}</span><span class="s2">, selectable_configs=&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">selectable_configs</span><span class="si">}</span><span class="s2">, atom_number_range=</span><span class="si">{</span><span class="n">atom_number_range</span><span class="si">}</span><span class="s2">).&quot;</span>
+            <span class="s2">"No structures available to select from after filtering "</span>
+            <span class="sa">f</span><span class="s2">"(chem_formula_list=</span><span class="si">{</span><span class="n">chem_formula_list</span><span class="si">}</span><span class="s2">, selectable_configs="</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">selectable_configs</span><span class="si">}</span><span class="s2">, atom_number_range=</span><span class="si">{</span><span class="n">atom_number_range</span><span class="si">}</span><span class="s2">)."</span>
         <span class="p">)</span>
 
     <span class="n">reuse</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">max_number_of_concurrent_jobs</span>
     <span class="k">if</span> <span class="n">reuse</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">&quot;Only </span><span class="si">%d</span><span class="s2"> structures available for </span><span class="si">%d</span><span class="s2"> concurrent structure_generation &quot;</span>
-            <span class="s2">&quot;jobs; reusing structures to fill the requested concurrency. Each &quot;</span>
-            <span class="s2">&quot;reused structure is assigned a distinct MD seed (atoms.info[&#39;md_seed&#39;]) &quot;</span>
-            <span class="s2">&quot;so its duplicate runs diverge into different trajectories.&quot;</span><span class="p">,</span>
+            <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> structures available for </span><span class="si">%d</span><span class="s2"> concurrent structure_generation "</span>
+            <span class="s2">"jobs; reusing structures to fill the requested concurrency. Each "</span>
+            <span class="s2">"reused structure is assigned a distinct MD seed (atoms.info['md_seed']) "</span>
+            <span class="s2">"so its duplicate runs diverge into different trajectories."</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">),</span>
             <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
         <span class="p">)</span>
@@ -223,7 +223,7 @@
         <span class="p">]</span>
         <span class="n">_assign_md_seeds</span><span class="p">(</span><span class="n">initial_atoms</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span>
         <span class="n">mark_structures_for_dft</span><span class="p">(</span>
-            <span class="n">initial_atoms</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+            <span class="n">initial_atoms</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">initial_atoms</span>
 
@@ -271,11 +271,11 @@
 
     <span class="n">_assign_md_seeds</span><span class="p">(</span><span class="n">initial_atoms</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span>
     <span class="n">mark_structures_for_dft</span><span class="p">(</span>
-        <span class="n">initial_atoms</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+        <span class="n">initial_atoms</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span>
     <span class="p">)</span>
 
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-        <span class="s2">&quot;Structures selected for MD: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="s2">"Structures selected for MD: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
         <span class="p">[</span><span class="n">a</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">initial_atoms</span><span class="p">],</span>
     <span class="p">)</span>
 
@@ -284,16 +284,16 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_assign_md_seeds</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Give each selected structure a distinct atoms.info[&#39;md_seed&#39;].</span>
+<span class="w">    </span><span class="sd">"""Give each selected structure a distinct atoms.info['md_seed'].</span>
 
 <span class="sd">    Needed because the same source structure can be selected more than once</span>
 <span class="sd">    (when max_number_of_concurrent_jobs exceeds the number of selectable</span>
 <span class="sd">    structures) — run_md seeds its stochastic dynamics from this value so</span>
 <span class="sd">    duplicate starting structures still diverge into different trajectories</span>
 <span class="sd">    instead of running identical MD.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">):</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;md_seed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">i</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"md_seed"</span><span class="p">]</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">i</span>
 
 
 <div class="viewcode-block" id="mark_structures_for_dft">
@@ -302,8 +302,8 @@
     <span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_name</span><span class="p">:</span> <span class="nb">str</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;job_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_id&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;config_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">job_name</span><span class="si">}</span><span class="s2">&quot;</span></div>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"job_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"job_id"</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"config_type"</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">job_name</span><span class="si">}</span><span class="s2">"</span></div>
 
 </pre></div>
 

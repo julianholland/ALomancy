@@ -92,17 +92,17 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.standard_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActiveLearningStandardMACE</span>
 
 <span class="c1"># Load configuration from YAML file</span>
-<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">&quot;standard_config.yaml&quot;</span><span class="p">)</span>
+<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">"standard_config.yaml"</span><span class="p">)</span>
 
 <span class="c1"># Initialize the active learning workflow</span>
 <span class="n">workflow</span> <span class="o">=</span> <span class="n">ActiveLearningStandardMACE</span><span class="p">(</span>
-    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/train_set.xyz&quot;</span><span class="p">,</span>
-    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/test_set.xyz&quot;</span><span class="p">,</span>
+    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">"results/initialization/train_set.xyz"</span><span class="p">,</span>
+    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">"results/initialization/test_set.xyz"</span><span class="p">,</span>
     <span class="n">jobs_dict</span><span class="o">=</span><span class="n">jobs_dict</span><span class="p">,</span>
     <span class="n">number_of_al_loops</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
     <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># 0=silent, 1=INFO, 2=DEBUG</span>
-    <span class="n">log_file</span><span class="o">=</span><span class="s2">&quot;results/alomancy.log&quot;</span><span class="p">,</span>  <span class="c1"># debug logs always written here</span>
-    <span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
+    <span class="n">log_file</span><span class="o">=</span><span class="s2">"results/alomancy.log"</span><span class="p">,</span>  <span class="c1"># debug logs always written here</span>
+    <span class="n">db_path</span><span class="o">=</span><span class="s2">"results/global_database"</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="c1"># Run the active learning workflow</span>
@@ -129,25 +129,25 @@ It writes two files:</p>
 <p>Create a <code class="docutils literal notranslate"><span class="pre">standard_config.yaml</span></code> file with the required top-level keys.<br />
 The <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> value is the profile name written by <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_cpu&quot;</span><span class="w">       </span><span class="c1"># profile name from ~/.alomancy/hpc_config.yaml</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"initialization"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"4:00:00"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_cpu"</span><span class="w">       </span><span class="c1"># profile name from ~/.alomancy/hpc_config.yaml</span>
 
 <span class="nt">mlip_committee</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mace_training&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;12:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_gpu&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"mace_training"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"12:00:00"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_gpu"</span>
 
 <span class="nt">structure_generation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;md_generation&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_gpu&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"md_generation"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"8:00:00"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_gpu"</span>
 
 <span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
-<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">       </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;24:00:00&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven_cpu&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"high_accuracy_evaluation"</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">"qe"</span><span class="w">       </span><span class="c1"># "qe" (default) or "vasp"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"24:00:00"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_cpu"</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">load_dictionaries</span></code> resolves each string <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> value from <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>

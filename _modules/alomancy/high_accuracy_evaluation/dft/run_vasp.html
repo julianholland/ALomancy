@@ -92,7 +92,7 @@
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
-<span class="c1"># ASE&#39;s Vasp calculator rejects any pbc other than [True, True, True] — VASP</span>
+<span class="c1"># ASE's Vasp calculator rejects any pbc other than [True, True, True] — VASP</span>
 <span class="c1"># itself has no non-periodic mode. Molecules generated for initialization</span>
 <span class="c1"># (isolated atoms, dimers, trimers) are built non-periodic, so they need</span>
 <span class="c1"># padding before they reach VASP or their periodic images will interact.</span>
@@ -115,19 +115,19 @@
 <div class="viewcode-block" id="get_vasp_input_kwargs">
 <a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_vasp_input_kwargs</span><span class="p">(</span><span class="n">vasp_input_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Default INCAR parameters merged with user overrides — analogous to get_qe_input_data.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Default INCAR parameters merged with user overrides — analogous to get_qe_input_data."""</span>
     <span class="n">defaults</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;pp&quot;</span><span class="p">:</span> <span class="s2">&quot;PBE&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;encut&quot;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
-        <span class="s2">&quot;ediff&quot;</span><span class="p">:</span> <span class="mf">1e-6</span><span class="p">,</span>
-        <span class="s2">&quot;nsw&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
-        <span class="s2">&quot;ibrion&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
-        <span class="s2">&quot;isif&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
-        <span class="s2">&quot;sigma&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
-        <span class="s2">&quot;ismear&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-        <span class="s2">&quot;prec&quot;</span><span class="p">:</span> <span class="s2">&quot;Accurate&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;lwave&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="s2">&quot;lcharg&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"pp"</span><span class="p">:</span> <span class="s2">"PBE"</span><span class="p">,</span>
+        <span class="s2">"encut"</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span>
+        <span class="s2">"ediff"</span><span class="p">:</span> <span class="mf">1e-6</span><span class="p">,</span>
+        <span class="s2">"nsw"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"ibrion"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+        <span class="s2">"isif"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">"sigma"</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+        <span class="s2">"ismear"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">"prec"</span><span class="p">:</span> <span class="s2">"Accurate"</span><span class="p">,</span>
+        <span class="s2">"lwave"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"lcharg"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">defaults</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">vasp_input_kwargs</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">defaults</span></div>
@@ -142,29 +142,29 @@
     <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">is_relaxation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Vasp</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create an ASE Vasp calculator — analogous to create_qe_calc_object.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Create an ASE Vasp calculator — analogous to create_qe_calc_object."""</span>
     <span class="n">_ensure_fully_periodic</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
     <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">generate_kpts</span><span class="p">(</span><span class="n">cell</span><span class="o">=</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="n">periodic_3d</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kspacing</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
-    <span class="n">hpc</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pp_path&quot;</span><span class="p">):</span>
-        <span class="c1"># ASE&#39;s Vasp calculator reads POTCAR locations from this env var, not</span>
+    <span class="n">hpc</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pp_path"</span><span class="p">):</span>
+        <span class="c1"># ASE's Vasp calculator reads POTCAR locations from this env var, not</span>
         <span class="c1"># from a constructor kwarg — must be set before Vasp(...) is built.</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;VASP_PP_PATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">&quot;pp_path&quot;</span><span class="p">]</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"VASP_PP_PATH"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">"pp_path"</span><span class="p">]</span>
     <span class="n">vasp_kwargs</span> <span class="o">=</span> <span class="n">get_vasp_input_kwargs</span><span class="p">(</span>
-        <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vasp_input_kwargs&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_input_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">is_relaxation</span><span class="p">:</span>
-        <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;nsw&quot;</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">&quot;ibrion&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">})</span>
+        <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">"nsw"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"ibrion"</span><span class="p">:</span> <span class="mi">2</span><span class="p">})</span>
 
     <span class="c1"># NCORE ~ sqrt(ranks_per_node) is a sensible default for band parallelism</span>
-    <span class="n">ncore</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">hpc</span><span class="p">[</span><span class="s2">&quot;node_info&quot;</span><span class="p">][</span><span class="s2">&quot;ranks_per_node&quot;</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">))</span>
-    <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;ncore&quot;</span><span class="p">,</span> <span class="n">ncore</span><span class="p">)</span>
+    <span class="n">ncore</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">hpc</span><span class="p">[</span><span class="s2">"node_info"</span><span class="p">][</span><span class="s2">"ranks_per_node"</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">))</span>
+    <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"ncore"</span><span class="p">,</span> <span class="n">ncore</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">Vasp</span><span class="p">(</span>
-        <span class="n">command</span><span class="o">=</span><span class="n">create_vasp_command</span><span class="p">(</span><span class="n">hpc</span><span class="p">[</span><span class="s2">&quot;node_info&quot;</span><span class="p">],</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">&quot;vasp_path&quot;</span><span class="p">]),</span>
+        <span class="n">command</span><span class="o">=</span><span class="n">create_vasp_command</span><span class="p">(</span><span class="n">hpc</span><span class="p">[</span><span class="s2">"node_info"</span><span class="p">],</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">"vasp_path"</span><span class="p">]),</span>
         <span class="n">directory</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
         <span class="n">kpts</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">),</span>
-        <span class="n">setups</span><span class="o">=</span><span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pseudo_dict&quot;</span><span class="p">,</span> <span class="p">{}),</span>
+        <span class="n">setups</span><span class="o">=</span><span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pseudo_dict"</span><span class="p">,</span> <span class="p">{}),</span>
         <span class="o">**</span><span class="n">vasp_kwargs</span><span class="p">,</span>
     <span class="p">)</span></div>
 
@@ -196,7 +196,7 @@
         <span class="n">out_dir</span><span class="p">,</span>
         <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
         <span class="n">create_vasp_calc_go</span><span class="p">,</span>
-        <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">&quot;vasp_opt&quot;</span><span class="p">,</span>
+        <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">"vasp_opt"</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 </pre></div>

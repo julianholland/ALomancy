@@ -86,19 +86,19 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 <span class="n">_JOB_SECTIONS</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="s2">&quot;initialization&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;mlip_committee&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;structure_generation&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;high_accuracy_evaluation&quot;</span><span class="p">,</span>
+    <span class="s2">"initialization"</span><span class="p">,</span>
+    <span class="s2">"mlip_committee"</span><span class="p">,</span>
+    <span class="s2">"structure_generation"</span><span class="p">,</span>
+    <span class="s2">"high_accuracy_evaluation"</span><span class="p">,</span>
 <span class="p">)</span>
 
 
 <div class="viewcode-block" id="load_dictionaries">
 <a class="viewcode-back" href="../../../api/configs.html#alomancy.configs.config_dictionaries.load_dictionaries">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">load_dictionaries</span><span class="p">(</span><span class="n">config_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a run YAML config and resolve any HPC string references.</span>
+<span class="w">    </span><span class="sd">"""Load a run YAML config and resolve any HPC string references.</span>
 
-<span class="sd">    If a job section&#39;s ``hpc:`` value is a string, it is looked up in</span>
+<span class="sd">    If a job section's ``hpc:`` value is a string, it is looked up in</span>
 <span class="sd">    ``~/.alomancy/hpc_config.yaml`` and replaced with the full profile dict.</span>
 <span class="sd">    Dict values are passed through unchanged (backwards compatible).</span>
 
@@ -106,7 +106,7 @@
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
 <span class="sd">        If a string HPC name is not found in the global config.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">config_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">jobs_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
@@ -114,22 +114,22 @@
     <span class="k">for</span> <span class="n">section</span> <span class="ow">in</span> <span class="n">_JOB_SECTIONS</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">section</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">jobs_dict</span><span class="p">:</span>
             <span class="k">continue</span>
-        <span class="n">hpc_ref</span> <span class="o">=</span> <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">)</span>
+        <span class="n">hpc_ref</span> <span class="o">=</span> <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc_ref</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">hpc_ref</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hpc_config</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;HPC profile &#39;</span><span class="si">{</span><span class="n">hpc_ref</span><span class="si">}</span><span class="s2">&#39; referenced in &#39;</span><span class="si">{</span><span class="n">section</span><span class="si">}</span><span class="s2">.hpc&#39; was not &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;found in ~/.alomancy/hpc_config.yaml. &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;Run &#39;alomancy add-hpc&#39; to add it.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"HPC profile '</span><span class="si">{</span><span class="n">hpc_ref</span><span class="si">}</span><span class="s2">' referenced in '</span><span class="si">{</span><span class="n">section</span><span class="si">}</span><span class="s2">.hpc' was not "</span>
+                    <span class="sa">f</span><span class="s2">"found in ~/.alomancy/hpc_config.yaml. "</span>
+                    <span class="sa">f</span><span class="s2">"Run 'alomancy add-hpc' to add it."</span>
                 <span class="p">)</span>
-            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s2">&quot;hpc&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s2">"hpc"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
     <span class="k">return</span> <span class="n">jobs_dict</span></div>
 
 
 
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;standard_config.yaml&quot;</span><span class="p">)))</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"standard_config.yaml"</span><span class="p">)))</span>
 </pre></div>
 
            </div>

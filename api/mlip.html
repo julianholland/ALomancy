@@ -51,6 +51,7 @@
 <li class="toctree-l2"><a class="reference internal" href="core.html">Core Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">MLIP Training</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.mace_wfl.cleanup_local_committee_checkpoints"><code class="docutils literal notranslate"><span class="pre">cleanup_local_committee_checkpoints()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.mace_wfl.mace_fit"><code class="docutils literal notranslate"><span class="pre">mace_fit()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.get_mace_eval_info.get_mace_eval_info"><code class="docutils literal notranslate"><span class="pre">get_mace_eval_info()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.get_mace_eval_info.select_best_committee_model"><code class="docutils literal notranslate"><span class="pre">select_best_committee_model()</span></code></a></li>
@@ -95,6 +96,33 @@
   <section id="module-alomancy.mlip.mace_wfl">
 <span id="mlip-training"></span><h1>MLIP Training<a class="headerlink" href="#module-alomancy.mlip.mace_wfl" title="Link to this heading"></a></h1>
 <dl class="py function">
+<dt class="sig sig-object py" id="alomancy.mlip.mace_wfl.cleanup_local_committee_checkpoints">
+<span class="sig-prename descclassname"><span class="pre">alomancy.mlip.mace_wfl.</span></span><span class="sig-name descname"><span class="pre">cleanup_local_committee_checkpoints</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">base_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_indices</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable" title="(in Python v3.14)"><span class="pre">Iterable</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/mlip/mace_wfl.html#cleanup_local_committee_checkpoints"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.mlip.mace_wfl.cleanup_local_committee_checkpoints" title="Link to this definition"></a></dt>
+<dd><p>Delete the LOCAL copy of each fit’s checkpoints/ directory once its
+compiled model exists locally.</p>
+<p>_cleanup_committee_checkpoints (above) only removes the REMOTE
+checkpoints/ directory, on the remote node, right after that fit’s own
+training finishes – it cannot help with local disk usage. expyre’s
+periodic mid-training sync (get_remotes(), called from
+sync_remote_results_status() on every get_results() polling iteration
+while a job isn’t yet ‘done’) pulls the <em>entire</em> remote stage directory
+back to local disk with delete=False (confirmed in expyre/func.py:
+_sync_remote_results_status_ll’s delete parameter defaults to False and
+is never overridden by anything in this codebase) – i.e. additive-only,
+never mirroring remote deletions. MACE’s own checkpoint rotation keeps
+only the current epoch’s file on the remote side at any moment, but each
+one has a distinct, epoch-numbered filename
+(mlip_committee_run-&lt;id&gt;_epoch-&lt;N&gt;.pt) – so every sync poll across a
+multi-hour training run adds one more such file locally that never gets
+removed, even though the remote side never had more than one or two at
+once. Observed in production: a single fit’s local checkpoints/
+directory reaching 5-7GB (20+ per-epoch .pt files) despite the
+remote-side cleanup above having already run successfully for that same
+fit. Called from train_mlip once a batch of committee jobs finishes, for
+whichever fit indices now have a compiled model on disk locally.</p>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="alomancy.mlip.mace_wfl.mace_fit">
 <span class="sig-prename descclassname"><span class="pre">alomancy.mlip.mace_wfl.</span></span><span class="sig-name descname"><span class="pre">mace_fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">workdir_str</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_idx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_mace_fit_cmd</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mace_run_train'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/alomancy/mlip/mace_wfl.html#mace_fit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.mlip.mace_wfl.mace_fit" title="Link to this definition"></a></dt>
 <dd><p>Minimal MACE model fitting function.</p>
@@ -123,8 +151,20 @@
 <p>Reads the <code class="docutils literal notranslate"><span class="pre">*_test.txt</span></code> metrics file written by MACE at the end of each
 training run, picks the fit with the lowest value of <em>metric</em> on the held-
 out test set, and returns <code class="docutils literal notranslate"><span class="pre">(best_fit_index,</span> <span class="pre">stagetwo_model_path)</span></code>.</p>
-<p>Falls back to <code class="docutils literal notranslate"><span class="pre">(0,</span> <span class="pre">fit_0_path)</span></code> if test metrics cannot be read for any
-committee member.</p>
+<p>Only considers fits whose stagetwo model file actually exists on disk –
+a fit can be missing readable test metrics while ALSO genuinely having
+no model at all, e.g. a committee member whose training job was
+abandoned after a sustained remote-communication failure (see
+remote_submission/executor.py’s _get_results_with_resume) or never
+retried after train_mlip’s backfill. Falls back to the lowest-indexed
+fit that HAS a model on disk if no committee member has readable test
+metrics – previously this defaulted to fit_0 unconditionally, which
+crashed a downstream consumer (structure_generation trying to stage a
+nonexistent model file as an MD job input) the one time fit_0 itself was
+the fit with no model. Raises ValueError if literally none of the
+committee’s fits have a model file (train_mlip guarantees at least 3
+before calling this, so this should only fire if that invariant is ever
+broken).</p>
 </dd></dl>
 
 </section>

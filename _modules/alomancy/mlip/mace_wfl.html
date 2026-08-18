@@ -78,7 +78,9 @@
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -93,28 +95,56 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 <span class="k">if</span> <span class="p">(</span>
-    <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;torch._native&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="ow">and</span> <span class="s2">&quot;TRITON_CACHE_DIR&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
+    <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">"torch._native"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="ow">and</span> <span class="s2">"TRITON_CACHE_DIR"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
 <span class="p">):</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-        <span class="s2">&quot;This PyTorch version uses triton for native GPU ops (torch._native). &quot;</span>
-        <span class="s2">&quot;On HPC nodes without python3-dev headers, triton kernel compilation will &quot;</span>
-        <span class="s2">&quot;fail at training time. Set TRITON_CACHE_DIR to a persistent path and &quot;</span>
-        <span class="s2">&quot;pre-warm the cache in an interactive GPU job. See CLAUDE.md for details.&quot;</span>
+        <span class="s2">"This PyTorch version uses triton for native GPU ops (torch._native). "</span>
+        <span class="s2">"On HPC nodes without python3-dev headers, triton kernel compilation will "</span>
+        <span class="s2">"fail at training time. Set TRITON_CACHE_DIR to a persistent path and "</span>
+        <span class="s2">"pre-warm the cache in an interactive GPU job. See CLAUDE.md for details."</span>
     <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_save_mace_eval_predictions</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">train_filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evaluate the trained stagetwo model on train and test sets; write predictions.</span>
+<span class="w">    </span><span class="sd">"""Evaluate the trained stagetwo model on train and test sets; write predictions.</span>
 
-<span class="sd">    Called from inside mace_fit while os.chdir&#39;d into mlip_dir. Writes</span>
+<span class="sd">    Called from inside mace_fit while os.chdir'd into mlip_dir. Writes</span>
 <span class="sd">    train_pred.xyz and test_pred.xyz in the current directory with mace_energy</span>
 <span class="sd">    and mace_forces keys so store_mlip_predictions can read them locally without</span>
 <span class="sd">    re-running inference.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">model_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model&quot;</span><span class="p">)</span>
+<span class="sd">    """</span>
+    <span class="c1"># Deliberately load the UNCOMPILED model (plain torch.save'd nn.Module)</span>
+    <span class="c1"># rather than the TorchScript-compiled one used for production</span>
+    <span class="c1"># MD/DFT-adjacent inference. Observed in production: the compiled</span>
+    <span class="c1"># model's force evaluation (torch.autograd.grad through the TorchScript</span>
+    <span class="c1"># interpreter) raised "RuntimeError: The following operation failed in</span>
+    <span class="c1"># the TorchScript interpreter. ... RuntimeError: Global alloc not</span>
+    <span class="c1"># supported yet" for every multi-atom structure, every loop, on this</span>
+    <span class="c1"># cluster's GPU/CUDA/PyTorch combination -- only the trivial</span>
+    <span class="c1"># single-atom case (whose autograd graph apparently sidesteps whatever</span>
+    <span class="c1"># op triggers it) ever succeeded, silently degrading every parity plot</span>
+    <span class="c1"># in the run's history to one point. Eager-mode (uncompiled) execution</span>
+    <span class="c1"># doesn't go through the TorchScript interpreter's op dispatch at all,</span>
+    <span class="c1"># so it isn't subject to this failure mode. This function runs a few</span>
+    <span class="c1"># thousand single-point evaluations once per fit per loop, not a</span>
+    <span class="c1"># performance-critical hot path, so trading compiled inference speed</span>
+    <span class="c1"># for eager-mode correctness here is the right call.</span>
+    <span class="c1">#</span>
+    <span class="c1"># Gate on the uncompiled model's own existence, not the compiled one's:</span>
+    <span class="c1"># MACE (mace/cli/run_train.py) writes the uncompiled model via a bare</span>
+    <span class="c1"># torch.save() unconditionally, then attempts jit.compile()+</span>
+    <span class="c1"># torch.jit.save() for the compiled variant inside a bare</span>
+    <span class="c1"># `except Exception: pass` -- a silent swallow on MACE's side. Gating</span>
+    <span class="c1"># on the compiled file's existence would skip valid, usable predictions</span>
+    <span class="c1"># whenever that compile step happens to fail for reasons unrelated to</span>
+    <span class="c1"># training itself, even though the model this function actually needs</span>
+    <span class="c1"># saved successfully.</span>
+    <span class="n">model_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model"</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">model_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Stagetwo compiled model not found; skipping eval predictions.&quot;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Stagetwo (uncompiled) model not found; skipping eval predictions."</span>
+        <span class="p">)</span>
         <span class="k">return</span>
 
     <span class="k">try</span><span class="p">:</span>
@@ -123,42 +153,167 @@
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-            <span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
         <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-            <span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="s2">"cpu"</span>
 
         <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span>
             <span class="n">model_paths</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">())],</span>
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
-            <span class="n">default_dtype</span><span class="o">=</span><span class="s2">&quot;float64&quot;</span><span class="p">,</span>
+            <span class="n">default_dtype</span><span class="o">=</span><span class="s2">"float64"</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to load MACECalculator for post-training eval: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to load MACECalculator for post-training eval: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
         <span class="k">return</span>
 
-    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">xyz_path</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="n">train_filename</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="s2">&quot;../../test_set.xyz&quot;</span><span class="p">)]:</span>
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">xyz_path</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">"train"</span><span class="p">,</span> <span class="n">train_filename</span><span class="p">),</span> <span class="p">(</span><span class="s2">"test"</span><span class="p">,</span> <span class="s2">"../../test_set.xyz"</span><span class="p">)]:</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">xyz_path</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">))</span>
+            <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">xyz_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Could not read </span><span class="si">%s</span><span class="s2"> for eval predictions: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">xyz_path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Could not read </span><span class="si">%s</span><span class="s2"> for eval predictions: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">xyz_path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
             <span class="k">continue</span>
 
         <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">n_ok</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">n_failed</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
             <span class="n">a</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">a</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calc</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;mace_energy&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">())</span>
-                <span class="n">a</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">&quot;mace_forces&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"mace_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">())</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"mace_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+                <span class="n">n_ok</span> <span class="o">+=</span> <span class="mi">1</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Prediction failed for one structure: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                <span class="n">n_failed</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="c1"># Only the first failure gets a full traceback -- this loop</span>
+                <span class="c1"># runs once per structure (hundreds to thousands per AL</span>
+                <span class="c1"># loop) and a repeated failure mode logs the same</span>
+                <span class="c1"># traceback every time; the summary line below still</span>
+                <span class="c1"># reports the total count. Was previously logger.debug,</span>
+                <span class="c1"># which silently produced nothing at all: this function</span>
+                <span class="c1"># runs in a freshly spawned remote process where</span>
+                <span class="c1"># setup_logging() is never called, so there was no handler</span>
+                <span class="c1"># for DEBUG-level records, and RemoteJobExecutor discarded</span>
+                <span class="c1"># a successful job's stdout/stderr entirely -- meaning a</span>
+                <span class="c1"># near-total prediction failure (e.g. 1 success out of</span>
+                <span class="c1"># 1405 structures, previously observed) was completely</span>
+                <span class="c1"># invisible, silently degrading parity plots to a single</span>
+                <span class="c1"># trivial point (the one structure whose prediction</span>
+                <span class="c1"># happened to succeed) with no error anywhere.</span>
+                <span class="k">if</span> <span class="n">n_failed</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"Prediction failed for structure </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> (config_type=</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                        <span class="n">n_ok</span> <span class="o">+</span> <span class="n">n_failed</span><span class="p">,</span>
+                        <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+                        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">),</span>
+                        <span class="n">exc</span><span class="p">,</span>
+                        <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                        <span class="s2">"Prediction failed for structure </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                        <span class="n">n_ok</span> <span class="o">+</span> <span class="n">n_failed</span><span class="p">,</span>
+                        <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+                        <span class="n">exc</span><span class="p">,</span>
+                    <span class="p">)</span>
             <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
 
+        <span class="k">if</span> <span class="n">n_failed</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"</span><span class="si">%s</span><span class="s2"> predictions: </span><span class="si">%d</span><span class="s2"> succeeded, </span><span class="si">%d</span><span class="s2"> failed out of </span><span class="si">%d</span><span class="s2"> structures."</span><span class="p">,</span>
+                <span class="n">tag</span><span class="p">,</span>
+                <span class="n">n_ok</span><span class="p">,</span>
+                <span class="n">n_failed</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+            <span class="p">)</span>
+
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">_pred.xyz&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Saved </span><span class="si">%d</span><span class="s2"> </span><span class="si">%s</span><span class="s2"> prediction(s) to </span><span class="si">%s</span><span class="s2">_pred.xyz.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">),</span> <span class="n">tag</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
+            <span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">_pred.xyz"</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Saved </span><span class="si">%d</span><span class="s2"> </span><span class="si">%s</span><span class="s2"> prediction(s) to </span><span class="si">%s</span><span class="s2">_pred.xyz."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">),</span> <span class="n">tag</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Failed to write </span><span class="si">%s</span><span class="s2">_pred.xyz: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to write </span><span class="si">%s</span><span class="s2">_pred.xyz: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_remove_checkpoints_dir_if_model_exists</span><span class="p">(</span>
+    <span class="n">model_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">checkpoints_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">location</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Delete checkpoints_dir once model_path exists; leave it alone</span>
+<span class="sd">    (with a warning) if the model is missing, so a checkpoint is never</span>
+<span class="sd">    deleted out from under a fit that hasn't actually finished training.</span>
+
+<span class="sd">    Shared by _cleanup_committee_checkpoints (remote) and</span>
+<span class="sd">    cleanup_local_committee_checkpoints (local) below -- `location` only</span>
+<span class="sd">    distinguishes their log messages ("local " vs "").</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">model_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Stagetwo compiled model not found; leaving </span><span class="si">%s%s</span><span class="s2"> in place."</span><span class="p">,</span>
+            <span class="n">location</span><span class="p">,</span>
+            <span class="n">checkpoints_dir</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">checkpoints_dir</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">checkpoints_dir</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Removed </span><span class="si">%s%s</span><span class="s2"> after successful fit."</span><span class="p">,</span> <span class="n">location</span><span class="p">,</span> <span class="n">checkpoints_dir</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to remove </span><span class="si">%s%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">location</span><span class="p">,</span> <span class="n">checkpoints_dir</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cleanup_committee_checkpoints</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Delete this fit's checkpoint directory once its compiled model exists.</span>
+
+<span class="sd">    Called from inside mace_fit while os.chdir'd into mlip_dir, after run() and</span>
+<span class="sd">    _save_mace_eval_predictions. MACE only needs the checkpoint internally, to</span>
+<span class="sd">    restore the best-validation-loss state before writing the compiled model</span>
+<span class="sd">    (mace/cli/run_train.py); ALomancy never reads checkpoints itself, and</span>
+<span class="sd">    restart_latest stays off (mace_fit_params above), so once the compiled model</span>
+<span class="sd">    exists the checkpoint is pure storage cost -- one file per fit, per committee</span>
+<span class="sd">    member, per AL loop, otherwise left behind forever.</span>
+<span class="sd">    """</span>
+    <span class="n">_remove_checkpoints_dir_if_model_exists</span><span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model"</span><span class="p">),</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"checkpoints"</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="cleanup_local_committee_checkpoints">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.mace_wfl.cleanup_local_committee_checkpoints">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">cleanup_local_committee_checkpoints</span><span class="p">(</span>
+    <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fit_indices</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Delete the LOCAL copy of each fit's checkpoints/ directory once its</span>
+<span class="sd">    compiled model exists locally.</span>
+
+<span class="sd">    _cleanup_committee_checkpoints (above) only removes the REMOTE</span>
+<span class="sd">    checkpoints/ directory, on the remote node, right after that fit's own</span>
+<span class="sd">    training finishes -- it cannot help with local disk usage. expyre's</span>
+<span class="sd">    periodic mid-training sync (get_remotes(), called from</span>
+<span class="sd">    sync_remote_results_status() on every get_results() polling iteration</span>
+<span class="sd">    while a job isn't yet 'done') pulls the *entire* remote stage directory</span>
+<span class="sd">    back to local disk with delete=False (confirmed in expyre/func.py:</span>
+<span class="sd">    _sync_remote_results_status_ll's delete parameter defaults to False and</span>
+<span class="sd">    is never overridden by anything in this codebase) -- i.e. additive-only,</span>
+<span class="sd">    never mirroring remote deletions. MACE's own checkpoint rotation keeps</span>
+<span class="sd">    only the current epoch's file on the remote side at any moment, but each</span>
+<span class="sd">    one has a distinct, epoch-numbered filename</span>
+<span class="sd">    (mlip_committee_run-&lt;id&gt;_epoch-&lt;N&gt;.pt) -- so every sync poll across a</span>
+<span class="sd">    multi-hour training run adds one more such file locally that never gets</span>
+<span class="sd">    removed, even though the remote side never had more than one or two at</span>
+<span class="sd">    once. Observed in production: a single fit's local checkpoints/</span>
+<span class="sd">    directory reaching 5-7GB (20+ per-epoch .pt files) despite the</span>
+<span class="sd">    remote-side cleanup above having already run successfully for that same</span>
+<span class="sd">    fit. Called from train_mlip once a batch of committee jobs finishes, for</span>
+<span class="sd">    whichever fit indices now have a compiled model on disk locally.</span>
+<span class="sd">    """</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">fit_indices</span><span class="p">:</span>
+        <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">_remove_checkpoints_dir_if_model_exists</span><span class="p">(</span>
+            <span class="n">fit_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model"</span><span class="p">,</span>
+            <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"checkpoints"</span><span class="p">,</span>
+            <span class="n">location</span><span class="o">=</span><span class="s2">"local "</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_select_validation_split</span><span class="p">(</span>
@@ -167,18 +322,18 @@
     <span class="n">valid_fraction</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
     <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Carve a per-fit validation set from all_training.</span>
+<span class="w">    </span><span class="sd">"""Carve a per-fit validation set from all_training.</span>
 
 <span class="sd">    Only structures with config_type in acceptable_configs are eligible;</span>
 <span class="sd">    the rest always stay in training. Returns (new_train_set, valid_set).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">eligible</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">all_training</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config_type&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">acceptable_configs</span>
+        <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">all_training</span> <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">acceptable_configs</span>
     <span class="p">]</span>
 
     <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">&quot;No structures with config_type in </span><span class="si">%s</span><span class="s2"> found; skipping validation split.&quot;</span><span class="p">,</span>
+            <span class="s2">"No structures with config_type in </span><span class="si">%s</span><span class="s2"> found; skipping validation split."</span><span class="p">,</span>
             <span class="n">acceptable_configs</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">all_training</span><span class="p">,</span> <span class="p">[]</span>
@@ -186,7 +341,7 @@
     <span class="n">n_valid</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">valid_fraction</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">eligible</span><span class="p">)))</span>
     <span class="k">if</span> <span class="n">n_valid</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">&quot;</span><span class="si">%.0f%%</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> eligible structure(s) rounds to 0; skipping validation split.&quot;</span><span class="p">,</span>
+            <span class="s2">"</span><span class="si">%.0f%%</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> eligible structure(s) rounds to 0; skipping validation split."</span><span class="p">,</span>
             <span class="n">valid_fraction</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">eligible</span><span class="p">),</span>
         <span class="p">)</span>
@@ -198,7 +353,7 @@
     <span class="n">new_train_set</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">all_training</span> <span class="k">if</span> <span class="nb">id</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_ids</span><span class="p">]</span>
 
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">&quot;Validation split: </span><span class="si">%d</span><span class="s2"> valid, </span><span class="si">%d</span><span class="s2"> train (from </span><span class="si">%d</span><span class="s2"> total, </span><span class="si">%d</span><span class="s2"> eligible).&quot;</span><span class="p">,</span>
+        <span class="s2">"Validation split: </span><span class="si">%d</span><span class="s2"> valid, </span><span class="si">%d</span><span class="s2"> train (from </span><span class="si">%d</span><span class="s2"> total, </span><span class="si">%d</span><span class="s2"> eligible)."</span><span class="p">,</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">valid_set</span><span class="p">),</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">new_train_set</span><span class="p">),</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">all_training</span><span class="p">),</span>
@@ -214,9 +369,9 @@
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">workdir_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">fit_idx</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-    <span class="n">_mace_fit_cmd</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;mace_run_train&quot;</span><span class="p">,</span>
+    <span class="n">_mace_fit_cmd</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mace_run_train"</span><span class="p">,</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Minimal MACE model fitting function.</span>
 
 <span class="sd">    Parameters</span>
@@ -229,48 +384,48 @@
 <span class="sd">        Path to the AL loop working directory (contains train_set.xyz / test_set.xyz).</span>
 <span class="sd">    fit_idx : int, optional</span>
 <span class="sd">        Committee member index (default 0).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">mlip_committee_job_dict</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;mlip_committee&quot;</span><span class="p">]</span>
+<span class="sd">    """</span>
+    <span class="n">mlip_committee_job_dict</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">]</span>
     <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir_str</span><span class="p">)</span>
-    <span class="n">mlip_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="sa">f</span><span class="s2">&quot;fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Creating MLIP directory: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">mlip_dir</span><span class="p">)</span>
+    <span class="n">mlip_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Creating MLIP directory: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">mlip_dir</span><span class="p">)</span>
     <span class="n">mlip_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    <span class="k">assert</span> <span class="s2">&quot;seed&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span> <span class="p">(</span>
-        <span class="s2">&quot;Seed should not be in mace_fit_kwargs, it is passed separately.&quot;</span>
+    <span class="k">assert</span> <span class="s2">"seed"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"mace_fit_kwargs"</span><span class="p">],</span> <span class="p">(</span>
+        <span class="s2">"Seed should not be in mace_fit_kwargs, it is passed separately."</span>
     <span class="p">)</span>
-    <span class="k">assert</span> <span class="s2">&quot;energy_key&quot;</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span> <span class="p">(</span>
-        <span class="s2">&quot;energy_key must be specified in mace_fit_kwargs. This corresponds to the energy key in the training set. using &#39;energy&#39; is not recommended.&quot;</span>
+    <span class="k">assert</span> <span class="s2">"energy_key"</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"mace_fit_kwargs"</span><span class="p">],</span> <span class="p">(</span>
+        <span class="s2">"energy_key must be specified in mace_fit_kwargs. This corresponds to the energy key in the training set. using 'energy' is not recommended."</span>
     <span class="p">)</span>
-    <span class="k">assert</span> <span class="s2">&quot;forces_key&quot;</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span> <span class="p">(</span>
-        <span class="s2">&quot;forces_key must be specified in mace_fit_kwargs. This corresponds to the forces key in the training set. using &#39;forces&#39; is not recommended.&quot;</span>
+    <span class="k">assert</span> <span class="s2">"forces_key"</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"mace_fit_kwargs"</span><span class="p">],</span> <span class="p">(</span>
+        <span class="s2">"forces_key must be specified in mace_fit_kwargs. This corresponds to the forces key in the training set. using 'forces' is not recommended."</span>
     <span class="p">)</span>
 
     <span class="n">epochs</span> <span class="o">=</span> <span class="p">(</span>
         <span class="mi">80</span>
-        <span class="k">if</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;max_num_epochs&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span>
-        <span class="k">else</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;max_num_epochs&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"max_num_epochs"</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="k">else</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"max_num_epochs"</span><span class="p">]</span>
     <span class="p">)</span>
 
     <span class="c1"># Read training data and carve per-fit validation set before chdir</span>
-    <span class="n">training_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">&quot;train_set.xyz&quot;</span><span class="p">)</span>
+    <span class="n">training_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">workdir</span><span class="p">,</span> <span class="s2">"train_set.xyz"</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">training_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
         <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Training file not found: </span><span class="si">{</span><span class="n">training_file</span><span class="si">}</span><span class="s2">. &quot;</span>
-            <span class="s2">&quot;Ensure train_set.xyz has been written to the working directory before fitting.&quot;</span>
+            <span class="sa">f</span><span class="s2">"Training file not found: </span><span class="si">{</span><span class="n">training_file</span><span class="si">}</span><span class="s2">. "</span>
+            <span class="s2">"Ensure train_set.xyz has been written to the working directory before fitting."</span>
         <span class="p">)</span>
-    <span class="n">all_training</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">training_file</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">))</span>
+    <span class="n">all_training</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">training_file</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">&quot;Read </span><span class="si">%d</span><span class="s2"> training structures from </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_training</span><span class="p">),</span> <span class="n">training_file</span>
+        <span class="s2">"Read </span><span class="si">%d</span><span class="s2"> training structures from </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_training</span><span class="p">),</span> <span class="n">training_file</span>
     <span class="p">)</span>
 
     <span class="c1"># valid_config_types can be overridden in mlip_committee config; defaults to</span>
     <span class="c1"># initialization test_config_types so validation covers the same structure classes</span>
     <span class="n">valid_config_types</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-        <span class="s2">&quot;valid_config_types&quot;</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;initialization&quot;</span><span class="p">][</span><span class="s2">&quot;test_config_types&quot;</span><span class="p">]</span>
+        <span class="s2">"valid_config_types"</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"initialization"</span><span class="p">][</span><span class="s2">"test_config_types"</span><span class="p">]</span>
     <span class="p">)</span>
-    <span class="n">acceptable_configs</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">valid_config_types</span><span class="p">,</span> <span class="s2">&quot;high_sd&quot;</span><span class="p">]</span>
-    <span class="n">valid_fraction</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;valid_fraction&quot;</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
+    <span class="n">acceptable_configs</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">valid_config_types</span><span class="p">,</span> <span class="s2">"high_sd"</span><span class="p">]</span>
+    <span class="n">valid_fraction</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"valid_fraction"</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
     <span class="n">fit_seed</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">fit_idx</span>
     <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fit_seed</span><span class="p">)</span>
     <span class="n">new_train_set</span><span class="p">,</span> <span class="n">valid_set</span> <span class="o">=</span> <span class="n">_select_validation_split</span><span class="p">(</span>
@@ -279,62 +434,62 @@
 
     <span class="c1"># When a split occurred, write per-fit train/valid files into mlip_dir (accessible</span>
     <span class="c1"># after chdir). When no split, point directly at the original train_set.xyz.</span>
-    <span class="n">valid_filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;valid_set_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">.xyz&quot;</span>
+    <span class="n">valid_filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"valid_set_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">.xyz"</span>
     <span class="k">if</span> <span class="n">valid_set</span><span class="p">:</span>
-        <span class="n">train_filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;train_set_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">.xyz&quot;</span>
-        <span class="n">write</span><span class="p">(</span><span class="n">mlip_dir</span> <span class="o">/</span> <span class="n">train_filename</span><span class="p">,</span> <span class="n">new_train_set</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
-        <span class="n">write</span><span class="p">(</span><span class="n">mlip_dir</span> <span class="o">/</span> <span class="n">valid_filename</span><span class="p">,</span> <span class="n">valid_set</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+        <span class="n">train_filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"train_set_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">.xyz"</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">mlip_dir</span> <span class="o">/</span> <span class="n">train_filename</span><span class="p">,</span> <span class="n">new_train_set</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">mlip_dir</span> <span class="o">/</span> <span class="n">valid_filename</span><span class="p">,</span> <span class="n">valid_set</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-            <span class="s2">&quot;Wrote split: </span><span class="si">%d</span><span class="s2"> train to </span><span class="si">%s</span><span class="s2">, </span><span class="si">%d</span><span class="s2"> valid to </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+            <span class="s2">"Wrote split: </span><span class="si">%d</span><span class="s2"> train to </span><span class="si">%s</span><span class="s2">, </span><span class="si">%d</span><span class="s2"> valid to </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">new_train_set</span><span class="p">),</span>
             <span class="n">train_filename</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">valid_set</span><span class="p">),</span>
             <span class="n">valid_filename</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">train_filename</span> <span class="o">=</span> <span class="s2">&quot;../../train_set.xyz&quot;</span>
+        <span class="n">train_filename</span> <span class="o">=</span> <span class="s2">"../../train_set.xyz"</span>
 
     <span class="c1"># default MACE fit parameters</span>
     <span class="c1"># These can be overridden by the job_dict passed to the function</span>
     <span class="n">mace_fit_params</span> <span class="o">=</span> <span class="p">{</span>
         <span class="c1"># Relative paths — MACE runs from inside mlip_dir after os.chdir below</span>
-        <span class="s2">&quot;train_file&quot;</span><span class="p">:</span> <span class="n">train_filename</span><span class="p">,</span>
-        <span class="s2">&quot;test_file&quot;</span><span class="p">:</span> <span class="s2">&quot;../../test_set.xyz&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;MACE&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;correlation&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
-        <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;ema&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="s2">&quot;energy_weight&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-        <span class="s2">&quot;forces_weight&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
-        <span class="s2">&quot;error_table&quot;</span><span class="p">:</span> <span class="s2">&quot;PerAtomMAE&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;eval_interval&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
-        <span class="s2">&quot;max_L&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
-        <span class="s2">&quot;max_num_epochs&quot;</span><span class="p">:</span> <span class="n">epochs</span><span class="p">,</span>
-        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;num_channels&quot;</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
-        <span class="s2">&quot;num_interactions&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
-        <span class="s2">&quot;patience&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>
-        <span class="s2">&quot;r_max&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
-        <span class="s2">&quot;restart_latest&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="s2">&quot;save_cpu&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="s2">&quot;scheduler_patience&quot;</span><span class="p">:</span> <span class="mi">15</span><span class="p">,</span>
-        <span class="s2">&quot;start_swa&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">epochs</span> <span class="o">*</span> <span class="mf">0.8</span><span class="p">)),</span>
-        <span class="s2">&quot;swa&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
-        <span class="s2">&quot;valid_batch_size&quot;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
-        <span class="s2">&quot;distributed&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="s2">&quot;seed&quot;</span><span class="p">:</span> <span class="n">fit_seed</span><span class="p">,</span>
-        <span class="o">**</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;mace_fit_kwargs&quot;</span><span class="p">],</span>
+        <span class="s2">"train_file"</span><span class="p">:</span> <span class="n">train_filename</span><span class="p">,</span>
+        <span class="s2">"test_file"</span><span class="p">:</span> <span class="s2">"../../test_set.xyz"</span><span class="p">,</span>
+        <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"MACE"</span><span class="p">,</span>
+        <span class="s2">"correlation"</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="s2">"device"</span><span class="p">:</span> <span class="s2">"cuda"</span><span class="p">,</span>
+        <span class="s2">"ema"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"energy_weight"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">"forces_weight"</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="s2">"error_table"</span><span class="p">:</span> <span class="s2">"PerAtomMAE"</span><span class="p">,</span>
+        <span class="s2">"eval_interval"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">"max_L"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">"max_num_epochs"</span><span class="p">:</span> <span class="n">epochs</span><span class="p">,</span>
+        <span class="s2">"name"</span><span class="p">:</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span>
+        <span class="s2">"num_channels"</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
+        <span class="s2">"num_interactions"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">"patience"</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="s2">"r_max"</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
+        <span class="s2">"restart_latest"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"save_cpu"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"scheduler_patience"</span><span class="p">:</span> <span class="mi">15</span><span class="p">,</span>
+        <span class="s2">"start_swa"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">epochs</span> <span class="o">*</span> <span class="mf">0.8</span><span class="p">)),</span>
+        <span class="s2">"swa"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"batch_size"</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+        <span class="s2">"valid_batch_size"</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+        <span class="s2">"distributed"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"seed"</span><span class="p">:</span> <span class="n">fit_seed</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"mace_fit_kwargs"</span><span class="p">],</span>
     <span class="p">}</span>
     <span class="k">if</span> <span class="n">valid_set</span><span class="p">:</span>
-        <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;valid_file&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">valid_filename</span>
+        <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"valid_file"</span><span class="p">]</span> <span class="o">=</span> <span class="n">valid_filename</span>
 
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;MACE fit parameters:&quot;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"MACE fit parameters:"</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;  </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"  </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
     <span class="n">parser</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">build_default_arg_parser</span><span class="p">()</span>
-    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s2">&quot;--name&quot;</span><span class="p">,</span> <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]])</span>  <span class="c1"># seed defaults</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s2">"--name"</span><span class="p">,</span> <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]])</span>  <span class="c1"># seed defaults</span>
     <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="nb">setattr</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
@@ -342,7 +497,8 @@
     <span class="k">try</span><span class="p">:</span>
         <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">mlip_dir</span><span class="p">)</span>
         <span class="n">run</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
-        <span class="n">_save_mace_eval_predictions</span><span class="p">(</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="n">train_filename</span><span class="p">)</span>
+        <span class="n">_save_mace_eval_predictions</span><span class="p">(</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span> <span class="n">train_filename</span><span class="p">)</span>
+        <span class="n">_cleanup_committee_checkpoints</span><span class="p">(</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">orig_dir</span><span class="p">)</span></div>
 
@@ -354,44 +510,44 @@
     <span class="n">remote_info</span><span class="p">:</span> <span class="n">RemoteInfo</span><span class="p">,</span>
     <span class="n">mace_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">mace_fit_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
-    <span class="n">mace_fit_cmd</span><span class="o">=</span><span class="s2">&quot;mace_run_train&quot;</span><span class="p">,</span>
-    <span class="n">run_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;mace_fit&quot;</span><span class="p">),</span>
+    <span class="n">mace_fit_cmd</span><span class="o">=</span><span class="s2">"mace_run_train"</span><span class="p">,</span>
+    <span class="n">run_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"mace_fit"</span><span class="p">),</span>
 <span class="p">):</span>
 
     <span class="c1"># fill in some params from standard function arguments</span>
-    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">mace_name</span>
-    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;energy_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;REF_energy&quot;</span>
-    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;forces_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;REF_forces&quot;</span>
-    <span class="k">if</span> <span class="s2">&quot;compute_stress&quot;</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="p">:</span>
-        <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">&quot;stress_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;REF_stress&quot;</span>
+    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span> <span class="o">=</span> <span class="n">mace_name</span>
+    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"energy_key"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"REF_energy"</span>
+    <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"forces_key"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"REF_forces"</span>
+    <span class="k">if</span> <span class="s2">"compute_stress"</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="p">:</span>
+        <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"stress_key"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"REF_stress"</span>
 
     <span class="n">input_files</span> <span class="o">=</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">input_files</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
     <span class="n">output_files</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">remote_info</span><span class="o">.</span><span class="n">output_files</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">run_dir</span><span class="p">)]</span>
 
-    <span class="c1"># set number of threads in queued job, only if user hasn&#39;t set them</span>
+    <span class="c1"># set number of threads in queued job, only if user hasn't set them</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
-        <span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;WFL_MACE_FIT_OMP_NUM_THREADS&quot;</span>
+        <span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"="</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"WFL_MACE_FIT_OMP_NUM_THREADS"</span>
         <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span>
     <span class="p">):</span>
         <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="s2">&quot;WFL_MACE_FIT_OMP_NUM_THREADS=$EXPYRE_NUM_CORES_PER_NODE&quot;</span>
+            <span class="s2">"WFL_MACE_FIT_OMP_NUM_THREADS=$EXPYRE_NUM_CORES_PER_NODE"</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
-        <span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;WFL_NUM_PYTHON_SUBPROCESSES&quot;</span>
+        <span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"="</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"WFL_NUM_PYTHON_SUBPROCESSES"</span>
         <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span>
     <span class="p">):</span>
         <span class="n">remote_info</span><span class="o">.</span><span class="n">env_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="s2">&quot;WFL_NUM_PYTHON_SUBPROCESSES=$EXPYRE_NUM_CORES_PER_NODE&quot;</span>
+            <span class="s2">"WFL_NUM_PYTHON_SUBPROCESSES=$EXPYRE_NUM_CORES_PER_NODE"</span>
         <span class="p">)</span>
 
     <span class="n">remote_func_kwargs</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;train_atoms_path&quot;</span><span class="p">:</span> <span class="n">train_atoms_path</span><span class="p">,</span>
-        <span class="s2">&quot;test_atoms_path&quot;</span><span class="p">:</span> <span class="n">test_atoms_path</span><span class="p">,</span>
-        <span class="s2">&quot;remote_info&quot;</span><span class="p">:</span> <span class="n">remote_info</span><span class="p">,</span>
-        <span class="s2">&quot;mace_name&quot;</span><span class="p">:</span> <span class="n">mace_name</span><span class="p">,</span>
-        <span class="s2">&quot;mace_fit_params&quot;</span><span class="p">:</span> <span class="n">mace_fit_params</span><span class="p">,</span>
-        <span class="s2">&quot;mace_fit_cmd&quot;</span><span class="p">:</span> <span class="n">mace_fit_cmd</span><span class="p">,</span>
-        <span class="s2">&quot;run_dir&quot;</span><span class="p">:</span> <span class="n">run_dir</span><span class="p">,</span>
+        <span class="s2">"train_atoms_path"</span><span class="p">:</span> <span class="n">train_atoms_path</span><span class="p">,</span>
+        <span class="s2">"test_atoms_path"</span><span class="p">:</span> <span class="n">test_atoms_path</span><span class="p">,</span>
+        <span class="s2">"remote_info"</span><span class="p">:</span> <span class="n">remote_info</span><span class="p">,</span>
+        <span class="s2">"mace_name"</span><span class="p">:</span> <span class="n">mace_name</span><span class="p">,</span>
+        <span class="s2">"mace_fit_params"</span><span class="p">:</span> <span class="n">mace_fit_params</span><span class="p">,</span>
+        <span class="s2">"mace_fit_cmd"</span><span class="p">:</span> <span class="n">mace_fit_cmd</span><span class="p">,</span>
+        <span class="s2">"run_dir"</span><span class="p">:</span> <span class="n">run_dir</span><span class="p">,</span>
     <span class="p">}</span>
 
     <span class="n">xpr</span> <span class="o">=</span> <span class="n">ExPyRe</span><span class="p">(</span>
@@ -426,7 +582,7 @@
 
     <span class="k">if</span> <span class="n">results</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">remote_info</span><span class="o">.</span><span class="n">ignore_failed_jobs</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Remote job failed with stdout: </span><span class="si">{</span><span class="n">stdout</span><span class="si">}</span><span class="s2"> and stderr: </span><span class="si">{</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"Remote job failed with stdout: </span><span class="si">{</span><span class="n">stdout</span><span class="si">}</span><span class="s2"> and stderr: </span><span class="si">{</span><span class="n">stderr</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">results</span>

@@ -128,14 +128,14 @@ Configures two files:
 Before continuing, make sure this HPC is reachable by SSH alias ...
 
 --- ExPyRe System (scheduler config) ---
-System name in ~/.expyre/config.json (e.g. &#39;raven_gpu&#39;): raven_gpu
+System name in ~/.expyre/config.json (e.g. 'raven_gpu'): raven_gpu
 
 Available SSH hosts from ~/.ssh/config:
   1) raven
   2) draco
   3) raccoon
   Enter a number to select, or type a hostname directly.
-SSH host: 1                          # picks &#39;raven&#39;
+SSH host: 1                          # picks 'raven'
 
 GPU system? [y/N]: y
 
@@ -146,17 +146,17 @@ Scratch directory path on remote, e.g. /ptmp/user/alomancy_scratch: /ptmp/jholl/
 
 Module/setup commands — press Enter after each command.
 Enter on a blank line to finish.
-Examples: &#39;module purge&#39;  &#39;module load python/3.11&#39;  &#39;export OMP_NUM_THREADS=1&#39;
+Examples: 'module purge'  'module load python/3.11'  'export OMP_NUM_THREADS=1'
   &gt; module purge
   &gt; module load cuda/12.2 python/3.11
   &gt; export OMP_NUM_THREADS=1
   &gt;
 
 Partitions (at least one required):
-  Partition name (e.g. &#39;general&#39;): gpubig
-  Cores per node for &#39;gpubig&#39;: 18
-  Max time for &#39;gpubig&#39; [24:00:00]:
-  Max memory for &#39;gpubig&#39;, e.g. 240GB: 120GB
+  Partition name (e.g. 'general'): gpubig
+  Cores per node for 'gpubig': 18
+  Max time for 'gpubig' [24:00:00]:
+  Max memory for 'gpubig', e.g. 240GB: 120GB
   Add another partition? [y/N]: n
 
 GPU SBATCH options (press Enter to skip each):
@@ -164,7 +164,7 @@ GPU SBATCH options (press Enter to skip each):
   Gres string, e.g. gpu:a100:1: gpu:a100:1
 
 --- ALomancy HPC Profile ---
-  (This name goes in your run YAML: hpc: &#39;&lt;profile_name&gt;&#39;)
+  (This name goes in your run YAML: hpc: '&lt;profile_name&gt;')
 Profile name [raven_gpu]:
 Venv activation command, e.g. source /u/user/.venvs/alomancy/bin/activate: source /u/jholl/.venvs/alomancy/bin/activate
 TRITON_CACHE_DIR path for GPU PyTorch JIT cache, or Enter to skip: /u/jholl/.triton_cache
@@ -183,22 +183,22 @@ DFT code on this system? Options: qe / vasp / none
 DFT code [none]:
 
 --- Writing config files ---
-  /home/jholl/.expyre/config.json  ← added &#39;raven_gpu&#39;
-  /home/jholl/.alomancy/hpc_config.yaml  ← added &#39;raven_gpu&#39;
+  /home/jholl/.expyre/config.json  ← added 'raven_gpu'
+  /home/jholl/.alomancy/hpc_config.yaml  ← added 'raven_gpu'
 
 --- Remote Installation ---
 Install alomancy on this system now? [y/N]: y
 Python executable path on remote [/u/jholl/.venvs/alomancy/bin/python]:
-  Running: ssh raven &#39;/u/jholl/.venvs/alomancy/bin/python -m pip install alomancy&#39; …
+  Running: ssh raven '/u/jholl/.venvs/alomancy/bin/python -m pip install alomancy' …
   Done.
 
-Setup complete! Use &#39;raven_gpu&#39; in your run YAML:
+Setup complete! Use 'raven_gpu' in your run YAML:
   mlip_committee:
-    hpc: &#39;raven_gpu&#39;
+    hpc: 'raven_gpu'
   structure_generation:
-    hpc: &#39;raven_gpu&#39;
+    hpc: 'raven_gpu'
   high_accuracy_evaluation:
-    hpc: &#39;raven_gpu&#39;
+    hpc: 'raven_gpu'
 </pre></div>
 </div>
 <p>The wizard writes a profile like this to <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>:</p>
@@ -220,26 +220,26 @@ Setup complete! Use &#39;raven_gpu&#39; in your run YAML:
 </div>
 <p>And this entry to <code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code>:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;systems&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;raven_gpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;raven&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;remsh_cmd&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ssh&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;scheduler&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;slurm&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;header&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="s2">&quot;#SBATCH --no-requeue&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;#SBATCH --nodes={num_nodes}&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;#SBATCH --cpus-per-task={num_cores}&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;#SBATCH --gres=gpu:a100:1&quot;</span>
+<span class="w">  </span><span class="nt">"systems"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"raven_gpu"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"raven"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"remsh_cmd"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ssh"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"scheduler"</span><span class="p">:</span><span class="w"> </span><span class="s2">"slurm"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"header"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">"#SBATCH --no-requeue"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"#SBATCH --nodes={num_nodes}"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"#SBATCH --cpus-per-task={num_cores}"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"#SBATCH --gres=gpu:a100:1"</span>
 <span class="w">      </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;commands&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="s2">&quot;module purge&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;module load cuda/12.2 python/3.11&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">&quot;export OMP_NUM_THREADS=1&quot;</span>
+<span class="w">      </span><span class="nt">"commands"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">"module purge"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"module load cuda/12.2 python/3.11"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"export OMP_NUM_THREADS=1"</span>
 <span class="w">      </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;partitions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;gpubig&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;num_cores&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;24:00:00&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max_mem&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;120GB&quot;</span><span class="p">}</span>
+<span class="w">      </span><span class="nt">"partitions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"gpubig"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"num_cores"</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span><span class="p">,</span><span class="w"> </span><span class="nt">"max_time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"24:00:00"</span><span class="p">,</span><span class="w"> </span><span class="nt">"max_mem"</span><span class="p">:</span><span class="w"> </span><span class="s2">"120GB"</span><span class="p">}</span>
 <span class="w">      </span><span class="p">},</span>
-<span class="w">      </span><span class="nt">&quot;rundir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/ptmp/jholl/scratch&quot;</span>
+<span class="w">      </span><span class="nt">"rundir"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/ptmp/jholl/scratch"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -263,17 +263,17 @@ because it is per-element and changes between projects.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.standard_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActiveLearningStandardMACE</span>
 
 <span class="c1"># Load configuration from YAML file</span>
-<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">&quot;standard_config.yaml&quot;</span><span class="p">)</span>
+<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">"standard_config.yaml"</span><span class="p">)</span>
 
 <span class="c1"># Create and run the workflow</span>
 <span class="n">workflow</span> <span class="o">=</span> <span class="n">ActiveLearningStandardMACE</span><span class="p">(</span>
-    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/train_set.xyz&quot;</span><span class="p">,</span>
-    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">&quot;results/initialization/test_set.xyz&quot;</span><span class="p">,</span>
+    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">"results/initialization/train_set.xyz"</span><span class="p">,</span>
+    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">"results/initialization/test_set.xyz"</span><span class="p">,</span>
     <span class="n">jobs_dict</span><span class="o">=</span><span class="n">jobs_dict</span><span class="p">,</span>
     <span class="n">number_of_al_loops</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
     <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># 0=silent, 1=INFO progress, 2=DEBUG</span>
-    <span class="n">log_file</span><span class="o">=</span><span class="s2">&quot;results/alomancy.log&quot;</span><span class="p">,</span>  <span class="c1"># file always captures DEBUG</span>
-    <span class="n">db_path</span><span class="o">=</span><span class="s2">&quot;results/global_database&quot;</span><span class="p">,</span>
+    <span class="n">log_file</span><span class="o">=</span><span class="s2">"results/alomancy.log"</span><span class="p">,</span>  <span class="c1"># file always captures DEBUG</span>
+    <span class="n">db_path</span><span class="o">=</span><span class="s2">"results/global_database"</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">workflow</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
@@ -284,14 +284,14 @@ because it is per-element and changes between projects.</p>
 <h2>Configuration File<a class="headerlink" href="#configuration-file" title="Link to this heading"></a></h2>
 <p>The configuration YAML file defines all the stages of the active learning workflow. Here’s a complete example:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2H&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"initialization"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
 <span class="w">  </span><span class="nt">test_to_train_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
 <span class="w">  </span><span class="nt">test_config_types</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;IsolatedAtom&quot;</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;init_dimer&quot;</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"IsolatedAtom"</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"init_dimer"</span>
 <span class="w">  </span><span class="nt">creation_kwargs</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;H&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;O&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="nt">mp_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">    </span><span class="nt">single_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">    </span><span class="nt">num_dimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
@@ -301,25 +301,25 @@ because it is per-element and changes between projects.</p>
 <span class="w">    </span><span class="nt">max_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
 <span class="w">    </span><span class="nt">amorphous_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
 <span class="w">    </span><span class="nt">mp_max_energy_above_hull</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_hpc&#39;</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_hpc'</span>
 
 <span class="nt">mlip_committee</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mlip_committee&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"mlip_committee"</span>
 <span class="w">  </span><span class="nt">size_of_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;5H&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_gpu_hpc&#39;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"5H"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_gpu_hpc'</span>
 
 <span class="nt">structure_generation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;structure_generation&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"structure_generation"</span>
 <span class="w">  </span><span class="nt">desired_number_of_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10H&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_gpu_hpc&#39;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"10H"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_gpu_hpc'</span>
 
 <span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
-<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;qe&quot;</span><span class="w">   </span><span class="c1"># &quot;qe&quot; (default) or &quot;vasp&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_cpu_hpc&#39;</span><span class="w">   </span><span class="c1"># concurrency is set on the HPC profile, see max_concurrent_jobs above</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"high_accuracy_evaluation"</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">"qe"</span><span class="w">   </span><span class="c1"># "qe" (default) or "vasp"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_cpu_hpc'</span><span class="w">   </span><span class="c1"># concurrency is set on the HPC profile, see max_concurrent_jobs above</span>
 </pre></div>
 </div>
 <section id="configuration-key-descriptions">
@@ -329,17 +329,17 @@ because it is per-element and changes between projects.</p>
 <li><p><strong>mlip_committee</strong>: Trains an ensemble (committee) of MACE interatomic potentials. The <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code> parameter determines how many committee members are trained in parallel.</p></li>
 <li><p><strong>structure_generation</strong>: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee. MD parameters (<code class="docutils literal notranslate"><span class="pre">steps</span></code>, <code class="docutils literal notranslate"><span class="pre">temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">timestep_fs</span></code>, <code class="docutils literal notranslate"><span class="pre">friction</span></code>, <code class="docutils literal notranslate"><span class="pre">ensemble</span></code>, <code class="docutils literal notranslate"><span class="pre">pressure</span></code>) go under <code class="docutils literal notranslate"><span class="pre">run_md_kwargs</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">structure_generation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;structure_generation&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"structure_generation"</span>
 <span class="w">  </span><span class="nt">desired_number_of_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10H&quot;</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"10H"</span>
 <span class="w">  </span><span class="nt">run_md_kwargs</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">steps</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20000</span>
 <span class="w">    </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200</span>
 <span class="w">    </span><span class="nt">timestep_fs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
 <span class="w">    </span><span class="nt">friction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.002</span>
-<span class="w">    </span><span class="nt">ensemble</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;npt&quot;</span><span class="w">   </span><span class="c1"># &quot;nvt&quot; (default, fixed cell) or &quot;npt&quot; (variable cell)</span>
-<span class="w">    </span><span class="nt">pressure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span><span class="w">      </span><span class="c1"># GPa; only used when ensemble is &quot;npt&quot;</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;my_gpu_hpc&#39;</span>
+<span class="w">    </span><span class="nt">ensemble</span><span class="p">:</span><span class="w"> </span><span class="s">"npt"</span><span class="w">   </span><span class="c1"># "nvt" (default, fixed cell) or "npt" (variable cell)</span>
+<span class="w">    </span><span class="nt">pressure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span><span class="w">      </span><span class="c1"># GPa; only used when ensemble is "npt"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_gpu_hpc'</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">&quot;nvt&quot;</span></code> runs fixed-cell Langevin dynamics (the default). <code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">&quot;npt&quot;</span></code> runs ASE’s <code class="docutils literal notranslate"><span class="pre">LangevinBAOAB</span></code> integrator with a barostat targeting <code class="docutils literal notranslate"><span class="pre">pressure</span></code> (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell’s fixed volume.</p>
@@ -352,27 +352,27 @@ because it is per-element and changes between projects.</p>
 <h2>Using VASP as the DFT Backend<a class="headerlink" href="#using-vasp-as-the-dft-backend" title="Link to this heading"></a></h2>
 <p>To switch from Quantum Espresso to VASP, set <code class="docutils literal notranslate"><span class="pre">calculator:</span> <span class="pre">vasp</span></code> in the <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code> block and replace the QE-specific HPC keys:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;high_accuracy_evaluation&quot;</span>
-<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;vasp&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"high_accuracy_evaluation"</span>
+<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">"vasp"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
 <span class="w">  </span><span class="nt">vasp_input_kwargs</span><span class="p">:</span><span class="w">          </span><span class="c1"># INCAR overrides (optional)</span>
 <span class="w">    </span><span class="nt">encut</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
 <span class="w">    </span><span class="nt">ediff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0e-7</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;raven&quot;</span>
-<span class="w">    </span><span class="nt">vasp_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/vasp_std&quot;</span>
-<span class="w">    </span><span class="nt">pp_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/potpaw_PBE&quot;</span><span class="w">  </span><span class="c1"># sets VASP_PP_PATH before each calculation</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">"raven"</span>
+<span class="w">    </span><span class="nt">vasp_path</span><span class="p">:</span><span class="w"> </span><span class="s">"/path/to/vasp_std"</span>
+<span class="w">    </span><span class="nt">pp_path</span><span class="p">:</span><span class="w"> </span><span class="s">"/path/to/potpaw_PBE"</span><span class="w">  </span><span class="c1"># sets VASP_PP_PATH before each calculation</span>
 <span class="w">    </span><span class="nt">pseudo_dict</span><span class="p">:</span><span class="w">              </span><span class="c1"># element → POTCAR suffix</span>
-<span class="w">      </span><span class="nt">H</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
-<span class="w">      </span><span class="nt">O</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;_GW&quot;</span>
+<span class="w">      </span><span class="nt">H</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+<span class="w">      </span><span class="nt">O</span><span class="p">:</span><span class="w"> </span><span class="s">"_GW"</span>
 <span class="w">    </span><span class="nt">node_info</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">ranks_per_system</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">72</span>
 <span class="w">      </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">36</span>
 <span class="w">      </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;90G&quot;</span>
+<span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">"90G"</span>
 <span class="w">    </span><span class="nt">max_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">   </span><span class="c1"># jobs started at once on this HPC (default 20)</span>
-<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;cpu&quot;</span><span class="p p-Indicator">]</span>
-<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">vasp&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"cpu"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">vasp"</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
 <blockquote>
@@ -398,7 +398,7 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
     <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Generate initial training and test sets.</span>
 
 <span class="sd">        Args:</span>
@@ -407,14 +407,14 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Tuple of (train_atoms_list, test_atoms_list)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Your custom initialization logic</span>
         <span class="n">train_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate training structures</span>
         <span class="n">test_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate test structures</span>
         <span class="k">return</span> <span class="n">train_atoms</span><span class="p">,</span> <span class="n">test_atoms</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">train_mlip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Train the machine-learned interatomic potential (MLIP).</span>
 
 <span class="sd">        Args:</span>
@@ -424,12 +424,12 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 
 <span class="sd">        Returns:</span>
 <span class="sd">            DataFrame with training metrics (MAE, RMSE, etc.)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Your custom MLIP training logic</span>
         <span class="n">metrics</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
             <span class="p">{</span>
-                <span class="s2">&quot;train_mae&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.01</span><span class="p">],</span>
-                <span class="s2">&quot;test_mae&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">],</span>
+                <span class="s2">"train_mae"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.01</span><span class="p">],</span>
+                <span class="s2">"test_mae"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">],</span>
             <span class="p">}</span>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">metrics</span>
@@ -437,7 +437,7 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
     <span class="k">def</span><span class="w"> </span><span class="nf">generate_structures</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">train_data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Generate candidate structures for labeling based on uncertainty.</span>
 
 <span class="sd">        Args:</span>
@@ -448,7 +448,7 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 
 <span class="sd">        Returns:</span>
 <span class="sd">            List of candidate Atoms objects</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Your custom structure generation logic</span>
         <span class="n">candidates</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Generate structures using MD or other methods</span>
         <span class="k">return</span> <span class="n">candidates</span>
@@ -456,7 +456,7 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
     <span class="k">def</span><span class="w"> </span><span class="nf">high_accuracy_evaluation</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">structures</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Perform high-accuracy evaluation (e.g., DFT) on selected structures.</span>
 
 <span class="sd">        Args:</span>
@@ -467,9 +467,9 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 
 <span class="sd">        Returns:</span>
 <span class="sd">            List of Atoms objects with energy and force labels in:</span>
-<span class="sd">            - atoms.info[&quot;REF_energy&quot;]</span>
-<span class="sd">            - atoms.arrays[&quot;REF_forces&quot;]</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">            - atoms.info["REF_energy"]</span>
+<span class="sd">            - atoms.arrays["REF_forces"]</span>
+<span class="sd">        """</span>
         <span class="c1"># Your custom high-accuracy evaluation logic</span>
         <span class="n">evaluated</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Run DFT and attach results</span>
         <span class="k">return</span> <span class="n">evaluated</span>
@@ -490,14 +490,14 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 <p>The initialization configuration can include external datasets via an <code class="docutils literal notranslate"><span class="pre">extra_datasets</span></code> parameter. These structures are seeded into the GlobalDatabase before initialization runs. This is useful for incorporating reference data (e.g., from literature or previous computations) without regenerating isolated atoms.</p>
 <p>Example configuration:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;initialization&quot;</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2H&quot;</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"initialization"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
 <span class="w">  </span><span class="nt">test_to_train_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
 <span class="w">  </span><span class="nt">extra_datasets</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;path/to/external_structures.xyz&quot;</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;path/to/another_dataset.xyz&quot;</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"path/to/external_structures.xyz"</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"path/to/another_dataset.xyz"</span>
 <span class="w">  </span><span class="nt">creation_kwargs</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;H&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;O&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="c1"># ... other options ...</span>
 </pre></div>
 </div>
@@ -523,14 +523,14 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 <p>You can retrieve predictions programmatically:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.database.global_database</span><span class="w"> </span><span class="kn">import</span> <span class="n">GlobalDatabase</span>
 
-<span class="n">db</span> <span class="o">=</span> <span class="n">GlobalDatabase</span><span class="p">(</span><span class="s2">&quot;results/global_database&quot;</span><span class="p">)</span>
+<span class="n">db</span> <span class="o">=</span> <span class="n">GlobalDatabase</span><span class="p">(</span><span class="s2">"results/global_database"</span><span class="p">)</span>
 
-<span class="c1"># Returns {&quot;train&quot;: (e_dft, e_pred, f_dft, f_pred), &quot;test&quot;: (...)}</span>
+<span class="c1"># Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)}</span>
 <span class="c1"># where each element is a numpy array; e values are per-atom (eV/atom)</span>
 <span class="n">preds</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_mace_predictions</span><span class="p">(</span><span class="n">loop_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">fit_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
-<span class="n">e_dft</span><span class="p">,</span> <span class="n">e_pred</span><span class="p">,</span> <span class="n">f_dft</span><span class="p">,</span> <span class="n">f_pred</span> <span class="o">=</span> <span class="n">preds</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">]</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Train energy MAE: </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">e_dft</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">e_pred</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> eV/atom&quot;</span><span class="p">)</span>
+<span class="n">e_dft</span><span class="p">,</span> <span class="n">e_pred</span><span class="p">,</span> <span class="n">f_dft</span><span class="p">,</span> <span class="n">f_pred</span> <span class="o">=</span> <span class="n">preds</span><span class="p">[</span><span class="s2">"train"</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Train energy MAE: </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">e_dft</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">e_pred</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> eV/atom"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Predictions are guarded by a <code class="docutils literal notranslate"><span class="pre">results/al_loop_{N}/mace_predictions.done</span></code> sentinel so they are not recomputed on restart. If you need to regenerate predictions (e.g. after installing a different model), delete that sentinel file.</p>

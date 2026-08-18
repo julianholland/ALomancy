@@ -178,11 +178,17 @@ that no other alomancy process already holds this run’s ExPyRe
 local_stage_dir (see acquire_local_expyre_lock – raises
 immediately on conflict rather than letting a second process
 silently corrupt shared job-tracking state hours into a run), then
-display the workflow summary, then check the installed-vs-latest-
-published alomancy version. Warns if behind by a minor release;
-raises if behind by a major release (breaking changes are likely).
-The version check is silently skipped if PyPI can’t be reached
-(e.g. no internet on an HPC compute node).</p>
+display the workflow summary, then check ssh connectivity to
+every distinct HPC host this run will use (see
+ensure_ssh_connectivity – gives any needed password/OTP prompt a
+chance to be answered right now, while whoever launched the run
+is presumably still watching, rather than hours later inside an
+unattended background job.start() call with nobody present), then
+check the installed-vs-latest-published alomancy version. Warns
+if behind by a minor release; raises if behind by a major release
+(breaking changes are likely). The version check is silently
+skipped if PyPI can’t be reached (e.g. no internet on an HPC
+compute node).</p>
 </dd></dl>
 
 <dl class="py method">

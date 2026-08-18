@@ -82,17 +82,17 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 <span class="n">_CALCULATOR_REGISTRY</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;qe&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="s2">&quot;module&quot;</span><span class="p">:</span> <span class="s2">&quot;alomancy.high_accuracy_evaluation.dft.run_qe&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;sp&quot;</span><span class="p">:</span> <span class="s2">&quot;run_sp_qe&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;go&quot;</span><span class="p">:</span> <span class="s2">&quot;run_go_qe&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;keys&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;qe_input_kwargs&quot;</span><span class="p">,</span> <span class="s2">&quot;pwx_path&quot;</span><span class="p">],</span>
+    <span class="s2">"qe"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"module"</span><span class="p">:</span> <span class="s2">"alomancy.high_accuracy_evaluation.dft.run_qe"</span><span class="p">,</span>
+        <span class="s2">"sp"</span><span class="p">:</span> <span class="s2">"run_sp_qe"</span><span class="p">,</span>
+        <span class="s2">"go"</span><span class="p">:</span> <span class="s2">"run_go_qe"</span><span class="p">,</span>
+        <span class="s2">"keys"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"qe_input_kwargs"</span><span class="p">,</span> <span class="s2">"pwx_path"</span><span class="p">],</span>
     <span class="p">},</span>
-    <span class="s2">&quot;vasp&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="s2">&quot;module&quot;</span><span class="p">:</span> <span class="s2">&quot;alomancy.high_accuracy_evaluation.dft.run_vasp&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;sp&quot;</span><span class="p">:</span> <span class="s2">&quot;run_sp_vasp&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;go&quot;</span><span class="p">:</span> <span class="s2">&quot;run_go_vasp&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;keys&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;vasp_input_kwargs&quot;</span><span class="p">,</span> <span class="s2">&quot;vasp_path&quot;</span><span class="p">],</span>
+    <span class="s2">"vasp"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"module"</span><span class="p">:</span> <span class="s2">"alomancy.high_accuracy_evaluation.dft.run_vasp"</span><span class="p">,</span>
+        <span class="s2">"sp"</span><span class="p">:</span> <span class="s2">"run_sp_vasp"</span><span class="p">,</span>
+        <span class="s2">"go"</span><span class="p">:</span> <span class="s2">"run_go_vasp"</span><span class="p">,</span>
+        <span class="s2">"keys"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"vasp_input_kwargs"</span><span class="p">,</span> <span class="s2">"vasp_path"</span><span class="p">],</span>
     <span class="p">},</span>
 <span class="p">}</span>
 
@@ -100,33 +100,33 @@
 <div class="viewcode-block" id="get_dft_functions">
 <a class="viewcode-back" href="../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.get_dft_functions">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_dft_functions</span><span class="p">(</span><span class="n">calculator</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return (run_sp_fn, run_go_fn) for the requested calculator.</span>
+<span class="w">    </span><span class="sd">"""Return (run_sp_fn, run_go_fn) for the requested calculator.</span>
 
 <span class="sd">    Lazy imports keep optional heavy dependencies from breaking installs</span>
 <span class="sd">    that only have one calculator available.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="n">calculator</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_CALCULATOR_REGISTRY</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Unknown calculator </span><span class="si">{</span><span class="n">calculator</span><span class="si">!r}</span><span class="s2">. Available: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_CALCULATOR_REGISTRY</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"Unknown calculator </span><span class="si">{</span><span class="n">calculator</span><span class="si">!r}</span><span class="s2">. Available: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_CALCULATOR_REGISTRY</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="n">entry</span> <span class="o">=</span> <span class="n">_CALCULATOR_REGISTRY</span><span class="p">[</span><span class="n">calculator</span><span class="p">]</span>
-    <span class="n">mod</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">&quot;module&quot;</span><span class="p">])</span>
-    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;sp&quot;</span><span class="p">]),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;go&quot;</span><span class="p">])</span></div>
+    <span class="n">mod</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">"module"</span><span class="p">])</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"sp"</span><span class="p">]),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"go"</span><span class="p">])</span></div>
 
 
 
 <div class="viewcode-block" id="warn_mismatched_kwargs">
 <a class="viewcode-back" href="../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">warn_mismatched_kwargs</span><span class="p">(</span><span class="n">calculator</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Warn when kwargs that belong to a different calculator are present in the config.&quot;&quot;&quot;</span>
-    <span class="n">hpc</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">,</span> <span class="p">{})</span>
+<span class="w">    </span><span class="sd">"""Warn when kwargs that belong to a different calculator are present in the config."""</span>
+    <span class="n">hpc</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">,</span> <span class="p">{})</span>
     <span class="k">for</span> <span class="n">other_calc</span><span class="p">,</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">_CALCULATOR_REGISTRY</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">other_calc</span> <span class="o">==</span> <span class="n">calculator</span><span class="p">:</span>
             <span class="k">continue</span>
-        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">[</span><span class="s2">&quot;keys&quot;</span><span class="p">]:</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"keys"</span><span class="p">]:</span>
             <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">job_dict</span> <span class="ow">or</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">hpc</span><span class="p">:</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;Config key </span><span class="si">%r</span><span class="s2"> looks like a </span><span class="si">%s</span><span class="s2"> setting but calculator=</span><span class="si">%r</span><span class="s2"> — it will be ignored.&quot;</span><span class="p">,</span>
+                    <span class="s2">"Config key </span><span class="si">%r</span><span class="s2"> looks like a </span><span class="si">%s</span><span class="s2"> setting but calculator=</span><span class="si">%r</span><span class="s2"> — it will be ignored."</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
                     <span class="n">other_calc</span><span class="p">,</span>
                     <span class="n">calculator</span><span class="p">,</span>

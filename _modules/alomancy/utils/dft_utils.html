@@ -99,31 +99,31 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_build_srun_command</span><span class="p">(</span><span class="n">para_info_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">executable_and_flags</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-    <span class="c1"># --mem=0 means &quot;use all memory already granted to the job&quot; (documented</span>
-    <span class="c1"># Slurm sentinel), not &quot;request 0 memory&quot;. This step runs nested inside</span>
+    <span class="c1"># --mem=0 means "use all memory already granted to the job" (documented</span>
+    <span class="c1"># Slurm sentinel), not "request 0 memory". This step runs nested inside</span>
     <span class="c1"># a job whose own #SBATCH header may already set --mem; if it were, the</span>
-    <span class="c1"># enclosing batch script&#39;s process itself is accounted as the job&#39;s</span>
+    <span class="c1"># enclosing batch script's process itself is accounted as the job's</span>
     <span class="c1"># first step and, on some Slurm configs, is credited with the *entire*</span>
     <span class="c1"># job memory allocation. A nested srun step that then asks for its own</span>
     <span class="c1"># explicit sub-amount (e.g. --mem=60GB) competes with that reservation</span>
-    <span class="c1"># and fails immediately with &quot;Unable to create step ... Memory required</span>
-    <span class="c1"># by task is not available&quot;, regardless of how large the job&#39;s total</span>
+    <span class="c1"># and fails immediately with "Unable to create step ... Memory required</span>
+    <span class="c1"># by task is not available", regardless of how large the job's total</span>
     <span class="c1"># --mem is. --mem=0 avoids the conflict by inheriting rather than</span>
     <span class="c1"># re-requesting.</span>
     <span class="k">return</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;srun --ntasks=</span><span class="si">{</span><span class="n">para_info_dict</span><span class="p">[</span><span class="s1">&#39;ranks_per_system&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> &quot;</span>
-        <span class="sa">f</span><span class="s2">&quot;--tasks-per-node=</span><span class="si">{</span><span class="n">para_info_dict</span><span class="p">[</span><span class="s1">&#39;ranks_per_node&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> &quot;</span>
-        <span class="sa">f</span><span class="s2">&quot;--cpus-per-task=</span><span class="si">{</span><span class="n">para_info_dict</span><span class="p">[</span><span class="s1">&#39;threads_per_rank&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> &quot;</span>
-        <span class="sa">f</span><span class="s2">&quot;--distribution=block:block &quot;</span>
-        <span class="sa">f</span><span class="s2">&quot;--hint=nomultithread &quot;</span>
-        <span class="sa">f</span><span class="s2">&quot;--mem=0 &quot;</span>
-        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">executable_and_flags</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">"srun --ntasks=</span><span class="si">{</span><span class="n">para_info_dict</span><span class="p">[</span><span class="s1">'ranks_per_system'</span><span class="p">]</span><span class="si">}</span><span class="s2"> "</span>
+        <span class="sa">f</span><span class="s2">"--tasks-per-node=</span><span class="si">{</span><span class="n">para_info_dict</span><span class="p">[</span><span class="s1">'ranks_per_node'</span><span class="p">]</span><span class="si">}</span><span class="s2"> "</span>
+        <span class="sa">f</span><span class="s2">"--cpus-per-task=</span><span class="si">{</span><span class="n">para_info_dict</span><span class="p">[</span><span class="s1">'threads_per_rank'</span><span class="p">]</span><span class="si">}</span><span class="s2"> "</span>
+        <span class="sa">f</span><span class="s2">"--distribution=block:block "</span>
+        <span class="sa">f</span><span class="s2">"--hint=nomultithread "</span>
+        <span class="sa">f</span><span class="s2">"--mem=0 "</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">executable_and_flags</span><span class="si">}</span><span class="s2">"</span>
     <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_write_dft_result</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="n">write</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.xyz&quot;</span><span class="p">),</span> <span class="n">atoms</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Writing structures to </span><span class="si">%s</span><span class="s2"> as </span><span class="si">%s</span><span class="s2">.xyz&quot;</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="n">write</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">),</span> <span class="n">atoms</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Writing structures to </span><span class="si">%s</span><span class="s2"> as </span><span class="si">%s</span><span class="s2">.xyz"</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_run_sp</span><span class="p">(</span>
@@ -135,7 +135,7 @@
     <span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">create_calc_fn</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
-    <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>
+    <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 
 
@@ -144,17 +144,17 @@
     <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">create_calc_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
-    <span class="n">opt_prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;opt&quot;</span><span class="p">,</span>
+    <span class="n">opt_prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"opt"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
     <span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">create_calc_fn</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">)</span>
     <span class="n">opt</span> <span class="o">=</span> <span class="n">BFGS</span><span class="p">(</span>
         <span class="n">input_structure</span><span class="p">,</span>
-        <span class="n">logfile</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.log&quot;</span><span class="p">)),</span>
-        <span class="n">trajectory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.traj&quot;</span><span class="p">)),</span>
+        <span class="n">logfile</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.log"</span><span class="p">)),</span>
+        <span class="n">trajectory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.traj"</span><span class="p">)),</span>
     <span class="p">)</span>
     <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
-    <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">])</span>
+    <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 </pre></div>
 

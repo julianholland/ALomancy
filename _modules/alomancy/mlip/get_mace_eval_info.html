@@ -90,17 +90,17 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">get_mace_eval_info</span><span class="p">(</span>
     <span class="n">mlip_committee_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Recover final results from train.txt files in MACE AL loop directories.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
-    <span class="n">al_loop_dirs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">),</span> <span class="s2">&quot;al_loop_*&quot;</span><span class="p">))</span>
+    <span class="n">al_loop_dirs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">),</span> <span class="s2">"al_loop_*"</span><span class="p">))</span>
     <span class="n">all_avg_results</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">al_loop_dir</span> <span class="ow">in</span> <span class="n">al_loop_dirs</span><span class="p">:</span>
         <span class="n">results_files</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
             <span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
-                <span class="n">Path</span><span class="p">(</span><span class="n">al_loop_dir</span><span class="p">,</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]),</span>
-                <span class="s2">&quot;fit_*/results/*train.txt&quot;</span><span class="p">,</span>
+                <span class="n">Path</span><span class="p">(</span><span class="n">al_loop_dir</span><span class="p">,</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]),</span>
+                <span class="s2">"fit_*/results/*train.txt"</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">results_files</span><span class="p">:</span>
@@ -115,15 +115,15 @@
         <span class="n">avg_result</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">key</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="n">key</span><span class="p">])</span> <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">results</span><span class="p">])</span>
             <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;mae_f&quot;</span><span class="p">,</span> <span class="s2">&quot;mae_e_per_atom&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">"mae_f"</span><span class="p">,</span> <span class="s2">"mae_e_per_atom"</span><span class="p">]</span>
         <span class="p">}</span>
         <span class="n">std_dev_results</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">key</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="n">key</span><span class="p">])</span> <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">results</span><span class="p">])</span>
             <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;mae_f&quot;</span><span class="p">,</span> <span class="s2">&quot;mae_e_per_atom&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">"mae_f"</span><span class="p">,</span> <span class="s2">"mae_e_per_atom"</span><span class="p">]</span>
         <span class="p">}</span>
         <span class="n">avg_result</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
-            <span class="p">{</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_std_dev&quot;</span><span class="p">:</span> <span class="n">std_dev_results</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">std_dev_results</span><span class="p">}</span>
+            <span class="p">{</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_std_dev"</span><span class="p">:</span> <span class="n">std_dev_results</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">std_dev_results</span><span class="p">}</span>
         <span class="p">)</span>
         <span class="n">all_avg_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">avg_result</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">all_avg_results</span><span class="p">)</span></div>
@@ -131,11 +131,11 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_read_last_metric_record</span><span class="p">(</span><span class="n">txt_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read the last parseable key-value record from a MACE metrics file.</span>
+<span class="w">    </span><span class="sd">"""Read the last parseable key-value record from a MACE metrics file.</span>
 
 <span class="sd">    Handles JSON-lines format (newer MACE) and Python list-of-tuples format</span>
 <span class="sd">    (older MACE).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">last_record</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">with</span> <span class="n">txt_path</span><span class="o">.</span><span class="n">open</span><span class="p">()</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">fh</span><span class="p">:</span>
@@ -163,72 +163,97 @@
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">mlip_committee_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;mae_f&quot;</span><span class="p">,</span>
+    <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mae_f"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Path</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Select the committee member with the lowest test-set force MAE.</span>
 
 <span class="sd">    Reads the ``*_test.txt`` metrics file written by MACE at the end of each</span>
 <span class="sd">    training run, picks the fit with the lowest value of *metric* on the held-</span>
 <span class="sd">    out test set, and returns ``(best_fit_index, stagetwo_model_path)``.</span>
 
-<span class="sd">    Falls back to ``(0, fit_0_path)`` if test metrics cannot be read for any</span>
-<span class="sd">    committee member.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
-    <span class="n">n_fits</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">&quot;size_of_committee&quot;</span><span class="p">]</span>
-    <span class="n">committee_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+<span class="sd">    Only considers fits whose stagetwo model file actually exists on disk --</span>
+<span class="sd">    a fit can be missing readable test metrics while ALSO genuinely having</span>
+<span class="sd">    no model at all, e.g. a committee member whose training job was</span>
+<span class="sd">    abandoned after a sustained remote-communication failure (see</span>
+<span class="sd">    remote_submission/executor.py's _get_results_with_resume) or never</span>
+<span class="sd">    retried after train_mlip's backfill. Falls back to the lowest-indexed</span>
+<span class="sd">    fit that HAS a model on disk if no committee member has readable test</span>
+<span class="sd">    metrics -- previously this defaulted to fit_0 unconditionally, which</span>
+<span class="sd">    crashed a downstream consumer (structure_generation trying to stage a</span>
+<span class="sd">    nonexistent model file as an MD job input) the one time fit_0 itself was</span>
+<span class="sd">    the fit with no model. Raises ValueError if literally none of the</span>
+<span class="sd">    committee's fits have a model file (train_mlip guarantees at least 3</span>
+<span class="sd">    before calling this, so this should only fire if that invariant is ever</span>
+<span class="sd">    broken).</span>
+<span class="sd">    """</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span>
+    <span class="n">n_fits</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"size_of_committee"</span><span class="p">]</span>
+    <span class="n">committee_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="n">best_fit</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">best_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_model_path</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">committee_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model"</span>
 
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_fits</span><span class="p">):</span>
-        <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">committee_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="n">results_dir</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">&quot;results&quot;</span>
+    <span class="n">fits_with_model</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_fits</span><span class="p">)</span> <span class="k">if</span> <span class="n">_model_path</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">fits_with_model</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"select_best_committee_model for </span><span class="si">{</span><span class="n">base_name</span><span class="si">!r}</span><span class="s2">: none of the "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">n_fits</span><span class="si">}</span><span class="s2"> committee fit(s) have a </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model file "</span>
+            <span class="s2">"on disk. Check remote job logs for failures."</span>
+        <span class="p">)</span>
+
+    <span class="n">best_fit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">best_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">fits_with_model</span><span class="p">:</span>
+        <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">committee_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">results_dir</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"results"</span>
         <span class="n">fit_seed</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">i</span>
 
-        <span class="n">txt_path</span> <span class="o">=</span> <span class="n">results_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_run-</span><span class="si">{</span><span class="n">fit_seed</span><span class="si">}</span><span class="s2">_test.txt&quot;</span>
+        <span class="n">txt_path</span> <span class="o">=</span> <span class="n">results_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_run-</span><span class="si">{</span><span class="n">fit_seed</span><span class="si">}</span><span class="s2">_test.txt"</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">txt_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-            <span class="n">candidates</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">results_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*_test.txt&quot;</span><span class="p">))</span>
+            <span class="n">candidates</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">results_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"*_test.txt"</span><span class="p">))</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;No test metrics file found for fit_</span><span class="si">%d</span><span class="s2"> — skipping.&quot;</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No test metrics file found for fit_</span><span class="si">%d</span><span class="s2"> — skipping."</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
                 <span class="k">continue</span>
             <span class="n">txt_path</span> <span class="o">=</span> <span class="n">candidates</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Using test metrics file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">txt_path</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Using test metrics file: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">txt_path</span><span class="p">)</span>
 
         <span class="n">record</span> <span class="o">=</span> <span class="n">_read_last_metric_record</span><span class="p">(</span><span class="n">txt_path</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">record</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;No parseable records in </span><span class="si">%s</span><span class="s2"> — skipping fit_</span><span class="si">%d</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">txt_path</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No parseable records in </span><span class="si">%s</span><span class="s2"> — skipping fit_</span><span class="si">%d</span><span class="s2">."</span><span class="p">,</span> <span class="n">txt_path</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
             <span class="k">continue</span>
 
         <span class="n">score</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">metric</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">score</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;Metric </span><span class="si">%r</span><span class="s2"> not in test file for fit_</span><span class="si">%d</span><span class="s2"> — skipping.&quot;</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">i</span>
+                <span class="s2">"Metric </span><span class="si">%r</span><span class="s2"> not in test file for fit_</span><span class="si">%d</span><span class="s2"> — skipping."</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">i</span>
             <span class="p">)</span>
             <span class="k">continue</span>
 
         <span class="n">score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;fit_</span><span class="si">%d</span><span class="s2"> test </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">score</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"fit_</span><span class="si">%d</span><span class="s2"> test </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">score</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">score</span> <span class="o">&lt;</span> <span class="n">best_score</span><span class="p">:</span>
             <span class="n">best_score</span> <span class="o">=</span> <span class="n">score</span>
             <span class="n">best_fit</span> <span class="o">=</span> <span class="n">i</span>
 
-    <span class="k">if</span> <span class="n">best_score</span> <span class="o">==</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">best_fit</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">best_fit</span> <span class="o">=</span> <span class="n">fits_with_model</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">&quot;Could not read test </span><span class="si">%r</span><span class="s2"> for any committee member; defaulting to fit_0.&quot;</span><span class="p">,</span>
+            <span class="s2">"Could not read test </span><span class="si">%r</span><span class="s2"> for any committee member; defaulting to "</span>
+            <span class="s2">"fit_</span><span class="si">%d</span><span class="s2"> (lowest-indexed fit with a model on disk)."</span><span class="p">,</span>
             <span class="n">metric</span><span class="p">,</span>
+            <span class="n">best_fit</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">&quot;Best committee member: fit_</span><span class="si">%d</span><span class="s2"> (test </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">).&quot;</span><span class="p">,</span>
+            <span class="s2">"Best committee member: fit_</span><span class="si">%d</span><span class="s2"> (test </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">)."</span><span class="p">,</span>
             <span class="n">best_fit</span><span class="p">,</span>
             <span class="n">metric</span><span class="p">,</span>
             <span class="n">best_score</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="n">model_path</span> <span class="o">=</span> <span class="n">committee_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;fit_</span><span class="si">{</span><span class="n">best_fit</span><span class="si">}</span><span class="s2">&quot;</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model&quot;</span>
-    <span class="k">return</span> <span class="n">best_fit</span><span class="p">,</span> <span class="n">model_path</span></div>
+    <span class="k">return</span> <span class="n">best_fit</span><span class="p">,</span> <span class="n">_model_path</span><span class="p">(</span><span class="n">best_fit</span><span class="p">)</span></div>
 
 </pre></div>
 

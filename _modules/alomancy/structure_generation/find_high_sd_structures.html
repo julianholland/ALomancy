@@ -96,26 +96,26 @@
     <span class="n">structure_forces_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">read_xyz</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-    <span class="n">desired_structures</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span>
-        <span class="s2">&quot;desired_number_of_structures&quot;</span>
+    <span class="n">desired_structures</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span>
+        <span class="s2">"desired_number_of_structures"</span>
     <span class="p">]</span>
 
-    <span class="k">assert</span> <span class="n">desired_structures</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;Number of structures must be greater than 0&quot;</span>
+    <span class="k">assert</span> <span class="n">desired_structures</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"Number of structures must be greater than 0"</span>
     <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">desired_structures</span><span class="p">,</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;Not enough structures to select </span><span class="si">{</span><span class="n">desired_structures</span><span class="si">}</span><span class="s2"> from. Available: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">"Not enough structures to select </span><span class="si">{</span><span class="n">desired_structures</span><span class="si">}</span><span class="s2"> from. Available: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
     <span class="p">)</span>
 
     <span class="n">std_dev_csv_name</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span>
-        <span class="s2">&quot;results&quot;</span><span class="p">,</span>
+        <span class="s2">"results"</span><span class="p">,</span>
         <span class="n">base_name</span><span class="p">,</span>
-        <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;std_dev_forces.csv&quot;</span><span class="p">,</span>
+        <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">],</span>
+        <span class="s2">"std_dev_forces.csv"</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">high_sd_structures_xyz_name</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span>
-        <span class="s2">&quot;results&quot;</span><span class="p">,</span>
+        <span class="s2">"results"</span><span class="p">,</span>
         <span class="n">base_name</span><span class="p">,</span>
-        <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;high_sd_structures.xyz&quot;</span><span class="p">,</span>
+        <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">],</span>
+        <span class="s2">"high_sd_structures.xyz"</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="k">if</span> <span class="p">(</span>
@@ -124,26 +124,26 @@
         <span class="ow">and</span> <span class="n">Path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">)</span>
     <span class="p">):</span>
         <span class="n">std_dev_df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">std_dev_csv_name</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;extxyz&quot;</span><span class="p">)</span>
+        <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
 
     <span class="k">else</span><span class="p">:</span>
         <span class="n">std_dev_df</span> <span class="o">=</span> <span class="n">std_deviation_of_forces</span><span class="p">(</span>
             <span class="n">structure_forces_dict</span><span class="o">=</span><span class="n">structure_forces_dict</span><span class="p">,</span>
             <span class="n">structure_generation_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span>
-                <span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+                <span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">]</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">index_list</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">&quot;structure_index&quot;</span><span class="p">][:</span><span class="n">desired_structures</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+        <span class="n">index_list</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"structure_index"</span><span class="p">][:</span><span class="n">desired_structures</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
         <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">index_list</span><span class="p">]</span>
 
         <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">high_sd_structures</span><span class="p">:</span>
             <span class="n">write</span><span class="p">(</span>
                 <span class="nb">str</span><span class="p">(</span>
                     <span class="n">Path</span><span class="p">(</span>
-                        <span class="s2">&quot;results&quot;</span><span class="p">,</span>
+                        <span class="s2">"results"</span><span class="p">,</span>
                         <span class="n">base_name</span><span class="p">,</span>
-                        <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
-                        <span class="s2">&quot;high_sd_structures.xyz&quot;</span><span class="p">,</span>
+                        <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">],</span>
+                        <span class="s2">"high_sd_structures.xyz"</span><span class="p">,</span>
                     <span class="p">)</span>
                 <span class="p">),</span>
                 <span class="n">structure</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
@@ -151,11 +151,11 @@
             <span class="p">)</span>
 
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">&quot;Selected </span><span class="si">%d</span><span class="s2"> structures for DFT calculations based on force std dev.&quot;</span><span class="p">,</span>
+        <span class="s2">"Selected </span><span class="si">%d</span><span class="s2"> structures for DFT calculations based on force std dev."</span><span class="p">,</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">),</span>
     <span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Std dev top structures:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[:</span><span class="n">desired_structures</span><span class="p">])</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Total mean std dev: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">&quot;mean_std_dev&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Std dev top structures:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[:</span><span class="n">desired_structures</span><span class="p">])</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Total mean std dev: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"mean_std_dev"</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
 
     <span class="k">return</span> <span class="n">high_sd_structures</span></div>
 
@@ -168,16 +168,16 @@
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
     <span class="n">list_of_other_calculators</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
-    <span class="n">forces_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;REF_forces&quot;</span><span class="p">,</span>
-    <span class="n">energy_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;REF_energy&quot;</span><span class="p">,</span>
+    <span class="n">forces_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"REF_forces"</span><span class="p">,</span>
+    <span class="n">energy_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"REF_energy"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]]:</span>
     <span class="n">structure_forces_dict</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;base_mlip&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="sa">f</span><span class="s2">&quot;structure_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;forces&quot;</span><span class="p">:</span> <span class="n">flatten_array_of_forces</span><span class="p">(</span>
+        <span class="s2">"base_mlip"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"forces"</span><span class="p">:</span> <span class="n">flatten_array_of_forces</span><span class="p">(</span>
                     <span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="n">forces_name</span><span class="p">]</span>
                 <span class="p">),</span>
-                <span class="s2">&quot;energy&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="n">energy_name</span><span class="p">]),</span>
+                <span class="s2">"energy"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="n">energy_name</span><span class="p">]),</span>
             <span class="p">}</span>
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
         <span class="p">}</span>
@@ -188,10 +188,10 @@
         <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">structure_list</span><span class="p">):</span>
             <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calculator</span>
 
-        <span class="n">structure_forces_dict</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="sa">f</span><span class="s2">&quot;structure_</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;forces&quot;</span><span class="p">:</span> <span class="n">flatten_array_of_forces</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()),</span>
-                <span class="s2">&quot;energy&quot;</span><span class="p">:</span> <span class="n">structure_list</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">(),</span>
+        <span class="n">structure_forces_dict</span><span class="p">[</span><span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"forces"</span><span class="p">:</span> <span class="n">flatten_array_of_forces</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()),</span>
+                <span class="s2">"energy"</span><span class="p">:</span> <span class="n">structure_list</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">(),</span>
             <span class="p">}</span>
             <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
         <span class="p">}</span>
@@ -199,7 +199,7 @@
     <span class="k">return</span> <span class="n">std_deviation_of_forces</span><span class="p">(</span>
         <span class="n">structure_forces_dict</span><span class="o">=</span><span class="n">structure_forces_dict</span><span class="p">,</span>
         <span class="n">structure_generation_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span>
-            <span class="s2">&quot;results&quot;</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">&quot;structure_generation&quot;</span><span class="p">][</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+            <span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">]</span>
         <span class="p">),</span>
     <span class="p">)</span></div>
 
@@ -217,7 +217,7 @@
 <span class="c1">#     structure_generation_dir: Path,</span>
 <span class="c1">#     verbose: int = 0,</span>
 <span class="c1"># ) -&gt; pd.DataFrame:</span>
-<span class="c1">#     &quot;&quot;&quot;</span>
+<span class="c1">#     """</span>
 <span class="c1">#     Calculate the standard deviation of forces for each structure in the dictionary.</span>
 
 <span class="c1">#     Parameters</span>
@@ -227,12 +227,12 @@
 
 <span class="c1">#         e.g.:</span>
 <span class="c1">#         {</span>
-<span class="c1">#             &#39;base_mace&#39;: {</span>
-<span class="c1">#                 &#39;structure_0&#39;: {&#39;forces&#39;: np.ndarray, &#39;energy&#39;: float},</span>
-<span class="c1">#                 &#39;structure_1&#39;: {&#39;forces&#39;: np.ndarray, &#39;energy&#39;: float},</span>
+<span class="c1">#             'base_mace': {</span>
+<span class="c1">#                 'structure_0': {'forces': np.ndarray, 'energy': float},</span>
+<span class="c1">#                 'structure_1': {'forces': np.ndarray, 'energy': float},</span>
 <span class="c1">#                 ...</span>
 <span class="c1">#             },</span>
-<span class="c1">#             &#39;fit_1&#39;: {</span>
+<span class="c1">#             'fit_1': {</span>
 <span class="c1">#                 ...</span>
 <span class="c1">#             },</span>
 <span class="c1">#         }</span>
@@ -241,13 +241,13 @@
 <span class="c1">#     -------</span>
 <span class="c1">#     list</span>
 <span class="c1">#         A list of standard deviations of forces for each structure.</span>
-<span class="c1">#     &quot;&quot;&quot;</span>
-<span class="c1">#     number_of_structures = len(structure_forces_dict[&quot;base_mlip&quot;])</span>
+<span class="c1">#     """</span>
+<span class="c1">#     number_of_structures = len(structure_forces_dict["base_mlip"])</span>
 <span class="c1">#     std_dev_array = np.zeros((number_of_structures, 3))</span>
 <span class="c1">#     for structure in range(number_of_structures):</span>
 <span class="c1">#         forces_array = np.concatenate(</span>
 <span class="c1">#             [</span>
-<span class="c1">#                 structure_forces_dict[fit][f&quot;structure_{structure}&quot;][&quot;forces&quot;]</span>
+<span class="c1">#                 structure_forces_dict[fit][f"structure_{structure}"]["forces"]</span>
 <span class="c1">#                 for fit in structure_forces_dict</span>
 <span class="c1">#             ],</span>
 <span class="c1">#             axis=0,</span>
@@ -255,7 +255,7 @@
 <span class="c1">#         std_dev_per_force_fragment = np.std(forces_array, axis=0)</span>
 <span class="c1">#         energy_array = np.array(</span>
 <span class="c1">#             [</span>
-<span class="c1">#                 structure_forces_dict[fit][f&quot;structure_{structure}&quot;][&quot;energy&quot;]</span>
+<span class="c1">#                 structure_forces_dict[fit][f"structure_{structure}"]["energy"]</span>
 <span class="c1">#                 for fit in structure_forces_dict</span>
 <span class="c1">#             ]</span>
 <span class="c1">#         )</span>
@@ -263,7 +263,7 @@
 
 <span class="c1">#         if verbose &gt; 0:</span>
 <span class="c1">#             print(</span>
-<span class="c1">#                 f&quot;Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}&quot;</span>
+<span class="c1">#                 f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"</span>
 <span class="c1">#             )</span>
 
 <span class="c1">#         std_dev_array[structure, :] = np.array(</span>
@@ -275,10 +275,10 @@
 <span class="c1">#         )</span>
 
 <span class="c1">#     df = pd.DataFrame(</span>
-<span class="c1">#         std_dev_array, columns=[&quot;max_std_dev&quot;, &quot;mean_std_dev&quot;, &quot;std_dev_energy&quot;]</span>
-<span class="c1">#     ).sort_values(by=&quot;max_std_dev&quot;, ascending=False)</span>
+<span class="c1">#         std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]</span>
+<span class="c1">#     ).sort_values(by="max_std_dev", ascending=False)</span>
 
-<span class="c1">#     df.to_csv(str(Path(structure_generation_dir, &quot;std_dev_forces.csv&quot;)), index=True)</span>
+<span class="c1">#     df.to_csv(str(Path(structure_generation_dir, "std_dev_forces.csv")), index=True)</span>
 
 <span class="c1">#     return df</span>
 
@@ -289,17 +289,17 @@
     <span class="n">structure_forces_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]],</span>
     <span class="n">structure_generation_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Calculate the standard deviation of forces for each structure in the dictionary.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Calculators in forces dict: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">structure_forces_dict</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
-    <span class="n">number_of_structures</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_forces_dict</span><span class="p">[</span><span class="s2">&quot;base_mlip&quot;</span><span class="p">])</span>
+<span class="sd">    """</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Calculators in forces dict: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">structure_forces_dict</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+    <span class="n">number_of_structures</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_forces_dict</span><span class="p">[</span><span class="s2">"base_mlip"</span><span class="p">])</span>
     <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">number_of_structures</span><span class="p">):</span>
         <span class="n">forces_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
             <span class="p">[</span>
-                <span class="n">structure_forces_dict</span><span class="p">[</span><span class="n">fit</span><span class="p">][</span><span class="sa">f</span><span class="s2">&quot;structure_</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">][</span><span class="s2">&quot;forces&quot;</span><span class="p">]</span>
+                <span class="n">structure_forces_dict</span><span class="p">[</span><span class="n">fit</span><span class="p">][</span><span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">"</span><span class="p">][</span><span class="s2">"forces"</span><span class="p">]</span>
                 <span class="k">for</span> <span class="n">fit</span> <span class="ow">in</span> <span class="n">structure_forces_dict</span>
             <span class="p">],</span>
             <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
@@ -308,14 +308,14 @@
 
         <span class="n">energy_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
             <span class="p">[</span>
-                <span class="n">structure_forces_dict</span><span class="p">[</span><span class="n">fit</span><span class="p">][</span><span class="sa">f</span><span class="s2">&quot;structure_</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">][</span><span class="s2">&quot;energy&quot;</span><span class="p">]</span>
+                <span class="n">structure_forces_dict</span><span class="p">[</span><span class="n">fit</span><span class="p">][</span><span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">"</span><span class="p">][</span><span class="s2">"energy"</span><span class="p">]</span>
                 <span class="k">for</span> <span class="n">fit</span> <span class="ow">in</span> <span class="n">structure_forces_dict</span>
             <span class="p">]</span>
         <span class="p">)</span>
         <span class="n">std_dev_per_energy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">energy_array</span><span class="p">)</span>
 
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-            <span class="s2">&quot;Structure </span><span class="si">%d</span><span class="s2">: max_std_dev=</span><span class="si">%.4f</span><span class="s2">, mean_std_dev=</span><span class="si">%.4f</span><span class="s2">, std_dev_energy=</span><span class="si">%.4f</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">"Structure </span><span class="si">%d</span><span class="s2">: max_std_dev=</span><span class="si">%.4f</span><span class="s2">, mean_std_dev=</span><span class="si">%.4f</span><span class="s2">, std_dev_energy=</span><span class="si">%.4f</span><span class="s2">"</span><span class="p">,</span>
             <span class="n">structure</span><span class="p">,</span>
             <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)),</span>
             <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)),</span>
@@ -324,16 +324,16 @@
 
         <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
             <span class="p">{</span>
-                <span class="s2">&quot;structure_index&quot;</span><span class="p">:</span> <span class="n">structure</span><span class="p">,</span>
-                <span class="s2">&quot;max_std_dev&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)),</span>
-                <span class="s2">&quot;mean_std_dev&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)),</span>
-                <span class="s2">&quot;std_dev_energy&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">std_dev_per_energy</span><span class="p">),</span>
+                <span class="s2">"structure_index"</span><span class="p">:</span> <span class="n">structure</span><span class="p">,</span>
+                <span class="s2">"max_std_dev"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)),</span>
+                <span class="s2">"mean_std_dev"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)),</span>
+                <span class="s2">"std_dev_energy"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">std_dev_per_energy</span><span class="p">),</span>
             <span class="p">}</span>
         <span class="p">)</span>
 
-    <span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">&quot;max_std_dev&quot;</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">df</span><span class="o">.</span><span class="n">write_csv</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">structure_generation_dir</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;std_dev_forces.csv&quot;</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Std dev DataFrame:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">df</span><span class="p">)</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"max_std_dev"</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">df</span><span class="o">.</span><span class="n">write_csv</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">structure_generation_dir</span><span class="p">)</span> <span class="o">/</span> <span class="s2">"std_dev_forces.csv"</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Std dev DataFrame:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">df</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">df</span></div>
 
