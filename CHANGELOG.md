@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-18
 
 ### Added
 - **Each MACE fit's `checkpoints/` directory is now deleted once its compiled model exists** (`_cleanup_committee_checkpoints`, `mlip/mace_wfl.py`), called right after `_save_mace_eval_predictions` in `mace_fit`. MACE only needs its checkpoint internally, to restore the best-validation-loss state before writing the final compiled model — ALomancy never reads checkpoint files itself (only `*_stagetwo_compiled.model`), and `restart_latest` stays off, so a fit's checkpoint was pure storage cost left behind forever (one file per committee member per AL loop). Skipped (with a warning, checkpoint left in place) if the compiled model is missing, so a failed fit's checkpoint is never deleted out from under a debugging session.
