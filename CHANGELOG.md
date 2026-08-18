@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`generate_structures`'s candidate-count log now reflects the post-bond-filter count.** Previously logged before `filter_structures_by_min_bond_distance` ran, so it could overstate how many structures were actually submitted for MACE committee evaluation just below.
 - Consolidated the near-duplicate checkpoint-cleanup logic in `mlip/mace_wfl.py` (`_cleanup_committee_checkpoints` and `cleanup_local_committee_checkpoints`) into a single shared `_remove_checkpoints_dir_if_model_exists` helper.
 - Consolidated three duplicate ssh-lock acquire/try/finally-release blocks in `remote_submission/executor.py` into a single `_ssh_call_lock` context manager.
+- **`test_run_md_default_ensemble_uses_langevin` was missing its `@pytest.mark.unit` and `@patch(...)` decorators** (a copy-paste omission, pre-existing before this session), causing it to both fail collection with `fixture 'mock_langevin_cls' not found` and be silently excluded from `pytest -m unit` runs. This was failing CI. Restored the decorators to match every sibling test in the same class.
 
 ## [0.6.1] - 2026-08-13
 

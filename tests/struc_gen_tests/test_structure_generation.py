@@ -1283,6 +1283,9 @@ class TestMolecularDynamics:
         traj = read(tmp_path / "test.xyz", ":", format="extxyz")
         assert len(traj) == 1
 
+    @pytest.mark.unit
+    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
+    @patch("alomancy.structure_generation.md.md_wfl.Langevin")
     def test_run_md_default_ensemble_uses_langevin(
         self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
     ):
