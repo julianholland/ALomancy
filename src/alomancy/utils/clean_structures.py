@@ -100,3 +100,29 @@ def filter_structures_by_min_bond_distance(
         )
 
     return filtered
+
+
+def wrap_structures_into_cell(structures: list[Atoms]) -> list[Atoms]:
+    """Wrap each structure's atoms back inside its periodic cell, in place.
+
+    MD trajectories routinely let atoms drift outside the reference cell
+    (a normal artifact of unwrapped-coordinate propagation, distinct from
+    the unphysical short-bond-distance case handled by
+    filter_structures_by_min_bond_distance) — DFT codes (QE/VASP) generally
+    expect coordinates within the cell, so this runs as the last step
+    before DFT submission, on structures that have already survived that
+    bond-distance filter.
+
+    `Atoms.wrap()` mutates the structure in place and returns None; it is
+    called unconditionally here rather than gated on `atoms.pbc.any()`
+    because it is a safe no-op on non-periodic axes/structures (confirmed
+    empirically against ASE 3.28: positions on a non-periodic axis, and on
+    a structure with `pbc=False` and no cell at all, are left unchanged).
+    `atoms.info`, `atoms.arrays` (including any non-standard extra arrays),
+    and any already-attached `atoms.calc` all survive `wrap()` unchanged —
+    confirmed empirically, since this is the property this function must
+    not violate.
+    """
+    for structure in structures:
+        structure.wrap()
+    return structures
