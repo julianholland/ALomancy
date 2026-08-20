@@ -1631,6 +1631,94 @@ class TestFilterStructuresByMinBondDistance:
         assert "2/2" in warnings[0].getMessage()
 
 
+class TestWrapStructuresIntoCell:
+    """wrap_structures_into_cell wraps MD-exploded structures back inside
+    their periodic cell before DFT submission, without disturbing metadata."""
+
+    @pytest.mark.unit
+    def test_atom_outside_cell_is_wrapped_back_in(self):
+        from alomancy.utils.clean_structures import wrap_structures_into_cell
+
+        atoms = Atoms(
+            symbols=["H", "H"],
+            positions=[[0, 0, 0], [6.5, 0, 0]],
+            cell=[5, 5, 5],
+            pbc=True,
+        )
+        original_position = atoms.get_positions()[1].copy()
+        result = wrap_structures_into_cell([atoms])
+        wrapped_position = result[0].get_positions()[1]
+
+        assert not np.allclose(wrapped_position, original_position)
+        # Wrapped position must differ from the original by an integer
+        # number of lattice vectors -- i.e. it's the same physical site.
+        diff = (original_position - wrapped_position) / 5.0
+        assert np.allclose(diff, np.round(diff))
+
+    @pytest.mark.unit
+    def test_info_preserved_exactly(self):
+        from alomancy.utils.clean_structures import wrap_structures_into_cell
+
+        atoms = Atoms(
+            symbols=["H", "H"],
+            positions=[[0, 0, 0], [6.5, 0, 0]],
+            cell=[5, 5, 5],
+            pbc=True,
+        )
+        atoms.info["config_type"] = "high_sd"
+        atoms.info["job_id"] = 7
+        result = wrap_structures_into_cell([atoms])
+        assert result[0].info == {"config_type": "high_sd", "job_id": 7}
+
+    @pytest.mark.unit
+    def test_non_periodic_structure_not_corrupted(self):
+        """Dimers/trimers/isolated atoms are pbc=False -- wrap() must not
+        raise and must leave positions unchanged for them."""
+        from alomancy.utils.clean_structures import wrap_structures_into_cell
+
+        atoms = Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [6.5, 0, 0]], pbc=False)
+        original_positions = atoms.get_positions().copy()
+        result = wrap_structures_into_cell([atoms])
+        assert np.allclose(result[0].get_positions(), original_positions)
+
+    @pytest.mark.unit
+    def test_already_in_cell_structure_is_unchanged(self):
+        from alomancy.utils.clean_structures import wrap_structures_into_cell
+
+        atoms = Atoms(
+            symbols=["H", "H"],
+            positions=[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
+            cell=[5, 5, 5],
+            pbc=True,
+        )
+        original_positions = atoms.get_positions().copy()
+        result = wrap_structures_into_cell([atoms])
+        assert np.allclose(result[0].get_positions(), original_positions, atol=1e-8)
+
+    @pytest.mark.unit
+    def test_multiple_structures_wrapped_independently(self):
+        from alomancy.utils.clean_structures import wrap_structures_into_cell
+
+        outside = Atoms(
+            symbols=["H", "H"],
+            positions=[[0, 0, 0], [6.5, 0, 0]],
+            cell=[5, 5, 5],
+            pbc=True,
+        )
+        inside = Atoms(
+            symbols=["H", "H"],
+            positions=[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
+            cell=[5, 5, 5],
+            pbc=True,
+        )
+        inside_original = inside.get_positions().copy()
+
+        result = wrap_structures_into_cell([outside, inside])
+
+        assert not np.allclose(result[0].get_positions()[1], [6.5, 0, 0])
+        assert np.allclose(result[1].get_positions(), inside_original, atol=1e-8)
+
+
 @pytest.mark.unit
 class TestReadAtomsFileIfEnabled:
     """Test read_atoms_file_if_enabled function."""

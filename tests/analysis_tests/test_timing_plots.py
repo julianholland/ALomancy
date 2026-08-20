@@ -165,20 +165,18 @@ def test_missing_file_returns_empty_df(tmp_path):
 
 
 @pytest.mark.unit
-def test_timing_plots_saves_files(tmp_path):
+def test_timing_plots_saves_one_combined_file(tmp_path):
+    """timing_plots now produces a single combined figure, not two."""
     from alomancy.analysis.timing_plots import timing_plots
 
     log = _write_log(tmp_path, _loop0_lines())
     plots_dir = tmp_path / "plots"
 
-    with (
-        mock.patch("matplotlib.pyplot.savefig") as mock_save,
-        mock.patch("matplotlib.figure.Figure.savefig") as mock_fig_save,
-    ):
-        timing_plots(log, plots_dir)
-        # Either fig.savefig or plt.savefig should have been called twice
-        total_calls = mock_save.call_count + mock_fig_save.call_count
-        assert total_calls >= 2
+    timing_plots(log, plots_dir)
+
+    pngs = list(plots_dir.glob("*.png"))
+    assert len(pngs) == 1
+    assert pngs[0].name == "timing_combined.png"
 
 
 @pytest.mark.unit
@@ -195,3 +193,84 @@ def test_timing_plots_no_op_on_empty_df(tmp_path):
         timing_plots(log, plots_dir)
         assert mock_save.call_count == 0
         assert mock_fig_save.call_count == 0
+
+
+@pytest.mark.unit
+def test_timing_plots_legend_has_both_phase_and_training_size_entries(tmp_path):
+    """twinx() legends must be combined manually or entries get silently
+    dropped -- assert both the phase-timing series and the training-set-size
+    line actually show up in the one legend."""
+    import matplotlib.pyplot as plt
+
+    from alomancy.analysis.timing_plots import timing_plots
+
+    log = _write_log(tmp_path, _loop0_lines())
+    plots_dir = tmp_path / "plots"
+
+    captured = {}
+    real_close = plt.close
+
+    def fake_close(fig):
+        # Two axes: primary (bars) and twinx (line) -- legend lives on ax.
+        captured["legend_labels"] = [
+            t.get_text() for t in fig.axes[0].get_legend().texts
+        ]
+        real_close(fig)
+
+    with mock.patch("matplotlib.pyplot.close", side_effect=fake_close):
+        timing_plots(log, plots_dir)
+
+    labels = captured["legend_labels"]
+    assert "Training structures" in labels
+    assert any(
+        label in labels
+        for label in ("Training + plots", "Structure gen", "DFT", "Post-process")
+    )
+
+
+def _n_loop_lines(n: int) -> list[str]:
+    """Build log lines for n consecutive, independently-numbered AL loops."""
+    lines: list[str] = []
+    for i in range(n):
+        day = 23 + i
+        lines.extend(
+            [
+                f"2026-07-{day:02d} 00:00:00 [DEBUG   ] alomancy.core.base_active_learning: Starting AL loop {i}",
+                f"2026-07-{day:02d} 00:00:00 [DEBUG   ] alomancy.core.base_active_learning:   Training set size: {15000 + i}",
+                f"2026-07-{day:02d} 01:00:00 [INFO    ] alomancy.core.standard_active_learning: 20 structures selected for structure generation step.",
+                f"2026-07-{day:02d} 02:00:00 [INFO    ] alomancy.structure_generation.find_high_sd_structures: Selected 200 structures for DFT calculations based on force std dev.",
+                f"2026-07-{day:02d} 03:00:00 [INFO    ] alomancy.core.base_active_learning: High-accuracy evaluation completed for 195 structures.",
+                f"2026-07-{day:02d} 04:00:00 [DEBUG   ] alomancy.core.base_active_learning: Completed AL loop {i}, retraining with {15000 + i} structures.",
+            ]
+        )
+    return lines
+
+
+@pytest.mark.unit
+def test_timing_plots_fixed_width_regardless_of_loop_count(tmp_path):
+    """Figure width must be constant whether the run has 2 loops or 5 --
+    the old per-plot figsize scaled with len(loops), growing unbounded."""
+    import matplotlib.pyplot as plt
+
+    from alomancy.analysis.timing_plots import timing_plots
+
+    widths: dict[int, float] = {}
+    for n_loops in (2, 5):
+        run_dir = tmp_path / f"run_{n_loops}"
+        run_dir.mkdir()
+        log = _write_log(run_dir, _n_loop_lines(n_loops))
+        plots_dir = run_dir / "plots"
+
+        captured = {}
+        real_close = plt.close
+
+        def fake_close(fig, _captured=captured, _real_close=real_close):
+            _captured["size"] = fig.get_size_inches()
+            _real_close(fig)
+
+        with mock.patch("matplotlib.pyplot.close", side_effect=fake_close):
+            timing_plots(log, plots_dir)
+
+        widths[n_loops] = captured["size"][0]
+
+    assert widths[2] == widths[5]

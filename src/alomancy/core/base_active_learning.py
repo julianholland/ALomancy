@@ -149,6 +149,7 @@ class BaseActiveLearningWorkflow(ABC):
         remove_redundancy: bool = True,
         high_force_threshold: float | None = 100.0,
         skip_initialization: bool = False,
+        db: GlobalDatabase | None = None,
     ):
         self.initial_train_file_path = Path(initial_train_file_path)
         self.initial_test_file_path = Path(initial_test_file_path)
@@ -158,7 +159,15 @@ class BaseActiveLearningWorkflow(ABC):
         self.start_loop = start_loop
         self.plots = plots
         self.seed = seed
-        self.db = GlobalDatabase(db_path)
+        # Constructing a real GlobalDatabase bootstraps actual HDF5+SQLite
+        # files on disk (sage_lib's Partition(storage="hybrid")) and costs
+        # ~1-3s even for an empty DB -- confirmed by direct benchmarking.
+        # `db`, when provided, lets a caller (in practice: a test fixture
+        # sharing one already-constructed, cheaply-cleared instance across
+        # many test cases via GlobalDatabase.clear()) skip that cost
+        # entirely. Defaults to None so every existing production call site
+        # (which only ever passes db_path) is unaffected.
+        self.db = db if db is not None else GlobalDatabase(db_path)
         self.remove_redundancy = remove_redundancy
         self.high_force_threshold = high_force_threshold
         self.skip_initialization = skip_initialization
@@ -364,12 +373,31 @@ class BaseActiveLearningWorkflow(ABC):
             )
 
         for loop in range(effective_start, self.number_of_al_loops):
+            base_name = f"al_loop_{loop}"
+
             # Derive current train/test from DB at the start of each iteration
             # so any redundancy flags from the previous loop are reflected.
             train_xyzs = self.db.get_train_atoms()
             test_xyzs = self.db.get_test_atoms()
 
-            base_name = f"al_loop_{loop}"
+            if self.plots:
+                # Per-loop plots (bond distances, MAE-vs-loop, training curves,
+                # parity) each land in their own results/current_plots/<base_name>/
+                # subdirectory rather than flat in results/current_plots/, which
+                # otherwise accumulates every loop's files in one shared directory
+                # for the whole run. Run-level aggregate plots (timing_plots, at
+                # the end of this loop body) intentionally stay flat at the
+                # top-level plots_dir -- they summarize across all loops, not just
+                # this one.
+                plots_dir = Path("results", "current_plots")
+                loop_plots_dir = plots_dir / base_name
+                loop_plots_dir.mkdir(exist_ok=True, parents=True)
+                from alomancy.analysis.bond_distance_plots import (
+                    plot_training_bond_distances,
+                )
+
+                plot_training_bond_distances(base_name, self.db, loop_plots_dir)
+
             workdir = Path(f"results/{base_name}")
 
             try:
@@ -398,12 +426,13 @@ class BaseActiveLearningWorkflow(ABC):
             logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
 
             if self.plots:
-                plots_dir = Path("results", "current_plots")
-                plots_dir.mkdir(exist_ok=True, parents=True)
+                # loop_plots_dir already created at the top of this loop
+                # iteration (before train_mlip), where plot_training_bond_distances
+                # runs.
                 mae_al_loop_plot(
                     evaluation_results,
                     self.jobs_dict["mlip_committee"],
-                    directory=plots_dir,
+                    directory=loop_plots_dir,
                 )
                 from alomancy.analysis.mlip_plots import (
                     plot_dft_vs_model,
@@ -411,13 +440,16 @@ class BaseActiveLearningWorkflow(ABC):
                 )
 
                 plot_training_curves(
-                    base_name, self.jobs_dict["mlip_committee"], self.seed, plots_dir
+                    base_name,
+                    self.jobs_dict["mlip_committee"],
+                    self.seed,
+                    loop_plots_dir,
                 )
                 plot_dft_vs_model(
                     base_name,
                     self.jobs_dict["mlip_committee"],
                     self.seed,
-                    plots_dir,
+                    loop_plots_dir,
                     db=self.db,
                     loop_idx=loop,
                 )
@@ -479,7 +511,9 @@ class BaseActiveLearningWorkflow(ABC):
             if self.plots and self.log_file is not None:
                 from alomancy.analysis.timing_plots import timing_plots
 
-                timing_plots(self.log_file, Path("results", "current_plots"))
+                # Run-level aggregate (all loops) -- stays flat at the top of
+                # plots_dir, not inside any single loop's subdirectory.
+                timing_plots(self.log_file, plots_dir)
 
     def _seed_db_from_extra_dataset(self, extra_dataset: str) -> None:
         """

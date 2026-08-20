@@ -40,6 +40,7 @@ from alomancy.structure_generation.select_initial_structures import (
 from alomancy.utils.clean_structures import (
     clean_structures,
     filter_structures_by_min_bond_distance,
+    wrap_structures_into_cell,
 )
 from alomancy.utils.file_saving_and_parsing import (
     read_atoms_file_if_enabled,
@@ -813,6 +814,16 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         # initialization bootstrap path at the other call site, which has
         # no equivalent upstream filter of its own).
         structures = filter_structures_by_min_bond_distance(structures)
+
+        # MD trajectories can leave atoms drifted outside the periodic cell
+        # (a normal MD artifact, not the unphysical-bond case filtered
+        # above) -- QE/VASP expect coordinates within the reference cell.
+        # Applied only to structures that already survived the bond-distance
+        # filter, right before DFT submission. wrap_structures_into_cell
+        # preserves atoms.info/arrays/calc exactly (verified empirically)
+        # and is a safe no-op on non-periodic structures (e.g. dimers,
+        # isolated atoms), so it's applied unconditionally here.
+        structures = wrap_structures_into_cell(structures)
 
         current_batches = sum(
             1

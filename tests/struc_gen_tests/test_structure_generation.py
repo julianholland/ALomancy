@@ -359,7 +359,14 @@ class TestFindHighSdStructures:
         )
         assert len(result) == 2
 
-    def test_assertion_error_not_enough_structures(self, tmp_path, monkeypatch):
+    @pytest.mark.unit
+    def test_fewer_available_than_desired_logs_warning_and_returns_all(
+        self, tmp_path, monkeypatch
+    ):
+        """Fewer candidates than desired: proceed with all available, log a
+        WARNING, and do not crash (previously an AssertionError)."""
+        import logging
+
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
         )
@@ -369,7 +376,73 @@ class TestFindHighSdStructures:
         forces_dict = self._build_forces_dict(structures)
         job_dict = self._build_job_dict(desired=5)
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
-        with pytest.raises(AssertionError):
+
+        # setup_logging (when called) sets propagate=False on the "alomancy"
+        # logger, so capture records by attaching a handler directly to it —
+        # see test_seed_logs_message in test_base_active_learning.py.
+        al_logger = logging.getLogger("alomancy")
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        handler.setLevel(logging.WARNING)
+        al_logger.addHandler(handler)
+        try:
+            result = find_high_sd_structures(
+                structure_list=structures,
+                base_name="loop_0",
+                job_dict=job_dict,
+                structure_forces_dict=forces_dict,
+                read_xyz=False,
+            )
+        finally:
+            al_logger.removeHandler(handler)
+
+        assert len(result) == 2
+        assert all(a in structures for a in result)
+        warning_records = [r for r in records if r.levelno == logging.WARNING]
+        messages = " ".join(r.getMessage() for r in warning_records)
+        assert "Only 2" in messages
+        assert "5" in messages
+
+    @pytest.mark.unit
+    def test_empty_structure_list_raises_value_error(self, tmp_path, monkeypatch):
+        """No candidates at all: nothing to select from, so raise ValueError
+        (never AssertionError — see CLAUDE.md's guard-with-ValueError
+        convention)."""
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        job_dict = self._build_job_dict(desired=5)
+        (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
+        with pytest.raises(ValueError, match="No candidate structures"):
+            find_high_sd_structures(
+                structure_list=[],
+                base_name="loop_0",
+                job_dict=job_dict,
+                structure_forces_dict={},
+                read_xyz=False,
+            )
+
+    @pytest.mark.unit
+    def test_desired_structures_zero_raises_value_error(self, tmp_path, monkeypatch):
+        """desired_number_of_structures <= 0 is a config error: ValueError,
+        not AssertionError (asserts are stripped under python -O)."""
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(2)]
+        forces_dict = self._build_forces_dict(structures)
+        job_dict = self._build_job_dict(desired=0)
+        (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
+        with pytest.raises(ValueError, match="greater than 0"):
             find_high_sd_structures(
                 structure_list=structures,
                 base_name="loop_0",
