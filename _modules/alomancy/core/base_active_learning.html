@@ -228,6 +228,7 @@
         <span class="n">remove_redundancy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">high_force_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span>
         <span class="n">skip_initialization</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">db</span><span class="p">:</span> <span class="n">GlobalDatabase</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">initial_train_file_path</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">initial_test_file_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">initial_test_file_path</span><span class="p">)</span>
@@ -237,7 +238,15 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">start_loop</span> <span class="o">=</span> <span class="n">start_loop</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">plots</span> <span class="o">=</span> <span class="n">plots</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">GlobalDatabase</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+        <span class="c1"># Constructing a real GlobalDatabase bootstraps actual HDF5+SQLite</span>
+        <span class="c1"># files on disk (sage_lib's Partition(storage="hybrid")) and costs</span>
+        <span class="c1"># ~1-3s even for an empty DB -- confirmed by direct benchmarking.</span>
+        <span class="c1"># `db`, when provided, lets a caller (in practice: a test fixture</span>
+        <span class="c1"># sharing one already-constructed, cheaply-cleared instance across</span>
+        <span class="c1"># many test cases via GlobalDatabase.clear()) skip that cost</span>
+        <span class="c1"># entirely. Defaults to None so every existing production call site</span>
+        <span class="c1"># (which only ever passes db_path) is unaffected.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">db</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">GlobalDatabase</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span> <span class="o">=</span> <span class="n">remove_redundancy</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="o">=</span> <span class="n">high_force_threshold</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">skip_initialization</span> <span class="o">=</span> <span class="n">skip_initialization</span>
@@ -451,12 +460,31 @@
             <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">loop</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">effective_start</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">number_of_al_loops</span><span class="p">):</span>
+            <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">"</span>
+
             <span class="c1"># Derive current train/test from DB at the start of each iteration</span>
             <span class="c1"># so any redundancy flags from the previous loop are reflected.</span>
             <span class="n">train_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_train_atoms</span><span class="p">()</span>
             <span class="n">test_xyzs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_test_atoms</span><span class="p">()</span>
 
-            <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"al_loop_</span><span class="si">{</span><span class="n">loop</span><span class="si">}</span><span class="s2">"</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span><span class="p">:</span>
+                <span class="c1"># Per-loop plots (bond distances, MAE-vs-loop, training curves,</span>
+                <span class="c1"># parity) each land in their own results/current_plots/&lt;base_name&gt;/</span>
+                <span class="c1"># subdirectory rather than flat in results/current_plots/, which</span>
+                <span class="c1"># otherwise accumulates every loop's files in one shared directory</span>
+                <span class="c1"># for the whole run. Run-level aggregate plots (timing_plots, at</span>
+                <span class="c1"># the end of this loop body) intentionally stay flat at the</span>
+                <span class="c1"># top-level plots_dir -- they summarize across all loops, not just</span>
+                <span class="c1"># this one.</span>
+                <span class="n">plots_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="s2">"current_plots"</span><span class="p">)</span>
+                <span class="n">loop_plots_dir</span> <span class="o">=</span> <span class="n">plots_dir</span> <span class="o">/</span> <span class="n">base_name</span>
+                <span class="n">loop_plots_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.bond_distance_plots</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+                    <span class="n">plot_training_bond_distances</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="n">plot_training_bond_distances</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="n">loop_plots_dir</span><span class="p">)</span>
+
             <span class="n">workdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
             <span class="k">try</span><span class="p">:</span>
@@ -485,12 +513,13 @@
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"AL Loop </span><span class="si">%d</span><span class="s2"> evaluation results:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">loop</span><span class="p">,</span> <span class="n">evaluation_results</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span><span class="p">:</span>
-                <span class="n">plots_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="s2">"current_plots"</span><span class="p">)</span>
-                <span class="n">plots_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="c1"># loop_plots_dir already created at the top of this loop</span>
+                <span class="c1"># iteration (before train_mlip), where plot_training_bond_distances</span>
+                <span class="c1"># runs.</span>
                 <span class="n">mae_al_loop_plot</span><span class="p">(</span>
                     <span class="n">evaluation_results</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span>
-                    <span class="n">directory</span><span class="o">=</span><span class="n">plots_dir</span><span class="p">,</span>
+                    <span class="n">directory</span><span class="o">=</span><span class="n">loop_plots_dir</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.mlip_plots</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
                     <span class="n">plot_dft_vs_model</span><span class="p">,</span>
@@ -498,13 +527,16 @@
                 <span class="p">)</span>
 
                 <span class="n">plot_training_curves</span><span class="p">(</span>
-                    <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span> <span class="n">plots_dir</span>
+                    <span class="n">base_name</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+                    <span class="n">loop_plots_dir</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="n">plot_dft_vs_model</span><span class="p">(</span>
                     <span class="n">base_name</span><span class="p">,</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">],</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
-                    <span class="n">plots_dir</span><span class="p">,</span>
+                    <span class="n">loop_plots_dir</span><span class="p">,</span>
                     <span class="n">db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
                     <span class="n">loop_idx</span><span class="o">=</span><span class="n">loop</span><span class="p">,</span>
                 <span class="p">)</span>
@@ -566,7 +598,9 @@
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.timing_plots</span><span class="w"> </span><span class="kn">import</span> <span class="n">timing_plots</span>
 
-                <span class="n">timing_plots</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="s2">"current_plots"</span><span class="p">))</span></div>
+                <span class="c1"># Run-level aggregate (all loops) -- stays flat at the top of</span>
+                <span class="c1"># plots_dir, not inside any single loop's subdirectory.</span>
+                <span class="n">timing_plots</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">plots_dir</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_seed_db_from_extra_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">extra_dataset</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>

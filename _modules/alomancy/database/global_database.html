@@ -109,6 +109,29 @@
         <span class="n">Path</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">partition</span> <span class="o">=</span> <span class="n">Partition</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">db_path</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">)</span>
 
+<div class="viewcode-block" id="GlobalDatabase.clear">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.clear">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Remove every structure, leaving this instance otherwise reusable.</span>
+
+<span class="sd">        Constructing a fresh GlobalDatabase (sage_lib's Partition(storage=</span>
+<span class="sd">        "hybrid") bootstrapping real HDF5+SQLite files on disk) costs</span>
+<span class="sd">        roughly 1-3s even for an empty DB -- confirmed by direct</span>
+<span class="sd">        benchmarking. clear() reuses the already-constructed instance and</span>
+<span class="sd">        costs ~0.002s instead, via sage_lib's public get_ids()/</span>
+<span class="sd">        remove_container() API (no private attributes touched). Primarily</span>
+<span class="sd">        exists so tests that need a pristine DB between cases don't have to</span>
+<span class="sd">        pay the full construction cost per test -- see tests/conftest.py's</span>
+<span class="sd">        shared-instance fixtures. add_structures's global_db_id numbering</span>
+<span class="sd">        is derived fresh from self.partition.N at add-time, so it correctly</span>
+<span class="sd">        restarts from 0 after clear() exactly as it would for a brand-new</span>
+<span class="sd">        instance -- no stale-counter risk.</span>
+<span class="sd">        """</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">get_ids</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">ids</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">remove_container</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span></div>
+
+
     <span class="c1"># ------------------------------------------------------------------</span>
     <span class="c1"># Writing</span>
     <span class="c1"># ------------------------------------------------------------------</span>

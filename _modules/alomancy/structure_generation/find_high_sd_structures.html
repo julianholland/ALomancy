@@ -100,10 +100,23 @@
         <span class="s2">"desired_number_of_structures"</span>
     <span class="p">]</span>
 
-    <span class="k">assert</span> <span class="n">desired_structures</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"Number of structures must be greater than 0"</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">desired_structures</span><span class="p">,</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s2">"Not enough structures to select </span><span class="si">{</span><span class="n">desired_structures</span><span class="si">}</span><span class="s2"> from. Available: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
-    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">desired_structures</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Number of structures must be greater than 0"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"No candidate structures available to select from — "</span>
+            <span class="s2">"structure_list is empty."</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">desired_structures</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> candidate structure(s) available, fewer than the </span><span class="si">%d</span><span class="s2"> "</span>
+            <span class="s2">"requested (desired_number_of_structures) — proceeding with all "</span>
+            <span class="s2">"</span><span class="si">%d</span><span class="s2"> available structure(s) instead of crashing the run."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+            <span class="n">desired_structures</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="n">effective_structures</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">desired_structures</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
 
     <span class="n">std_dev_csv_name</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span>
         <span class="s2">"results"</span><span class="p">,</span>
@@ -133,7 +146,7 @@
                 <span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">]</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">index_list</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"structure_index"</span><span class="p">][:</span><span class="n">desired_structures</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+        <span class="n">index_list</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"structure_index"</span><span class="p">][:</span><span class="n">effective_structures</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
         <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">index_list</span><span class="p">]</span>
 
         <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">high_sd_structures</span><span class="p">:</span>
@@ -154,7 +167,7 @@
         <span class="s2">"Selected </span><span class="si">%d</span><span class="s2"> structures for DFT calculations based on force std dev."</span><span class="p">,</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">),</span>
     <span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Std dev top structures:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[:</span><span class="n">desired_structures</span><span class="p">])</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Std dev top structures:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[:</span><span class="n">effective_structures</span><span class="p">])</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Total mean std dev: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"mean_std_dev"</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
 
     <span class="k">return</span> <span class="n">high_sd_structures</span></div>

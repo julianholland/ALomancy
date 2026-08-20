@@ -56,6 +56,7 @@
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Utilities</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.utils.clean_structures.clean_structures"><code class="docutils literal notranslate"><span class="pre">clean_structures()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.utils.clean_structures.filter_structures_by_min_bond_distance"><code class="docutils literal notranslate"><span class="pre">filter_structures_by_min_bond_distance()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.utils.clean_structures.wrap_structures_into_cell"><code class="docutils literal notranslate"><span class="pre">wrap_structures_into_cell()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.utils.test_train_manager.add_new_training_data"><code class="docutils literal notranslate"><span class="pre">add_new_training_data()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.utils.test_train_manager.extend_test_and_train_sets_with_extra_dataset"><code class="docutils literal notranslate"><span class="pre">extend_test_and_train_sets_with_extra_dataset()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.utils.test_train_manager.split_atoms_list_into_test_and_train"><code class="docutils literal notranslate"><span class="pre">split_atoms_list_into_test_and_train()</span></code></a></li>
@@ -117,6 +118,28 @@ ones, correctly covering every config_type this codebase produces.
 Single-atom structures always pass through unfiltered — there is no
 pairwise distance to check, and <cite>np.triu_indices(1, k=1)</cite> correctly
 returns an empty index set rather than raising.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.utils.clean_structures.wrap_structures_into_cell">
+<span class="sig-prename descclassname"><span class="pre">alomancy.utils.clean_structures.</span></span><span class="sig-name descname"><span class="pre">wrap_structures_into_cell</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">structures</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><span class="pre">Atoms</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/utils/clean_structures.html#wrap_structures_into_cell"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.utils.clean_structures.wrap_structures_into_cell" title="Link to this definition"></a></dt>
+<dd><p>Wrap each structure’s atoms back inside its periodic cell, in place.</p>
+<p>MD trajectories routinely let atoms drift outside the reference cell
+(a normal artifact of unwrapped-coordinate propagation, distinct from
+the unphysical short-bond-distance case handled by
+filter_structures_by_min_bond_distance) — DFT codes (QE/VASP) generally
+expect coordinates within the cell, so this runs as the last step
+before DFT submission, on structures that have already survived that
+bond-distance filter.</p>
+<p><cite>Atoms.wrap()</cite> mutates the structure in place and returns None; it is
+called unconditionally here rather than gated on <cite>atoms.pbc.any()</cite>
+because it is a safe no-op on non-periodic axes/structures (confirmed
+empirically against ASE 3.28: positions on a non-periodic axis, and on
+a structure with <cite>pbc=False</cite> and no cell at all, are left unchanged).
+<cite>atoms.info</cite>, <cite>atoms.arrays</cite> (including any non-standard extra arrays),
+and any already-attached <cite>atoms.calc</cite> all survive <cite>wrap()</cite> unchanged —
+confirmed empirically, since this is the property this function must
+not violate.</p>
 </dd></dl>
 
 <dl class="py function" id="module-alomancy.utils.test_train_manager">

@@ -183,6 +183,35 @@
 
     <span class="k">return</span> <span class="n">filtered</span></div>
 
+
+
+<div class="viewcode-block" id="wrap_structures_into_cell">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.wrap_structures_into_cell">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">wrap_structures_into_cell</span><span class="p">(</span><span class="n">structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Wrap each structure's atoms back inside its periodic cell, in place.</span>
+
+<span class="sd">    MD trajectories routinely let atoms drift outside the reference cell</span>
+<span class="sd">    (a normal artifact of unwrapped-coordinate propagation, distinct from</span>
+<span class="sd">    the unphysical short-bond-distance case handled by</span>
+<span class="sd">    filter_structures_by_min_bond_distance) — DFT codes (QE/VASP) generally</span>
+<span class="sd">    expect coordinates within the cell, so this runs as the last step</span>
+<span class="sd">    before DFT submission, on structures that have already survived that</span>
+<span class="sd">    bond-distance filter.</span>
+
+<span class="sd">    `Atoms.wrap()` mutates the structure in place and returns None; it is</span>
+<span class="sd">    called unconditionally here rather than gated on `atoms.pbc.any()`</span>
+<span class="sd">    because it is a safe no-op on non-periodic axes/structures (confirmed</span>
+<span class="sd">    empirically against ASE 3.28: positions on a non-periodic axis, and on</span>
+<span class="sd">    a structure with `pbc=False` and no cell at all, are left unchanged).</span>
+<span class="sd">    `atoms.info`, `atoms.arrays` (including any non-standard extra arrays),</span>
+<span class="sd">    and any already-attached `atoms.calc` all survive `wrap()` unchanged —</span>
+<span class="sd">    confirmed empirically, since this is the property this function must</span>
+<span class="sd">    not violate.</span>
+<span class="sd">    """</span>
+    <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">structures</span><span class="p">:</span>
+        <span class="n">structure</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">structures</span></div>
+
 </pre></div>
 
            </div>

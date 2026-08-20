@@ -54,6 +54,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.add_structures"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.add_structures()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.apply_train_test_split"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.apply_train_test_split()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.assign_global_db_ids()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.clear"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.clear()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_all_by_config_type_and_formula()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type_and_formula()</span></code></a></li>
@@ -179,6 +180,24 @@ untagged structure is eligible.</p></li>
 <p>Uses the container’s 0-based positional index as the ID. Safe to call on
 a DB populated before this feature existed — already-tagged containers are
 skipped. Returns the number of containers newly tagged.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.clear">
+<span class="sig-name descname"><span class="pre">clear</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.clear"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.clear" title="Link to this definition"></a></dt>
+<dd><p>Remove every structure, leaving this instance otherwise reusable.</p>
+<p>Constructing a fresh GlobalDatabase (sage_lib’s Partition(storage=
+“hybrid”) bootstrapping real HDF5+SQLite files on disk) costs
+roughly 1-3s even for an empty DB – confirmed by direct
+benchmarking. clear() reuses the already-constructed instance and
+costs ~0.002s instead, via sage_lib’s public get_ids()/
+remove_container() API (no private attributes touched). Primarily
+exists so tests that need a pristine DB between cases don’t have to
+pay the full construction cost per test – see tests/conftest.py’s
+shared-instance fixtures. add_structures’s global_db_id numbering
+is derived fresh from self.partition.N at add-time, so it correctly
+restarts from 0 after clear() exactly as it would for a brand-new
+instance – no stale-counter risk.</p>
 </dd></dl>
 
 <dl class="py method">
