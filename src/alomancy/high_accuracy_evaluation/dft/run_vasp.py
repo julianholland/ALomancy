@@ -68,7 +68,7 @@ def create_vasp_calc_object(
         high_accuracy_eval_job_dict.get("vasp_input_kwargs", {})
     )
     if is_relaxation:
-        vasp_kwargs.update({"nsw": 200, "ibrion": 2})
+        vasp_kwargs.update({"nsw": 0, "ibrion": -1})
 
     # NCORE ~ sqrt(ranks_per_node) is a sensible default for band parallelism
     ncore = max(1, int(hpc["node_info"]["ranks_per_node"] ** 0.5))
