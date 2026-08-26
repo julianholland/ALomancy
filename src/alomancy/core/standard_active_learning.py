@@ -688,6 +688,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
 
         elif method == "ezga":
+            run_ezga_kwargs = job_dict["structure_generation"].get(
+                "run_ezga_kwargs", {}
+            )
             logger.info(
                 "Structure generation: running EZGA from %d seed structure(s).",
                 len(input_structures),
@@ -697,6 +700,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 initial_structures=input_structures,
                 model_path=base_mace_model_path,
                 output_dir=operating_dir / "ezga",
+                **run_ezga_kwargs,
             )
 
             logger.info(

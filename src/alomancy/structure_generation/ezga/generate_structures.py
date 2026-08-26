@@ -9,9 +9,16 @@ def build_ezga_config(
     dataset_path: Path,
     output_path: Path,
     model_path: str,
+    max_generations: int = 2,
+    population_size: int = 2,
 ) -> dict:
+    if max_generations < 1:
+        raise ValueError("max_generations must be at least 1.")
+    if population_size < 1:
+        raise ValueError("population_size must be at least 1.")
+
     return {
-        "max_generations": 2,
+        "max_generations": max_generations,
         "resume": False,
         "output_path": str(output_path),
 
@@ -24,7 +31,7 @@ def build_ezga_config(
         },
 
         "multiobjective": {
-            "size": 2,
+            "size": population_size,
         },
 
         "variation": {
@@ -88,6 +95,8 @@ def run_ezga(
     initial_structures: list[Atoms],
     model_path: str,
     output_dir: Path,
+    max_generations: int = 2,
+    population_size: int = 2,
 ) -> list[Atoms]:
 
     if not initial_structures:
@@ -116,6 +125,8 @@ def run_ezga(
         dataset_path=initial_population_path,
         output_path=output_dir,
         model_path=model_path,
+        max_generations=max_generations,
+        population_size=population_size,
     )
 
     # ------------------------------------------------------------------
