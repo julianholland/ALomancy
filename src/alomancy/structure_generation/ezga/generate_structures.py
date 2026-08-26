@@ -1,5 +1,4 @@
 from pathlib import Path
-
 import yaml
 from ase import Atoms
 from ase.io import read, write
@@ -18,12 +17,8 @@ def build_ezga_config(
 
         "population": {
             "dataset_path": str(dataset_path),
-
-            # Keep the EZGA database local to this run/output directory.
-            # This avoids reusing population data from unrelated previous runs.
             "db_path": str(output_path / "db"),
             "db_ro_path": str(output_path / "db_ro"),
-
             "filter_duplicates": True,
             "collision_factor": 0.80,
         },

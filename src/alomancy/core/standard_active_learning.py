@@ -43,6 +43,8 @@ from alomancy.utils.file_saving_and_parsing import (
 )
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
+from alomancy.structure_generation.ezga.generate_structures import run_ezga
+
 logger = logging.getLogger(__name__)
 
 
@@ -625,56 +627,87 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         committee_size = job_dict["mlip_committee"]["size_of_committee"]
         fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
 
+        method = job_dict["structure_generation"].get("method", "md")
+
         logger.info(
-            "Structure generation: MD will run with fit_%d (lowest test-set force "
-            "MAE) as the base model; the remaining %d committee member(s) %s will "
-            "be used afterwards to score MD-generated structures by force std dev.",
+            "Structure generation: %s will run with fit_%d "
+            "(lowest test-set force MAE) as the base model; "
+            "the remaining %d committee member(s) %s will be used afterwards "
+            "to score generated structures by force std dev.",
+            method.upper(),
             best_fit_idx,
             len(fits_to_use),
             fits_to_use,
         )
 
-        if "run_md_kwargs" not in job_dict["structure_generation"]:
-            job_dict["structure_generation"]["run_md_kwargs"] = {}
+        if method == "md":
+            if "run_md_kwargs" not in job_dict["structure_generation"]:
+                job_dict["structure_generation"]["run_md_kwargs"] = {}
 
-        function_kwargs = {
-            "structure_generation_job_dict": job_dict["structure_generation"],
-            "total_md_runs": len(input_structures),
-            "model_path": [
-                base_mace_model_path
-            ],  # need to pass model path to preserve consistent dtype
-            **job_dict["structure_generation"]["run_md_kwargs"],
-        }
+            function_kwargs = {
+                "structure_generation_job_dict": job_dict["structure_generation"],
+                "total_md_runs": len(input_structures),
+                "model_path": [base_mace_model_path],
+                **job_dict["structure_generation"]["run_md_kwargs"],
+            }
 
-        logger.info(
-            "Structure generation: submitting %d MD run(s) from %d seed "
-            "structure(s) to generate candidate structures.",
-            len(input_structures),
-            len(input_structures),
-        )
+            logger.info(
+                "Structure generation: submitting %d MD run(s) from %d seed "
+                "structure(s) to generate candidate structures.",
+                len(input_structures),
+                len(input_structures),
+            )
 
-        md_trajectory_paths = md_remote_submitter(
-            remote_info=get_remote_info(
-                job_dict["structure_generation"], input_files=[base_mace_model_path]
-            ),
-            base_name=base_name,
-            target_file=f"{job_dict['structure_generation']['name']}.xyz",
-            input_atoms_list=input_structures,
-            function=run_md,
-            function_kwargs=function_kwargs,
-        )
+            md_trajectory_paths = md_remote_submitter(
+                remote_info=get_remote_info(
+                    job_dict["structure_generation"],
+                    input_files=[base_mace_model_path],
+                ),
+                base_name=base_name,
+                target_file=f"{job_dict['structure_generation']['name']}.xyz",
+                input_atoms_list=input_structures,
+                function=run_md,
+                function_kwargs=function_kwargs,
+            )
 
-        structure_list = []
-        for md_trajectory_path in md_trajectory_paths:
-            structures = read(md_trajectory_path, ":", format="extxyz")
-            structure_list.extend(structures)
+            structure_list = []
 
-        logger.info(
-            "Structure generation: MD produced %d candidate structure(s) across "
-            "%d trajectory file(s).",
-            len(structure_list),
-            len(md_trajectory_paths),
-        )
+            for md_trajectory_path in md_trajectory_paths:
+                structures = read(
+                    md_trajectory_path,
+                    ":",
+                    format="extxyz",
+                )
+                structure_list.extend(structures)
+
+            logger.info(
+                "Structure generation: MD produced %d candidate structure(s) "
+                "across %d trajectory file(s).",
+                len(structure_list),
+                len(md_trajectory_paths),
+            )
+
+        elif method == "ezga":
+            logger.info(
+                "Structure generation: running EZGA from %d seed structure(s).",
+                len(input_structures),
+            )
+
+            structure_list = run_ezga(
+                initial_structures=input_structures,
+                model_path=base_mace_model_path,
+                output_dir=operating_dir / "ezga",
+            )
+
+            logger.info(
+                "Structure generation: EZGA produced %d candidate structure(s).",
+                len(structure_list),
+            )
+
+        else:
+            raise ValueError(
+                f"Unknown structure generation method: {method}"
+            )
 
         model_paths_list = list(
             Path.glob(
