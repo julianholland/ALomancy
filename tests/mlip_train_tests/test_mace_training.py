@@ -485,6 +485,30 @@ class TestSaveMaceEvalPredictions:
         write(str(path), structures, format="extxyz")
 
     @pytest.mark.unit
+    def test_prefers_regular_model_over_compiled_model(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock, patch
+
+        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+
+        monkeypatch.chdir(tmp_path)
+        regular_model = tmp_path / "test_name_stagetwo.model"
+        regular_model.touch()
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        self._write_structures(tmp_path / "train.xyz", 1)
+
+        monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.23)
+        monkeypatch.setattr(
+            Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
+        )
+
+        with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+            mock_calc_cls.return_value = MagicMock()
+            _save_mace_eval_predictions("test_name", "train.xyz")
+
+        selected_path = Path(mock_calc_cls.call_args.kwargs["model_paths"][0])
+        assert selected_path == regular_model.resolve()
+
+    @pytest.mark.unit
     def test_first_failure_gets_warning_with_traceback_rest_are_debug(
         self, tmp_path, monkeypatch
     ):

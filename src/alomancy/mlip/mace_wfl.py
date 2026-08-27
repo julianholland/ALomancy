@@ -35,10 +35,22 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
     and mace_forces keys so store_mlip_predictions can read them locally without
     re-running inference.
     """
-    model_path = Path(f"{name}_stagetwo_compiled.model")
+    # Prefer the regular model for post-training evaluation.  The TorchScript
+    # model can fail while computing forces through torch.autograd.grad with
+    # ``RuntimeError: Global alloc not supported yet`` on some PyTorch/MACE
+    # combinations, silently leaving parity plots with no usable predictions.
+    regular_model_path = Path(f"{name}_stagetwo.model")
+    compiled_model_path = Path(f"{name}_stagetwo_compiled.model")
+    model_path = (
+        regular_model_path
+        if regular_model_path.exists()
+        else compiled_model_path
+    )
     if not model_path.exists():
-        logger.warning("Stagetwo compiled model not found; skipping eval predictions.")
+        logger.warning("Stagetwo model not found; skipping eval predictions.")
         return
+
+    logger.info("Using %s for post-training eval predictions.", model_path.name)
 
     try:
         from mace.calculators import MACECalculator
