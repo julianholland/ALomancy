@@ -1,8 +1,88 @@
 from pathlib import Path
+from typing import Any, Callable
+
+import numpy as np
 import yaml
 from ase import Atoms
 from ase.io import read, write
 from ezga.factory import build_default_engine, load_config
+
+
+def objective_energy_per_atom(scale: float = 1.0) -> Callable[[Any], np.ndarray]:
+    """Return an EZGA objective based on potential energy per atom."""
+
+    def compute(dataset: Any) -> np.ndarray:
+        energies = np.asarray(dataset.get_all_energies(), dtype=float)
+        compositions, _ = dataset.get_all_compositions(return_species=True)
+        atom_counts = np.asarray(compositions, dtype=float).sum(axis=1)
+
+        if energies.shape[0] != atom_counts.shape[0]:
+            raise ValueError(
+                "EZGA energies and compositions contain different numbers "
+                "of structures."
+            )
+        if np.any(atom_counts < 1):
+            raise ValueError("Cannot compute energy per atom for an empty structure.")
+        if not np.all(np.isfinite(energies)):
+            raise ValueError("Cannot compute energy per atom from non-finite energies.")
+
+        return scale * energies / atom_counts
+
+    return compute
+
+
+def bounded_mutation_add(
+    species: list[str],
+    max_atoms: int,
+    bound: list[str] | None = None,
+    collision_tolerance: float = 2.0,
+    slab: bool = False,
+) -> Callable[[Any], Any | None]:
+    """Build an EZGA add mutation that respects an upper atom-count limit."""
+    from ezga.variation.mutation import mutation_add
+
+    mutation = mutation_add(
+        species=species,
+        bound=bound,
+        collision_tolerance=collision_tolerance,
+        slab=slab,
+    )
+
+    def apply(structure: Any) -> Any | None:
+        if structure.AtomPositionManager.atomCount >= max_atoms:
+            return None
+        candidate = mutation(structure)
+        if (
+            candidate is None
+            or candidate.AtomPositionManager.atomCount > max_atoms
+        ):
+            return None
+        return candidate
+
+    return apply
+
+
+def bounded_mutation_remove(
+    species: str,
+    min_atoms: int,
+) -> Callable[[Any], Any | None]:
+    """Build an EZGA remove mutation that respects a lower atom-count limit."""
+    from ezga.variation.mutation import mutation_remove
+
+    mutation = mutation_remove(species=species)
+
+    def apply(structure: Any) -> Any | None:
+        if structure.AtomPositionManager.atomCount <= min_atoms:
+            return None
+        candidate = mutation(structure)
+        if (
+            candidate is None
+            or candidate.AtomPositionManager.atomCount < min_atoms
+        ):
+            return None
+        return candidate
+
+    return apply
 
 
 def build_ezga_config(
@@ -11,11 +91,17 @@ def build_ezga_config(
     model_path: str,
     max_generations: int = 2,
     population_size: int = 2,
+    min_atoms: int = 2,
+    max_atoms: int = 41,
 ) -> dict:
     if max_generations < 1:
         raise ValueError("max_generations must be at least 1.")
     if population_size < 1:
         raise ValueError("population_size must be at least 1.")
+    if min_atoms < 1:
+        raise ValueError("min_atoms must be at least 1.")
+    if max_atoms < min_atoms:
+        raise ValueError("max_atoms must be greater than or equal to min_atoms.")
 
     return {
         "max_generations": max_generations,
@@ -38,6 +124,7 @@ def build_ezga_config(
             "initial_mutation_rate": 1.0,
             "min_mutation_rate": 1.0,
             "crossover_probability": 0.0,
+            "use_magnitude_scaling": False,
         },
 
         "mutation_funcs": [
@@ -45,7 +132,40 @@ def build_ezga_config(
                 "type": "ezga.variation.mutation.mutation_rattle",
                 "std": 0.05,
                 "species": ["Pd"],
-            }
+            },
+            {
+                "type":
+                    "ezga.variation.mutation.mutation_random_strain",
+                "max_strain": 0.02,
+            },
+            {
+                "type": (
+                    "alomancy.structure_generation.ezga.generate_structures."
+                    "bounded_mutation_add"
+                ),
+                "species": ["Pd"],
+                "max_atoms": max_atoms,
+                "bound": ["Pd"],
+                "collision_tolerance": 2.0,
+                "slab": True,
+            },
+            {
+                "type": (
+                    "alomancy.structure_generation.ezga.generate_structures."
+                    "bounded_mutation_remove"
+                ),
+                "species": "Pd",
+                "min_atoms": min_atoms,
+            },
+            {
+                "type":
+                    "ezga.variation.mutation.mutation_remove_add",
+                "species_add": ["Pd"],
+                "species_remove": ["Pd"],
+                "bound": ["Pd"],
+                "collision_tolerance": 2.0,
+                "slab": True,
+            },
         ],
 
         "crossover_funcs": [
@@ -67,8 +187,10 @@ def build_ezga_config(
             ],
             "objectives_funcs": [
                 {
-                    "type":
-                    "ezga.evaluator.objective.objective_energy",
+                    "type": (
+                        "alomancy.structure_generation.ezga."
+                        "generate_structures.objective_energy_per_atom"
+                    ),
                     "scale": 1.0,
                 }
             ],
@@ -97,10 +219,23 @@ def run_ezga(
     output_dir: Path,
     max_generations: int = 2,
     population_size: int = 2,
+    min_atoms: int = 2,
+    max_atoms: int = 41,
 ) -> list[Atoms]:
 
     if not initial_structures:
         raise ValueError("EZGA requires at least one initial structure.")
+    invalid_sizes = [
+        len(structure)
+        for structure in initial_structures
+        if not min_atoms <= len(structure) <= max_atoms
+    ]
+    if invalid_sizes:
+        raise ValueError(
+            "EZGA initial structures must contain between "
+            f"{min_atoms} and {max_atoms} atoms; found invalid sizes "
+            f"{sorted(set(invalid_sizes))}."
+        )
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -127,6 +262,8 @@ def run_ezga(
         model_path=model_path,
         max_generations=max_generations,
         population_size=population_size,
+        min_atoms=min_atoms,
+        max_atoms=max_atoms,
     )
 
     # ------------------------------------------------------------------
