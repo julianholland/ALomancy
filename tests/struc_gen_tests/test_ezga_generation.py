@@ -33,6 +33,10 @@ def test_ezga_config_uses_bounded_mutations_and_per_atom_energy():
         model_path="model.model",
         min_atoms=3,
         max_atoms=40,
+        mutation_operators={
+            "rattle": {"std": 0.08},
+            "random_strain": {"max_strain": 0.03},
+        },
     )
 
     mutations = config["mutation_funcs"]
@@ -57,6 +61,8 @@ def test_ezga_config_uses_bounded_mutations_and_per_atom_energy():
     )
     assert add_config["max_atoms"] == 40
     assert remove_config["min_atoms"] == 3
+    assert mutations[0]["std"] == 0.08
+    assert mutations[1]["max_strain"] == 0.03
     assert config["evaluator"]["objectives_funcs"][0]["type"].endswith(
         "objective_energy_per_atom"
     )

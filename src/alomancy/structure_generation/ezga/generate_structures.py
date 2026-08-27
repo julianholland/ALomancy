@@ -85,6 +85,82 @@ def bounded_mutation_remove(
     return apply
 
 
+def build_mutation_configs(
+    mutation_operators: dict[str, dict[str, Any]] | None,
+    min_atoms: int,
+    max_atoms: int,
+) -> list[dict[str, Any]]:
+    """Translate ALomancy mutation settings into EZGA factory specifications."""
+    defaults: dict[str, dict[str, Any]] = {
+        "rattle": {"enabled": True, "std": 0.05, "species": ["Pd"]},
+        "random_strain": {"enabled": True, "max_strain": 0.02},
+        "add": {
+            "enabled": True,
+            "species": ["Pd"],
+            "bound": ["Pd"],
+            "collision_tolerance": 2.0,
+            "slab": True,
+        },
+        "remove": {"enabled": True, "species": "Pd"},
+        "remove_add": {
+            "enabled": True,
+            "species_add": ["Pd"],
+            "species_remove": ["Pd"],
+            "bound": ["Pd"],
+            "collision_tolerance": 2.0,
+            "slab": True,
+        },
+    }
+    supplied = mutation_operators or {}
+    unknown = set(supplied) - set(defaults)
+    if unknown:
+        raise ValueError(f"Unknown EZGA mutation operators: {sorted(unknown)}")
+
+    settings = {
+        name: {**default, **supplied.get(name, {})}
+        for name, default in defaults.items()
+    }
+    mutations: list[dict[str, Any]] = []
+
+    if settings["rattle"].pop("enabled"):
+        mutations.append({
+            "type": "ezga.variation.mutation.mutation_rattle",
+            **settings["rattle"],
+        })
+    if settings["random_strain"].pop("enabled"):
+        mutations.append({
+            "type": "ezga.variation.mutation.mutation_random_strain",
+            **settings["random_strain"],
+        })
+    if settings["add"].pop("enabled"):
+        mutations.append({
+            "type": (
+                "alomancy.structure_generation.ezga.generate_structures."
+                "bounded_mutation_add"
+            ),
+            "max_atoms": max_atoms,
+            **settings["add"],
+        })
+    if settings["remove"].pop("enabled"):
+        mutations.append({
+            "type": (
+                "alomancy.structure_generation.ezga.generate_structures."
+                "bounded_mutation_remove"
+            ),
+            "min_atoms": min_atoms,
+            **settings["remove"],
+        })
+    if settings["remove_add"].pop("enabled"):
+        mutations.append({
+            "type": "ezga.variation.mutation.mutation_remove_add",
+            **settings["remove_add"],
+        })
+
+    if not mutations:
+        raise ValueError("At least one EZGA mutation operator must be enabled.")
+    return mutations
+
+
 def build_ezga_config(
     dataset_path: Path,
     output_path: Path,
@@ -93,6 +169,7 @@ def build_ezga_config(
     population_size: int = 2,
     min_atoms: int = 2,
     max_atoms: int = 41,
+    mutation_operators: dict[str, dict[str, Any]] | None = None,
 ) -> dict:
     if max_generations < 1:
         raise ValueError("max_generations must be at least 1.")
@@ -127,46 +204,11 @@ def build_ezga_config(
             "use_magnitude_scaling": False,
         },
 
-        "mutation_funcs": [
-            {
-                "type": "ezga.variation.mutation.mutation_rattle",
-                "std": 0.05,
-                "species": ["Pd"],
-            },
-            {
-                "type":
-                    "ezga.variation.mutation.mutation_random_strain",
-                "max_strain": 0.02,
-            },
-            {
-                "type": (
-                    "alomancy.structure_generation.ezga.generate_structures."
-                    "bounded_mutation_add"
-                ),
-                "species": ["Pd"],
-                "max_atoms": max_atoms,
-                "bound": ["Pd"],
-                "collision_tolerance": 2.0,
-                "slab": True,
-            },
-            {
-                "type": (
-                    "alomancy.structure_generation.ezga.generate_structures."
-                    "bounded_mutation_remove"
-                ),
-                "species": "Pd",
-                "min_atoms": min_atoms,
-            },
-            {
-                "type":
-                    "ezga.variation.mutation.mutation_remove_add",
-                "species_add": ["Pd"],
-                "species_remove": ["Pd"],
-                "bound": ["Pd"],
-                "collision_tolerance": 2.0,
-                "slab": True,
-            },
-        ],
+        "mutation_funcs": build_mutation_configs(
+            mutation_operators=mutation_operators,
+            min_atoms=min_atoms,
+            max_atoms=max_atoms,
+        ),
 
         "crossover_funcs": [
             "ezga.variation.crossover.crossover_inplane_shuffle",
@@ -221,6 +263,7 @@ def run_ezga(
     population_size: int = 2,
     min_atoms: int = 2,
     max_atoms: int = 41,
+    mutation_operators: dict[str, dict[str, Any]] | None = None,
 ) -> list[Atoms]:
 
     if not initial_structures:
@@ -264,6 +307,7 @@ def run_ezga(
         population_size=population_size,
         min_atoms=min_atoms,
         max_atoms=max_atoms,
+        mutation_operators=mutation_operators,
     )
 
     # ------------------------------------------------------------------
