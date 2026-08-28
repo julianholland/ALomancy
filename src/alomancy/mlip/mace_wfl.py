@@ -121,6 +121,12 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
                         len(atoms_list),
                         exc,
                     )
+            finally:
+                # Keep only the explicit mace_energy/mace_forces fields above.
+                # Otherwise ASE also tries to serialize MACECalculator.results;
+                # some model-internal arrays are not per-atom and make EXTXYZ
+                # writing fail with a shape-broadcasting error.
+                a.calc = None
             out.append(a)
 
         if n_failed:

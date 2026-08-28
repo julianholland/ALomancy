@@ -501,12 +501,17 @@ class TestSaveMaceEvalPredictions:
             Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
         )
 
-        with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+        with (
+            patch("mace.calculators.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace_wfl.write") as mock_write,
+        ):
             mock_calc_cls.return_value = MagicMock()
             _save_mace_eval_predictions("test_name", "train.xyz")
 
         selected_path = Path(mock_calc_cls.call_args.kwargs["model_paths"][0])
         assert selected_path == regular_model.resolve()
+        written_atoms = mock_write.call_args.args[1]
+        assert all(atoms.calc is None for atoms in written_atoms)
 
     @pytest.mark.unit
     def test_first_failure_gets_warning_with_traceback_rest_are_debug(

@@ -23,10 +23,11 @@ def objective_energy_per_atom(scale: float = 1.0) -> Callable[[Any], np.ndarray]
             )
         if np.any(atom_counts < 1):
             raise ValueError("Cannot compute energy per atom for an empty structure.")
-        if not np.all(np.isfinite(energies)):
-            raise ValueError("Cannot compute energy per atom from non-finite energies.")
-
-        return scale * energies / atom_counts
+        # Initial EZGA seeds have not been evaluated by MACE yet and therefore
+        # carry NaN energies.  Match EZGA objective_energy semantics by using a
+        # neutral zero until the simulator populates their energies.
+        clean_energies = np.nan_to_num(energies, nan=0.0)
+        return scale * clean_energies / atom_counts
 
     return compute
 
