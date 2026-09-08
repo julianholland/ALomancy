@@ -225,7 +225,8 @@ def mace_fit(
     job_dict : dict
         Full jobs dictionary (mlip_committee and initialization sub-dicts are used).
     seed : int
-        Base random seed; each committee member uses seed + fit_idx.
+        Common validation-split seed. MACE itself uses seed + fit_idx so
+        committee members still start from different random initializations.
     workdir_str : str
         Path to the AL loop working directory (contains train_set.xyz / test_set.xyz).
     fit_idx : int, optional

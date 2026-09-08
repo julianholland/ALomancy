@@ -7,7 +7,37 @@ import pytest
 from ase import Atoms
 
 from alomancy.mlip.mace_wfl import _select_validation_split
+from alomancy.remote_submission import submitters
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
+
+
+@pytest.mark.unit
+def test_committee_uses_common_split_seed_and_distinct_fit_indices(
+    tmp_path, monkeypatch
+):
+    captured = {}
+
+    class FakeExecutor:
+        def __init__(self, _remote_info):
+            pass
+
+        def run_and_wait(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(submitters, "RemoteJobExecutor", FakeExecutor)
+
+    submitters.committee_remote_submitter(
+        remote_info={},
+        base_name="al_loop_0",
+        function=lambda: None,
+        seed=803,
+        size_of_committee=3,
+    )
+
+    configs = captured["job_configs"]
+    assert [c["function_kwargs"]["seed"] for c in configs] == [803, 803, 803]
+    assert [c["function_kwargs"]["fit_idx"] for c in configs] == [0, 1, 2]
 
 
 class TestEvaluationMetrics:

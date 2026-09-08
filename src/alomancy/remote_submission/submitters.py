@@ -218,7 +218,10 @@ def committee_remote_submitter(
     job_configs = [
         {
             "function_kwargs": {
-                "seed": seed + i,
+                # The validation split uses this common base seed. mace_fit
+                # applies fit_idx only to the MACE initialization seed, so the
+                # models remain independent while validation stays identical.
+                "seed": seed,
                 "fit_idx": i,
                 **(function_kwargs or {}),
             },
