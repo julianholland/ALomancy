@@ -1,6 +1,5 @@
 import json
 import logging
-import typing
 from pathlib import Path
 
 import numpy as np
@@ -323,121 +322,27 @@ class TestSelectValidationSplit:
         assert not any(id(a) in isolated_ids for a in valid)
 
 
-class TestSelectBestCommitteeModel:
-    """Tests for select_best_committee_model — picks the fit with lowest test mae_f."""
+class TestLegacyMetricParsing:
+    @pytest.mark.unit
+    def test_reads_json_and_python_records_without_eval(self, tmp_path):
+        from alomancy.mlip.get_mace_eval_info import _read_last_metric_record
 
-    JOB_DICT: typing.ClassVar[dict] = {"name": "mlip_committee", "size_of_committee": 3}
-
-    def _write_test_txt_python_format(
-        self, results_dir: Path, mae_f: float, mae_e: float = 0.01
-    ) -> None:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        line = str([("mae_f", str(mae_f)), ("mae_e", str(mae_e))])
-        (results_dir / "results_test.txt").write_text(f"header\n{line}\n")
-
-    def _write_test_txt_json_format(
-        self, results_dir: Path, mae_f: float, mae_e_per_atom: float = 0.01
-    ) -> None:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        record = json.dumps(
-            {
-                "mode": "test",
-                "epoch": 79,
-                "mae_f": mae_f,
-                "mae_e_per_atom": mae_e_per_atom,
-            }
-        )
-        (results_dir / "results_test.txt").write_text(record + "\n")
-
-    def _fit_dir(self, base: Path, fit_idx: int) -> Path:
-        return (
-            base
-            / "results"
-            / "al_loop_0"
-            / "mlip_committee"
-            / f"fit_{fit_idx}"
-            / "results"
-        )
+        path = tmp_path / "metrics.txt"
+        path.write_text(json.dumps({"mae_f": 0.3}) + "\n" + "[('mae_f', 0.2)]\n")
+        assert _read_last_metric_record(path)["mae_f"] == 0.2
 
     @pytest.mark.unit
-    def test_selects_fit_with_lowest_mae_f(self, tmp_path, monkeypatch):
+    def test_legacy_test_files_cannot_select_model(self, tmp_path, monkeypatch):
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 0), mae_f=0.30)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.10)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.20)
-
-        best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
-        assert best_idx == 1
-
-    @pytest.mark.unit
-    def test_returns_correct_model_path(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
-
-        monkeypatch.chdir(tmp_path)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 0), mae_f=0.30)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.05)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.20)
-
-        _, model_path = select_best_committee_model(
-            "al_loop_0", self.JOB_DICT, seed=803
-        )
-        assert "fit_1" in str(model_path)
-        assert model_path.name == "mlip_committee_stagetwo.model"
-
-    @pytest.mark.unit
-    def test_falls_back_to_fit_0_when_no_test_files(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
-
-        monkeypatch.chdir(tmp_path)
-        best_idx, model_path = select_best_committee_model(
-            "al_loop_0", self.JOB_DICT, seed=803
-        )
-        assert best_idx == 0
-        assert "fit_0" in str(model_path)
-
-    @pytest.mark.unit
-    def test_falls_back_to_fit_0_when_metric_missing(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
-
-        monkeypatch.chdir(tmp_path)
-        for i in range(3):
-            d = self._fit_dir(tmp_path, i)
-            d.mkdir(parents=True, exist_ok=True)
-            # Write a file with a different metric key — no 'mae_f'
-            (d / "results_test.txt").write_text(
-                json.dumps({"mae_e_per_atom": 0.01}) + "\n"
+        directory = tmp_path / "results/al_loop_0/c/fit_0/results"
+        directory.mkdir(parents=True)
+        (directory / "c_test.txt").write_text(json.dumps({"mae_f": 0.01}))
+        with pytest.raises(RuntimeError, match="validation"):
+            select_best_committee_model(
+                "al_loop_0", {"name": "c", "size_of_committee": 1}, 803
             )
-
-        best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
-        assert best_idx == 0
-
-    @pytest.mark.unit
-    def test_handles_json_format(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
-
-        monkeypatch.chdir(tmp_path)
-        self._write_test_txt_json_format(self._fit_dir(tmp_path, 0), mae_f=0.25)
-        self._write_test_txt_json_format(self._fit_dir(tmp_path, 1), mae_f=0.08)
-        self._write_test_txt_json_format(self._fit_dir(tmp_path, 2), mae_f=0.15)
-
-        best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
-        assert best_idx == 1
-
-    @pytest.mark.unit
-    def test_skips_fits_missing_test_file_picks_best_of_rest(
-        self, tmp_path, monkeypatch
-    ):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
-
-        monkeypatch.chdir(tmp_path)
-        # fit_0 has no test file; fit_1 and fit_2 do
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 1), mae_f=0.12)
-        self._write_test_txt_python_format(self._fit_dir(tmp_path, 2), mae_f=0.08)
-
-        best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
-        assert best_idx == 2
 
 
 class TestSaveMaceEvalPredictions:

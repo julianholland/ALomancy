@@ -1191,6 +1191,22 @@ class TestTrainMlipSkipSubmission:
 class TestGenerateStructures:
     """Tests for generate_structures covering the main branching paths."""
 
+    @pytest.fixture(autouse=True)
+    def validated_committee(self, monkeypatch):
+        monkeypatch.setattr(
+            "alomancy.core.standard_active_learning.select_best_committee_model",
+            lambda base, job, seed: (
+                0,
+                Path(
+                    "results",
+                    base,
+                    job["name"],
+                    "fit_0",
+                    f"{job['name']}_stagetwo.model",
+                ),
+            ),
+        )
+
     def _wf(self, tmp_path, minimal_jobs_dict):
         return ActiveLearningStandardMACE(
             initial_train_file_path=str(tmp_path / "train.xyz"),
@@ -1475,6 +1491,9 @@ class TestHighAccuracyEvaluationCoverage:
     def _atoms(self, symbol="H"):
         a = Atoms(symbol, positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
         a.info["REF_energy"] = -1.0
+        from ase.calculators.singlepoint import SinglePointCalculator
+
+        a.calc = SinglePointCalculator(a, energy=-1.0, forces=np.zeros((len(a), 3)))
         return a
 
     def test_reuses_all_existing_results(

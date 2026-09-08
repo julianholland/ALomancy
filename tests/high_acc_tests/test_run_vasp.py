@@ -111,8 +111,8 @@ class TestCreateVaspCalcObject:
         calc = create_vasp_calc_object(
             _cu_atoms(), _job_dict(), "/tmp/out", is_relaxation=True
         )
-        assert calc.int_params["ibrion"] == 2
-        assert calc.int_params["nsw"] == 200
+        assert calc.int_params["ibrion"] == -1
+        assert calc.int_params["nsw"] == 0
 
     def test_ncore_derived_from_ranks_per_node(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (

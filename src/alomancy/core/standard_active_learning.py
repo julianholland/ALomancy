@@ -30,6 +30,7 @@ from alomancy.remote_submission import (
     md_remote_submitter,
 )
 from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
+from alomancy.structure_generation.ezga.generate_structures import run_ezga
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
@@ -38,12 +39,12 @@ from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
 from alomancy.utils.clean_structures import clean_structures
+from alomancy.utils.dataset_curation import grouped_split
+from alomancy.utils.dft_utils import refresh_dft_labels
 from alomancy.utils.file_saving_and_parsing import (
     read_atoms_file_if_enabled,
 )
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
-
-from alomancy.structure_generation.ezga.generate_structures import run_ezga
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +173,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         }
         needs = compute_initialization_needs(**_needs_kwargs)
 
-        # Seed extra_datasets only if DB is still missing some initialization targets
+        # Explicit extra datasets are imported independently of generation targets.
         extra_datasets = init_job_dict.get("extra_datasets") or []
-        if extra_datasets and _needs_anything(needs):
+        if extra_datasets:
             for ed in extra_datasets:
                 self._seed_db_from_extra_dataset(ed)
             needs = compute_initialization_needs(**_needs_kwargs)
@@ -346,6 +347,11 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             # MACE can read E0s for every element from the training file.
             train_xyzs = always_train_structures + eligible_train
 
+        if init_job_dict.get("grouped_splits", False):
+            train_xyzs, test_xyzs = grouped_split(
+                all_evaluated, init_job_dict["test_to_train_ratio"], self.seed
+            )
+
         write(
             Path(work_dir, Path(self.initial_train_file_path).name),
             train_xyzs,
@@ -377,16 +383,32 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         if "mace_fit_kwargs" not in mlip_committee_job_dict:
             mlip_committee_job_dict["mace_fit_kwargs"] = {}
         logger.debug("Working directory: %s", os.getcwd())
-        if (
-            len(
-                list(
-                    Path(f"results/{base_name}").glob(
-                        f"{mlip_committee_job_dict['name']}/fit_*/{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
-                    )
-                )
-            )
-            < mlip_committee_job_dict["size_of_committee"]
-        ):
+        configured_size = mlip_committee_job_dict["size_of_committee"]
+        model_glob = (
+            f"{mlip_committee_job_dict['name']}/fit_*/"
+            f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
+        )
+
+        def _found_fit_indices() -> set[int]:
+            if mlip_committee_job_dict.get("require_checkpoint_metrics", False):
+                from alomancy.mlip.evaluation import read_evaluation
+
+                found = set()
+                for i in range(configured_size):
+                    fit_dir = workdir / mlip_committee_job_dict["name"] / f"fit_{i}"
+                    try:
+                        read_evaluation(fit_dir, "valid")
+                        read_evaluation(fit_dir, "test")
+                    except (OSError, ValueError, KeyError):
+                        continue
+                    found.add(i)
+                return found
+            return {
+                int(p.parent.name.removeprefix("fit_"))
+                for p in workdir.glob(model_glob)
+            }
+
+        if len(_found_fit_indices()) < configured_size:
             committee_remote_submitter(
                 remote_info=get_remote_info(
                     mlip_committee_job_dict,
@@ -404,18 +426,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     "workdir_str": str(workdir),
                 },
             )
-
-        model_glob = (
-            f"{mlip_committee_job_dict['name']}/fit_*/"
-            f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
-        )
-        configured_size = mlip_committee_job_dict["size_of_committee"]
-
-        def _found_fit_indices() -> set[int]:
-            return {
-                int(p.parent.name.removeprefix("fit_"))
-                for p in Path(f"results/{base_name}").glob(model_glob)
-            }
 
         found_fit_indices = _found_fit_indices()
 
@@ -631,7 +641,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
 
         logger.info(
             "Structure generation: %s will run with fit_%d "
-            "(lowest test-set force MAE) as the base model; "
+            "(lowest common-validation force MAE) as the base model; "
             "the remaining %d committee member(s) %s will be used afterwards "
             "to score generated structures by force std dev.",
             method.upper(),
@@ -709,9 +719,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             )
 
         else:
-            raise ValueError(
-                f"Unknown structure generation method: {method}"
-            )
+            raise ValueError(f"Unknown structure generation method: {method}")
 
         model_paths_list = list(
             Path.glob(
@@ -776,7 +784,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "high_accuracy_eval already done for %s, loading cached results.",
                 base_name,
             )
-            return list(read(sentinel_results, ":"))
+            return [
+                refresh_dft_labels(a, str(sentinel_results))
+                for a in read(sentinel_results, ":")
+            ]
 
         calculator = high_accuracy_eval_job_dict.get("calculator", "qe")
         warn_mismatched_kwargs(calculator, high_accuracy_eval_job_dict)
@@ -805,7 +816,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     len(found_structures),
                 )
 
-                atoms_list = [read(p, format="extxyz") for p in found_structures]
+                atoms_list = [
+                    refresh_dft_labels(read(p, format="extxyz"), str(p))
+                    for p in found_structures
+                ]
                 return atoms_list
 
             elif len(found_structures) > 0:
@@ -899,7 +913,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             completed_file = Path(directory, f"{output_name}.xyz")
             structure = None
             if completed_file.exists():
-                structure = read(completed_file, format="extxyz")
+                structure = refresh_dft_labels(
+                    read(completed_file, format="extxyz"), str(completed_file)
+                )
             if structure is not None:
                 high_accuracy_structures.append(structure)
 
