@@ -1493,6 +1493,42 @@ class TestCleanStructures:
         assert len(result) == 1
         assert "REF_energy" not in result[0].info
 
+    @pytest.mark.unit
+    def test_stress_captured_from_calculator(self):
+        """Stress is captured from atoms.get_stress() when not already in info."""
+        from ase.calculators.singlepoint import SinglePointCalculator
+
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref()
+        stress = np.array([0.1, 0.2, 0.3, 0.0, 0.0, 0.0])
+        s.calc = SinglePointCalculator(
+            s, energy=-76.0, forces=np.zeros((3, 3)), stress=stress
+        )
+        result = clean_structures([s], config_type="test")
+        np.testing.assert_allclose(result[0].info["REF_stresses"], stress)
+
+    @pytest.mark.unit
+    def test_stress_preserved_when_already_present(self):
+        """Stress already in atoms.info is used as-is, no recomputation."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref()
+        stress = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        s.info["REF_stresses"] = stress
+        result = clean_structures([s], config_type="test")
+        np.testing.assert_allclose(result[0].info["REF_stresses"], stress)
+
+    @pytest.mark.unit
+    def test_missing_stress_does_not_raise_and_key_absent(self):
+        """No calculator and no pre-existing REF_stresses -- non-fatal, key
+        simply absent (unlike REF_energy/REF_forces, which are required)."""
+        from alomancy.utils.clean_structures import clean_structures
+
+        s = self._make_structure_with_ref()  # has REF_energy/REF_forces, no calc
+        result = clean_structures([s], config_type="test")
+        assert "REF_stresses" not in result[0].info
+
 
 class TestFilterStructuresByMinBondDistance:
     """filter_structures_by_min_bond_distance excludes unphysical/exploded

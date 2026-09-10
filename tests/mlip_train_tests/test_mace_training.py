@@ -7,7 +7,12 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from alomancy.mlip.mace.mace_wfl import _select_validation_split
+from alomancy.mlip.mace.mace_wfl import (
+    _apply_compute_stress_defaults,
+    _compute_dynamic_epochs,
+    _select_validation_split,
+    _write_resolved_mace_epochs,
+)
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 
@@ -321,6 +326,102 @@ class TestSelectValidationSplit:
         isolated_ids = {id(a) for a in isolated}
         assert isolated_ids.issubset({id(a) for a in new_train})
         assert not any(id(a) in isolated_ids for a in valid)
+
+
+class TestComputeDynamicEpochs:
+    """Tests for _compute_dynamic_epochs -- the max_num_epochs="dynamic" formula."""
+
+    @pytest.mark.unit
+    def test_typical_mid_run_value(self):
+        # 200_000 * 16 / 4000 = 800 -> capped to 300
+        assert _compute_dynamic_epochs(batch_size=16, n_training_structures=4000) == 300
+
+    @pytest.mark.unit
+    def test_large_training_set_hits_floor(self):
+        # 200_000 * 16 / 1_000_000 = 3.2 -> ceil 4 -> floored to 20
+        assert (
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=1_000_000)
+            == 20
+        )
+
+    @pytest.mark.unit
+    def test_small_training_set_hits_cap(self):
+        # 200_000 * 16 / 100 = 32_000 -> capped to 300
+        assert _compute_dynamic_epochs(batch_size=16, n_training_structures=100) == 300
+
+    @pytest.mark.unit
+    def test_uncapped_value_between_floor_and_cap(self):
+        # 200_000 * 16 / 20_000 = 160 -- within [20, 300], unclamped
+        assert (
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=20_000) == 160
+        )
+
+    @pytest.mark.unit
+    def test_rounds_up_not_down(self):
+        # 200_000 * 16 / 19_999 = 160.008... -> ceil to 161, not floor to 160
+        assert (
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=19_999) == 161
+        )
+
+    @pytest.mark.unit
+    def test_raises_on_zero_training_structures(self):
+        with pytest.raises(ValueError):
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=0)
+
+    @pytest.mark.unit
+    def test_raises_on_negative_training_structures(self):
+        with pytest.raises(ValueError):
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=-5)
+
+
+class TestWriteResolvedMaceEpochs:
+    """Tests for _write_resolved_mace_epochs -- the resolved_mace_epochs.json sidecar."""
+
+    @pytest.mark.unit
+    def test_writes_max_num_epochs_and_start_swa(self, tmp_path):
+        _write_resolved_mace_epochs(
+            tmp_path, {"max_num_epochs": 160, "start_swa": 128, "other": "ignored"}
+        )
+        payload = json.loads((tmp_path / "resolved_mace_epochs.json").read_text())
+        assert payload == {"max_num_epochs": 160, "start_swa": 128}
+
+    @pytest.mark.unit
+    def test_written_unconditionally_for_fixed_epochs_too(self, tmp_path):
+        # Not just for max_num_epochs="dynamic" -- fixed-int runs get the
+        # sidecar too, so mlip_plots.py has one code path to read from.
+        _write_resolved_mace_epochs(tmp_path, {"max_num_epochs": 80, "start_swa": 64})
+        assert (tmp_path / "resolved_mace_epochs.json").exists()
+
+
+class TestApplyComputeStressDefaults:
+    """Tests for _apply_compute_stress_defaults -- the compute_stress opt-in wiring."""
+
+    @pytest.mark.unit
+    def test_noop_when_compute_stress_false(self):
+        params = {"loss": "weighted"}
+        _apply_compute_stress_defaults(params, False)
+        assert params == {"loss": "weighted"}
+
+    @pytest.mark.unit
+    def test_sets_stress_key_and_loss_when_enabled(self):
+        params = {}
+        _apply_compute_stress_defaults(params, True)
+        assert params["stress_key"] == "REF_stresses"
+        assert params["loss"] == "stress"
+
+    @pytest.mark.unit
+    def test_does_not_override_explicit_loss(self):
+        params = {"loss": "huber"}
+        _apply_compute_stress_defaults(params, True)
+        assert params["loss"] == "huber"
+        assert params["stress_key"] == "REF_stresses"
+
+    @pytest.mark.unit
+    def test_does_not_override_explicit_stress_key(self):
+        params = {"stress_key": "my_stress"}
+        _apply_compute_stress_defaults(params, True)
+        assert params["stress_key"] == "my_stress"
+        assert params["loss"] == "stress"
 
 
 class TestSelectBestCommitteeModel:

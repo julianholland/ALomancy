@@ -1,5 +1,7 @@
 import importlib.util
+import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -16,6 +18,10 @@ from mace.cli.run_train import run
 from alomancy.configs.remote_info import RemoteInfo
 
 logger = logging.getLogger(__name__)
+
+_DYNAMIC_EPOCHS_TARGET_SAMPLES = 200_000
+_DYNAMIC_EPOCHS_CAP = 300
+_DYNAMIC_EPOCHS_FLOOR = 20
 
 if (
     importlib.util.find_spec("torch._native") is not None
@@ -236,6 +242,68 @@ def cleanup_local_committee_checkpoints(
         )
 
 
+def _compute_dynamic_epochs(batch_size: int, n_training_structures: int) -> int:
+    """epochs = ceil(200_000 * batch_size / n_training_structures), clamped to
+    [20, 300].
+
+    The cap prevents an absurd epoch count for a small early-loop training
+    set; the floor prevents a data-rich late-loop training set from being
+    pushed down to a near-zero stage-two (SWA) phase --
+    start_swa = floor(0.8 * epochs), so a floor of 20 guarantees at least 16
+    SWA epochs.
+    """
+    if n_training_structures <= 0:
+        raise ValueError(
+            f"n_training_structures must be positive, got {n_training_structures}."
+        )
+    raw = math.ceil(_DYNAMIC_EPOCHS_TARGET_SAMPLES * batch_size / n_training_structures)
+    epochs = max(_DYNAMIC_EPOCHS_FLOOR, min(_DYNAMIC_EPOCHS_CAP, raw))
+    if epochs != raw:
+        logger.warning(
+            "Dynamic epoch formula produced %d epochs (batch_size=%d, "
+            "n_training_structures=%d); clamped to %d.",
+            raw,
+            batch_size,
+            n_training_structures,
+            epochs,
+        )
+    return epochs
+
+
+def _write_resolved_mace_epochs(mlip_dir: Path, mace_fit_params: dict) -> None:
+    """Persist the actually-resolved max_num_epochs/start_swa to
+    resolved_mace_epochs.json in the fit directory.
+
+    Written unconditionally (fixed or "dynamic" epochs alike) so
+    mlip_plots.py has one code path to read the true stage-two transition
+    epoch, without replicating the training-set-size-dependent formula
+    (which it has no inputs for) or risking drift from MACE's own
+    patience-triggered early SWA transition.
+    """
+    payload = {
+        "max_num_epochs": mace_fit_params["max_num_epochs"],
+        "start_swa": mace_fit_params["start_swa"],
+    }
+    with open(mlip_dir / "resolved_mace_epochs.json", "w") as fh:
+        json.dump(payload, fh)
+
+
+def _apply_compute_stress_defaults(mace_fit_params: dict, compute_stress: bool) -> None:
+    """Mutate mace_fit_params in place to enable stress training, if requested.
+
+    compute_stress is an alomancy-level convenience flag, not a literal MACE
+    CLI pass-through: MACE only actually trains on stress when loss is one of
+    "stress"/"huber"/"universal" (confirmed against
+    mace/tools/model_script_utils.py) -- a bare stress_key alone has no
+    training effect. setdefault (not direct assignment) so a user who
+    already set loss/stress_key explicitly (e.g. "huber", "universal") keeps
+    their own choice.
+    """
+    if compute_stress:
+        mace_fit_params.setdefault("stress_key", "REF_stresses")
+        mace_fit_params.setdefault("loss", "stress")
+
+
 def _select_validation_split(
     all_training: list[Atoms],
     acceptable_configs: list[str],
@@ -319,12 +387,6 @@ def mace_fit(
         "forces_key must be specified in mace_fit_kwargs. This corresponds to the forces key in the training set. using 'forces' is not recommended."
     )
 
-    epochs = (
-        80
-        if mlip_committee_job_dict["max_num_epochs"] is None
-        else mlip_committee_job_dict["max_num_epochs"]
-    )
-
     # Read training data and carve per-fit validation set before chdir
     training_file = Path(workdir, "train_set.xyz")
     if not training_file.exists():
@@ -336,6 +398,23 @@ def mace_fit(
     logger.info(
         "Read %d training structures from %s.", len(all_training), training_file
     )
+
+    batch_size = mlip_committee_job_dict["mace_fit_kwargs"].get("batch_size", 16)
+
+    configured_epochs = mlip_committee_job_dict["max_num_epochs"]
+    if configured_epochs is None:
+        epochs = 80
+    elif configured_epochs == "dynamic":
+        epochs = _compute_dynamic_epochs(batch_size, len(all_training))
+        logger.info(
+            "Dynamic max_num_epochs resolved to %d (batch_size=%d, "
+            "n_training_structures=%d).",
+            epochs,
+            batch_size,
+            len(all_training),
+        )
+    else:
+        epochs = configured_epochs
 
     # valid_config_types can be overridden in mlip_committee config; defaults to
     # initialization test_config_types so validation covers the same structure classes
@@ -393,7 +472,7 @@ def mace_fit(
         "scheduler_patience": 15,
         "start_swa": int(np.floor(epochs * 0.8)),
         "swa": None,
-        "batch_size": 16,
+        "batch_size": batch_size,
         "valid_batch_size": 16,
         "distributed": None,
         "seed": fit_seed,
@@ -401,6 +480,12 @@ def mace_fit(
     }
     if valid_set:
         mace_fit_params["valid_file"] = valid_filename
+
+    _apply_compute_stress_defaults(
+        mace_fit_params, mlip_committee_job_dict.get("compute_stress", False)
+    )
+
+    _write_resolved_mace_epochs(mlip_dir, mace_fit_params)
 
     logger.debug("MACE fit parameters:")
     for key, value in mace_fit_params.items():

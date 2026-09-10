@@ -16,6 +16,7 @@ def make_atoms(
     config_type=None,
     ref_energy=None,
     ref_forces=None,
+    ref_stresses=None,
     needs_relaxation=False,
     cell=10.0,
 ):
@@ -29,6 +30,8 @@ def make_atoms(
         atoms.info["REF_energy"] = ref_energy
     if ref_forces is not None:
         atoms.arrays["REF_forces"] = np.array(ref_forces)
+    if ref_stresses is not None:
+        atoms.info["REF_stresses"] = np.array(ref_stresses)
     if needs_relaxation:
         atoms.info["needs_relaxation"] = True
     return atoms
@@ -143,6 +146,42 @@ class TestAddStructures:
         np.testing.assert_allclose(
             retrieved[0].arrays["REF_forces"], h2_dimer.arrays["REF_forces"], atol=1e-6
         )
+
+    @pytest.mark.unit
+    def test_ref_stresses_round_trip(self, tmp_path):
+        """REF_stresses survive storage and retrieval (manual _REF_stresses
+        info-key workaround, since AtomPositionManager has no native stress
+        slot -- unlike REF_forces, which round-trips via total_force)."""
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+            ref_stresses=[0.1, 0.2, 0.3, 0.0, 0.0, 0.0],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h2_dimer])
+        retrieved = db.get_all_as_atoms()
+        assert len(retrieved) == 1
+        assert "REF_stresses" in retrieved[0].info
+        np.testing.assert_allclose(
+            retrieved[0].info["REF_stresses"], h2_dimer.info["REF_stresses"], atol=1e-6
+        )
+
+    @pytest.mark.unit
+    def test_no_ref_stresses_key_when_absent(self, tmp_path):
+        """A structure stored without REF_stresses round-trips with no
+        REF_stresses key at all -- not None, not a zero array."""
+        h2_dimer = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-31.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([h2_dimer])
+        retrieved = db.get_all_as_atoms()
+        assert "REF_stresses" not in retrieved[0].info
 
     @pytest.mark.unit
     def test_custom_dedup_list(self, tmp_path):

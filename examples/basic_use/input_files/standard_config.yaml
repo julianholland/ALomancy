@@ -25,8 +25,9 @@ mlip_committee:
   name: "mlip_committee"
   size_of_committee: 5
   max_time: "5H"
+  max_num_epochs: "dynamic"
+  compute_stress: true
   mace_fit_kwargs:
-    max_num_epochs: 80
     E0s:
       6: -241.94038776317848
       11: -1296.5877903540002
@@ -76,6 +77,11 @@ structure_generation:
 high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
   max_time: "30m"
+  # get_qe_input_data's **qe_input_kwargs merge is shallow at the top level
+  # (control/system/electrons) -- a "system" override here replaces that
+  # whole sub-dict, it doesn't patch just input_dft. Stress is computed by
+  # default (control.tstress: true); opting back out means passing the
+  # whole control dict here, not just {tstress: false}.
   qe_input_kwargs:
     system:
       input_dft: "pbe"

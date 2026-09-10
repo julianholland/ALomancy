@@ -17,6 +17,7 @@ def clean_structures(
     adds DFT results to copy of structures info dictionary.
     """
     cleaned_structures = []
+    n_no_stress = 0
     for structure in structures:
         # copy structure with just the right information
         structure_copy = Atoms(
@@ -53,11 +54,31 @@ def clean_structures(
             structure_copy.info["REF_energy"] = energy
             structure_copy.arrays["REF_forces"] = forces
 
+            if "REF_stresses" in structure.info:
+                structure_copy.info["REF_stresses"] = structure.info["REF_stresses"]
+            else:
+                try:
+                    structure_copy.info["REF_stresses"] = structure.get_stress()
+                except Exception:
+                    # Stress is not always physically meaningful (e.g.
+                    # non-periodic structures) or available (e.g. a
+                    # calculator that didn't compute it) -- unlike
+                    # REF_energy/REF_forces this is never fatal.
+                    n_no_stress += 1
+
         if override_config_type or "config_type" not in structure.info:
             logger.debug("Setting config_type to '%s'.", config_type)
             structure_copy.info["config_type"] = config_type
 
         cleaned_structures.append(structure_copy)
+
+    if n_no_stress:
+        logger.info(
+            "No stress available for %d/%d structure(s) (non-periodic, or "
+            "calculator did not report it).",
+            n_no_stress,
+            len(structures),
+        )
 
     return cleaned_structures
 
