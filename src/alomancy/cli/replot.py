@@ -7,7 +7,7 @@ from alomancy.analysis.mlip_plots import plot_dft_vs_model, plot_training_curves
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.analysis.timing_plots import timing_plots
 from alomancy.database.global_database import GlobalDatabase
-from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
 logger = logging.getLogger(__name__)
 

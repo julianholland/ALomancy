@@ -35,7 +35,7 @@ alomancy v0.4.2 onwards.
 
 This message implies missing prediction files is expected only for
 pre-v0.4.2 runs, but it's firing on current runs too. Need to check whether
-`_save_mace_eval_predictions` (`mlip/mace_wfl.py`) is actually writing
+`_save_mace_eval_predictions` (`mlip/mace/mace_wfl.py`) is actually writing
 `train_pred.xyz`/`test_pred.xyz` in `fit_<i>/` on the remote node, and/or
 whether `store_mlip_predictions`/`plot_dft_vs_model` are looking in the
 right path/filename for them.

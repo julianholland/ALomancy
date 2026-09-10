@@ -203,7 +203,7 @@ def committee_remote_submitter(
         ``range(size_of_committee)`` (every member, indices 0..N-1).
         Each job's output directory is keyed off its own index (not its
         position in this list) so it matches the `fit_{fit_idx}` directory
-        `mace_fit` itself writes to (`mlip/mace_wfl.py`) — using the
+        `mace_fit` itself writes to (`mlip/mace/mace_wfl.py`) — using the
         shared `common_output_pattern`/positional `job_id` mechanism here
         would stage/sync the wrong directory whenever fit_indices is a
         non-contiguous subset (e.g. backfilling just fit_2 and fit_4).

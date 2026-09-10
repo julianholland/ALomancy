@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from alomancy.mlip.mace_wfl import _select_validation_split
+from alomancy.mlip.mace.mace_wfl import _select_validation_split
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
 
@@ -129,7 +129,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_returns_dataframe_with_mae_columns(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         self._write_train_txt(
@@ -143,7 +143,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_averages_multiple_fits(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -161,7 +161,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_empty_dataframe_when_no_al_loop_dirs(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         df = get_mace_eval_info({"name": "mlip_committee"})
@@ -169,7 +169,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_one_row_per_al_loop(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         for loop in range(3):
@@ -188,7 +188,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_loop_with_no_results_files_skipped(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         # Loop 0 has results; loop 1 directory exists but is empty
@@ -370,7 +370,7 @@ class TestSelectBestCommitteeModel:
 
     @pytest.mark.unit
     def test_selects_fit_with_lowest_mae_f(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -384,7 +384,7 @@ class TestSelectBestCommitteeModel:
 
     @pytest.mark.unit
     def test_returns_correct_model_path(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -401,7 +401,7 @@ class TestSelectBestCommitteeModel:
 
     @pytest.mark.unit
     def test_falls_back_to_fit_0_when_no_test_files(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -422,7 +422,7 @@ class TestSelectBestCommitteeModel:
         neither wrote a readable test-metrics file. The old unconditional
         'default to fit_0' fallback would have returned fit_0's (nonexistent)
         model path here."""
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         self._touch_model(tmp_path, 1)
@@ -437,7 +437,7 @@ class TestSelectBestCommitteeModel:
 
     @pytest.mark.unit
     def test_raises_when_no_fit_has_a_model(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
 
@@ -446,7 +446,7 @@ class TestSelectBestCommitteeModel:
 
     @pytest.mark.unit
     def test_falls_back_to_fit_0_when_metric_missing(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -463,7 +463,7 @@ class TestSelectBestCommitteeModel:
 
     @pytest.mark.unit
     def test_handles_json_format(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -479,7 +479,7 @@ class TestSelectBestCommitteeModel:
     def test_skips_fits_missing_test_file_picks_best_of_rest(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+        from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
         # fit_0 has a model but no test file; fit_1 and fit_2 have both.
@@ -543,7 +543,7 @@ class TestSaveMaceEvalPredictions:
     ):
         from unittest.mock import MagicMock, patch
 
-        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+        from alomancy.mlip.mace.mace_wfl import _save_mace_eval_predictions
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -603,7 +603,7 @@ class TestSaveMaceEvalPredictions:
     def test_no_failure_logs_when_all_predictions_succeed(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock, patch
 
-        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+        from alomancy.mlip.mace.mace_wfl import _save_mace_eval_predictions
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -640,7 +640,7 @@ class TestCleanupCommitteeCheckpoints:
     def test_removes_checkpoints_dir_when_compiled_model_exists(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import _cleanup_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -656,7 +656,7 @@ class TestCleanupCommitteeCheckpoints:
     def test_leaves_checkpoints_dir_when_compiled_model_missing(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import _cleanup_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         checkpoints_dir = tmp_path / "checkpoints"
@@ -669,7 +669,7 @@ class TestCleanupCommitteeCheckpoints:
 
     @pytest.mark.unit
     def test_no_error_when_checkpoints_dir_absent(self, tmp_path, monkeypatch):
-        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import _cleanup_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -692,7 +692,7 @@ class TestCleanupLocalCommitteeCheckpoints:
     def test_removes_local_checkpoints_for_fits_with_compiled_model(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         for i in (1, 3, 4):
@@ -716,7 +716,7 @@ class TestCleanupLocalCommitteeCheckpoints:
         its checkpoints/, if any partial sync left one, must be left alone
         for postmortem, matching _cleanup_committee_checkpoints' own
         existence-gated behavior."""
-        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         fit_dir = self._fit_dir(tmp_path, 0)
@@ -731,7 +731,7 @@ class TestCleanupLocalCommitteeCheckpoints:
 
     @pytest.mark.unit
     def test_noop_for_fit_dir_with_no_checkpoints(self, tmp_path, monkeypatch):
-        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         fit_dir = self._fit_dir(tmp_path, 2)
