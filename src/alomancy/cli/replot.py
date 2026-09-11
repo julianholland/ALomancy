@@ -105,16 +105,25 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
         m = re.fullmatch(r"al_loop_(\d+)", base_name)
         loop_idx = int(m.group(1)) if m else None
         logger.info("Plotting loop %s …", base_name)
-        plot_training_curves(base_name, job_dict, seed, plots_dir)
+        # Per-loop plots land in their own subdirectory, matching the live
+        # AL loop's results/current_plots/<base_name>/ layout.
+        loop_plots_dir = plots_dir / base_name
+        loop_plots_dir.mkdir(exist_ok=True, parents=True)
+        plot_training_curves(base_name, job_dict, seed, loop_plots_dir)
         if not no_parity:
             plot_dft_vs_model(
-                base_name, job_dict, seed, plots_dir, db=db, loop_idx=loop_idx
+                base_name, job_dict, seed, loop_plots_dir, db=db, loop_idx=loop_idx
             )
 
-    # Cross-loop MAE summary (reads all al_loop_*/... train.txt files)
+    # Cross-loop MAE summary (reads all al_loop_*/... train.txt files). This
+    # mirrors the live run's last-loop mae_al_loop_plot call (which always
+    # shows the fullest cumulative history at that point), so it lands in the
+    # last plotted loop's subdirectory rather than flat in plots_dir.
     df = get_mace_eval_info(job_dict)
     if not df.empty:
-        mae_al_loop_plot(df, job_dict, directory=plots_dir)
+        last_loop_plots_dir = plots_dir / loops[-1].name
+        last_loop_plots_dir.mkdir(exist_ok=True, parents=True)
+        mae_al_loop_plot(df, job_dict, directory=last_loop_plots_dir)
     else:
         logger.warning(
             "get_mace_eval_info returned empty DataFrame — MAE loop plot skipped."

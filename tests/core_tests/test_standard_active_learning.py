@@ -1215,6 +1215,19 @@ class TestGenerateStructures:
             db_path=str(tmp_path / "db"),
         )
 
+    def _touch_committee_model(
+        self, tmp_path, minimal_jobs_dict, base_name="test_base", fit_idx=0
+    ):
+        """generate_structures picks an MD base model via
+        select_best_committee_model, which only considers fits with a
+        {name}_stagetwo.model file on disk -- tests that don't exercise
+        that existence check specifically need at least one fit's model
+        file present."""
+        name = minimal_jobs_dict["mlip_committee"]["name"]
+        fit_dir = tmp_path / "results" / base_name / name / f"fit_{fit_idx}"
+        fit_dir.mkdir(parents=True, exist_ok=True)
+        (fit_dir / f"{name}_stagetwo.model").touch()
+
     def test_returns_cached_high_sd_structures(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
@@ -1263,6 +1276,7 @@ class TestGenerateStructures:
     ):
         """When input structures xyz exists but high_sd doesn't, load input and run MD."""
         monkeypatch.chdir(tmp_path)
+        self._touch_committee_model(tmp_path, minimal_jobs_dict)
         job_dict = minimal_jobs_dict.copy()
         # This fixture file deliberately holds exactly 1 structure; tell
         # generate_structures that 1 is the expected count so its
@@ -1315,6 +1329,7 @@ class TestGenerateStructures:
     ):
         """When no cached files exist, the method selects structures then runs MD pipeline."""
         monkeypatch.chdir(tmp_path)
+        self._touch_committee_model(tmp_path, minimal_jobs_dict)
         job_dict = minimal_jobs_dict.copy()
 
         selected = Atoms(
@@ -1355,6 +1370,7 @@ class TestGenerateStructures:
     def test_assigns_sequential_job_ids(self, tmp_path, minimal_jobs_dict, monkeypatch):
         """Returned structures get job_id 0, 1, 2, ... assigned."""
         monkeypatch.chdir(tmp_path)
+        self._touch_committee_model(tmp_path, minimal_jobs_dict)
         job_dict = minimal_jobs_dict.copy()
 
         structures = [
@@ -1396,6 +1412,7 @@ class TestGenerateStructures:
         MD trajectory. generate_structures must clear it on every returned
         structure so MD output is never routed to GO in high_accuracy_evaluation."""
         monkeypatch.chdir(tmp_path)
+        self._touch_committee_model(tmp_path, minimal_jobs_dict)
         job_dict = minimal_jobs_dict.copy()
 
         selected = Atoms(
@@ -1435,6 +1452,7 @@ class TestGenerateStructures:
     ):
         """generate_structures injects an empty run_md_kwargs if absent."""
         monkeypatch.chdir(tmp_path)
+        self._touch_committee_model(tmp_path, minimal_jobs_dict)
         job_dict = minimal_jobs_dict.copy()
         # minimal_jobs_dict intentionally has no run_md_kwargs in structure_generation
         assert "run_md_kwargs" not in job_dict["structure_generation"]

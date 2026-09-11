@@ -52,13 +52,13 @@ class TestConstructor:
     """Tests for BaseActiveLearningWorkflow constructor."""
 
     @pytest.mark.unit
-    def test_default_params(self, tmp_path, minimal_jobs_dict):
+    def test_default_params(self, tmp_path, minimal_jobs_dict, shared_db):
         """Test that default parameters are set correctly."""
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         assert wf.number_of_al_loops == 5
         assert wf.verbose == 0
@@ -67,7 +67,7 @@ class TestConstructor:
         assert isinstance(wf.db, GlobalDatabase)
 
     @pytest.mark.unit
-    def test_custom_params(self, tmp_path, minimal_jobs_dict):
+    def test_custom_params(self, tmp_path, minimal_jobs_dict, shared_db):
         """Test that custom parameters override defaults."""
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
@@ -78,7 +78,7 @@ class TestConstructor:
             start_loop=1,
             plots=False,
             seed=42,
-            db_path=str(tmp_path / "custom_db"),
+            db=shared_db,
         )
         assert wf.number_of_al_loops == 3
         assert wf.verbose == 1
@@ -109,7 +109,7 @@ class TestConstructor:
             )
 
     @pytest.mark.unit
-    def test_paths_stored_as_path_objects(self, tmp_path, minimal_jobs_dict):
+    def test_paths_stored_as_path_objects(self, tmp_path, minimal_jobs_dict, shared_db):
         """Test that file paths are converted to Path objects."""
         train_path = str(tmp_path / "train.xyz")
         test_path = str(tmp_path / "test.xyz")
@@ -117,7 +117,7 @@ class TestConstructor:
             initial_train_file_path=train_path,
             initial_test_file_path=test_path,
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         assert isinstance(wf.initial_train_file_path, Path)
         assert isinstance(wf.initial_test_file_path, Path)
@@ -128,7 +128,7 @@ class TestSeedDbFromExtraDataset:
 
     @pytest.mark.unit
     def test_seeds_structures_into_db(
-        self, tmp_path, minimal_jobs_dict, h_atom, h2o_mol
+        self, tmp_path, minimal_jobs_dict, h_atom, h2o_mol, shared_db
     ):
         """Test that extra dataset structures are added to the database."""
         xyz_path = tmp_path / "extra.xyz"
@@ -138,13 +138,15 @@ class TestSeedDbFromExtraDataset:
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         wf._seed_db_from_extra_dataset(str(xyz_path))
         assert wf.db.size == 2
 
     @pytest.mark.unit
-    def test_dedup_on_seed_isolated_atom(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_dedup_on_seed_isolated_atom(
+        self, tmp_path, minimal_jobs_dict, h_atom, shared_db
+    ):
         """Test that duplicate IsolatedAtoms are deduplicated on seed."""
         # Two H IsolatedAtoms in same file — only 1 should be added
         xyz_path = tmp_path / "extra.xyz"
@@ -154,13 +156,13 @@ class TestSeedDbFromExtraDataset:
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         wf._seed_db_from_extra_dataset(str(xyz_path))
         assert wf.db.size == 1
 
     @pytest.mark.unit
-    def test_seed_logs_message(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_seed_logs_message(self, tmp_path, minimal_jobs_dict, h_atom, shared_db):
         """Test that seeding emits a log record at INFO level."""
         import logging
 
@@ -171,7 +173,7 @@ class TestSeedDbFromExtraDataset:
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
             log_file=None,
         )
         # setup_logging sets propagate=False on the "alomancy" logger, so we
@@ -195,7 +197,9 @@ class TestSeedDbFromExtraDataset:
         assert str(xyz_path) in messages
 
     @pytest.mark.unit
-    def test_seed_with_single_atom_file(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_seed_with_single_atom_file(
+        self, tmp_path, minimal_jobs_dict, h_atom, shared_db
+    ):
         """Test seeding with a single-atom file."""
         xyz_path = tmp_path / "single.xyz"
         write(str(xyz_path), h_atom, format="extxyz")
@@ -204,7 +208,7 @@ class TestSeedDbFromExtraDataset:
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         wf._seed_db_from_extra_dataset(str(xyz_path))
         assert wf.db.size == 1
@@ -235,12 +239,14 @@ class TestDisplayWorkflowSummary:
         return " ".join(r.getMessage() for r in records)
 
     @pytest.mark.unit
-    def test_shows_remote_version_from_helper(self, tmp_path, minimal_jobs_dict):
+    def test_shows_remote_version_from_helper(
+        self, tmp_path, minimal_jobs_dict, shared_db
+    ):
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
             log_file=None,
         )
 
@@ -254,13 +260,13 @@ class TestDisplayWorkflowSummary:
 
     @pytest.mark.unit
     def test_falls_back_to_placeholder_when_version_unknown(
-        self, tmp_path, minimal_jobs_dict
+        self, tmp_path, minimal_jobs_dict, shared_db
     ):
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
             log_file=None,
         )
 
@@ -332,13 +338,13 @@ class TestPreRunChecksSshConnectivity:
 
     @pytest.mark.unit
     def test_ensure_ssh_connectivity_called_with_collected_profiles(
-        self, tmp_path, minimal_jobs_dict
+        self, tmp_path, minimal_jobs_dict, shared_db
     ):
         wf = ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
             log_file=None,
         )
 
@@ -356,7 +362,7 @@ class TestPreRunChecksSshConnectivity:
 
     @pytest.mark.unit
     def test_ssh_connectivity_checked_before_pypi_fetch(
-        self, tmp_path, minimal_jobs_dict
+        self, tmp_path, minimal_jobs_dict, shared_db
     ):
         """Ordering matters: the ssh check must happen before the PyPI
         version check, not after -- a slow/blocked PyPI call must not
@@ -366,7 +372,7 @@ class TestPreRunChecksSshConnectivity:
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
             log_file=None,
         )
 
@@ -390,20 +396,20 @@ class TestPreRunChecksSshConnectivity:
 class TestRunWorkflowStructure:
     """Tests for run() method structure and execution flow."""
 
-    def _make_workflow(self, tmp_path, minimal_jobs_dict, **kwargs):
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, shared_db, **kwargs):
         """Helper to create a ConcreteWorkflow with standard parameters."""
         return ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
             number_of_al_loops=2,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
             **kwargs,
         )
 
     @pytest.mark.unit
     def test_run_delegates_extra_dataset_seeding_to_initialize(
-        self, tmp_path, minimal_jobs_dict, h_atom, monkeypatch
+        self, tmp_path, minimal_jobs_dict, h_atom, monkeypatch, shared_db
     ):
         """Test that run() does not pre-seed extra_datasets; seeding is initialize_training_set's responsibility."""
         monkeypatch.chdir(tmp_path)
@@ -411,7 +417,7 @@ class TestRunWorkflowStructure:
         write(str(extra), [h_atom], format="extxyz")
         minimal_jobs_dict["initialization"]["extra_datasets"] = [str(extra)]
 
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         wf.plots = False
 
         seed_calls_from_run = []
@@ -436,10 +442,10 @@ class TestRunWorkflowStructure:
         assert len(seed_calls_from_run) == 0
 
     @pytest.mark.unit
-    def test_loop_count(self, tmp_path, minimal_jobs_dict, monkeypatch):
+    def test_loop_count(self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db):
         """Test that run() executes the correct number of AL loops."""
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         wf.plots = False  # Disable plotting
         train_call_count = []
 
@@ -461,7 +467,9 @@ class TestRunWorkflowStructure:
         assert len(train_call_count) == 2  # number_of_al_loops=2
 
     @pytest.mark.unit
-    def test_start_loop_respected(self, tmp_path, minimal_jobs_dict, monkeypatch):
+    def test_start_loop_respected(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
         """Test that start_loop parameter is respected."""
         monkeypatch.chdir(tmp_path)
         wf = ConcreteWorkflow(
@@ -471,7 +479,7 @@ class TestRunWorkflowStructure:
             number_of_al_loops=4,
             start_loop=2,
             plots=False,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         train_calls = []
 
@@ -492,11 +500,11 @@ class TestRunWorkflowStructure:
 
     @pytest.mark.unit
     def test_base_names_correct_for_loops(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         """Test that base_name is correct for each loop."""
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         wf.plots = False  # Disable plotting
         train_calls = []
 
@@ -518,7 +526,7 @@ class TestRunWorkflowStructure:
 
     @pytest.mark.unit
     def test_abstract_methods_called_in_sequence(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         """Test that abstract methods are called in the correct sequence."""
         monkeypatch.chdir(tmp_path)
@@ -528,7 +536,7 @@ class TestRunWorkflowStructure:
             jobs_dict=minimal_jobs_dict,
             number_of_al_loops=1,
             plots=False,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
         call_sequence = []
 
@@ -565,11 +573,11 @@ class TestRunWorkflowStructure:
 
     @pytest.mark.unit
     def test_workdir_created_for_each_loop(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         """Test that work directories are created for each loop."""
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         wf.plots = False  # Disable plotting
 
         with (
@@ -585,10 +593,12 @@ class TestRunWorkflowStructure:
         assert (tmp_path / "results" / "al_loop_1").exists()
 
     @pytest.mark.unit
-    def test_train_test_files_written(self, tmp_path, minimal_jobs_dict, monkeypatch):
+    def test_train_test_files_written(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
         """Test that train and test set files are written for each loop."""
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         wf.plots = False  # Disable plotting
 
         with (
@@ -606,7 +616,7 @@ class TestRunWorkflowStructure:
 
     @pytest.mark.unit
     def test_al_loop_structures_tagged_as_high_sd(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         """New structures from high_accuracy_evaluation get config_type='high_sd'."""
         monkeypatch.chdir(tmp_path)
@@ -618,7 +628,7 @@ class TestRunWorkflowStructure:
             jobs_dict=minimal_jobs_dict,
             number_of_al_loops=1,
             plots=False,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
 
         def make_evaluated_structure():
@@ -653,7 +663,7 @@ class TestRunWorkflowStructure:
 
     @pytest.mark.unit
     def test_al_loop_metadata_stored_in_structures(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         """Structures from loop N carry al_loop=N in their info dict."""
         monkeypatch.chdir(tmp_path)
@@ -665,7 +675,7 @@ class TestRunWorkflowStructure:
             jobs_dict=minimal_jobs_dict,
             number_of_al_loops=2,
             plots=False,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
 
         def make_structure():
@@ -705,51 +715,59 @@ class TestRunWorkflowStructure:
 class TestLoadInitialTrainTestSets:
     """Tests for load_initial_train_test_sets."""
 
-    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, shared_db):
         return ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
 
     @pytest.mark.unit
-    def test_raises_file_not_found_when_missing(self, tmp_path, minimal_jobs_dict):
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+    def test_raises_file_not_found_when_missing(
+        self, tmp_path, minimal_jobs_dict, shared_db
+    ):
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         with pytest.raises(FileNotFoundError):
             wf.load_initial_train_test_sets()
 
     @pytest.mark.unit
     def test_loads_structures_from_existing_files(
-        self, tmp_path, minimal_jobs_dict, h_atom
+        self, tmp_path, minimal_jobs_dict, h_atom, shared_db
     ):
         write(str(tmp_path / "train.xyz"), [h_atom, h_atom], format="extxyz")
         write(str(tmp_path / "test.xyz"), [h_atom], format="extxyz")
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         train, test = wf.load_initial_train_test_sets()
         assert len(train) == 2
         assert len(test) == 1
 
     @pytest.mark.unit
-    def test_dummy_run_caps_train_at_500(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_dummy_run_caps_train_at_500(
+        self, tmp_path, minimal_jobs_dict, h_atom, shared_db
+    ):
         write(str(tmp_path / "train.xyz"), [h_atom] * 600, format="extxyz")
         write(str(tmp_path / "test.xyz"), [h_atom] * 300, format="extxyz")
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         train, test = wf.load_initial_train_test_sets(dummy_run=True)
         assert len(train) == 500
         assert len(test) == 200
 
     @pytest.mark.unit
-    def test_raises_when_only_train_missing(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_raises_when_only_train_missing(
+        self, tmp_path, minimal_jobs_dict, h_atom, shared_db
+    ):
         write(str(tmp_path / "test.xyz"), [h_atom], format="extxyz")
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         with pytest.raises(FileNotFoundError):
             wf.load_initial_train_test_sets()
 
     @pytest.mark.unit
-    def test_raises_when_only_test_missing(self, tmp_path, minimal_jobs_dict, h_atom):
+    def test_raises_when_only_test_missing(
+        self, tmp_path, minimal_jobs_dict, h_atom, shared_db
+    ):
         write(str(tmp_path / "train.xyz"), [h_atom], format="extxyz")
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         with pytest.raises(FileNotFoundError):
             wf.load_initial_train_test_sets()
 
@@ -757,19 +775,19 @@ class TestLoadInitialTrainTestSets:
 class TestProcessStructure:
     """Tests for process_structure."""
 
-    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, shared_db):
         return ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
 
     @pytest.mark.unit
-    def test_extracts_ref_energy(self, tmp_path, minimal_jobs_dict):
+    def test_extracts_ref_energy(self, tmp_path, minimal_jobs_dict, shared_db):
         from ase.calculators.emt import EMT
 
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         atoms = Atoms(
             "Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True
         )
@@ -779,10 +797,10 @@ class TestProcessStructure:
         assert isinstance(result.info["REF_energy"], float)
 
     @pytest.mark.unit
-    def test_extracts_ref_forces(self, tmp_path, minimal_jobs_dict):
+    def test_extracts_ref_forces(self, tmp_path, minimal_jobs_dict, shared_db):
         from ase.calculators.emt import EMT
 
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         atoms = Atoms(
             "Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True
         )
@@ -792,10 +810,10 @@ class TestProcessStructure:
         assert result.arrays["REF_forces"].shape == (2, 3)
 
     @pytest.mark.unit
-    def test_returns_copy_not_same_object(self, tmp_path, minimal_jobs_dict):
+    def test_returns_copy_not_same_object(self, tmp_path, minimal_jobs_dict, shared_db):
         from ase.calculators.emt import EMT
 
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         atoms = Atoms(
             "Cu2", positions=[[0, 0, 0], [1.8, 0, 0]], cell=[10, 10, 10], pbc=True
         )
@@ -807,39 +825,39 @@ class TestProcessStructure:
 class TestSentinelHelpers:
     """Tests for _phase_done, _mark_phase_done, _last_complete_loop."""
 
-    def _make_workflow(self, tmp_path, minimal_jobs_dict):
+    def _make_workflow(self, tmp_path, minimal_jobs_dict, shared_db):
         return ConcreteWorkflow(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
             number_of_al_loops=3,
-            db_path=str(tmp_path / "db"),
+            db=shared_db,
         )
 
     @pytest.mark.unit
     def test_phase_done_returns_false_when_no_sentinel(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         assert wf._phase_done("al_loop_0", "train_mlip") is False
 
     @pytest.mark.unit
     def test_phase_done_returns_true_after_mark(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         (tmp_path / "results" / "al_loop_0").mkdir(parents=True)
         wf._mark_phase_done("al_loop_0", "train_mlip")
         assert wf._phase_done("al_loop_0", "train_mlip") is True
 
     @pytest.mark.unit
     def test_mark_phase_done_writes_nonempty_file(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         (tmp_path / "results" / "al_loop_0").mkdir(parents=True)
         wf._mark_phase_done("al_loop_0", "high_accuracy_eval")
         sentinel = tmp_path / "results" / "al_loop_0" / "high_accuracy_eval.done"
@@ -848,18 +866,18 @@ class TestSentinelHelpers:
 
     @pytest.mark.unit
     def test_last_complete_loop_returns_minus_one_when_none(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         assert wf._last_complete_loop() == -1
 
     @pytest.mark.unit
     def test_last_complete_loop_consecutive(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         for loop in range(2):
             loop_dir = tmp_path / "results" / f"al_loop_{loop}"
             loop_dir.mkdir(parents=True)
@@ -868,10 +886,10 @@ class TestSentinelHelpers:
 
     @pytest.mark.unit
     def test_last_complete_loop_stops_at_gap(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         # loop 0 complete, loop 1 missing, loop 2 complete → should return 0
         for loop in [0, 2]:
             loop_dir = tmp_path / "results" / f"al_loop_{loop}"
@@ -881,10 +899,10 @@ class TestSentinelHelpers:
 
     @pytest.mark.unit
     def test_last_complete_loop_sufficient_with_only_sentinel(
-        self, tmp_path, minimal_jobs_dict, monkeypatch
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = self._make_workflow(tmp_path, minimal_jobs_dict)
+        wf = self._make_workflow(tmp_path, minimal_jobs_dict, shared_db)
         # loop.done alone (no accumulated XYZ files) is now sufficient
         loop_dir = tmp_path / "results" / "al_loop_0"
         loop_dir.mkdir(parents=True)

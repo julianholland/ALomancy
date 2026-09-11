@@ -6,7 +6,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from alomancy.analysis.colors import PALETTE, add_logo_watermark, setup_alomancy_style
+from alomancy.analysis.colors import (
+    PALETTE,
+    STAGE2_COLOR,
+    add_logo_watermark,
+    setup_alomancy_style,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -180,17 +185,27 @@ def parse_timing_log(log_file: str | Path) -> pd.DataFrame:
 
 
 def timing_plots(log_file: str | Path, directory: str | Path) -> None:
-    """Generate timing bar charts from an alomancy.log file.
+    """Generate a combined timing plot from an alomancy.log file.
 
-    Produces two PNGs in *directory*:
-    - ``timing_total.png``: total wall-clock time per loop with n_train annotation
-    - ``timing_phases.png``: stacked bar chart with queue/running sub-segments
+    Produces a single PNG in *directory* (``timing_combined.png``): a stacked
+    bar chart of wall-clock time per phase per AL loop (with queue/running
+    sub-segments, as the old ``timing_phases.png`` showed), overlaid with a
+    line on a secondary y-axis showing the number of training structures per
+    loop (the annotation the old ``timing_total.png`` carried as text
+    labels). The legend combines both axes' handles into one call, placed at
+    ``upper left``.
+
+    The figure width is fixed regardless of the number of loops -- unlike
+    the old per-plot ``max(4, len(loops) * 1.2 + 1)`` sizing, which grew
+    unbounded as a run accumulated loops. Bars get more cramped with many
+    loops on a fixed-width figure; that is an accepted, explicitly requested
+    tradeoff over an ever-widening image.
     """
     import matplotlib.pyplot as plt
 
     df = parse_timing_log(log_file)
     if df.empty:
-        logger.warning("No timing data found in %s — skipping timing plots.", log_file)
+        logger.warning("No timing data found in %s — skipping timing plot.", log_file)
         return
 
     directory = Path(directory)
@@ -200,26 +215,7 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
     loops = df["loop"].tolist()
     x = np.arange(len(loops))
 
-    # --- total time bar chart ---
-    fig, ax = plt.subplots(figsize=(max(4, len(loops) * 1.2 + 1), 4))
-    total_h = df["total_s"].to_numpy() / 3600.0
-    ax.bar(x, total_h, color=PALETTE[0])
-    for xi, (h, n) in enumerate(zip(total_h, df["n_train"].tolist())):
-        if not np.isnan(h):
-            label = f"n={int(n):,}" if n is not None and not np.isnan(float(n)) else ""
-            ax.text(xi, h, label, ha="center", va="bottom", fontsize=8)
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"Loop {li}" for li in loops])
-    ax.set_ylabel("Wall-clock time (hours)")
-    ax.set_title("Total time per AL loop")
-    fig.tight_layout()
-    add_logo_watermark(fig)
-    total_path = directory / "timing_total.png"
-    fig.savefig(total_path, dpi=150)
-    plt.close(fig)
-    logger.info("Saved timing total plot to %s", total_path)
-
-    # --- phase breakdown stacked bar chart ---
+    # --- phase breakdown stacked bar chart (primary content) ---
     phase_cols = [
         ("training_plots_s", "training_plots_queue_s", "Training + plots"),
         ("generate_structures_s", "generate_structures_queue_s", "Structure gen"),
@@ -227,7 +223,7 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
         ("postprocess_s", None, "Post-process"),
     ]
 
-    fig, ax = plt.subplots(figsize=(max(4, len(loops) * 1.2 + 1), 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
     bottoms = np.zeros(len(loops))
     queue_patch_added = False
 
@@ -270,12 +266,33 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
 
     ax.set_xticks(x)
     ax.set_xticklabels([f"Loop {li}" for li in loops])
+    ax.set_xlabel("AL loop")
     ax.set_ylabel("Wall-clock time (hours)")
-    ax.set_title("Phase breakdown per AL loop")
-    ax.legend(loc="upper right", fontsize=8)
+    ax.set_title("Phase breakdown and training-set size per AL loop")
+
+    # --- training-set size overlay (secondary y-axis line) ---
+    ax2 = ax.twinx()
+    n_train = df["n_train"].to_numpy(dtype=float)
+    ax2.plot(
+        x,
+        n_train,
+        color=STAGE2_COLOR,
+        marker="o",
+        linewidth=1.5,
+        label="Training structures",
+    )
+    ax2.set_ylabel("Training structures")
+    ax2.grid(False)
+
+    # twinx() legends must be combined manually -- ax.legend() alone would
+    # silently drop ax2's line from the legend.
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, loc="upper left", fontsize=8)
+
     fig.tight_layout()
     add_logo_watermark(fig)
-    phases_path = directory / "timing_phases.png"
-    fig.savefig(phases_path, dpi=150)
+    combined_path = directory / "timing_combined.png"
+    fig.savefig(combined_path, dpi=150)
     plt.close(fig)
-    logger.info("Saved timing phases plot to %s", phases_path)
+    logger.info("Saved combined timing plot to %s", combined_path)

@@ -46,10 +46,16 @@ class RemoteInfo:
     check_interval: int
         check_interval arg to pass to get_results
     ignore_failed_jobs: bool, default False
-        skip failures in remote jobs
+        currently unused by RemoteJobExecutor -- accepted for backwards compatibility
     resubmit_killed_jobs: bool, default False
-        resubmit jobs that were killed without an exit status (out of walltime or crashed),
-        hoping that other parameters such as walltime or memory have been changed to make run complete this time
+        when a RemoteJobExecutor job is declared definitively dead (ExPyReJobDiedError --
+        no _succeeded/_error file and the remote scheduler no longer shows it queued/held/
+        running), submit ONE fresh replacement (job.start(force_rerun=True)) instead of
+        giving up immediately. Distinct from and unrelated to the always-on resume behavior
+        for transient transport failures (see executor._get_results_with_resume) -- this is
+        specifically for a job the scheduler itself killed (OOM, walltime, node failure).
+        Off by default because a killed job often needs different resources to succeed on
+        retry, not just a second identical attempt.
     max_concurrent_jobs: int, default 20
         cap on how many jobs a RemoteJobExecutor keeps started (occupying a scheduler slot)
         at once; the next queued job starts the instant a running one finishes. This is a

@@ -70,3 +70,69 @@ def clean_structures(
         cleaned_structures.append(structure_copy)
 
     return cleaned_structures
+
+
+def filter_structures_by_min_bond_distance(
+    structures: list[Atoms], min_distance: float = 0.5
+) -> list[Atoms]:
+    """Exclude structures with any pairwise atomic distance below min_distance (Å).
+
+    Guards against submitting an unphysical/exploded structure (e.g. an MD
+    instability, or a badly-generated dimer/trimer/stretch-compress
+    structure) to expensive DFT. `get_all_distances(mic=True)` is safe to
+    call unconditionally: it uses the minimum-image convention for
+    periodic structures and falls back to plain distances for non-periodic
+    ones, correctly covering every config_type this codebase produces.
+    Single-atom structures always pass through unfiltered — there is no
+    pairwise distance to check, and `np.triu_indices(1, k=1)` correctly
+    returns an empty index set rather than raising.
+    """
+    filtered = []
+    n_excluded = 0
+    for structure in structures:
+        if len(structure) < 2:
+            filtered.append(structure)
+            continue
+        distance_matrix = structure.get_all_distances(mic=True)
+        upper = distance_matrix[np.triu_indices(len(structure), k=1)]
+        if upper.min() >= min_distance:
+            filtered.append(structure)
+        else:
+            n_excluded += 1
+
+    if n_excluded:
+        logger.warning(
+            "Excluded %d/%d structure(s) with a bond shorter than %.2f Å "
+            "from DFT submission.",
+            n_excluded,
+            len(structures),
+            min_distance,
+        )
+
+    return filtered
+
+
+def wrap_structures_into_cell(structures: list[Atoms]) -> list[Atoms]:
+    """Wrap each structure's atoms back inside its periodic cell, in place.
+
+    MD trajectories routinely let atoms drift outside the reference cell
+    (a normal artifact of unwrapped-coordinate propagation, distinct from
+    the unphysical short-bond-distance case handled by
+    filter_structures_by_min_bond_distance) — DFT codes (QE/VASP) generally
+    expect coordinates within the cell, so this runs as the last step
+    before DFT submission, on structures that have already survived that
+    bond-distance filter.
+
+    `Atoms.wrap()` mutates the structure in place and returns None; it is
+    called unconditionally here rather than gated on `atoms.pbc.any()`
+    because it is a safe no-op on non-periodic axes/structures (confirmed
+    empirically against ASE 3.28: positions on a non-periodic axis, and on
+    a structure with `pbc=False` and no cell at all, are left unchanged).
+    `atoms.info`, `atoms.arrays` (including any non-standard extra arrays),
+    and any already-attached `atoms.calc` all survive `wrap()` unchanged —
+    confirmed empirically, since this is the property this function must
+    not violate.
+    """
+    for structure in structures:
+        structure.wrap()
+    return structures

@@ -190,3 +190,50 @@ def skip_if_no_gpu():
             pytest.skip("GPU not available")
     except ImportError:
         pytest.skip("PyTorch not available")
+
+
+# ---------------------------------------------------------------------------
+# Shared GlobalDatabase instance (performance)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def _session_global_database(tmp_path_factory):
+    """One real GlobalDatabase, constructed once for the whole test session.
+
+    Constructing a GlobalDatabase bootstraps real HDF5+SQLite files on disk
+    (sage_lib's Partition(storage="hybrid")) and costs ~1-3s even for a
+    brand-new, empty DB -- confirmed by direct benchmarking. Dozens of tests
+    across tests/core_tests/ each used to pay this cost individually via
+    their own db_path=str(tmp_path / "db"), and were the single biggest
+    contributor to this repo's `pytest -m unit` runtime. `shared_db` (below)
+    clears this same instance before every test instead, which costs
+    ~0.002s -- see GlobalDatabase.clear()'s docstring for the full
+    benchmark comparison and why it's safe (global_db_id numbering is
+    derived fresh from partition.N at add-time, so it isn't affected by
+    reusing an instance across tests).
+    """
+    from alomancy.database.global_database import GlobalDatabase
+
+    db_path = tmp_path_factory.mktemp("shared_global_db")
+    return GlobalDatabase(str(db_path))
+
+
+@pytest.fixture
+def shared_db(_session_global_database):
+    """A GlobalDatabase reused across the whole test session but cleared to
+    empty before every individual test -- functionally identical to a fresh
+    GlobalDatabase(db_path) for any test that doesn't care about the exact
+    filesystem path, without paying that construction's ~1-3s cost per test.
+
+    Safe under both plain `pytest` (sequential within a process) and
+    pytest-xdist (distributes whole test files/classes to separate worker
+    processes, each with its own conftest session fixtures -- never splits
+    one test file's tests across workers in a way that would race on this
+    instance). Not suitable for a test that specifically asserts on the
+    DB's on-disk path/location, or that needs to inspect the raw contents
+    of a `db_path` directory it controls -- those tests should keep
+    constructing their own GlobalDatabase(str(tmp_path / "db")) directly.
+    """
+    _session_global_database.clear()
+    return _session_global_database

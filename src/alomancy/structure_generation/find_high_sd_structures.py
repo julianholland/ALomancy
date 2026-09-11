@@ -21,10 +21,23 @@ def find_high_sd_structures(
         "desired_number_of_structures"
     ]
 
-    assert desired_structures > 0, "Number of structures must be greater than 0"
-    assert len(structure_list) >= desired_structures, (
-        f"Not enough structures to select {desired_structures} from. Available: {len(structure_list)}"
-    )
+    if desired_structures <= 0:
+        raise ValueError("Number of structures must be greater than 0")
+    if len(structure_list) == 0:
+        raise ValueError(
+            "No candidate structures available to select from — "
+            "structure_list is empty."
+        )
+    if len(structure_list) < desired_structures:
+        logger.warning(
+            "Only %d candidate structure(s) available, fewer than the %d "
+            "requested (desired_number_of_structures) — proceeding with all "
+            "%d available structure(s) instead of crashing the run.",
+            len(structure_list),
+            desired_structures,
+            len(structure_list),
+        )
+    effective_structures = min(desired_structures, len(structure_list))
 
     std_dev_csv_name = Path(
         "results",
@@ -54,7 +67,7 @@ def find_high_sd_structures(
                 "results", base_name, job_dict["structure_generation"]["name"]
             ),
         )
-        index_list = std_dev_df["structure_index"][:desired_structures].to_list()
+        index_list = std_dev_df["structure_index"][:effective_structures].to_list()
         high_sd_structures = [structure_list[i] for i in index_list]
 
         for structure in high_sd_structures:
@@ -75,7 +88,7 @@ def find_high_sd_structures(
         "Selected %d structures for DFT calculations based on force std dev.",
         len(high_sd_structures),
     )
-    logger.debug("Std dev top structures:\n%s", std_dev_df[:desired_structures])
+    logger.debug("Std dev top structures:\n%s", std_dev_df[:effective_structures])
     logger.debug("Total mean std dev: %s", std_dev_df["mean_std_dev"].mean())
 
     return high_sd_structures

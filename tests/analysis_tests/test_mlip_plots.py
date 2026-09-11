@@ -434,6 +434,37 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
 
     assert (plots_dir / "training_mae_demo.png").exists()
     assert (plots_dir / "training_loss_demo.png").exists()
+    assert (plots_dir / "metrics" / "demo_fit_0_training_metrics.csv").exists()
+
+
+@pytest.mark.unit
+def test_plot_training_curves_metrics_csv_has_expected_columns(tmp_path, monkeypatch):
+    """The per-fit metrics CSV alongside the plots must carry the same
+    loss/mae_e_per_atom/mae_f numbers the plots themselves were drawn from,
+    indexed by epoch -- so downstream analysis can work from real numbers
+    instead of re-parsing *_train.txt."""
+    from alomancy.analysis.mlip_plots import plot_training_curves
+
+    monkeypatch.chdir(tmp_path)
+    _write_fit_data(tmp_path, "mlip_committee", seed=803, n_epochs=5)
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {
+        "name": "mlip_committee",
+        "size_of_committee": 1,
+        "max_num_epochs": 5,
+        "mace_fit_kwargs": {},
+    }
+    plot_training_curves("demo", job_dict, 803, plots_dir)
+
+    metrics_path = plots_dir / "metrics" / "demo_fit_0_training_metrics.csv"
+    df = pd.read_csv(metrics_path, index_col="epoch")
+
+    assert list(df.columns) == ["loss", "mae_e_per_atom", "mae_f"]
+    assert len(df) == 5
+    assert df.loc[0, "loss"] == pytest.approx(1.0)
+    assert df.loc[4, "mae_f"] == pytest.approx(0.3 - 0.01 * 4)
 
 
 @pytest.mark.unit
