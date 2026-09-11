@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import yaml
@@ -53,10 +54,7 @@ def bounded_mutation_add(
         if structure.AtomPositionManager.atomCount >= max_atoms:
             return None
         candidate = mutation(structure)
-        if (
-            candidate is None
-            or candidate.AtomPositionManager.atomCount > max_atoms
-        ):
+        if candidate is None or candidate.AtomPositionManager.atomCount > max_atoms:
             return None
         return candidate
 
@@ -76,10 +74,7 @@ def bounded_mutation_remove(
         if structure.AtomPositionManager.atomCount <= min_atoms:
             return None
         candidate = mutation(structure)
-        if (
-            candidate is None
-            or candidate.AtomPositionManager.atomCount < min_atoms
-        ):
+        if candidate is None or candidate.AtomPositionManager.atomCount < min_atoms:
             return None
         return candidate
 
@@ -124,38 +119,48 @@ def build_mutation_configs(
     mutations: list[dict[str, Any]] = []
 
     if settings["rattle"].pop("enabled"):
-        mutations.append({
-            "type": "ezga.variation.mutation.mutation_rattle",
-            **settings["rattle"],
-        })
+        mutations.append(
+            {
+                "type": "ezga.variation.mutation.mutation_rattle",
+                **settings["rattle"],
+            }
+        )
     if settings["random_strain"].pop("enabled"):
-        mutations.append({
-            "type": "ezga.variation.mutation.mutation_random_strain",
-            **settings["random_strain"],
-        })
+        mutations.append(
+            {
+                "type": "ezga.variation.mutation.mutation_random_strain",
+                **settings["random_strain"],
+            }
+        )
     if settings["add"].pop("enabled"):
-        mutations.append({
-            "type": (
-                "alomancy.structure_generation.ezga.generate_structures."
-                "bounded_mutation_add"
-            ),
-            "max_atoms": max_atoms,
-            **settings["add"],
-        })
+        mutations.append(
+            {
+                "type": (
+                    "alomancy.structure_generation.ezga.generate_structures."
+                    "bounded_mutation_add"
+                ),
+                "max_atoms": max_atoms,
+                **settings["add"],
+            }
+        )
     if settings["remove"].pop("enabled"):
-        mutations.append({
-            "type": (
-                "alomancy.structure_generation.ezga.generate_structures."
-                "bounded_mutation_remove"
-            ),
-            "min_atoms": min_atoms,
-            **settings["remove"],
-        })
+        mutations.append(
+            {
+                "type": (
+                    "alomancy.structure_generation.ezga.generate_structures."
+                    "bounded_mutation_remove"
+                ),
+                "min_atoms": min_atoms,
+                **settings["remove"],
+            }
+        )
     if settings["remove_add"].pop("enabled"):
-        mutations.append({
-            "type": "ezga.variation.mutation.mutation_remove_add",
-            **settings["remove_add"],
-        })
+        mutations.append(
+            {
+                "type": "ezga.variation.mutation.mutation_remove_add",
+                **settings["remove_add"],
+            }
+        )
 
     if not mutations:
         raise ValueError("At least one EZGA mutation operator must be enabled.")
@@ -185,7 +190,6 @@ def build_ezga_config(
         "max_generations": max_generations,
         "resume": False,
         "output_path": str(output_path),
-
         "population": {
             "dataset_path": str(dataset_path),
             "db_path": str(output_path / "db"),
@@ -193,38 +197,31 @@ def build_ezga_config(
             "filter_duplicates": True,
             "collision_factor": 0.80,
         },
-
         "multiobjective": {
             "size": population_size,
         },
-
         "variation": {
             "initial_mutation_rate": 1.0,
             "min_mutation_rate": 1.0,
             "crossover_probability": 0.0,
             "use_magnitude_scaling": False,
         },
-
         "mutation_funcs": build_mutation_configs(
             mutation_operators=mutation_operators,
             min_atoms=min_atoms,
             max_atoms=max_atoms,
         ),
-
         "crossover_funcs": [
             "ezga.variation.crossover.crossover_inplane_shuffle",
         ],
-
         "thermostat": {
             "initial_temperature": 1.0,
             "constant_temperature": True,
         },
-
         "evaluator": {
             "features_funcs": [
                 {
-                    "type":
-                    "ezga.evaluator.features.feature_composition_vector",
+                    "type": "ezga.evaluator.features.feature_composition_vector",
                     "IDs": ["Pd"],
                 }
             ],
@@ -238,12 +235,10 @@ def build_ezga_config(
                 }
             ],
         },
-
         "simulator": {
             "mode": "sampling",
             "calculator": {
-                "type":
-                    "ezga.simulator.mace_calculator.mace_calculator",
+                "type": "ezga.simulator.mace_calculator.mace_calculator",
                 "calc_path": model_path,
                 "device": "cpu",
                 "default_dtype": "float64",

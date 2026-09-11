@@ -38,14 +38,13 @@ from alomancy.structure_generation.md.md_wfl import get_forces_for_all_maces, ru
 from alomancy.structure_generation.select_initial_structures import (
     select_initial_structures,
 )
-
-from alomancy.utils.dataset_curation import grouped_split
-from alomancy.utils.dft_utils import refresh_dft_labels
 from alomancy.utils.clean_structures import (
     clean_structures,
     filter_structures_by_min_bond_distance,
     wrap_structures_into_cell,
 )
+from alomancy.utils.dataset_curation import grouped_split
+from alomancy.utils.dft_utils import refresh_dft_labels
 from alomancy.utils.file_saving_and_parsing import (
     read_atoms_file_if_enabled,
 )
