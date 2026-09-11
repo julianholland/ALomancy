@@ -1,6 +1,5 @@
 import json
 import logging
-import typing
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +7,37 @@ import pytest
 from ase import Atoms
 
 from alomancy.mlip.mace_wfl import _select_validation_split
+from alomancy.remote_submission import submitters
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
+
+
+@pytest.mark.unit
+def test_committee_uses_common_split_seed_and_distinct_fit_indices(
+    tmp_path, monkeypatch
+):
+    captured = {}
+
+    class FakeExecutor:
+        def __init__(self, _remote_info):
+            pass
+
+        def run_and_wait(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(submitters, "RemoteJobExecutor", FakeExecutor)
+
+    submitters.committee_remote_submitter(
+        remote_info={},
+        base_name="al_loop_0",
+        function=lambda: None,
+        seed=803,
+        size_of_committee=3,
+    )
+
+    configs = captured["job_configs"]
+    assert [c["function_kwargs"]["seed"] for c in configs] == [803, 803, 803]
+    assert [c["function_kwargs"]["fit_idx"] for c in configs] == [0, 1, 2]
 
 
 class TestEvaluationMetrics:
@@ -323,41 +352,14 @@ class TestSelectValidationSplit:
         assert not any(id(a) in isolated_ids for a in valid)
 
 
-class TestSelectBestCommitteeModel:
-    """Tests for select_best_committee_model — picks the fit with lowest test mae_f."""
+class TestLegacyMetricParsing:
+    @pytest.mark.unit
+    def test_reads_json_and_python_records_without_eval(self, tmp_path):
+        from alomancy.mlip.get_mace_eval_info import _read_last_metric_record
 
-    JOB_DICT: typing.ClassVar[dict] = {"name": "mlip_committee", "size_of_committee": 3}
-
-    def _write_test_txt_python_format(
-        self, results_dir: Path, mae_f: float, mae_e: float = 0.01
-    ) -> None:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        line = str([("mae_f", str(mae_f)), ("mae_e", str(mae_e))])
-        (results_dir / "results_test.txt").write_text(f"header\n{line}\n")
-
-    def _write_test_txt_json_format(
-        self, results_dir: Path, mae_f: float, mae_e_per_atom: float = 0.01
-    ) -> None:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        record = json.dumps(
-            {
-                "mode": "test",
-                "epoch": 79,
-                "mae_f": mae_f,
-                "mae_e_per_atom": mae_e_per_atom,
-            }
-        )
-        (results_dir / "results_test.txt").write_text(record + "\n")
-
-    def _fit_dir(self, base: Path, fit_idx: int) -> Path:
-        return (
-            base
-            / "results"
-            / "al_loop_0"
-            / "mlip_committee"
-            / f"fit_{fit_idx}"
-            / "results"
-        )
+        path = tmp_path / "metrics.txt"
+        path.write_text(json.dumps({"mae_f": 0.3}) + "\n" + "[('mae_f', 0.2)]\n")
+        assert _read_last_metric_record(path)["mae_f"] == 0.2
 
     def _touch_model(self, base: Path, fit_idx: int) -> None:
         """select_best_committee_model only considers fits with a
@@ -369,7 +371,7 @@ class TestSelectBestCommitteeModel:
         (fit_dir / "mlip_committee_stagetwo.model").touch()
 
     @pytest.mark.unit
-    def test_selects_fit_with_lowest_mae_f(self, tmp_path, monkeypatch):
+    def test_legacy_test_files_cannot_select_model(self, tmp_path, monkeypatch):
         from alomancy.mlip.get_mace_eval_info import select_best_committee_model
 
         monkeypatch.chdir(tmp_path)
@@ -536,6 +538,35 @@ class TestSaveMaceEvalPredictions:
             a.info["REF_energy"] = 1.0
             structures.append(a)
         write(str(path), structures, format="extxyz")
+
+    @pytest.mark.unit
+    def test_prefers_regular_model_over_compiled_model(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock, patch
+
+        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+
+        monkeypatch.chdir(tmp_path)
+        regular_model = tmp_path / "test_name_stagetwo.model"
+        regular_model.touch()
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        self._write_structures(tmp_path / "train.xyz", 1)
+
+        monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.23)
+        monkeypatch.setattr(
+            Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
+        )
+
+        with (
+            patch("mace.calculators.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace_wfl.write") as mock_write,
+        ):
+            mock_calc_cls.return_value = MagicMock()
+            _save_mace_eval_predictions("test_name", "train.xyz")
+
+        selected_path = Path(mock_calc_cls.call_args.kwargs["model_paths"][0])
+        assert selected_path == regular_model.resolve()
+        written_atoms = mock_write.call_args.args[1]
+        assert all(atoms.calc is None for atoms in written_atoms)
 
     @pytest.mark.unit
     def test_first_failure_gets_warning_with_traceback_rest_are_debug(

@@ -12,10 +12,13 @@ def clean_structures(
     override_config_type: bool = False,
     already_computed: bool = True,
     extra_metadata: dict | None = None,
+    label_source: str = "reference",
 ) -> list[Atoms]:
     """
     adds DFT results to copy of structures info dictionary.
     """
+    if label_source not in {"reference", "calculator"}:
+        raise ValueError("label_source must be reference or calculator")
     cleaned_structures = []
     for structure in structures:
         # copy structure with just the right information
@@ -35,12 +38,13 @@ def clean_structures(
 
         if already_computed:
             if (
-                "REF_energy" not in structure.info
+                label_source == "calculator"
+                or "REF_energy" not in structure.info
                 or "REF_forces" not in structure.arrays
             ):
                 try:
                     energy = structure.get_potential_energy()
-                    forces = structure.get_forces()
+                    forces = structure.get_forces(apply_constraint=False)
                 except Exception as e:
                     raise ValueError(
                         "Structure is marked as already_computed but is missing REF_energy or REF_forces, and they could not be computed. Original error: "
@@ -50,6 +54,12 @@ def clean_structures(
                 energy = structure.info["REF_energy"]
                 forces = structure.arrays["REF_forces"]
 
+            energy = float(energy)
+            forces = np.asarray(forces, dtype=float)
+            if not len(structure) or not np.isfinite(energy):
+                raise ValueError("DFT energy must be finite and structure nonempty")
+            if forces.shape != (len(structure), 3) or not np.isfinite(forces).all():
+                raise ValueError("DFT forces must be finite with shape (N, 3)")
             structure_copy.info["REF_energy"] = energy
             structure_copy.arrays["REF_forces"] = forces
 

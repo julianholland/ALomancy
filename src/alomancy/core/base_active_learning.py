@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,12 @@ from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.database.global_database import GlobalDatabase
 from alomancy.remote_submission.executor import acquire_local_expyre_lock
 from alomancy.utils.clean_structures import clean_structures
+from alomancy.utils.dataset_curation import (
+    curate_database,
+    geometry_digest,
+    structure_domain,
+    validate_policy,
+)
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 from alomancy.utils.logging_config import setup_logging
 from alomancy.utils.remote_ssh import (
@@ -154,6 +161,8 @@ class BaseActiveLearningWorkflow(ABC):
         self.initial_train_file_path = Path(initial_train_file_path)
         self.initial_test_file_path = Path(initial_test_file_path)
         self.jobs_dict = jobs_dict
+        if jobs_dict.get("dataset_curation"):
+            validate_policy(jobs_dict["dataset_curation"])
         self.number_of_al_loops = number_of_al_loops
         self.verbose = verbose
         self.start_loop = start_loop
@@ -323,6 +332,17 @@ class BaseActiveLearningWorkflow(ABC):
         This method defines the core AL loop and calls the abstract methods
         that must be implemented by subclasses.
         """
+        if self.jobs_dict.get("dataset_curation"):
+            policy_path = Path("results/curation_policy.json")
+            policy = json.dumps(
+                self.jobs_dict["dataset_curation"], sort_keys=True, indent=2
+            )
+            if policy_path.exists() and policy_path.read_text() != policy:
+                raise ValueError(
+                    "Curation policy changed: use a new results directory to avoid stale checkpoints"
+                )
+            policy_path.parent.mkdir(parents=True, exist_ok=True)
+            policy_path.write_text(policy)
         self.pre_run_checks()
 
         last_complete = self._last_complete_loop()
@@ -371,6 +391,9 @@ class BaseActiveLearningWorkflow(ABC):
             remove_high_force_structures_from_partition(
                 self.db, force_threshold=self.high_force_threshold
             )
+
+        if self.jobs_dict.get("dataset_curation"):
+            curate_database(self.db, self.jobs_dict["dataset_curation"])
 
         for loop in range(effective_start, self.number_of_al_loops):
             base_name = f"al_loop_{loop}"
@@ -454,6 +477,16 @@ class BaseActiveLearningWorkflow(ABC):
                     loop_idx=loop,
                 )
 
+            if self.jobs_dict.get("mlip_committee", {}).get("quality_gate"):
+                from alomancy.mlip.evaluation import check_quality_gate
+
+                check_quality_gate(workdir, self.jobs_dict["mlip_committee"])
+            if self.jobs_dict.get("workflow", {}).get("train_only", False):
+                logger.info(
+                    "Initial committee training complete; train_only stops before generation."
+                )
+                return
+
             generated_structures = self.generate_structures(
                 base_name, self.jobs_dict, train_xyzs, **kwargs
             )
@@ -477,11 +510,35 @@ class BaseActiveLearningWorkflow(ABC):
                 extra_metadata={"al_loop": loop},
             )
 
-            new_train_data, new_test_data = split_atoms_list_into_test_and_train(
-                new_training_data,
-                test_fraction=self.jobs_dict["initialization"]["test_to_train_ratio"],
-                seed=self.seed,
-            )
+            if self.jobs_dict.get("workflow", {}).get("fixed_test", False):
+                archive = self.db.get_all_as_atoms()
+                known = {geometry_digest(a) for a in archive}
+                held_groups = {
+                    a.info.get("split_group")
+                    for a in archive
+                    if a.info.get("split") == "test" and a.info.get("split_group")
+                }
+                new_train_data = []
+                diagnostic = []
+                for atoms in new_training_data:
+                    key = geometry_digest(atoms)
+                    if key in known or atoms.info.get("split_group") in held_groups:
+                        diagnostic.append(atoms)
+                    else:
+                        new_train_data.append(atoms)
+                        known.add(key)
+                self.db.add_structures(
+                    diagnostic, split="diagnostic", skip_duplicates=False
+                )
+                new_test_data = []
+            else:
+                new_train_data, new_test_data = split_atoms_list_into_test_and_train(
+                    new_training_data,
+                    test_fraction=self.jobs_dict["initialization"][
+                        "test_to_train_ratio"
+                    ],
+                    seed=self.seed,
+                )
 
             # Add AL loop structures to DB with split tags; DB is the restart source.
             self.db.add_structures(new_train_data, split="train", skip_duplicates=False)
@@ -499,6 +556,9 @@ class BaseActiveLearningWorkflow(ABC):
                     self.db,
                     force_threshold=self.high_force_threshold,
                 )
+
+            if self.jobs_dict.get("dataset_curation"):
+                curate_database(self.db, self.jobs_dict["dataset_curation"])
 
             self._mark_phase_done(base_name, "loop")
 
@@ -532,6 +592,25 @@ class BaseActiveLearningWorkflow(ABC):
         if isinstance(all_atoms, Atoms):
             all_atoms = [all_atoms]
 
+        digest = hashlib.sha256(Path(extra_dataset).read_bytes()).hexdigest()
+        existing = {
+            a.info.get("source_dataset_sha256") for a in self.db.get_all_as_atoms()
+        }
+        if digest in existing:
+            logger.info(
+                "Extra dataset %s already imported (sha256=%s)", extra_dataset, digest
+            )
+            return
+        reset_splits = self.jobs_dict["initialization"].get("reset_extra_splits", False)
+        for atoms in all_atoms:
+            atoms.info["source_dataset_sha256"] = digest
+            atoms.info.setdefault("domain", structure_domain(atoms))
+            if reset_splits:
+                for key in ("split", "global_db_id", "is_duplicate", "is_high_force"):
+                    atoms.info.pop(key, None)
+                for key in list(atoms.info):
+                    if key.startswith("mace_"):
+                        del atoms.info[key]
         added = self.db.add_structures(all_atoms, skip_duplicates=True)
         skipped = len(all_atoms) - added
         msg = f"Seeded DB from {extra_dataset}: {added} structure(s) added"

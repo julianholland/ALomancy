@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 from pathlib import Path
@@ -12,12 +13,48 @@ def get_mace_eval_info(
     mlip_committee_job_dict: dict,
 ) -> pd.DataFrame:
     """
-    Recover final results from train.txt files in MACE AL loop directories.
+    Read final test metrics; explicitly identify legacy validation-only logs.
     """
 
-    al_loop_dirs = list(Path.glob(Path("results"), "al_loop_*"))
+    al_loop_dirs = sorted(
+        Path("results").glob("al_loop_*"), key=lambda p: int(p.name.rsplit("_", 1)[1])
+    )
     all_avg_results = []
     for al_loop_dir in al_loop_dirs:
+        from alomancy.mlip.evaluation import read_evaluation
+
+        metric_files = sorted(
+            (al_loop_dir / mlip_committee_job_dict["name"]).glob(
+                "fit_*/evaluation_metrics.json"
+            )
+        )
+        if metric_files:
+            expected = mlip_committee_job_dict.get(
+                "size_of_committee", len(metric_files)
+            )
+            expected_dirs = {f"fit_{i}" for i in range(expected)}
+            if {p.parent.name for p in metric_files} != expected_dirs:
+                raise RuntimeError(
+                    "Missing checkpoint evaluations for committee members"
+                )
+            records = [read_evaluation(p.parent, "test")[0] for p in metric_files]
+            row = {
+                key: float(np.mean([r[key] for r in records]))
+                for key in ("mae_f", "mae_e_per_atom")
+            }
+            row.update(
+                {
+                    f"{key}_std_dev": float(np.std([r[key] for r in records]))
+                    for key in ("mae_f", "mae_e_per_atom")
+                }
+            )
+            row["metric_source"] = "checkpoint_test"
+            all_avg_results.append(row)
+            continue
+        if mlip_committee_job_dict.get("require_checkpoint_metrics", False):
+            raise RuntimeError(
+                f"{al_loop_dir}: checkpoint evaluations are required; training logs are insufficient"
+            )
         results_files = list(
             Path.glob(
                 Path(al_loop_dir, mlip_committee_job_dict["name"]),
@@ -30,7 +67,7 @@ def get_mace_eval_info(
         for results_file in results_files:
             with open(results_file) as file:
                 data_line = file.readlines()[-1]
-                result = dict(eval(data_line))
+                result = dict(ast.literal_eval(data_line))
                 results.append(result)
 
         avg_result = {
@@ -45,6 +82,11 @@ def get_mace_eval_info(
         }
         avg_result.update(
             {f"{key}_std_dev": std_dev_results[key] for key in std_dev_results}
+        )
+        avg_result["metric_source"] = "legacy_training_validation"
+        logger.warning(
+            "%s: using legacy training-time validation metrics, not final test metrics",
+            al_loop_dir,
         )
         all_avg_results.append(avg_result)
     return pd.DataFrame(all_avg_results)
@@ -70,7 +112,7 @@ def _read_last_metric_record(txt_path: Path) -> dict | None:
             except (json.JSONDecodeError, ValueError):
                 pass
             try:
-                record = dict(eval(line))
+                record = dict(ast.literal_eval(line))
                 last_record = record
             except Exception:
                 pass
