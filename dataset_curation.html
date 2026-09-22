@@ -1,0 +1,202 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Formation-energy curation and initial MACE validation &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Formation-energy curation and initial MACE validation</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/dataset_curation.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="formation-energy-curation-and-initial-mace-validation">
+<h1>Formation-energy curation and initial MACE validation<a class="headerlink" href="#formation-energy-curation-and-initial-mace-validation" title="Link to this heading"></a></h1>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">dataset_curation</span></code> policy annotates labelled structures and flags
+eligibility across both training and test splits. It preserves the source DFT
+energies and forces, the isolated-atom MACE reference, and rejected data.</p>
+<p>For each structure it records <code class="docutils literal notranslate"><span class="pre">REF_formation_energy</span> <span class="pre">=</span> <span class="pre">REF_energy</span> <span class="pre">-</span> <span class="pre">sum(N_Z</span> <span class="pre">*</span> <span class="pre">mu_Z)</span></code>,
+<code class="docutils literal notranslate"><span class="pre">REF_formation_energy_per_atom</span></code>, <code class="docutils literal notranslate"><span class="pre">REF_max_force</span></code>, <code class="docutils literal notranslate"><span class="pre">formation_reference_id</span></code>,
+<code class="docutils literal notranslate"><span class="pre">domain</span></code>, <code class="docutils literal notranslate"><span class="pre">is_training_eligible</span></code>, <code class="docutils literal notranslate"><span class="pre">filter_reasons</span></code>, and a policy fingerprint.
+<code class="docutils literal notranslate"><span class="pre">REF_max_force</span></code> is the maximum <strong>atomic vector norm</strong>, in eV/Angstrom. Formation
+windows use eV/atom so different system sizes can be compared. The force cutoff
+is exclusive; the energy-window endpoints are inclusive. Unknown domains can
+be rejected explicitly. Non-finite labels and explicitly unconverged DFT are
+always rejected. Absence of convergence metadata does not prove convergence.</p>
+<p>Example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">dataset_curation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">reference</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pd_FCC_reference_version</span>
+<span class="w">    </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">verified</span><span class="w">  </span><span class="c1"># use estimated unless the reference has been verified</span>
+<span class="w">    </span><span class="nt">chemical_potentials</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">Pd</span><span class="p">:</span><span class="w"> </span><span class="nv">-5.0</span><span class="p p-Indicator">}</span><span class="w">  </span><span class="c1"># example only; supply your DFT value</span>
+<span class="w">  </span><span class="nt">require_known_domain</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">max_force</span><span class="p">:</span><span class="w"> </span><span class="nv">10.0</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">domains</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">bulk</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.0</span><span class="p p-Indicator">]}</span>
+<span class="w">    </span><span class="nt">surface</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.0</span><span class="p p-Indicator">]}</span>
+<span class="w">    </span><span class="nt">dimer</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">6.0</span><span class="p p-Indicator">]}</span>
+<span class="w">    </span><span class="nt">trimer</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">6.0</span><span class="p p-Indicator">]}</span>
+<span class="w">    </span><span class="nt">cluster</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">-0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">6.0</span><span class="p p-Indicator">]}</span>
+<span class="w">    </span><span class="nt">isolated_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">max_force</span><span class="p">:</span><span class="w"> </span><span class="nv">0.05</span><span class="p p-Indicator">}</span>
+</pre></div>
+</div>
+<p>These example limits are initial choices, not universal physical criteria.
+For pure Pd a fixed reference shift leaves the ordering of E/N unchanged.
+Filtering can remove unsuitable training examples; shifting energies alone
+cannot reduce prediction errors or establish dynamical stability.</p>
+<section id="offline-preparation">
+<h2>Offline preparation<a class="headerlink" href="#offline-preparation" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>alomancy.utils.recover_dft_labels<span class="w"> </span>source.xyz<span class="w"> </span>old_run/results<span class="w"> </span>recovery_v1
+python<span class="w"> </span>-m<span class="w"> </span>alomancy.utils.prepare_dataset<span class="w"> </span>recovery_v1/recovered.xyz<span class="w"> </span>init.yaml<span class="w"> </span>prepared_v1
+</pre></div>
+</div>
+<p>Recovery is intended for the historical <code class="docutils literal notranslate"><span class="pre">high_sd</span></code> label-inheritance defect. It
+matches ordered geometries to raw DFT outputs, checks completed/converged OUTCARs,
+and recovers energy and forces together. Missing or conflicting matches go to
+quarantine. Other labels are retained with an explicit audit limitation.
+Provenance includes source hashes and frame indices. Parentage is traced to seed
+groups where available. The input file is never rewritten.</p>
+<p>Preparation accepts an explicit reference. If it is null, it estimates Pd mu
+from the minimum E/N of low-force FCC-derived <code class="docutils literal notranslate"><span class="pre">bulk_rattle</span></code> frames. This narrow
+classifier checks the FCC primitive-supercell geometry; it does not assume
+<code class="docutils literal notranslate"><span class="pre">init_MP</span></code> means FCC. The estimate is labelled <code class="docutils literal notranslate"><span class="pre">estimated</span></code>, with
+<code class="docutils literal notranslate"><span class="pre">equilibrium_verified:</span> <span class="pre">false</span></code>. A relaxed FCC equation of state and matching DFT
+protocol are needed for an equilibrium reference. ASE documents the
+<a class="reference external" href="https://ase-lib.org/examples_generated/tutorials/bulk.html">energy-volume fitting procedure</a>.</p>
+<p>Outputs are the annotated full archive, selected and rejected subsets,
+train/test files, a per-frame CSV, reference JSON, manifest with file hashes,
+and <code class="docutils literal notranslate"><span class="pre">resolved_init.yaml</span></code> pointing at the selected dataset. Existing prepared
+versions cannot be overwritten by the CLI. Changing the reference or thresholds
+requires a new preparation version and a new results directory; cached models
+must not be silently reused with a changed policy.</p>
+</section>
+<section id="training-and-evaluation">
+<h2>Training and evaluation<a class="headerlink" href="#training-and-evaluation" title="Link to this heading"></a></h2>
+<p>Set <code class="docutils literal notranslate"><span class="pre">initialization.grouped_splits:</span> <span class="pre">true</span></code> and
+<code class="docutils literal notranslate"><span class="pre">mlip_committee.grouped_validation:</span> <span class="pre">true</span></code>. Identical ordered geometries and
+shared <code class="docutils literal notranslate"><span class="pre">split_group</span></code> ancestry stay together; the splitter is stratified by
+domain and keeps isolated atoms in training. It does not detect arbitrary
+symmetry-equivalent geometries. <code class="docutils literal notranslate"><span class="pre">reset_extra_splits</span></code> removes obsolete operational
+split flags on import. <code class="docutils literal notranslate"><span class="pre">workflow.fixed_test</span></code> prevents later acquisition from
+expanding the held-out test, and routes known held-out descendants to diagnostics.</p>
+<p><code class="docutils literal notranslate"><span class="pre">workflow.train_only:</span> <span class="pre">true</span></code> stops after the initial committee and validation
+gate, before structure generation. Exported checkpoints are evaluated on fit,
+common validation, and held-out test. <code class="docutils literal notranslate"><span class="pre">evaluation_metrics.json</span></code> records per-domain
+metrics, units, dataset identity and checkpoint SHA256. Committee selection uses
+validation force MAE and refuses missing or inconsistent validation. With
+<code class="docutils literal notranslate"><span class="pre">require_checkpoint_metrics:</span> <span class="pre">true</span></code>, historical training-log metrics cannot be
+silently presented as final-checkpoint test results. Optional <code class="docutils literal notranslate"><span class="pre">quality_gate</span></code>
+limits must pass for every member and required domain before exploration.</p>
+<p>Energy MAE is in eV/atom; force MAE is over Cartesian components in eV/Angstrom.
+The per-component error metric is different from the atomic-norm curation cutoff.
+DFT result boundaries explicitly replace inherited REF labels from the current
+DFT calculator. Imported REF labels keep precedence elsewhere. ASE <code class="docutils literal notranslate"><span class="pre">energy</span></code>
+remains the current target convention; available <code class="docutils literal notranslate"><span class="pre">free_energy</span></code> is recorded
+separately. VASP’s <a class="reference external" href="https://vasp.at/wiki/Smearing_technique">smearing documentation</a>
+explains the distinction between extrapolated energies and force-consistent
+free energies; protocol/energy conventions must be checked before combining
+historical and new datasets.</p>
+<p>A low validation MAE is not a stability certificate. Run physical checks such as
+a dimer curve, FCC E(V), and short bulk/surface dynamics, then longer checks over
+the intended domain. Specialization follows successful general-model validation.</p>
+<p>ExPyRe imports remote functions by reference. Deploy this same ALomancy source
+revision to the training/DFT environments before submission (see <code class="docutils literal notranslate"><span class="pre">CLAUDE.md</span></code>).
+Updating only the local checkout leaves remote jobs using old implementations.
+MD/EZGA code does not need modification for this preparation stage.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

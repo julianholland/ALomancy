@@ -107,6 +107,7 @@
     <span class="n">md_remote_submitter</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.submitters</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASE_OUTPUT_PREFIX</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.structure_generation.ezga.generate_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_ezga</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.structure_generation.find_high_sd_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">find_high_sd_structures</span><span class="p">,</span>
 <span class="p">)</span>
@@ -119,6 +120,8 @@
     <span class="n">filter_structures_by_min_bond_distance</span><span class="p">,</span>
     <span class="n">wrap_structures_into_cell</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dataset_curation</span><span class="w"> </span><span class="kn">import</span> <span class="n">grouped_split</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dft_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">refresh_dft_labels</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.file_saving_and_parsing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">read_atoms_file_if_enabled</span><span class="p">,</span>
 <span class="p">)</span>
@@ -255,9 +258,9 @@
         <span class="p">}</span>
         <span class="n">needs</span> <span class="o">=</span> <span class="n">compute_initialization_needs</span><span class="p">(</span><span class="o">**</span><span class="n">_needs_kwargs</span><span class="p">)</span>
 
-        <span class="c1"># Seed extra_datasets only if DB is still missing some initialization targets</span>
+        <span class="c1"># Explicit extra datasets are imported independently of generation targets.</span>
         <span class="n">extra_datasets</span> <span class="o">=</span> <span class="n">init_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extra_datasets"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="n">extra_datasets</span> <span class="ow">and</span> <span class="n">_needs_anything</span><span class="p">(</span><span class="n">needs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">extra_datasets</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">ed</span> <span class="ow">in</span> <span class="n">extra_datasets</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_seed_db_from_extra_dataset</span><span class="p">(</span><span class="n">ed</span><span class="p">)</span>
             <span class="n">needs</span> <span class="o">=</span> <span class="n">compute_initialization_needs</span><span class="p">(</span><span class="o">**</span><span class="n">_needs_kwargs</span><span class="p">)</span>
@@ -369,65 +372,72 @@
         <span class="c1"># --- Build train/test from DB contents -----------------------</span>
         <span class="n">all_evaluated</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">get_all_as_atoms</span><span class="p">()</span>
 
-        <span class="n">test_config_types</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">init_job_dict</span><span class="p">[</span><span class="s2">"test_config_types"</span><span class="p">])</span>
-        <span class="n">eligible_test_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">always_train_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">all_evaluated</span><span class="p">:</span>
-            <span class="p">(</span>
-                <span class="n">eligible_test_structures</span>
-                <span class="k">if</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">test_config_types</span>
-                <span class="k">else</span> <span class="n">always_train_structures</span>
-            <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible_test_structures</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">"No eligible test structures found for the specified "</span>
-                <span class="s2">"test_config_types. All structures will be used for training."</span>
+        <span class="k">if</span> <span class="n">init_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"grouped_splits"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">train_xyzs</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="n">grouped_split</span><span class="p">(</span>
+                <span class="n">all_evaluated</span><span class="p">,</span> <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">"test_to_train_ratio"</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span>
             <span class="p">)</span>
-            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">all_evaluated</span>
-            <span class="n">test_xyzs</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># test_to_train_ratio applies only within the test_config_types</span>
-            <span class="c1"># pool, not against the whole DB. Dimers/trimers/stretch_compress/</span>
-            <span class="c1"># IsolatedAtom (always_train_structures) never count toward this</span>
-            <span class="c1"># ratio's denominator — with a small test_config_types pool and a</span>
-            <span class="c1"># much larger always-train pool, computing the quota against</span>
-            <span class="c1"># len(all_evaluated) could exceed the entire eligible pool,</span>
-            <span class="c1"># routing 100% of it to test and leaving train_xyzs with zero</span>
-            <span class="c1"># representatives of that config_type (e.g. init_amorphous),</span>
-            <span class="c1"># permanently once update_splits_post_hoc tags the DB.</span>
-            <span class="n">eligible_train</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="n">split_atoms_list_into_test_and_train</span><span class="p">(</span>
-                <span class="n">eligible_test_structures</span><span class="p">,</span>
-                <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">"test_to_train_ratio"</span><span class="p">],</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
-            <span class="p">)</span>
+            <span class="n">test_config_types</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">init_job_dict</span><span class="p">[</span><span class="s2">"test_config_types"</span><span class="p">])</span>
+            <span class="n">eligible_test_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">always_train_structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">all_evaluated</span><span class="p">:</span>
+                <span class="p">(</span>
+                    <span class="n">eligible_test_structures</span>
+                    <span class="k">if</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">test_config_types</span>
+                    <span class="k">else</span> <span class="n">always_train_structures</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
 
-            <span class="c1"># Guarantee every eligible config_type keeps at least one</span>
-            <span class="c1"># representative in train_xyzs, as a backstop against an unlucky</span>
-            <span class="c1"># shuffle leaving a low-count config_type entirely in test.</span>
-            <span class="n">train_config_types</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible_train</span><span class="p">}</span>
-            <span class="n">eligible_config_types</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible_test_structures</span>
-            <span class="p">}</span>
-            <span class="n">missing_types</span> <span class="o">=</span> <span class="n">eligible_config_types</span> <span class="o">-</span> <span class="n">train_config_types</span>
-            <span class="k">if</span> <span class="n">missing_types</span><span class="p">:</span>
-                <span class="k">for</span> <span class="n">config_type</span> <span class="ow">in</span> <span class="n">missing_types</span><span class="p">:</span>
-                    <span class="n">idx</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
-                        <span class="n">i</span>
-                        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">)</span>
-                        <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="n">config_type</span>
-                    <span class="p">)</span>
-                    <span class="n">eligible_train</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">test_xyzs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">eligible_test_structures</span><span class="p">:</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">"Reserved one structure from each of </span><span class="si">%s</span><span class="s2"> for training "</span>
-                    <span class="s2">"to avoid entirely excluding these config_types from "</span>
-                    <span class="s2">"train_atoms_list."</span><span class="p">,</span>
-                    <span class="nb">sorted</span><span class="p">(</span><span class="n">missing_types</span><span class="p">),</span>
+                    <span class="s2">"No eligible test structures found for the specified "</span>
+                    <span class="s2">"test_config_types. All structures will be used for training."</span>
+                <span class="p">)</span>
+                <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">all_evaluated</span>
+                <span class="n">test_xyzs</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># test_to_train_ratio applies only within the test_config_types</span>
+                <span class="c1"># pool, not against the whole DB. Dimers/trimers/stretch_compress/</span>
+                <span class="c1"># IsolatedAtom (always_train_structures) never count toward this</span>
+                <span class="c1"># ratio's denominator — with a small test_config_types pool and a</span>
+                <span class="c1"># much larger always-train pool, computing the quota against</span>
+                <span class="c1"># len(all_evaluated) could exceed the entire eligible pool,</span>
+                <span class="c1"># routing 100% of it to test and leaving train_xyzs with zero</span>
+                <span class="c1"># representatives of that config_type (e.g. init_amorphous),</span>
+                <span class="c1"># permanently once update_splits_post_hoc tags the DB.</span>
+                <span class="n">eligible_train</span><span class="p">,</span> <span class="n">test_xyzs</span> <span class="o">=</span> <span class="n">split_atoms_list_into_test_and_train</span><span class="p">(</span>
+                    <span class="n">eligible_test_structures</span><span class="p">,</span>
+                    <span class="n">init_job_dict</span><span class="p">[</span><span class="s2">"test_to_train_ratio"</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
                 <span class="p">)</span>
 
-            <span class="c1"># IsolatedAtom and other ineligible types always go to training so</span>
-            <span class="c1"># MACE can read E0s for every element from the training file.</span>
-            <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">always_train_structures</span> <span class="o">+</span> <span class="n">eligible_train</span>
+                <span class="c1"># Guarantee every eligible config_type keeps at least one</span>
+                <span class="c1"># representative in train_xyzs, as a backstop against an unlucky</span>
+                <span class="c1"># shuffle leaving a low-count config_type entirely in test.</span>
+                <span class="n">train_config_types</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible_train</span>
+                <span class="p">}</span>
+                <span class="n">eligible_config_types</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible_test_structures</span>
+                <span class="p">}</span>
+                <span class="n">missing_types</span> <span class="o">=</span> <span class="n">eligible_config_types</span> <span class="o">-</span> <span class="n">train_config_types</span>
+                <span class="k">if</span> <span class="n">missing_types</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">config_type</span> <span class="ow">in</span> <span class="n">missing_types</span><span class="p">:</span>
+                        <span class="n">idx</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                            <span class="n">i</span>
+                            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">test_xyzs</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="n">config_type</span>
+                        <span class="p">)</span>
+                        <span class="n">eligible_train</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">test_xyzs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"Reserved one structure from each of </span><span class="si">%s</span><span class="s2"> for training "</span>
+                        <span class="s2">"to avoid entirely excluding these config_types from "</span>
+                        <span class="s2">"train_atoms_list."</span><span class="p">,</span>
+                        <span class="nb">sorted</span><span class="p">(</span><span class="n">missing_types</span><span class="p">),</span>
+                    <span class="p">)</span>
+
+                <span class="c1"># IsolatedAtom and other ineligible types always go to training</span>
+                <span class="c1"># so MACE can read E0s for every element from the training file.</span>
+                <span class="n">train_xyzs</span> <span class="o">=</span> <span class="n">always_train_structures</span> <span class="o">+</span> <span class="n">eligible_train</span>
 
         <span class="n">write</span><span class="p">(</span>
             <span class="n">Path</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_train_file_path</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
@@ -463,16 +473,32 @@
         <span class="k">if</span> <span class="s2">"mace_fit_kwargs"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">mlip_committee_job_dict</span><span class="p">:</span>
             <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"mace_fit_kwargs"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Working directory: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">())</span>
-        <span class="k">if</span> <span class="p">(</span>
-            <span class="nb">len</span><span class="p">(</span>
-                <span class="nb">list</span><span class="p">(</span>
-                    <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model"</span>
-                    <span class="p">)</span>
-                <span class="p">)</span>
-            <span class="p">)</span>
-            <span class="o">&lt;</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"size_of_committee"</span><span class="p">]</span>
-        <span class="p">):</span>
+        <span class="n">configured_size</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"size_of_committee"</span><span class="p">]</span>
+        <span class="n">model_glob</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/"</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model"</span>
+        <span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_found_fit_indices</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"require_checkpoint_metrics"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_evaluation</span>
+
+                <span class="n">found</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">configured_size</span><span class="p">):</span>
+                    <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">workdir</span> <span class="o">/</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">read_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="s2">"valid"</span><span class="p">)</span>
+                        <span class="n">read_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">):</span>
+                        <span class="k">continue</span>
+                    <span class="n">found</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">found</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s2">"fit_"</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">workdir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">model_glob</span><span class="p">)</span>
+            <span class="p">}</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">_found_fit_indices</span><span class="p">())</span> <span class="o">&lt;</span> <span class="n">configured_size</span><span class="p">:</span>
             <span class="n">committee_remote_submitter</span><span class="p">(</span>
                 <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
                     <span class="n">mlip_committee_job_dict</span><span class="p">,</span>
@@ -490,18 +516,6 @@
                     <span class="s2">"workdir_str"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">workdir</span><span class="p">),</span>
                 <span class="p">},</span>
             <span class="p">)</span>
-
-        <span class="n">model_glob</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_*/"</span>
-            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model"</span>
-        <span class="p">)</span>
-        <span class="n">configured_size</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"size_of_committee"</span><span class="p">]</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">_found_fit_indices</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
-            <span class="k">return</span> <span class="p">{</span>
-                <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s2">"fit_"</span><span class="p">))</span>
-                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"results/</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">model_glob</span><span class="p">)</span>
-            <span class="p">}</span>
 
         <span class="n">found_fit_indices</span> <span class="o">=</span> <span class="n">_found_fit_indices</span><span class="p">()</span>
 
@@ -730,56 +744,89 @@
         <span class="n">committee_size</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"mlip_committee"</span><span class="p">][</span><span class="s2">"size_of_committee"</span><span class="p">]</span>
         <span class="n">fits_to_use</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">committee_size</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">best_fit_idx</span><span class="p">]</span>
 
+        <span class="n">method</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"method"</span><span class="p">,</span> <span class="s2">"md"</span><span class="p">)</span>
+
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">"Structure generation: MD will run with fit_</span><span class="si">%d</span><span class="s2"> (lowest test-set force "</span>
-            <span class="s2">"MAE) as the base model; the remaining </span><span class="si">%d</span><span class="s2"> committee member(s) </span><span class="si">%s</span><span class="s2"> will "</span>
-            <span class="s2">"be used afterwards to score MD-generated structures by force std dev."</span><span class="p">,</span>
+            <span class="s2">"Structure generation: </span><span class="si">%s</span><span class="s2"> will run with fit_</span><span class="si">%d</span><span class="s2"> "</span>
+            <span class="s2">"(lowest common-validation force MAE) as the base model; "</span>
+            <span class="s2">"the remaining </span><span class="si">%d</span><span class="s2"> committee member(s) </span><span class="si">%s</span><span class="s2"> will be used afterwards "</span>
+            <span class="s2">"to score generated structures by force std dev."</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
             <span class="n">best_fit_idx</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
             <span class="n">fits_to_use</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="k">if</span> <span class="s2">"run_md_kwargs"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">]:</span>
-            <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"run_md_kwargs"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">"md"</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">"run_md_kwargs"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">]:</span>
+                <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"run_md_kwargs"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
-        <span class="n">function_kwargs</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">"structure_generation_job_dict"</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">],</span>
-            <span class="s2">"total_md_runs"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
-            <span class="s2">"model_path"</span><span class="p">:</span> <span class="p">[</span>
-                <span class="n">base_mace_model_path</span>
-            <span class="p">],</span>  <span class="c1"># need to pass model path to preserve consistent dtype</span>
-            <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"run_md_kwargs"</span><span class="p">],</span>
-        <span class="p">}</span>
+            <span class="n">function_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"structure_generation_job_dict"</span><span class="p">:</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">],</span>
+                <span class="s2">"total_md_runs"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+                <span class="s2">"model_path"</span><span class="p">:</span> <span class="p">[</span><span class="n">base_mace_model_path</span><span class="p">],</span>
+                <span class="o">**</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"run_md_kwargs"</span><span class="p">],</span>
+            <span class="p">}</span>
 
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">"Structure generation: submitting </span><span class="si">%d</span><span class="s2"> MD run(s) from </span><span class="si">%d</span><span class="s2"> seed "</span>
-            <span class="s2">"structure(s) to generate candidate structures."</span><span class="p">,</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
-        <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"Structure generation: submitting </span><span class="si">%d</span><span class="s2"> MD run(s) from </span><span class="si">%d</span><span class="s2"> seed "</span>
+                <span class="s2">"structure(s) to generate candidate structures."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+            <span class="p">)</span>
 
-        <span class="n">md_trajectory_paths</span> <span class="o">=</span> <span class="n">md_remote_submitter</span><span class="p">(</span>
-            <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
-                <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">],</span> <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="n">base_mace_model_path</span><span class="p">]</span>
-            <span class="p">),</span>
-            <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
-            <span class="n">target_file</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">'structure_generation'</span><span class="p">][</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">,</span>
-            <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">input_structures</span><span class="p">,</span>
-            <span class="n">function</span><span class="o">=</span><span class="n">run_md</span><span class="p">,</span>
-            <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
-        <span class="p">)</span>
+            <span class="n">md_trajectory_paths</span> <span class="o">=</span> <span class="n">md_remote_submitter</span><span class="p">(</span>
+                <span class="n">remote_info</span><span class="o">=</span><span class="n">get_remote_info</span><span class="p">(</span>
+                    <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">],</span>
+                    <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="n">base_mace_model_path</span><span class="p">],</span>
+                <span class="p">),</span>
+                <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+                <span class="n">target_file</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">'structure_generation'</span><span class="p">][</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">,</span>
+                <span class="n">input_atoms_list</span><span class="o">=</span><span class="n">input_structures</span><span class="p">,</span>
+                <span class="n">function</span><span class="o">=</span><span class="n">run_md</span><span class="p">,</span>
+                <span class="n">function_kwargs</span><span class="o">=</span><span class="n">function_kwargs</span><span class="p">,</span>
+            <span class="p">)</span>
 
-        <span class="n">structure_list</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">md_trajectory_path</span> <span class="ow">in</span> <span class="n">md_trajectory_paths</span><span class="p">:</span>
-            <span class="n">structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">md_trajectory_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
-            <span class="n">structure_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span>
+            <span class="n">structure_list</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">"Structure generation: MD produced </span><span class="si">%d</span><span class="s2"> candidate structure(s) across "</span>
-            <span class="s2">"</span><span class="si">%d</span><span class="s2"> trajectory file(s)."</span><span class="p">,</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">md_trajectory_paths</span><span class="p">),</span>
-        <span class="p">)</span>
+            <span class="k">for</span> <span class="n">md_trajectory_path</span> <span class="ow">in</span> <span class="n">md_trajectory_paths</span><span class="p">:</span>
+                <span class="n">structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span>
+                    <span class="n">md_trajectory_path</span><span class="p">,</span>
+                    <span class="s2">":"</span><span class="p">,</span>
+                    <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">structure_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"Structure generation: MD produced </span><span class="si">%d</span><span class="s2"> candidate structure(s) "</span>
+                <span class="s2">"across </span><span class="si">%d</span><span class="s2"> trajectory file(s)."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">md_trajectory_paths</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">"ezga"</span><span class="p">:</span>
+            <span class="n">run_ezga_kwargs</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"run_ezga_kwargs"</span><span class="p">,</span> <span class="p">{}</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"Structure generation: running EZGA from </span><span class="si">%d</span><span class="s2"> seed structure(s)."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">input_structures</span><span class="p">),</span>
+            <span class="p">)</span>
+
+            <span class="n">structure_list</span> <span class="o">=</span> <span class="n">run_ezga</span><span class="p">(</span>
+                <span class="n">initial_structures</span><span class="o">=</span><span class="n">input_structures</span><span class="p">,</span>
+                <span class="n">model_path</span><span class="o">=</span><span class="n">base_mace_model_path</span><span class="p">,</span>
+                <span class="n">output_dir</span><span class="o">=</span><span class="n">operating_dir</span> <span class="o">/</span> <span class="s2">"ezga"</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">run_ezga_kwargs</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"Structure generation: EZGA produced </span><span class="si">%d</span><span class="s2"> candidate structure(s)."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown structure generation method: </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="n">model_paths_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
             <span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
@@ -856,7 +903,10 @@
                 <span class="s2">"high_accuracy_eval already done for </span><span class="si">%s</span><span class="s2">, loading cached results."</span><span class="p">,</span>
                 <span class="n">base_name</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">sentinel_results</span><span class="p">,</span> <span class="s2">":"</span><span class="p">))</span>
+            <span class="k">return</span> <span class="p">[</span>
+                <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">sentinel_results</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">read</span><span class="p">(</span><span class="n">sentinel_results</span><span class="p">,</span> <span class="s2">":"</span><span class="p">)</span>
+            <span class="p">]</span>
 
         <span class="n">calculator</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"calculator"</span><span class="p">,</span> <span class="s2">"qe"</span><span class="p">)</span>
         <span class="n">warn_mismatched_kwargs</span><span class="p">(</span><span class="n">calculator</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">)</span>
@@ -885,7 +935,10 @@
                     <span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">),</span>
                 <span class="p">)</span>
 
-                <span class="n">atoms_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">read</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">found_structures</span><span class="p">]</span>
+                <span class="n">atoms_list</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+                    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">found_structures</span>
+                <span class="p">]</span>
                 <span class="k">return</span> <span class="n">atoms_list</span>
 
             <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">found_structures</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
@@ -996,7 +1049,9 @@
             <span class="n">completed_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">directory</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">output_name</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">)</span>
             <span class="n">structure</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="n">completed_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-                <span class="n">structure</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">completed_file</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+                <span class="n">structure</span> <span class="o">=</span> <span class="n">refresh_dft_labels</span><span class="p">(</span>
+                    <span class="n">read</span><span class="p">(</span><span class="n">completed_file</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">completed_file</span><span class="p">)</span>
+                <span class="p">)</span>
             <span class="k">if</span> <span class="n">structure</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">high_accuracy_structures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span>
 

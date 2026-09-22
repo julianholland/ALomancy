@@ -91,10 +91,13 @@
     <span class="n">override_config_type</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="n">already_computed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">extra_metadata</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">label_source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"reference"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    adds DFT results to copy of structures info dictionary.</span>
 <span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">label_source</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"reference"</span><span class="p">,</span> <span class="s2">"calculator"</span><span class="p">}:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"label_source must be reference or calculator"</span><span class="p">)</span>
     <span class="n">cleaned_structures</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">structures</span><span class="p">:</span>
         <span class="c1"># copy structure with just the right information</span>
@@ -114,12 +117,13 @@
 
         <span class="k">if</span> <span class="n">already_computed</span><span class="p">:</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="s2">"REF_energy"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span>
+                <span class="n">label_source</span> <span class="o">==</span> <span class="s2">"calculator"</span>
+                <span class="ow">or</span> <span class="s2">"REF_energy"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span>
                 <span class="ow">or</span> <span class="s2">"REF_forces"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">arrays</span>
             <span class="p">):</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="n">energy</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
-                    <span class="n">forces</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+                    <span class="n">forces</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_forces</span><span class="p">(</span><span class="n">apply_constraint</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
                 <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                         <span class="s2">"Structure is marked as already_computed but is missing REF_energy or REF_forces, and they could not be computed. Original error: "</span>
@@ -129,6 +133,12 @@
                 <span class="n">energy</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span>
                 <span class="n">forces</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span>
 
+            <span class="n">energy</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">energy</span><span class="p">)</span>
+            <span class="n">forces</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">forces</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">energy</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"DFT energy must be finite and structure nonempty"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">forces</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">forces</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"DFT forces must be finite with shape (N, 3)"</span><span class="p">)</span>
             <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
             <span class="n">structure_copy</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
 

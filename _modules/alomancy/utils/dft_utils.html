@@ -84,6 +84,8 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">write</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">BFGS</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">clean_structures</span>
+
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 
@@ -121,6 +123,34 @@
     <span class="p">)</span>
 
 
+<div class="viewcode-block" id="refresh_dft_labels">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.dft_utils.refresh_dft_labels">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">refresh_dft_labels</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"DFT"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Replace inherited labels from the current, explicitly DFT calculator.</span>
+
+<span class="sd">    Never call this on a generated candidate with a surrogate calculator.</span>
+<span class="sd">    Keep ASE's energy convention; store free_energy separately when available.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Cannot refresh DFT labels without a calculator"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">calc</span><span class="p">,</span> <span class="s2">"converged"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"DFT electronic calculation did not converge"</span><span class="p">)</span>
+    <span class="n">clean</span> <span class="o">=</span> <span class="n">clean_structures</span><span class="p">([</span><span class="n">atoms</span><span class="p">],</span> <span class="s2">"DFT"</span><span class="p">,</span> <span class="n">label_source</span><span class="o">=</span><span class="s2">"calculator"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">clean</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">set_array</span><span class="p">(</span><span class="s2">"REF_forces"</span><span class="p">,</span> <span class="n">clean</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_label_source"</span><span class="p">]</span> <span class="o">=</span> <span class="n">source</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">calc</span><span class="p">,</span> <span class="s2">"converged"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"dft_converged"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy_convention"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"energy"</span>
+    <span class="n">free_energy</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"free_energy"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">free_energy</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">free_energy</span><span class="p">):</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_free_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">free_energy</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"REF_free_energy"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">atoms</span></div>
+
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_write_dft_result</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">write</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">),</span> <span class="n">atoms</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Writing structures to </span><span class="si">%s</span><span class="s2"> as </span><span class="si">%s</span><span class="s2">.xyz"</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
@@ -135,6 +165,7 @@
     <span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">create_calc_fn</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
+    <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
     <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 
@@ -153,7 +184,16 @@
         <span class="n">logfile</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.log"</span><span class="p">)),</span>
         <span class="n">trajectory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.traj"</span><span class="p">)),</span>
     <span class="p">)</span>
-    <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
+    <span class="n">converged</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Geometry optimization in </span><span class="si">%s</span><span class="s2"> did not reach fmax=0.05 eV/Angstrom "</span>
+            <span class="s2">"within 200 steps; keeping the best structure found rather than "</span>
+            <span class="s2">"discarding the completed DFT computation."</span><span class="p">,</span>
+            <span class="n">out_dir</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_converged"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">converged</span><span class="p">)</span>
     <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 </pre></div>

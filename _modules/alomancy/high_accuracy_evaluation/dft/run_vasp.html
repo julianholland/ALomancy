@@ -154,7 +154,7 @@
         <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_input_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">is_relaxation</span><span class="p">:</span>
-        <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">"nsw"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"ibrion"</span><span class="p">:</span> <span class="mi">2</span><span class="p">})</span>
+        <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">"nsw"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"ibrion"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">})</span>
 
     <span class="c1"># NCORE ~ sqrt(ranks_per_node) is a sensible default for band parallelism</span>
     <span class="n">ncore</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">hpc</span><span class="p">[</span><span class="s2">"node_info"</span><span class="p">][</span><span class="s2">"ranks_per_node"</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">))</span>

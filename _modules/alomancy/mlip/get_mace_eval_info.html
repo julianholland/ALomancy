@@ -75,12 +75,15 @@
            <div itemprop="articleBody">
              
   <h1>Source code for alomancy.mlip.get_mace_eval_info</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">ast</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_evaluation</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
@@ -91,12 +94,46 @@
     <span class="n">mlip_committee_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""</span>
-<span class="sd">    Recover final results from train.txt files in MACE AL loop directories.</span>
+<span class="sd">    Read final test metrics; explicitly identify legacy validation-only logs.</span>
 <span class="sd">    """</span>
 
-    <span class="n">al_loop_dirs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">),</span> <span class="s2">"al_loop_*"</span><span class="p">))</span>
+    <span class="n">al_loop_dirs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"al_loop_*"</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="p">)</span>
     <span class="n">all_avg_results</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">al_loop_dir</span> <span class="ow">in</span> <span class="n">al_loop_dirs</span><span class="p">:</span>
+        <span class="n">metric_files</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">al_loop_dir</span> <span class="o">/</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
+                <span class="s2">"fit_*/evaluation_metrics.json"</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">metric_files</span><span class="p">:</span>
+            <span class="n">expected</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"size_of_committee"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">metric_files</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">expected_dirs</span> <span class="o">=</span> <span class="p">{</span><span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">expected</span><span class="p">)}</span>
+            <span class="k">if</span> <span class="p">{</span><span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">metric_files</span><span class="p">}</span> <span class="o">!=</span> <span class="n">expected_dirs</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="s2">"Missing checkpoint evaluations for committee members"</span>
+                <span class="p">)</span>
+            <span class="n">records</span> <span class="o">=</span> <span class="p">[</span><span class="n">read_evaluation</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">metric_files</span><span class="p">]</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">key</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">r</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">]))</span>
+                <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"mae_f"</span><span class="p">,</span> <span class="s2">"mae_e_per_atom"</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="n">row</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_std_dev"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">([</span><span class="n">r</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">]))</span>
+                    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"mae_f"</span><span class="p">,</span> <span class="s2">"mae_e_per_atom"</span><span class="p">)</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+            <span class="n">row</span><span class="p">[</span><span class="s2">"metric_source"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"checkpoint_test"</span>
+            <span class="n">all_avg_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">mlip_committee_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"require_checkpoint_metrics"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">al_loop_dir</span><span class="si">}</span><span class="s2">: checkpoint evaluations are required; training logs are insufficient"</span>
+            <span class="p">)</span>
         <span class="n">results_files</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
             <span class="n">Path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
                 <span class="n">Path</span><span class="p">(</span><span class="n">al_loop_dir</span><span class="p">,</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]),</span>
@@ -109,7 +146,7 @@
         <span class="k">for</span> <span class="n">results_file</span> <span class="ow">in</span> <span class="n">results_files</span><span class="p">:</span>
             <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">results_file</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
                 <span class="n">data_line</span> <span class="o">=</span> <span class="n">file</span><span class="o">.</span><span class="n">readlines</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">eval</span><span class="p">(</span><span class="n">data_line</span><span class="p">))</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">data_line</span><span class="p">))</span>
                 <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 
         <span class="n">avg_result</span> <span class="o">=</span> <span class="p">{</span>
@@ -124,6 +161,11 @@
         <span class="p">}</span>
         <span class="n">avg_result</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
             <span class="p">{</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_std_dev"</span><span class="p">:</span> <span class="n">std_dev_results</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">std_dev_results</span><span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">avg_result</span><span class="p">[</span><span class="s2">"metric_source"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"legacy_training_validation"</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"</span><span class="si">%s</span><span class="s2">: using legacy training-time validation metrics, not final test metrics"</span><span class="p">,</span>
+            <span class="n">al_loop_dir</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">all_avg_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">avg_result</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">all_avg_results</span><span class="p">)</span></div>
@@ -150,7 +192,7 @@
             <span class="k">except</span> <span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
                 <span class="k">pass</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">record</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">eval</span><span class="p">(</span><span class="n">line</span><span class="p">))</span>
+                <span class="n">record</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">line</span><span class="p">))</span>
                 <span class="n">last_record</span> <span class="o">=</span> <span class="n">record</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="k">pass</span>
@@ -162,98 +204,90 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">select_best_committee_model</span><span class="p">(</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">mlip_committee_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
-    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>  <span class="c1"># noqa: ARG001 -- unused now that selection is checkpoint-based, kept for call-site compatibility</span>
     <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mae_f"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Path</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""</span>
-<span class="sd">    Select the committee member with the lowest test-set force MAE.</span>
+<span class="sd">    Select the committee member with the lowest common-validation error.</span>
 
-<span class="sd">    Reads the ``*_test.txt`` metrics file written by MACE at the end of each</span>
-<span class="sd">    training run, picks the fit with the lowest value of *metric* on the held-</span>
-<span class="sd">    out test set, and returns ``(best_fit_index, stagetwo_model_path)``.</span>
+<span class="sd">    Prefers the shared ``"valid"`` checkpoint split (``mlip/evaluation.py``'s</span>
+<span class="sd">    ``save_evaluation``/``read_evaluation``, written by</span>
+<span class="sd">    ``_save_mace_eval_predictions`` right after training) when every</span>
+<span class="sd">    committee member has one. Falls back to the held-out ``"test"`` split</span>
+<span class="sd">    when NO fit has a ``"valid"`` entry at all -- ``mace_fit``'s own</span>
+<span class="sd">    ``_select_validation_split`` legitimately skips carving a validation</span>
+<span class="sd">    split (just a warning, not a failure) whenever the eligible pool is too</span>
+<span class="sd">    small, in which case every fit is missing "valid" uniformly, and the</span>
+<span class="sd">    only sensible remaining common metric across the committee is "test"</span>
+<span class="sd">    (always attempted regardless of pool size). If fits DISAGREE on having</span>
+<span class="sd">    "valid" (some do, some don't), that indicates a genuine per-fit</span>
+<span class="sd">    evaluation failure rather than a normal small-pool run, and this raises.</span>
 
-<span class="sd">    Only considers fits whose stagetwo model file actually exists on disk --</span>
-<span class="sd">    a fit can be missing readable test metrics while ALSO genuinely having</span>
-<span class="sd">    no model at all, e.g. a committee member whose training job was</span>
-<span class="sd">    abandoned after a sustained remote-communication failure (see</span>
-<span class="sd">    remote_submission/executor.py's _get_results_with_resume) or never</span>
-<span class="sd">    retried after train_mlip's backfill. Falls back to the lowest-indexed</span>
-<span class="sd">    fit that HAS a model on disk if no committee member has readable test</span>
-<span class="sd">    metrics -- previously this defaulted to fit_0 unconditionally, which</span>
-<span class="sd">    crashed a downstream consumer (structure_generation trying to stage a</span>
-<span class="sd">    nonexistent model file as an MD job input) the one time fit_0 itself was</span>
-<span class="sd">    the fit with no model. Raises ValueError if literally none of the</span>
-<span class="sd">    committee's fits have a model file (train_mlip guarantees at least 3</span>
-<span class="sd">    before calling this, so this should only fire if that invariant is ever</span>
-<span class="sd">    broken).</span>
+<span class="sd">    Picks the fit with the lowest value of *metric* on whichever split was</span>
+<span class="sd">    used and returns ``(best_fit_index, stagetwo_model_path)``.</span>
+
+<span class="sd">    ``seed`` is no longer used by this function (the old *_test.txt-based</span>
+<span class="sd">    legacy path derived a per-fit seed from it) -- kept as a required</span>
+<span class="sd">    parameter only so existing call sites (``standard_active_learning.py``,</span>
+<span class="sd">    the checkpoint-evaluation test suite) don't need to change.</span>
 <span class="sd">    """</span>
     <span class="n">name</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span>
     <span class="n">n_fits</span> <span class="o">=</span> <span class="n">mlip_committee_job_dict</span><span class="p">[</span><span class="s2">"size_of_committee"</span><span class="p">]</span>
     <span class="n">committee_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_model_path</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">committee_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model"</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_try_read</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">split</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Path</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">metrics</span><span class="p">,</span> <span class="n">model_path</span> <span class="o">=</span> <span class="n">read_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="n">split</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">metrics</span><span class="p">[</span><span class="n">metric</span><span class="p">]),</span> <span class="n">model_path</span>
 
-    <span class="n">fits_with_model</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_fits</span><span class="p">)</span> <span class="k">if</span> <span class="n">_model_path</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()]</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">fits_with_model</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">"select_best_committee_model for </span><span class="si">{</span><span class="n">base_name</span><span class="si">!r}</span><span class="s2">: none of the "</span>
-            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">n_fits</span><span class="si">}</span><span class="s2"> committee fit(s) have a </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model file "</span>
-            <span class="s2">"on disk. Check remote job logs for failures."</span>
-        <span class="p">)</span>
-
-    <span class="n">best_fit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">best_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">)</span>
-
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">fits_with_model</span><span class="p">:</span>
+    <span class="n">valid_scores</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">test_scores</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_fits</span><span class="p">):</span>
         <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">committee_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
-        <span class="n">results_dir</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"results"</span>
-        <span class="n">fit_seed</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">i</span>
+        <span class="n">valid_result</span> <span class="o">=</span> <span class="n">_try_read</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="s2">"valid"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">valid_result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">valid_scores</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">valid_result</span>
+        <span class="n">test_result</span> <span class="o">=</span> <span class="n">_try_read</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">test_result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">test_scores</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">test_result</span>
 
-        <span class="n">txt_path</span> <span class="o">=</span> <span class="n">results_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_run-</span><span class="si">{</span><span class="n">fit_seed</span><span class="si">}</span><span class="s2">_test.txt"</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">txt_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-            <span class="n">candidates</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">results_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"*_test.txt"</span><span class="p">))</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
-                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No test metrics file found for fit_</span><span class="si">%d</span><span class="s2"> — skipping."</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
-                <span class="k">continue</span>
-            <span class="n">txt_path</span> <span class="o">=</span> <span class="n">candidates</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Using test metrics file: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">txt_path</span><span class="p">)</span>
-
-        <span class="n">record</span> <span class="o">=</span> <span class="n">_read_last_metric_record</span><span class="p">(</span><span class="n">txt_path</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">record</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No parseable records in </span><span class="si">%s</span><span class="s2"> — skipping fit_</span><span class="si">%d</span><span class="s2">."</span><span class="p">,</span> <span class="n">txt_path</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
-            <span class="k">continue</span>
-
-        <span class="n">score</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">metric</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">score</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">"Metric </span><span class="si">%r</span><span class="s2"> not in test file for fit_</span><span class="si">%d</span><span class="s2"> — skipping."</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">i</span>
+    <span class="k">if</span> <span class="n">valid_scores</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">valid_scores</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_fits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"select_best_committee_model for </span><span class="si">{</span><span class="n">base_name</span><span class="si">!r}</span><span class="s2">: "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">n_fits</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">valid_scores</span><span class="p">)</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">n_fits</span><span class="si">}</span><span class="s2"> committee fit(s) "</span>
+                <span class="s2">"are missing complete checkpoint validation on the 'valid' "</span>
+                <span class="s2">"split while others have it. Check remote job logs for "</span>
+                <span class="s2">"evaluation failures."</span>
             <span class="p">)</span>
-            <span class="k">continue</span>
-
-        <span class="n">score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"fit_</span><span class="si">%d</span><span class="s2"> test </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">score</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">score</span> <span class="o">&lt;</span> <span class="n">best_score</span><span class="p">:</span>
-            <span class="n">best_score</span> <span class="o">=</span> <span class="n">score</span>
-            <span class="n">best_fit</span> <span class="o">=</span> <span class="n">i</span>
-
-    <span class="k">if</span> <span class="n">best_fit</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">best_fit</span> <span class="o">=</span> <span class="n">fits_with_model</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">"Could not read test </span><span class="si">%r</span><span class="s2"> for any committee member; defaulting to "</span>
-            <span class="s2">"fit_</span><span class="si">%d</span><span class="s2"> (lowest-indexed fit with a model on disk)."</span><span class="p">,</span>
-            <span class="n">metric</span><span class="p">,</span>
-            <span class="n">best_fit</span><span class="p">,</span>
-        <span class="p">)</span>
+        <span class="n">scores</span><span class="p">,</span> <span class="n">split_used</span> <span class="o">=</span> <span class="n">valid_scores</span><span class="p">,</span> <span class="s2">"valid"</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">"Best committee member: fit_</span><span class="si">%d</span><span class="s2"> (test </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">)."</span><span class="p">,</span>
-            <span class="n">best_fit</span><span class="p">,</span>
-            <span class="n">metric</span><span class="p">,</span>
-            <span class="n">best_score</span><span class="p">,</span>
+            <span class="s2">"No committee member has a 'valid' checkpoint evaluation "</span>
+            <span class="s2">"(expected when the eligible pool is too small for a "</span>
+            <span class="s2">"validation split) — falling back to the 'test' split."</span>
         <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_scores</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_fits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"select_best_committee_model for </span><span class="si">{</span><span class="n">base_name</span><span class="si">!r}</span><span class="s2">: "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">n_fits</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">test_scores</span><span class="p">)</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">n_fits</span><span class="si">}</span><span class="s2"> committee fit(s) "</span>
+                <span class="s2">"are missing complete checkpoint validation (neither "</span>
+                <span class="s2">"'valid' nor 'test' evaluation is available). Check remote "</span>
+                <span class="s2">"job logs for evaluation failures."</span>
+            <span class="p">)</span>
+        <span class="n">scores</span><span class="p">,</span> <span class="n">split_used</span> <span class="o">=</span> <span class="n">test_scores</span><span class="p">,</span> <span class="s2">"test"</span>
 
-    <span class="k">return</span> <span class="n">best_fit</span><span class="p">,</span> <span class="n">_model_path</span><span class="p">(</span><span class="n">best_fit</span><span class="p">)</span></div>
+    <span class="n">best_fit</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="n">scores</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">"Best committee member: fit_</span><span class="si">%d</span><span class="s2"> (</span><span class="si">%s</span><span class="s2"> </span><span class="si">%s</span><span class="s2"> = </span><span class="si">%.6f</span><span class="s2">)."</span><span class="p">,</span>
+        <span class="n">best_fit</span><span class="p">,</span>
+        <span class="n">split_used</span><span class="p">,</span>
+        <span class="n">metric</span><span class="p">,</span>
+        <span class="n">scores</span><span class="p">[</span><span class="n">best_fit</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">best_fit</span><span class="p">,</span> <span class="n">scores</span><span class="p">[</span><span class="n">best_fit</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span></div>
 
 </pre></div>
 

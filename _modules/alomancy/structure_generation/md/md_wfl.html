@@ -105,6 +105,8 @@
     <span class="n">friction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.002</span><span class="p">,</span>
     <span class="n">ensemble</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"nvt"</span><span class="p">,</span>
     <span class="n">pressure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">equilibration_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">equilibration_temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">300.0</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    ensemble : {"nvt", "npt"}</span>
@@ -115,6 +117,11 @@
 <span class="sd">        Target external pressure in GPa, only used when ensemble="npt".</span>
 <span class="sd">        ASE's externalstress is the negative of pressure (positive pressure</span>
 <span class="sd">        compresses), so it is derived here as -pressure * ase.units.GPa.</span>
+<span class="sd">    equilibration_steps : int</span>
+<span class="sd">        Number of initial fixed-cell NVT Langevin steps that are not written to</span>
+<span class="sd">        the production trajectory. Zero disables equilibration.</span>
+<span class="sd">    equilibration_temperature : float</span>
+<span class="sd">        Temperature in K used during the initial NVT equilibration.</span>
 <span class="sd">    """</span>
     <span class="k">if</span> <span class="n">ensemble</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"nvt"</span><span class="p">,</span> <span class="s2">"npt"</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown ensemble </span><span class="si">{</span><span class="n">ensemble</span><span class="si">!r}</span><span class="s2">; must be 'nvt' or 'npt'."</span><span class="p">)</span>
@@ -159,6 +166,28 @@
             <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">md_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s1">'job_id'</span><span class="p">]</span><span class="si">}</span><span class="s2">.log"</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">equilibration_steps</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"equilibration_steps must be non-negative."</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">equilibration_temperature</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"equilibration_temperature must be positive."</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">equilibration_steps</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"Equilibrating MD run </span><span class="si">%s</span><span class="s2"> for </span><span class="si">%d</span><span class="s2"> NVT steps at </span><span class="si">%g</span><span class="s2"> K."</span><span class="p">,</span>
+            <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span>
+            <span class="n">equilibration_steps</span><span class="p">,</span>
+            <span class="n">equilibration_temperature</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">equilibration</span> <span class="o">=</span> <span class="n">Langevin</span><span class="p">(</span>
+            <span class="n">atoms</span><span class="o">=</span><span class="n">md_structure</span><span class="p">,</span>
+            <span class="n">timestep</span><span class="o">=</span><span class="n">timestep_fs</span> <span class="o">*</span> <span class="n">fs</span><span class="p">,</span>
+            <span class="n">temperature_K</span><span class="o">=</span><span class="n">equilibration_temperature</span><span class="p">,</span>
+            <span class="n">friction</span><span class="o">=</span><span class="n">friction</span><span class="p">,</span>
+            <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+            <span class="n">logfile</span><span class="o">=</span><span class="n">logfile</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">equilibration</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">steps</span><span class="o">=</span><span class="n">equilibration_steps</span><span class="p">)</span>
 
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
         <span class="s2">"MD run </span><span class="si">%s</span><span class="s2">: ensemble=</span><span class="si">%s%s</span><span class="s2">."</span><span class="p">,</span>
