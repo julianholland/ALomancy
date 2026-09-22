@@ -11,6 +11,7 @@ from ase import Atoms
 from ase.io import read, write
 from expyre import ExPyRe
 from mace import tools
+from mace.calculators import MACECalculator
 from mace.cli.run_train import run
 
 from alomancy.configs.remote_info import RemoteInfo
@@ -77,8 +78,6 @@ def _save_mace_eval_predictions(
     logger.info("Using %s for post-training eval predictions.", model_path.name)
 
     try:
-        from mace.calculators import MACECalculator
-
         try:
             import torch
 

@@ -424,7 +424,7 @@ class TestSaveMaceEvalPredictions:
         )
 
         with (
-            patch("mace.calculators.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls,
             patch("alomancy.mlip.mace_wfl.write") as mock_write,
         ):
             mock_calc_cls.return_value = MagicMock()
@@ -463,7 +463,7 @@ class TestSaveMaceEvalPredictions:
 
         al_logger, handler, records = self._collect_alomancy_logs()
         try:
-            with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+            with patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls:
                 mock_calc_cls.return_value = MagicMock()
                 _save_mace_eval_predictions("test_name", "train.xyz")
         finally:
@@ -515,7 +515,7 @@ class TestSaveMaceEvalPredictions:
 
         al_logger, handler, records = self._collect_alomancy_logs()
         try:
-            with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+            with patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls:
                 mock_calc_cls.return_value = MagicMock()
                 _save_mace_eval_predictions("test_name", "train.xyz")
         finally:
