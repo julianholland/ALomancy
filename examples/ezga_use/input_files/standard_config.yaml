@@ -1,0 +1,109 @@
+initialization:
+  name: "initialization"
+  max_time: "2H"
+  test_to_train_ratio: 0.1
+  test_config_types:
+    - "IsolatedAtom"
+    - "init_dimer"
+  creation_kwargs:
+    elements: [6, 11]  # Na, C by atomic number — match your system
+    mp_structures: true
+    single_atoms: true
+    num_dimers_per_combo: 10
+    num_trimers_per_combo: 5
+    num_amorphous: 300
+    num_stretch_compress_per_mp: 5
+    max_atom_number: 20
+    amorphous_atom_number: 20
+    mp_max_energy_above_hull: 0.1
+    densities_list: [1.0, 2.0, 3.0]
+    deform_xyz: false
+    max_deformation: 0.2
+  hpc: 'raven'
+
+mlip_committee:
+  name: "mlip_committee"
+  size_of_committee: 5
+  max_time: "5H"
+  mace_fit_kwargs:
+    max_num_epochs: 80
+    E0s:
+      6: -241.94038776317848
+      11: -1296.5877903540002
+    model: "MACE"
+    energy_key: "REF_energy"
+    forces_key: "REF_forces"
+    atomic_numbers: [6, 11]
+    correlation: 3
+    device: "cuda"
+    ema: null
+    energy_weight: 1
+    forces_weight: 10
+    error_table: "PerAtomMAE"
+    eval_interval: 1
+    max_L: 2
+    num_channels: 128
+    num_interactions: 2
+    patience: 30
+    r_max: 5.0
+    restart_latest: null
+    save_cpu: null
+    scheduler_patience: 15
+    swa: null
+    batch_size: 16
+    valid_batch_size: 16
+    distributed: null
+  hpc: 'raccoon_big'
+
+# This example demonstrates EZGA (genetic-algorithm) structure generation as
+# an alternative to the default MD-based candidate generation shown in
+# examples/basic_use/. Set structure_generation.method: "ezga" to switch;
+# everything downstream (bond-distance filtering, committee force-std-dev
+# scoring, DFT evaluation) is unchanged either way — EZGA only replaces how
+# candidate structures are produced. Unlike MD, EZGA runs entirely in the
+# local driver process (no remote submission of its own) and only exercises
+# the single best-fit committee model (device="cpu", hardcoded) to relax
+# candidates internally, so run_md_kwargs is not used here.
+structure_generation:
+  name: "structure_generation"
+  desired_number_of_structures: 50
+  max_time: "10H"
+  method: "ezga"
+  structure_selection_kwargs:
+    max_number_of_concurrent_jobs: 5
+    chem_formula_list: null
+    atom_number_range: [2, 21]  # must stay within run_ezga_kwargs' min_atoms/max_atoms below
+    enforce_chemical_diversity: True
+  run_ezga_kwargs:
+    max_generations: 2
+    population_size: 2
+    min_atoms: 2
+    max_atoms: 21
+    mutation_operators:
+      rattle:
+        enabled: true
+        std: 0.05
+        species: ["Na"]
+      random_strain:
+        enabled: true
+        max_strain: 0.02
+      add:
+        enabled: true
+        species: ["Na"]
+        bound: ["Na", "C"]
+        collision_tolerance: 2.0
+        slab: false
+      remove:
+        enabled: true
+        species: "Na"
+      remove_add:
+        enabled: false
+  hpc: 'raccoon_small'
+
+high_accuracy_evaluation:
+  name: "high_accuracy_evaluation"
+  max_time: "30m"
+  qe_input_kwargs:
+    system:
+      input_dft: "pbe"
+  hpc: 'raven'

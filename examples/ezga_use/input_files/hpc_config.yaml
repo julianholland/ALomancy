@@ -1,0 +1,61 @@
+raven:
+  hpc_name: "raven"
+  gpu: false
+  pre_cmds:
+    - "source /u/jholl/venvs/alomancy/bin/activate"
+  partitions:
+    - "general"
+  node_info:
+    ranks_per_system: 72
+    ranks_per_node: 72
+    threads_per_rank: 1
+    max_mem_per_node: "60GB"
+  pwx_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
+  pp_path: "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency"
+  pseudo_dict:
+    C: "C.pbe-n-kjpaw_psl.1.0.0.UPF"
+    Na: "na_pbe_v1.5.uspp.F.UPF"
+
+raven_gpu:
+  hpc_name: "raven_gpu"
+  gpu: true
+  pre_cmds:
+    - "source /u/jholl/venvs/alomancy/bin/activate"
+  partitions:
+    - "gpu"
+  node_info:
+    ranks_per_system: 72
+    ranks_per_node: 72
+    threads_per_rank: 1
+    max_mem_per_node: "60GB"
+  high_accuracy_executable_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
+  pp_path: "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency"
+  pseudo_dict:
+    C: "C.pbe-n-kjpaw_psl.1.0.0.UPF"
+    Na: "na_pbe_v1.5.uspp.F.UPF"
+
+raccoon_small:
+  hpc_name: "fhi-raccoon"
+  gpu: true
+  pre_cmds:
+    - "source /home/jholl/venvs/alomancy/bin/activate"
+  partitions:
+    - "gpusmall"
+  node_info:
+    ranks_per_system: 32
+    ranks_per_node: 32
+    threads_per_rank: 1
+    max_mem_per_node: "125GB"
+
+raccoon_big:
+  hpc_name: "fhi-raccoon"
+  gpu: true
+  pre_cmds:
+    - "source /home/jholl/venvs/alomancy/bin/activate"
+  partitions:
+    - "gpubig"
+  node_info:
+    ranks_per_system: 64
+    ranks_per_node: 64
+    threads_per_rank: 1
+    max_mem_per_node: "1TB"
