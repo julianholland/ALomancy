@@ -641,6 +641,60 @@ class TestInitializeTrainingSetDBPath:
         # Verify structures were returned
         assert len(train) + len(test) == 5, "All structures should be distributed"
 
+    def test_db_path_grouped_splits_skips_config_type_split(
+        self, tmp_path, minimal_jobs_dict
+    ):
+        """When grouped_splits is enabled, the config-type-based split (and
+        its missing-config-type backstop) must not run at all -- previously
+        it was computed unconditionally and then discarded once
+        grouped_split's own result overwrote it."""
+        minimal_jobs_dict["initialization"]["grouped_splits"] = True
+        wf = ActiveLearningStandardMACE(
+            initial_train_file_path=str(tmp_path / "nonexistent_train.xyz"),
+            initial_test_file_path=str(tmp_path / "nonexistent_test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            db_path=str(tmp_path / "db"),
+        )
+
+        test_atoms_list = []
+        for i in range(5):
+            atoms = Atoms("H", positions=[[0, 0, 0]])
+            atoms.info["config_type"] = "IsolatedAtom" if i < 2 else "other_type"
+            atoms.info["REF_energy"] = -1.0 - i * 0.1
+            atoms.arrays["REF_forces"] = np.array([[0, 0, 0]])
+            test_atoms_list.append(atoms)
+
+        needs_dict = {
+            "isolated_atoms": [],
+            "dimer_override": {},
+            "trimer_override": {},
+            "amorphous_override": 0,
+            "mp_structures": [],
+        }
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.compute_initialization_needs"
+            ) as mock_needs,
+            patch(
+                "alomancy.core.standard_active_learning.split_atoms_list_into_test_and_train"
+            ) as mock_split,
+            patch(
+                "alomancy.core.standard_active_learning.grouped_split"
+            ) as mock_grouped_split,
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            mock_needs.return_value = needs_dict
+            mock_grouped_split.return_value = (test_atoms_list[:4], test_atoms_list[4:])
+            wf.db.get_all_as_atoms = Mock(return_value=test_atoms_list)
+
+            train, test = wf.initialize_training_set("initialization")
+
+        mock_split.assert_not_called()
+        mock_grouped_split.assert_called_once()
+        assert len(train) == 4
+        assert len(test) == 1
+
     def test_db_path_handles_no_eligible_test_structures(
         self, tmp_path, minimal_jobs_dict
     ):

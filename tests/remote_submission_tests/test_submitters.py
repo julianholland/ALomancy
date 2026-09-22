@@ -42,7 +42,12 @@ class TestCommitteeRemoteSubmitter:
         unrelated, already-successful committee members. Regression test
         for the exact bug class committee_remote_submitter's own docstring
         claims to guard against; this was previously untested at any
-        level."""
+        level.
+
+        seed is passed through unchanged (not offset by fit_idx) -- the
+        common validation split needs one shared seed across the whole
+        committee; mace_fit itself derives fit_idx-offset seeds for MACE's
+        own per-member initialization internally."""
         monkeypatch.chdir(tmp_path)
         captured: dict = {}
         monkeypatch.setattr(
@@ -67,10 +72,10 @@ class TestCommitteeRemoteSubmitter:
         expected_fit_4 = str(Path("results", "al_loop_6", "mlip_committee", "fit_4"))
         assert job_configs[0]["output_files"] == [expected_fit_2]
         assert job_configs[0]["function_kwargs"]["fit_idx"] == 2
-        assert job_configs[0]["function_kwargs"]["seed"] == 803 + 2
+        assert job_configs[0]["function_kwargs"]["seed"] == 803
         assert job_configs[1]["output_files"] == [expected_fit_4]
         assert job_configs[1]["function_kwargs"]["fit_idx"] == 4
-        assert job_configs[1]["function_kwargs"]["seed"] == 803 + 4
+        assert job_configs[1]["function_kwargs"]["seed"] == 803
 
     @pytest.mark.unit
     def test_default_fit_indices_covers_full_committee_in_order(

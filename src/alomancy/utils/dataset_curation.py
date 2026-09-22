@@ -46,7 +46,12 @@ def structure_domain(atoms: Atoms) -> str:
         return "dimer"
     if ct == "init_trimer" or len(atoms) == 3:
         return "trimer"
-    return "unknown"
+    # No specific rule for this config_type (e.g. "high_sd", an AL-loop
+    # candidate) -- fall back to the config_type itself rather than
+    # "unknown", so require_known_domain doesn't silently treat every
+    # currently-unmapped-but-tagged structure as having no provenance at
+    # all. A structure with no config_type either genuinely has none.
+    return ct or "unknown"
 
 
 def validate_policy(policy: dict) -> None:

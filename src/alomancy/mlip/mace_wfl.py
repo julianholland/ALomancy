@@ -447,7 +447,11 @@ def mace_fit(
     try:
         os.chdir(mlip_dir)
         run(args)
-        _save_mace_eval_predictions(mlip_committee_job_dict["name"], train_filename)
+        _save_mace_eval_predictions(
+            mlip_committee_job_dict["name"],
+            train_filename,
+            valid_filename if valid_set else None,
+        )
         _cleanup_committee_checkpoints(mlip_committee_job_dict["name"])
     finally:
         os.chdir(orig_dir)

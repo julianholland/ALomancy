@@ -52,6 +52,47 @@ def test_refuses_missing_validation_instead_of_fit_zero(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_falls_back_to_test_when_no_fit_has_a_validation_split(tmp_path, monkeypatch):
+    """mace_fit's own _select_validation_split legitimately skips carving a
+    validation split (logs a warning, doesn't fail) whenever the eligible
+    pool is too small -- every fit is then uniformly missing 'valid'. This
+    must not be treated as an evaluation failure: fall back to the 'test'
+    split, which mace_fit always attempts regardless of pool size."""
+    monkeypatch.chdir(tmp_path)
+    for i, error in enumerate([0.3, 0.1, 0.2]):
+        fit = tmp_path / "results/al_loop_0/committee" / f"fit_{i}"
+        fit.mkdir(parents=True)
+        model = fit / "committee_stagetwo.model"
+        model.write_bytes(b"checkpoint")
+        save_evaluation(fit, model, {"test": prediction_metrics([predicted(error)])})
+    best, _ = select_best_committee_model(
+        "al_loop_0", {"name": "committee", "size_of_committee": 3}, 803
+    )
+    assert best == 1
+
+
+@pytest.mark.unit
+def test_refuses_when_fits_disagree_on_having_a_validation_split(tmp_path, monkeypatch):
+    """Some fits having 'valid' while others don't (rather than uniformly
+    none) indicates a genuine per-fit evaluation failure, not a normal
+    small-pool run -- this must still raise, not silently fall back."""
+    monkeypatch.chdir(tmp_path)
+    for i, error in enumerate([0.3, 0.1, 0.2]):
+        fit = tmp_path / "results/al_loop_0/committee" / f"fit_{i}"
+        fit.mkdir(parents=True)
+        model = fit / "committee_stagetwo.model"
+        model.write_bytes(b"checkpoint")
+        splits = {"test": prediction_metrics([predicted(error)])}
+        if i != 0:
+            splits["valid"] = prediction_metrics([predicted(error)])
+        save_evaluation(fit, model, splits)
+    with pytest.raises(RuntimeError, match="complete checkpoint validation"):
+        select_best_committee_model(
+            "al_loop_0", {"name": "committee", "size_of_committee": 3}, 803
+        )
+
+
+@pytest.mark.unit
 def test_invalid_prediction_is_not_silently_omitted():
     a = predicted(0.1)
     del a.info["mace_energy"]

@@ -213,6 +213,55 @@ def test_explicit_source_domain_recovers_unknown_annotation():
 
 
 @pytest.mark.unit
+def test_high_sd_with_no_explicit_domain_falls_back_to_config_type():
+    """An AL-loop "high_sd" candidate with >3 atoms and no explicit
+    domain/structure_type override has no dedicated classification branch
+    -- it must resolve to its own config_type ("high_sd"), never the
+    literal string "unknown", so require_known_domain doesn't silently
+    exclude every AL-loop structure from training (see
+    test_high_sd_domain_is_not_flagged_unknown_under_require_known_domain
+    below for the end-to-end consequence)."""
+    from alomancy.utils.dataset_curation import structure_domain
+
+    a = Atoms(
+        "Pd4",
+        positions=[[0, 0, 0], [2.5, 0, 0], [0, 2.5, 0], [2.5, 2.5, 0]],
+        cell=[20] * 3,
+        pbc=True,
+    )
+    a.info["config_type"] = "high_sd"
+    assert structure_domain(a) == "high_sd"
+
+
+@pytest.mark.unit
+def test_high_sd_domain_is_not_flagged_unknown_under_require_known_domain():
+    a = Atoms(
+        "Pd4",
+        positions=[[0, 0, 0], [2.5, 0, 0], [0, 2.5, 0], [2.5, 2.5, 0]],
+        cell=[20] * 3,
+        pbc=True,
+    )
+    a.info.update(REF_energy=-8.0, config_type="high_sd")
+    a.set_array("REF_forces", np.zeros((4, 3)))
+    metadata = annotate_structure(a, {"require_known_domain": True})
+    assert metadata["domain"] == "high_sd"
+    assert "unknown_domain" not in metadata["filter_reasons"]
+
+
+@pytest.mark.unit
+def test_missing_config_type_still_resolves_to_unknown():
+    from alomancy.utils.dataset_curation import structure_domain
+
+    a = Atoms(
+        "Pd4",
+        positions=[[0, 0, 0], [2.5, 0, 0], [0, 2.5, 0], [2.5, 2.5, 0]],
+        cell=[20] * 3,
+        pbc=True,
+    )
+    assert structure_domain(a) == "unknown"
+
+
+@pytest.mark.unit
 def test_full_preparation_annotates_filters_and_preserves_reference(tmp_path):
     import json
 

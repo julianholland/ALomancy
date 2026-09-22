@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from alomancy.mlip.evaluation import read_evaluation
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,8 +23,6 @@ def get_mace_eval_info(
     )
     all_avg_results = []
     for al_loop_dir in al_loop_dirs:
-        from alomancy.mlip.evaluation import read_evaluation
-
         metric_files = sorted(
             (al_loop_dir / mlip_committee_job_dict["name"]).glob(
                 "fit_*/evaluation_metrics.json"
@@ -122,95 +122,87 @@ def _read_last_metric_record(txt_path: Path) -> dict | None:
 def select_best_committee_model(
     base_name: str,
     mlip_committee_job_dict: dict,
-    seed: int,
+    seed: int,  # noqa: ARG001 -- unused now that selection is checkpoint-based, kept for call-site compatibility
     metric: str = "mae_f",
 ) -> tuple[int, Path]:
     """
-    Select the committee member with the lowest test-set force MAE.
+    Select the committee member with the lowest common-validation error.
 
-    Reads the ``*_test.txt`` metrics file written by MACE at the end of each
-    training run, picks the fit with the lowest value of *metric* on the held-
-    out test set, and returns ``(best_fit_index, stagetwo_model_path)``.
+    Prefers the shared ``"valid"`` checkpoint split (``mlip/evaluation.py``'s
+    ``save_evaluation``/``read_evaluation``, written by
+    ``_save_mace_eval_predictions`` right after training) when every
+    committee member has one. Falls back to the held-out ``"test"`` split
+    when NO fit has a ``"valid"`` entry at all -- ``mace_fit``'s own
+    ``_select_validation_split`` legitimately skips carving a validation
+    split (just a warning, not a failure) whenever the eligible pool is too
+    small, in which case every fit is missing "valid" uniformly, and the
+    only sensible remaining common metric across the committee is "test"
+    (always attempted regardless of pool size). If fits DISAGREE on having
+    "valid" (some do, some don't), that indicates a genuine per-fit
+    evaluation failure rather than a normal small-pool run, and this raises.
 
-    Only considers fits whose stagetwo model file actually exists on disk --
-    a fit can be missing readable test metrics while ALSO genuinely having
-    no model at all, e.g. a committee member whose training job was
-    abandoned after a sustained remote-communication failure (see
-    remote_submission/executor.py's _get_results_with_resume) or never
-    retried after train_mlip's backfill. Falls back to the lowest-indexed
-    fit that HAS a model on disk if no committee member has readable test
-    metrics -- previously this defaulted to fit_0 unconditionally, which
-    crashed a downstream consumer (structure_generation trying to stage a
-    nonexistent model file as an MD job input) the one time fit_0 itself was
-    the fit with no model. Raises ValueError if literally none of the
-    committee's fits have a model file (train_mlip guarantees at least 3
-    before calling this, so this should only fire if that invariant is ever
-    broken).
+    Picks the fit with the lowest value of *metric* on whichever split was
+    used and returns ``(best_fit_index, stagetwo_model_path)``.
+
+    ``seed`` is no longer used by this function (the old *_test.txt-based
+    legacy path derived a per-fit seed from it) -- kept as a required
+    parameter only so existing call sites (``standard_active_learning.py``,
+    the checkpoint-evaluation test suite) don't need to change.
     """
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["size_of_committee"]
     committee_dir = Path("results", base_name, name)
 
-    def _model_path(i: int) -> Path:
-        return committee_dir / f"fit_{i}" / f"{name}_stagetwo.model"
+    def _try_read(fit_dir: Path, split: str) -> tuple[float, Path] | None:
+        try:
+            metrics, model_path = read_evaluation(fit_dir, split)
+        except (FileNotFoundError, KeyError, ValueError):
+            return None
+        return float(metrics[metric]), model_path
 
-    fits_with_model = [i for i in range(n_fits) if _model_path(i).exists()]
-    if not fits_with_model:
-        raise ValueError(
-            f"select_best_committee_model for {base_name!r}: none of the "
-            f"{n_fits} committee fit(s) have a {name}_stagetwo.model file "
-            "on disk. Check remote job logs for failures."
-        )
-
-    best_fit: int | None = None
-    best_score = float("inf")
-
-    for i in fits_with_model:
+    valid_scores: dict[int, tuple[float, Path]] = {}
+    test_scores: dict[int, tuple[float, Path]] = {}
+    for i in range(n_fits):
         fit_dir = committee_dir / f"fit_{i}"
-        results_dir = fit_dir / "results"
-        fit_seed = seed + i
+        valid_result = _try_read(fit_dir, "valid")
+        if valid_result is not None:
+            valid_scores[i] = valid_result
+        test_result = _try_read(fit_dir, "test")
+        if test_result is not None:
+            test_scores[i] = test_result
 
-        txt_path = results_dir / f"{name}_run-{fit_seed}_test.txt"
-        if not txt_path.exists():
-            candidates = sorted(results_dir.glob("*_test.txt"))
-            if not candidates:
-                logger.warning("No test metrics file found for fit_%d — skipping.", i)
-                continue
-            txt_path = candidates[0]
-            logger.debug("Using test metrics file: %s", txt_path)
-
-        record = _read_last_metric_record(txt_path)
-        if record is None:
-            logger.warning("No parseable records in %s — skipping fit_%d.", txt_path, i)
-            continue
-
-        score = record.get(metric)
-        if score is None:
-            logger.warning(
-                "Metric %r not in test file for fit_%d — skipping.", metric, i
+    if valid_scores:
+        if len(valid_scores) < n_fits:
+            raise RuntimeError(
+                f"select_best_committee_model for {base_name!r}: "
+                f"{n_fits - len(valid_scores)} of {n_fits} committee fit(s) "
+                "are missing complete checkpoint validation on the 'valid' "
+                "split while others have it. Check remote job logs for "
+                "evaluation failures."
             )
-            continue
-
-        score = float(score)
-        logger.debug("fit_%d test %s = %.6f", i, metric, score)
-        if score < best_score:
-            best_score = score
-            best_fit = i
-
-    if best_fit is None:
-        best_fit = fits_with_model[0]
-        logger.warning(
-            "Could not read test %r for any committee member; defaulting to "
-            "fit_%d (lowest-indexed fit with a model on disk).",
-            metric,
-            best_fit,
-        )
+        scores, split_used = valid_scores, "valid"
     else:
         logger.info(
-            "Best committee member: fit_%d (test %s = %.6f).",
-            best_fit,
-            metric,
-            best_score,
+            "No committee member has a 'valid' checkpoint evaluation "
+            "(expected when the eligible pool is too small for a "
+            "validation split) — falling back to the 'test' split."
         )
+        if len(test_scores) < n_fits:
+            raise RuntimeError(
+                f"select_best_committee_model for {base_name!r}: "
+                f"{n_fits - len(test_scores)} of {n_fits} committee fit(s) "
+                "are missing complete checkpoint validation (neither "
+                "'valid' nor 'test' evaluation is available). Check remote "
+                "job logs for evaluation failures."
+            )
+        scores, split_used = test_scores, "test"
 
-    return best_fit, _model_path(best_fit)
+    best_fit = min(scores, key=lambda i: scores[i][0])
+    logger.info(
+        "Best committee member: fit_%d (%s %s = %.6f).",
+        best_fit,
+        split_used,
+        metric,
+        scores[best_fit][0],
+    )
+    return best_fit, scores[best_fit][1]

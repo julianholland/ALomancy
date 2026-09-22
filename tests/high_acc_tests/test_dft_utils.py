@@ -1,11 +1,13 @@
 """Tests for backend-agnostic DFT utilities in dft_utils.py."""
 
+import logging
 from pathlib import Path
 
 import pytest
 from ase import Atoms
 from ase.calculators.emt import EMT
 
+import alomancy.utils.dft_utils as dft_utils
 from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
@@ -162,3 +164,43 @@ class TestRunGo:
         out = str(tmp_path / "a" / "b" / "c")
         _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
         assert Path(out).exists()
+
+    def test_converged_structure_flagged_true(self, tmp_path):
+        out = str(tmp_path / "out")
+        result = _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
+        assert result.info["geometry_converged"] is True
+
+    def test_non_convergence_warns_and_keeps_structure(self, tmp_path, monkeypatch):
+        """Non-convergence must not discard the completed DFT computation --
+        it downgrades to a logged warning and geometry_converged=False,
+        keeping the best structure BFGS found rather than raising."""
+
+        class _NeverConverges:
+            def __init__(self, atoms, logfile=None, trajectory=None):
+                pass
+
+            def run(self, fmax, steps):
+                return False
+
+        monkeypatch.setattr(dft_utils, "BFGS", _NeverConverges)
+
+        al_logger = logging.getLogger("alomancy")
+        al_logger.setLevel(logging.WARNING)
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        handler.setLevel(logging.WARNING)
+        al_logger.addHandler(handler)
+        try:
+            out = str(tmp_path / "out")
+            result = _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
+        finally:
+            al_logger.removeHandler(handler)
+
+        assert result.info["geometry_converged"] is False
+        assert (Path(out) / "x.xyz").exists()
+        assert any("did not reach fmax" in r.getMessage() for r in records)

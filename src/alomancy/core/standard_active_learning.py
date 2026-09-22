@@ -291,70 +291,72 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         # --- Build train/test from DB contents -----------------------
         all_evaluated = self.db.get_all_as_atoms()
 
-        test_config_types = set(init_job_dict["test_config_types"])
-        eligible_test_structures: list[Atoms] = []
-        always_train_structures: list[Atoms] = []
-        for atoms in all_evaluated:
-            (
-                eligible_test_structures
-                if atoms.info.get("config_type") in test_config_types
-                else always_train_structures
-            ).append(atoms)
-
-        if not eligible_test_structures:
-            logger.warning(
-                "No eligible test structures found for the specified "
-                "test_config_types. All structures will be used for training."
-            )
-            train_xyzs = all_evaluated
-            test_xyzs = []
-        else:
-            # test_to_train_ratio applies only within the test_config_types
-            # pool, not against the whole DB. Dimers/trimers/stretch_compress/
-            # IsolatedAtom (always_train_structures) never count toward this
-            # ratio's denominator — with a small test_config_types pool and a
-            # much larger always-train pool, computing the quota against
-            # len(all_evaluated) could exceed the entire eligible pool,
-            # routing 100% of it to test and leaving train_xyzs with zero
-            # representatives of that config_type (e.g. init_amorphous),
-            # permanently once update_splits_post_hoc tags the DB.
-            eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
-                eligible_test_structures,
-                init_job_dict["test_to_train_ratio"],
-                self.seed,
-            )
-
-            # Guarantee every eligible config_type keeps at least one
-            # representative in train_xyzs, as a backstop against an unlucky
-            # shuffle leaving a low-count config_type entirely in test.
-            train_config_types = {a.info.get("config_type", "") for a in eligible_train}
-            eligible_config_types = {
-                a.info.get("config_type", "") for a in eligible_test_structures
-            }
-            missing_types = eligible_config_types - train_config_types
-            if missing_types:
-                for config_type in missing_types:
-                    idx = next(
-                        i
-                        for i, a in enumerate(test_xyzs)
-                        if a.info.get("config_type", "") == config_type
-                    )
-                    eligible_train.append(test_xyzs.pop(idx))
-                logger.warning(
-                    "Reserved one structure from each of %s for training "
-                    "to avoid entirely excluding these config_types from "
-                    "train_atoms_list.",
-                    sorted(missing_types),
-                )
-
-            # IsolatedAtom and other ineligible types always go to training so
-            # MACE can read E0s for every element from the training file.
-            train_xyzs = always_train_structures + eligible_train
-
         if init_job_dict.get("grouped_splits", False):
             train_xyzs, test_xyzs = grouped_split(
                 all_evaluated, init_job_dict["test_to_train_ratio"], self.seed
             )
+        else:
+            test_config_types = set(init_job_dict["test_config_types"])
+            eligible_test_structures: list[Atoms] = []
+            always_train_structures: list[Atoms] = []
+            for atoms in all_evaluated:
+                (
+                    eligible_test_structures
+                    if atoms.info.get("config_type") in test_config_types
+                    else always_train_structures
+                ).append(atoms)
+
+            if not eligible_test_structures:
+                logger.warning(
+                    "No eligible test structures found for the specified "
+                    "test_config_types. All structures will be used for training."
+                )
+                train_xyzs = all_evaluated
+                test_xyzs = []
+            else:
+                # test_to_train_ratio applies only within the test_config_types
+                # pool, not against the whole DB. Dimers/trimers/stretch_compress/
+                # IsolatedAtom (always_train_structures) never count toward this
+                # ratio's denominator — with a small test_config_types pool and a
+                # much larger always-train pool, computing the quota against
+                # len(all_evaluated) could exceed the entire eligible pool,
+                # routing 100% of it to test and leaving train_xyzs with zero
+                # representatives of that config_type (e.g. init_amorphous),
+                # permanently once update_splits_post_hoc tags the DB.
+                eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
+                    eligible_test_structures,
+                    init_job_dict["test_to_train_ratio"],
+                    self.seed,
+                )
+
+                # Guarantee every eligible config_type keeps at least one
+                # representative in train_xyzs, as a backstop against an unlucky
+                # shuffle leaving a low-count config_type entirely in test.
+                train_config_types = {
+                    a.info.get("config_type", "") for a in eligible_train
+                }
+                eligible_config_types = {
+                    a.info.get("config_type", "") for a in eligible_test_structures
+                }
+                missing_types = eligible_config_types - train_config_types
+                if missing_types:
+                    for config_type in missing_types:
+                        idx = next(
+                            i
+                            for i, a in enumerate(test_xyzs)
+                            if a.info.get("config_type", "") == config_type
+                        )
+                        eligible_train.append(test_xyzs.pop(idx))
+                    logger.warning(
+                        "Reserved one structure from each of %s for training "
+                        "to avoid entirely excluding these config_types from "
+                        "train_atoms_list.",
+                        sorted(missing_types),
+                    )
+
+                # IsolatedAtom and other ineligible types always go to training
+                # so MACE can read E0s for every element from the training file.
+                train_xyzs = always_train_structures + eligible_train
 
         write(
             Path(work_dir, Path(self.initial_train_file_path).name),
