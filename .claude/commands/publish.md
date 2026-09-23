@@ -64,11 +64,23 @@ date +%Y-%m-%d
 ```
 If there is no `[Unreleased]` section, warn the user and ask whether they want to add release notes before continuing.
 
-**CLAUDE.md:**
-Ask the user: "Does CLAUDE.md need any updates for this release? (new modules, conventions, architecture changes)" — if yes, read the file and make the edits they describe.
+**CLAUDE.md and docs/ — audit, don't just ask:**
+Do not simply ask the user whether updates are needed. Make the judgement yourself from the actual changes since the last release:
 
-**docs/:**
-Ask the user: "Do any docs pages need updating for this release?" — if yes, read and edit the relevant files.
+1. Collect the changes since the previous tag:
+   ```bash
+   git log <previous_tag>..HEAD --oneline
+   git diff <previous_tag>..HEAD --stat -- src/ docs/ CLAUDE.md
+   git diff <previous_tag>..HEAD -- src/
+   ```
+   Use the release's CHANGELOG entries as a guide to what changed, but verify against the diff: the changelog can be incomplete.
+2. For each user-facing or architectural change (new modules, new/changed config keys, changed defaults, new conventions, moved import paths, new CLI commands), check whether it is already documented:
+   - **CLAUDE.md**: grep for the relevant function/module/config names and read the matching section.
+   - **docs/**: grep `docs/` for the relevant names; check any page covering that subsystem (e.g. `docs/remote_submission_architecture.md` for `remote_submission/`, `docs/dataset_curation.md` for curation, `docs/deprecations.md` for deprecations).
+3. Report to the user, per change:
+   - **Documented** → quote or cite (file:line) the section you think covers it.
+   - **Not documented, or out of date** → draft the text you propose adding or replacing, and say where it would go.
+4. Ask the user for feedback on the drafts, then apply only the approved edits (revised as the user asks). If everything is already documented, say so, show the evidence, and move on without editing.
 
 **Commit all documentation changes:**
 Once all edits are done, stage and commit only the files that were actually modified:
