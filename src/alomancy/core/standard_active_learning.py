@@ -564,11 +564,19 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             if isinstance(high_sd_structures, Atoms):
                 high_sd_structures = [high_sd_structures]
 
-            # MD-generated structures must never be routed to geometry optimisation
-            # in high_accuracy_evaluation, even if a stale needs_relaxation=True was
-            # inherited by the on-disk copy from an earlier run.
+            # MD/EZGA-generated structures are relaxed (GO) to high_force_threshold
+            # rather than evaluated at a single point whenever a threshold is set
+            # (the default) -- a cold-start committee can drive MD into
+            # near-collision, wildly-off-equilibrium geometries whose raw single
+            # point forces are enormous and get discarded anyway by the post-hoc
+            # high-force DB filter; relaxing first turns that wasted DFT compute
+            # into a genuinely useful, moderate-force training point instead.
+            # Explicitly overwritten here (not just left alone) regardless of any
+            # stale needs_relaxation the on-disk copy inherited from an earlier run.
             for structure in high_sd_structures:
-                structure.info["needs_relaxation"] = False
+                structure.info["needs_relaxation"] = (
+                    self.high_force_threshold is not None
+                )
 
             logger.info(
                 "%d High SD structures loaded from file: %s",
@@ -784,14 +792,25 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             structure_forces_dict=structure_forces_dict,
         )
 
-        # Assign job IDs to high SD structures. Also force needs_relaxation=False:
-        # MD seeds can inherit needs_relaxation=True from their source structure (e.g.
-        # amorphous init structures) via .copy(), and that flag survives the MD
-        # trajectory unless cleared here. MD-generated structures must never be
-        # routed to geometry optimisation in high_accuracy_evaluation.
+        # Assign job IDs to high SD structures. Also set needs_relaxation
+        # explicitly (not merely leave alone): MD seeds can inherit
+        # needs_relaxation=True from their source structure (e.g. amorphous init
+        # structures) via .copy(), and that flag survives the MD trajectory
+        # unless overwritten here regardless of the value below.
+        #
+        # needs_relaxation=True (routing to GO, relaxed to high_force_threshold)
+        # whenever a threshold is set (the default) -- a cold-start committee can
+        # drive MD/EZGA into near-collision, wildly-off-equilibrium geometries
+        # whose raw single-point forces are enormous and get discarded anyway by
+        # the post-hoc high-force DB filter; relaxing first turns that wasted DFT
+        # compute into a genuinely useful, moderate-force training point instead.
+        # needs_relaxation=False (single point, unchanged legacy behavior) when
+        # high_force_threshold is None.
         for i in range(len(high_sd_structures)):
             high_sd_structures[i].info["job_id"] = i
-            high_sd_structures[i].info["needs_relaxation"] = False
+            high_sd_structures[i].info["needs_relaxation"] = (
+                self.high_force_threshold is not None
+            )
 
         self._mark_phase_done(base_name, "generate_structures")
         return high_sd_structures

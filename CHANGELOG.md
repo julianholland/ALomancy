@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`generate_structures`' `high_sd` output (MD or EZGA) is now relaxed (GO) to `high_force_threshold` instead of evaluated at a single point, whenever a threshold is set** (the default, `100.0`). Root cause: a cold-start committee can drive MD/EZGA into near-collision, wildly-off-equilibrium geometries with enormous raw single-point forces (observed on one production run: median ~440 eV/Å, max ~1680 eV/Å) that get discarded anyway by the existing post-hoc high-force DB filter — training-set growth stalled completely for several loops even though the database kept growing normally, since almost none of the newly-generated candidates survived that filter. Relaxing first turns that wasted DFT compute into a genuinely useful training point instead. **This is a real cost change for essentially every existing run** — GO is materially more expensive than SP (BFGS steps, trajectory files, longer walltime) — not opt-in, since it's driven by the already-defaulted `high_force_threshold`. Set `high_force_threshold=None` on `BaseActiveLearningWorkflow` to reproduce the exact prior SP-only behavior. New optional `high_accuracy_evaluation.relax_max_steps` config key (default `200`, unchanged) caps the BFGS step budget independently of the fmax target.
+
 ## [0.8.0] - 2026-09-22
 
 ### Added

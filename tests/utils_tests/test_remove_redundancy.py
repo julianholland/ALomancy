@@ -73,7 +73,14 @@ def test_all_structures_kept_in_archive(tmp_path):
 
 @pytest.mark.unit
 def test_non_config_list_structures_unaffected(tmp_path):
-    """Structures whose config_type is NOT in config_list are never flagged."""
+    """Structures whose config_type is NOT in config_list are never flagged.
+
+    Only 2 structures match config_list here -- too few for
+    NaturalTolerancePlateauProbe to probe a tolerance at all (it needs at
+    least datapoints_to_calculate_gradient=3 probe steps), so
+    remove_redundancy_from_partition skips flagging entirely rather than
+    crashing. Both init_amorphous structures survive; this isn't a real
+    dedup decision, just "not enough data to make one"."""
     from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
 
     base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
@@ -91,8 +98,9 @@ def test_non_config_list_structures_unaffected(tmp_path):
     remove_redundancy_from_partition(db, config_list=["init_amorphous"])
 
     train = db.get_train_atoms()
-    # 1 IsolatedAtom (unaffected) + 1 unique init_amorphous = 2
-    assert len(train) == 2
+    # 1 IsolatedAtom (unaffected) + 2 init_amorphous (neither flagged: too
+    # few structures to probe a tolerance) = 3
+    assert len(train) == 3
 
 
 @pytest.mark.unit
@@ -105,6 +113,52 @@ def test_empty_train_split_no_error(tmp_path):
     db.add_structures([a], split="test", skip_duplicates=False)
     # Should not raise
     remove_redundancy_from_partition(db, config_list=["init_amorphous"])
+
+
+@pytest.mark.unit
+def test_no_plateau_found_skips_flagging(tmp_path, monkeypatch):
+    """When the tolerance probe runs but finds no plateau, it emits a
+    "No plateaus found" warning and returns an arbitrary fallback tolerance
+    (per deduplicate_lib's own calculate_tolerance implementation) -- this
+    must not be used to flag duplicates; remove_redundancy_from_partition
+    should skip flagging entirely instead."""
+    import warnings
+
+    from deduplicate_lib.plugins.tolerance_calculators import (
+        natural_tolerance_plateau_probe,
+    )
+
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+    near1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
+    near2 = [[0.0002, 0.0, 0.0], [2.0002, 0.0, 0.0]]
+
+    structures = [_make_s2(base), _make_s2(near1), _make_s2(near2)]
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(structures, split="train", skip_duplicates=False)
+
+    def _fake_calculate_tolerance(self, condition="longest"):
+        warnings.warn(
+            "No plateaus found in tolerance probe. Consider adding in "
+            "perturbed structures and/or increasing dataset size and/or "
+            "increaseing probe steps.\nReturning average of all same and "
+            "all different tolerance as fallback.",
+            stacklevel=2,
+        )
+        return 0.5
+
+    monkeypatch.setattr(
+        natural_tolerance_plateau_probe.NaturalTolerancePlateauProbe,
+        "calculate_tolerance",
+        _fake_calculate_tolerance,
+    )
+
+    remove_redundancy_from_partition(db, config_list=["init_amorphous"])
+
+    # Nothing flagged despite near1/near2 being near-duplicates of base --
+    # the fallback tolerance is never applied.
+    assert len(db.get_train_atoms()) == 3
 
 
 @pytest.mark.unit

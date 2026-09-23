@@ -1,6 +1,7 @@
 """Flag near-duplicate structures in the training split of the GlobalDatabase."""
 
 import logging
+import warnings
 
 import numpy as np
 
@@ -33,6 +34,9 @@ def remove_redundancy_from_partition(
     from deduplicate_lib.plugins.duplicate_detection_algorithms.distance_matrix import (
         DistanceMatrix,
     )
+    from deduplicate_lib.plugins.tolerance_calculators.natural_tolerance_plateau_probe import (
+        NaturalTolerancePlateauProbe,
+    )
 
     train_partition = db.get_split_partition("train")
     if len(train_partition) == 0:
@@ -63,11 +67,49 @@ def remove_redundancy_from_partition(
     assign_descriptor_to_all_partition(subset_p, dimensions=128)
 
     descriptor_array = np.array(list(subset_p.get_metadata("char_vec")))
+
     dm_dda = DistanceMatrix(
-        tolerance=tolerance,
         dataset_array=descriptor_array,
         max_vector_array_size=len(descriptor_array),
     )
+
+    # calculate_tolerance can fail two distinct ways when the data doesn't
+    # support a confident plateau: it raises ValueError outright when there
+    # are too few probe steps to even attempt gradient detection (small
+    # config_list-matching subsets), or it emits a "No plateaus found"
+    # warning and returns an arbitrary fallback tolerance (midpoint of the
+    # all-same/all-different bounds) when the probe ran but found nothing
+    # stable. Neither case should flag any structure as a duplicate --
+    # skip redundancy removal for this call rather than crashing or
+    # applying a tolerance with no real relationship to the data.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            tolerance = NaturalTolerancePlateauProbe(
+                duplicate_detection_algorithm_object=dm_dda,
+                tolerance_dataset_array=descriptor_array,
+                probe_steps=len(descriptor_array),
+                probe_buffer_fraction=0.01,
+            ).calculate_tolerance(condition="minimum")
+        except ValueError as exc:
+            logger.info(
+                "Not enough structures (%d) to probe a natural tolerance "
+                "plateau (%s) — skipping redundancy removal for this call.",
+                len(descriptor_array),
+                exc,
+            )
+            return
+
+    if any("No plateaus found" in str(w.message) for w in caught):
+        logger.info(
+            "No tolerance plateau isolated among %d structures — skipping "
+            "redundancy removal for this call rather than using an "
+            "arbitrary fallback tolerance.",
+            len(descriptor_array),
+        )
+        return
+
+    dm_dda.tolerance = tolerance
     dm_dda.get_dataset_unique_structures()
     unique_local = set(map(int, dm_dda.get_unique_vector_indices()))
 

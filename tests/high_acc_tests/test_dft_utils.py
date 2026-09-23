@@ -170,6 +170,58 @@ class TestRunGo:
         result = _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
         assert result.info["geometry_converged"] is True
 
+    def test_fmax_and_steps_default_when_absent_from_job_dict(
+        self, tmp_path, monkeypatch
+    ):
+        """fmax/relax_max_steps default to today's hardcoded values (0.05,
+        200) when the job dict doesn't set them -- preserves existing
+        behavior for every caller that doesn't opt into a custom target."""
+        captured = {}
+
+        class _Capturing:
+            def __init__(self, atoms, logfile=None, trajectory=None):
+                pass
+
+            def run(self, fmax, steps):
+                captured["fmax"] = fmax
+                captured["steps"] = steps
+                return True
+
+        monkeypatch.setattr(dft_utils, "BFGS", _Capturing)
+        out = str(tmp_path / "out")
+        _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
+
+        assert captured["fmax"] == 0.05
+        assert captured["steps"] == 200
+
+    def test_fmax_and_steps_read_from_job_dict_when_present(
+        self, tmp_path, monkeypatch
+    ):
+        """fmax/relax_max_steps are read from the job dict when present --
+        the channel high_force_threshold uses to drive relaxation targets."""
+        captured = {}
+
+        class _Capturing:
+            def __init__(self, atoms, logfile=None, trajectory=None):
+                pass
+
+            def run(self, fmax, steps):
+                captured["fmax"] = fmax
+                captured["steps"] = steps
+                return True
+
+        monkeypatch.setattr(dft_utils, "BFGS", _Capturing)
+        out = str(tmp_path / "out")
+        _run_go(
+            _cu_dimer(),
+            out,
+            {"name": "x", "fmax": 5.0, "relax_max_steps": 500},
+            lambda a, j, d: EMT(),
+        )
+
+        assert captured["fmax"] == 5.0
+        assert captured["steps"] == 500
+
     def test_non_convergence_warns_and_keeps_structure(self, tmp_path, monkeypatch):
         """Non-convergence must not discard the completed DFT computation --
         it downgrades to a logged warning and geometry_converged=False,

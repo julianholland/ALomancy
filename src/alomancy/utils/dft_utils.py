@@ -101,13 +101,17 @@ def _run_go(
         logfile=str(Path(out_dir, f"{opt_prefix}.log")),
         trajectory=str(Path(out_dir, f"{opt_prefix}.traj")),
     )
-    converged = opt.run(fmax=0.05, steps=200)
+    fmax = job_dict.get("fmax", 0.05)
+    steps = job_dict.get("relax_max_steps", 200)
+    converged = opt.run(fmax=fmax, steps=steps)
     if not converged:
         logger.warning(
-            "Geometry optimization in %s did not reach fmax=0.05 eV/Angstrom "
-            "within 200 steps; keeping the best structure found rather than "
+            "Geometry optimization in %s did not reach fmax=%.4g eV/Angstrom "
+            "within %d steps; keeping the best structure found rather than "
             "discarding the completed DFT computation.",
             out_dir,
+            fmax,
+            steps,
         )
     refresh_dft_labels(input_structure, str(Path(out_dir).resolve()))
     input_structure.info["geometry_converged"] = bool(converged)
