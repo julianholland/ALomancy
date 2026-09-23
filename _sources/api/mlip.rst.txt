@@ -1,14 +1,14 @@
 MLIP Training
 =============
 
-.. automodule:: alomancy.mlip.committee_remote_submitter
+.. automodule:: alomancy.remote_submission.submitters
    :members:
    :undoc-members:
 
-.. automodule:: alomancy.mlip.mace_wfl
+.. automodule:: alomancy.mlip.mace.mace_wfl
    :members:
    :undoc-members:
 
-.. automodule:: alomancy.mlip.get_mace_eval_info
+.. automodule:: alomancy.mlip.mace.get_mace_eval_info
    :members:
    :undoc-members:

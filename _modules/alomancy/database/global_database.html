@@ -661,9 +661,14 @@
 <span class="sd">        Return a copy of atoms ready for sage_lib storage, or None to skip.</span>
 
 <span class="sd">        Normalises REF_energy / REF_forces from either atoms.info/arrays or a</span>
-<span class="sd">        calculator.  REF_forces are serialised into info["_REF_forces"] because</span>
-<span class="sd">        sage_lib only persists atoms.info, not atoms.arrays.  Returns None (and</span>
-<span class="sd">        logs a warning) if no energy source can be found.</span>
+<span class="sd">        calculator. REF_forces round-trip natively via</span>
+<span class="sd">        AtomPositionManager.configure(total_force=...)/apm.forces -- no</span>
+<span class="sd">        info-key workaround needed. REF_stresses has no native slot on</span>
+<span class="sd">        AtomPositionManager (only total_force exists for force-like data), so</span>
+<span class="sd">        it IS manually serialised into info["_REF_stresses"] (as a JSON-safe</span>
+<span class="sd">        list) because sage_lib only persists atoms.info, not atoms.arrays or</span>
+<span class="sd">        any other attribute. Returns None (and logs a warning) if no energy</span>
+<span class="sd">        source can be found.</span>
 <span class="sd">        """</span>
         <span class="n">formula</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()</span>
         <span class="n">config_type</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)</span>
@@ -709,6 +714,10 @@
                 <span class="n">metadata</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
         <span class="n">a</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="n">metadata</span>
 
+        <span class="n">stress</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"REF_stresses"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">stress</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
         <span class="k">return</span> <span class="n">a</span>
 
     <span class="nd">@staticmethod</span>
@@ -723,6 +732,7 @@
             <span class="n">pbc</span><span class="o">=</span><span class="p">[</span><span class="nb">bool</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">pbc</span><span class="p">],</span>
         <span class="p">)</span>
         <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
+        <span class="n">stress</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"_REF_stresses"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="n">energy</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">energy</span>
         <span class="n">forces</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span>
         <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">SinglePointCalculator</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">energy</span><span class="o">=</span><span class="n">energy</span><span class="p">,</span> <span class="n">forces</span><span class="o">=</span><span class="n">forces</span><span class="p">)</span>
@@ -730,6 +740,8 @@
         <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
         <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
+        <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">stress</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">atoms</span></div>
 
