@@ -184,13 +184,17 @@
         <span class="n">logfile</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.log"</span><span class="p">)),</span>
         <span class="n">trajectory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.traj"</span><span class="p">)),</span>
     <span class="p">)</span>
-    <span class="n">converged</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
+    <span class="n">fmax</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fmax"</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relax_max_steps"</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+    <span class="n">converged</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="n">fmax</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="n">steps</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="s2">"Geometry optimization in </span><span class="si">%s</span><span class="s2"> did not reach fmax=0.05 eV/Angstrom "</span>
-            <span class="s2">"within 200 steps; keeping the best structure found rather than "</span>
+            <span class="s2">"Geometry optimization in </span><span class="si">%s</span><span class="s2"> did not reach fmax=</span><span class="si">%.4g</span><span class="s2"> eV/Angstrom "</span>
+            <span class="s2">"within </span><span class="si">%d</span><span class="s2"> steps; keeping the best structure found rather than "</span>
             <span class="s2">"discarding the completed DFT computation."</span><span class="p">,</span>
             <span class="n">out_dir</span><span class="p">,</span>
+            <span class="n">fmax</span><span class="p">,</span>
+            <span class="n">steps</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_converged"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">converged</span><span class="p">)</span>

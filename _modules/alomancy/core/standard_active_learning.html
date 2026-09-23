@@ -654,11 +654,19 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">,</span> <span class="n">Atoms</span><span class="p">):</span>
                 <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">high_sd_structures</span><span class="p">]</span>
 
-            <span class="c1"># MD-generated structures must never be routed to geometry optimisation</span>
-            <span class="c1"># in high_accuracy_evaluation, even if a stale needs_relaxation=True was</span>
-            <span class="c1"># inherited by the on-disk copy from an earlier run.</span>
+            <span class="c1"># MD/EZGA-generated structures are relaxed (GO) to high_force_threshold</span>
+            <span class="c1"># rather than evaluated at a single point whenever a threshold is set</span>
+            <span class="c1"># (the default) -- a cold-start committee can drive MD into</span>
+            <span class="c1"># near-collision, wildly-off-equilibrium geometries whose raw single</span>
+            <span class="c1"># point forces are enormous and get discarded anyway by the post-hoc</span>
+            <span class="c1"># high-force DB filter; relaxing first turns that wasted DFT compute</span>
+            <span class="c1"># into a genuinely useful, moderate-force training point instead.</span>
+            <span class="c1"># Explicitly overwritten here (not just left alone) regardless of any</span>
+            <span class="c1"># stale needs_relaxation the on-disk copy inherited from an earlier run.</span>
             <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">high_sd_structures</span><span class="p">:</span>
-                <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"needs_relaxation"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"needs_relaxation"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="p">)</span>
 
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
                 <span class="s2">"</span><span class="si">%d</span><span class="s2"> High SD structures loaded from file: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
@@ -874,14 +882,25 @@
             <span class="n">structure_forces_dict</span><span class="o">=</span><span class="n">structure_forces_dict</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># Assign job IDs to high SD structures. Also force needs_relaxation=False:</span>
-        <span class="c1"># MD seeds can inherit needs_relaxation=True from their source structure (e.g.</span>
-        <span class="c1"># amorphous init structures) via .copy(), and that flag survives the MD</span>
-        <span class="c1"># trajectory unless cleared here. MD-generated structures must never be</span>
-        <span class="c1"># routed to geometry optimisation in high_accuracy_evaluation.</span>
+        <span class="c1"># Assign job IDs to high SD structures. Also set needs_relaxation</span>
+        <span class="c1"># explicitly (not merely leave alone): MD seeds can inherit</span>
+        <span class="c1"># needs_relaxation=True from their source structure (e.g. amorphous init</span>
+        <span class="c1"># structures) via .copy(), and that flag survives the MD trajectory</span>
+        <span class="c1"># unless overwritten here regardless of the value below.</span>
+        <span class="c1">#</span>
+        <span class="c1"># needs_relaxation=True (routing to GO, relaxed to high_force_threshold)</span>
+        <span class="c1"># whenever a threshold is set (the default) -- a cold-start committee can</span>
+        <span class="c1"># drive MD/EZGA into near-collision, wildly-off-equilibrium geometries</span>
+        <span class="c1"># whose raw single-point forces are enormous and get discarded anyway by</span>
+        <span class="c1"># the post-hoc high-force DB filter; relaxing first turns that wasted DFT</span>
+        <span class="c1"># compute into a genuinely useful, moderate-force training point instead.</span>
+        <span class="c1"># needs_relaxation=False (single point, unchanged legacy behavior) when</span>
+        <span class="c1"># high_force_threshold is None.</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">high_sd_structures</span><span class="p">)):</span>
             <span class="n">high_sd_structures</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"job_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span>
-            <span class="n">high_sd_structures</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"needs_relaxation"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">high_sd_structures</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"needs_relaxation"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">"generate_structures"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">high_sd_structures</span></div>

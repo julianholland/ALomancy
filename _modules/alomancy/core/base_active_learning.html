@@ -578,10 +578,26 @@
                 <span class="n">base_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">,</span> <span class="n">train_xyzs</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
             <span class="p">)</span>
 
+            <span class="c1"># high_sd structures are relaxed (GO) to high_force_threshold rather</span>
+            <span class="c1"># than evaluated at a single point whenever a threshold is set (the</span>
+            <span class="c1"># default) -- see generate_structures' needs_relaxation assignment.</span>
+            <span class="c1"># fmax is injected here (not read from YAML) so high_force_threshold</span>
+            <span class="c1"># stays the one source of truth for both the post-hoc DB filter and</span>
+            <span class="c1"># this relaxation target. allow_relaxation must be passed explicitly</span>
+            <span class="c1"># here: unlike the initialization call site, this per-loop call</span>
+            <span class="c1"># never received it before, so needs_relaxation was previously inert.</span>
+            <span class="n">high_accuracy_eval_job_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"high_accuracy_evaluation"</span><span class="p">]</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">high_accuracy_eval_job_dict</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="o">**</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
+                    <span class="s2">"fmax"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_force_threshold</span><span class="p">,</span>
+                <span class="p">}</span>
+
             <span class="n">new_training_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_accuracy_evaluation</span><span class="p">(</span>
                 <span class="n">base_name</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"high_accuracy_evaluation"</span><span class="p">],</span>
+                <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
                 <span class="n">generated_structures</span><span class="p">,</span>
+                <span class="n">allow_relaxation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                 <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
