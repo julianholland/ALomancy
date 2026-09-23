@@ -13,9 +13,12 @@ from ase import Atoms
 from ase.io import read, write
 from expyre import ExPyRe
 from mace import tools
+from mace.calculators import MACECalculator
 from mace.cli.run_train import run
 
 from alomancy.configs.remote_info import RemoteInfo
+from alomancy.mlip.evaluation import prediction_metrics, save_evaluation
+from alomancy.utils.dataset_curation import grouped_split
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,9 @@ if (
     )
 
 
-def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
+def _save_mace_eval_predictions(
+    name: str, train_filename: str, valid_filename: str | None = None
+) -> None:
     """Evaluate the trained stagetwo model on train and test sets; write predictions.
 
     Called from inside mace_fit while os.chdir'd into mlip_dir. Writes
@@ -76,9 +81,9 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
         )
         return
 
-    try:
-        from mace.calculators import MACECalculator
+    logger.info("Using %s for post-training eval predictions.", model_path.name)
 
+    try:
         try:
             import torch
 
@@ -95,7 +100,11 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
         logger.warning("Failed to load MACECalculator for post-training eval: %s", exc)
         return
 
-    for tag, xyz_path in [("train", train_filename), ("test", "../../test_set.xyz")]:
+    split_results = {}
+    paths = [("train", train_filename), ("test", "../../test_set.xyz")]
+    if valid_filename is not None:
+        paths.append(("valid", valid_filename))
+    for tag, xyz_path in paths:
         try:
             atoms_list = list(read(xyz_path, ":", format="extxyz"))
         except Exception as exc:
@@ -107,6 +116,8 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
         n_failed = 0
         for atoms in atoms_list:
             a = atoms.copy()
+            a.info.pop("mace_energy", None)
+            a.arrays.pop("mace_forces", None)
             a.calc = calc
             try:
                 a.info["mace_energy"] = float(a.get_potential_energy())
@@ -145,6 +156,12 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
                         len(atoms_list),
                         exc,
                     )
+            finally:
+                # Keep only the explicit mace_energy/mace_forces fields above.
+                # Otherwise ASE also tries to serialize MACECalculator.results;
+                # some model-internal arrays are not per-atom and make EXTXYZ
+                # writing fail with a shape-broadcasting error.
+                a.calc = None
             out.append(a)
 
         if n_failed:
@@ -161,6 +178,15 @@ def _save_mace_eval_predictions(name: str, train_filename: str) -> None:
             logger.info("Saved %d %s prediction(s) to %s_pred.xyz.", len(out), tag, tag)
         except Exception as exc:
             logger.warning("Failed to write %s_pred.xyz: %s", tag, exc)
+        try:
+            split_results[tag] = prediction_metrics(out)
+        except ValueError as exc:
+            split_results[tag] = {
+                "complete": False,
+                "reason": str(exc),
+                "n_structures": len(out),
+            }
+    save_evaluation(Path.cwd(), model_path, split_results)
 
 
 def _remove_checkpoints_dir_if_model_exists(
@@ -365,7 +391,8 @@ def mace_fit(
     job_dict : dict
         Full jobs dictionary (mlip_committee and initialization sub-dicts are used).
     seed : int
-        Base random seed; each committee member uses seed + fit_idx.
+        Common validation-split seed. MACE itself uses seed + fit_idx so
+        committee members still start from different random initializations.
     workdir_str : str
         Path to the AL loop working directory (contains train_set.xyz / test_set.xyz).
     fit_idx : int, optional
@@ -424,10 +451,14 @@ def mace_fit(
     acceptable_configs = [*valid_config_types, "high_sd"]
     valid_fraction = mlip_committee_job_dict.get("valid_fraction", 0.05)
     fit_seed = seed + fit_idx
-    rng = np.random.default_rng(fit_seed)
-    new_train_set, valid_set = _select_validation_split(
-        all_training, acceptable_configs, valid_fraction=valid_fraction, rng=rng
-    )
+    # A shared holdout makes committee selection comparable; fit seeds still differ.
+    rng = np.random.default_rng(seed)
+    if mlip_committee_job_dict.get("grouped_validation", False):
+        new_train_set, valid_set = grouped_split(all_training, valid_fraction, seed)
+    else:
+        new_train_set, valid_set = _select_validation_split(
+            all_training, acceptable_configs, valid_fraction=valid_fraction, rng=rng
+        )
 
     # When a split occurred, write per-fit train/valid files into mlip_dir (accessible
     # after chdir). When no split, point directly at the original train_set.xyz.
@@ -500,7 +531,11 @@ def mace_fit(
     try:
         os.chdir(mlip_dir)
         run(args)
-        _save_mace_eval_predictions(mlip_committee_job_dict["name"], train_filename)
+        _save_mace_eval_predictions(
+            mlip_committee_job_dict["name"],
+            train_filename,
+            valid_filename if valid_set else None,
+        )
         _cleanup_committee_checkpoints(mlip_committee_job_dict["name"])
     finally:
         os.chdir(orig_dir)

@@ -170,13 +170,20 @@ class GlobalDatabase:
         return [self._atoms_from_container(c) for c in self.partition.list_containers()]
 
     def get_train_atoms(
-        self, exclude_duplicates: bool = True, exclude_high_force: bool = True
+        self,
+        exclude_duplicates: bool = True,
+        exclude_high_force: bool = True,
+        exclude_ineligible: bool = True,
     ) -> list[Atoms]:
         """Return all train-split structures, optionally excluding flagged containers."""
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
             if c.AtomPositionManager.metadata.get("split") == "train"
+            and (
+                not exclude_ineligible
+                or c.AtomPositionManager.metadata.get("is_training_eligible", True)
+            )
             and not (
                 exclude_duplicates
                 and c.AtomPositionManager.metadata.get("is_duplicate", False)
@@ -187,12 +194,16 @@ class GlobalDatabase:
             )
         ]
 
-    def get_test_atoms(self) -> list[Atoms]:
+    def get_test_atoms(self, exclude_ineligible: bool = True) -> list[Atoms]:
         """Return all test-split structures."""
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
             if c.AtomPositionManager.metadata.get("split") == "test"
+            and (
+                not exclude_ineligible
+                or c.AtomPositionManager.metadata.get("is_training_eligible", True)
+            )
         ]
 
     def get_split_partition(self, split: str) -> Partition:
@@ -561,11 +572,14 @@ class GlobalDatabase:
         if forces is not None:
             configure_kwargs["total_force"] = forces
         a.AtomPositionManager.configure(**configure_kwargs)
-        a.atoms.metadata = {
-            k: v
-            for k, v in atoms.info.items()
-            if isinstance(v, (str, int, float, bool, list, dict))
-        }
+        metadata = {}
+        for key, value in atoms.info.items():
+            # ASE extxyz parses integer provenance (source_index, seed IDs) as NumPy scalars.
+            if isinstance(value, np.generic):
+                value = value.item()
+            if isinstance(value, (str, int, float, bool, list, dict)):
+                metadata[key] = value
+        a.atoms.metadata = metadata
 
         stress = atoms.info.get("REF_stresses")
         if stress is not None:

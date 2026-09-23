@@ -1,19 +1,43 @@
 import json
 import logging
-import typing
 from pathlib import Path
 
 import numpy as np
 import pytest
 from ase import Atoms
 
-from alomancy.mlip.mace.mace_wfl import (
-    _apply_compute_stress_defaults,
-    _compute_dynamic_epochs,
-    _select_validation_split,
-    _write_resolved_mace_epochs,
-)
+from alomancy.mlip.mace_wfl import _select_validation_split
+from alomancy.remote_submission import submitters
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
+
+
+@pytest.mark.unit
+def test_committee_uses_common_split_seed_and_distinct_fit_indices(
+    tmp_path, monkeypatch
+):
+    captured = {}
+
+    class FakeExecutor:
+        def __init__(self, _remote_info):
+            pass
+
+        def run_and_wait(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(submitters, "RemoteJobExecutor", FakeExecutor)
+
+    submitters.committee_remote_submitter(
+        remote_info={},
+        base_name="al_loop_0",
+        function=lambda: None,
+        seed=803,
+        size_of_committee=3,
+    )
+
+    configs = captured["job_configs"]
+    assert [c["function_kwargs"]["seed"] for c in configs] == [803, 803, 803]
+    assert [c["function_kwargs"]["fit_idx"] for c in configs] == [0, 1, 2]
 
 
 class TestEvaluationMetrics:
@@ -592,6 +616,14 @@ class TestSelectBestCommitteeModel:
 
         best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
         assert best_idx == 2
+class TestLegacyMetricParsing:
+    @pytest.mark.unit
+    def test_reads_json_and_python_records_without_eval(self, tmp_path):
+        from alomancy.mlip.get_mace_eval_info import _read_last_metric_record
+
+        path = tmp_path / "metrics.txt"
+        path.write_text(json.dumps({"mae_f": 0.3}) + "\n" + "[('mae_f', 0.2)]\n")
+        assert _read_last_metric_record(path)["mae_f"] == 0.2
 
 
 class TestSaveMaceEvalPredictions:
@@ -639,6 +671,35 @@ class TestSaveMaceEvalPredictions:
         write(str(path), structures, format="extxyz")
 
     @pytest.mark.unit
+    def test_prefers_regular_model_over_compiled_model(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock, patch
+
+        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+
+        monkeypatch.chdir(tmp_path)
+        regular_model = tmp_path / "test_name_stagetwo.model"
+        regular_model.touch()
+        (tmp_path / "test_name_stagetwo_compiled.model").touch()
+        self._write_structures(tmp_path / "train.xyz", 1)
+
+        monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.23)
+        monkeypatch.setattr(
+            Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
+        )
+
+        with (
+            patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace_wfl.write") as mock_write,
+        ):
+            mock_calc_cls.return_value = MagicMock()
+            _save_mace_eval_predictions("test_name", "train.xyz")
+
+        selected_path = Path(mock_calc_cls.call_args.kwargs["model_paths"][0])
+        assert selected_path == regular_model.resolve()
+        written_atoms = mock_write.call_args.args[1]
+        assert all(atoms.calc is None for atoms in written_atoms)
+
+    @pytest.mark.unit
     def test_first_failure_gets_warning_with_traceback_rest_are_debug(
         self, tmp_path, monkeypatch
     ):
@@ -666,7 +727,7 @@ class TestSaveMaceEvalPredictions:
 
         al_logger, handler, records = self._collect_alomancy_logs()
         try:
-            with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+            with patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls:
                 mock_calc_cls.return_value = MagicMock()
                 _save_mace_eval_predictions("test_name", "train.xyz")
         finally:
@@ -718,7 +779,7 @@ class TestSaveMaceEvalPredictions:
 
         al_logger, handler, records = self._collect_alomancy_logs()
         try:
-            with patch("mace.calculators.MACECalculator") as mock_calc_cls:
+            with patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls:
                 mock_calc_cls.return_value = MagicMock()
                 _save_mace_eval_predictions("test_name", "train.xyz")
         finally:

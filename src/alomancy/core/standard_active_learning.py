@@ -30,6 +30,7 @@ from alomancy.remote_submission import (
     md_remote_submitter,
 )
 from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
+from alomancy.structure_generation.ezga.generate_structures import run_ezga
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
 )
@@ -42,6 +43,8 @@ from alomancy.utils.clean_structures import (
     filter_structures_by_min_bond_distance,
     wrap_structures_into_cell,
 )
+from alomancy.utils.dataset_curation import grouped_split
+from alomancy.utils.dft_utils import refresh_dft_labels
 from alomancy.utils.file_saving_and_parsing import (
     read_atoms_file_if_enabled,
 )
@@ -174,9 +177,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         }
         needs = compute_initialization_needs(**_needs_kwargs)
 
-        # Seed extra_datasets only if DB is still missing some initialization targets
+        # Explicit extra datasets are imported independently of generation targets.
         extra_datasets = init_job_dict.get("extra_datasets") or []
-        if extra_datasets and _needs_anything(needs):
+        if extra_datasets:
             for ed in extra_datasets:
                 self._seed_db_from_extra_dataset(ed)
             needs = compute_initialization_needs(**_needs_kwargs)
@@ -288,65 +291,72 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         # --- Build train/test from DB contents -----------------------
         all_evaluated = self.db.get_all_as_atoms()
 
-        test_config_types = set(init_job_dict["test_config_types"])
-        eligible_test_structures: list[Atoms] = []
-        always_train_structures: list[Atoms] = []
-        for atoms in all_evaluated:
-            (
-                eligible_test_structures
-                if atoms.info.get("config_type") in test_config_types
-                else always_train_structures
-            ).append(atoms)
-
-        if not eligible_test_structures:
-            logger.warning(
-                "No eligible test structures found for the specified "
-                "test_config_types. All structures will be used for training."
+        if init_job_dict.get("grouped_splits", False):
+            train_xyzs, test_xyzs = grouped_split(
+                all_evaluated, init_job_dict["test_to_train_ratio"], self.seed
             )
-            train_xyzs = all_evaluated
-            test_xyzs = []
         else:
-            # test_to_train_ratio applies only within the test_config_types
-            # pool, not against the whole DB. Dimers/trimers/stretch_compress/
-            # IsolatedAtom (always_train_structures) never count toward this
-            # ratio's denominator — with a small test_config_types pool and a
-            # much larger always-train pool, computing the quota against
-            # len(all_evaluated) could exceed the entire eligible pool,
-            # routing 100% of it to test and leaving train_xyzs with zero
-            # representatives of that config_type (e.g. init_amorphous),
-            # permanently once update_splits_post_hoc tags the DB.
-            eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
-                eligible_test_structures,
-                init_job_dict["test_to_train_ratio"],
-                self.seed,
-            )
+            test_config_types = set(init_job_dict["test_config_types"])
+            eligible_test_structures: list[Atoms] = []
+            always_train_structures: list[Atoms] = []
+            for atoms in all_evaluated:
+                (
+                    eligible_test_structures
+                    if atoms.info.get("config_type") in test_config_types
+                    else always_train_structures
+                ).append(atoms)
 
-            # Guarantee every eligible config_type keeps at least one
-            # representative in train_xyzs, as a backstop against an unlucky
-            # shuffle leaving a low-count config_type entirely in test.
-            train_config_types = {a.info.get("config_type", "") for a in eligible_train}
-            eligible_config_types = {
-                a.info.get("config_type", "") for a in eligible_test_structures
-            }
-            missing_types = eligible_config_types - train_config_types
-            if missing_types:
-                for config_type in missing_types:
-                    idx = next(
-                        i
-                        for i, a in enumerate(test_xyzs)
-                        if a.info.get("config_type", "") == config_type
-                    )
-                    eligible_train.append(test_xyzs.pop(idx))
+            if not eligible_test_structures:
                 logger.warning(
-                    "Reserved one structure from each of %s for training "
-                    "to avoid entirely excluding these config_types from "
-                    "train_atoms_list.",
-                    sorted(missing_types),
+                    "No eligible test structures found for the specified "
+                    "test_config_types. All structures will be used for training."
+                )
+                train_xyzs = all_evaluated
+                test_xyzs = []
+            else:
+                # test_to_train_ratio applies only within the test_config_types
+                # pool, not against the whole DB. Dimers/trimers/stretch_compress/
+                # IsolatedAtom (always_train_structures) never count toward this
+                # ratio's denominator — with a small test_config_types pool and a
+                # much larger always-train pool, computing the quota against
+                # len(all_evaluated) could exceed the entire eligible pool,
+                # routing 100% of it to test and leaving train_xyzs with zero
+                # representatives of that config_type (e.g. init_amorphous),
+                # permanently once update_splits_post_hoc tags the DB.
+                eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
+                    eligible_test_structures,
+                    init_job_dict["test_to_train_ratio"],
+                    self.seed,
                 )
 
-            # IsolatedAtom and other ineligible types always go to training so
-            # MACE can read E0s for every element from the training file.
-            train_xyzs = always_train_structures + eligible_train
+                # Guarantee every eligible config_type keeps at least one
+                # representative in train_xyzs, as a backstop against an unlucky
+                # shuffle leaving a low-count config_type entirely in test.
+                train_config_types = {
+                    a.info.get("config_type", "") for a in eligible_train
+                }
+                eligible_config_types = {
+                    a.info.get("config_type", "") for a in eligible_test_structures
+                }
+                missing_types = eligible_config_types - train_config_types
+                if missing_types:
+                    for config_type in missing_types:
+                        idx = next(
+                            i
+                            for i, a in enumerate(test_xyzs)
+                            if a.info.get("config_type", "") == config_type
+                        )
+                        eligible_train.append(test_xyzs.pop(idx))
+                    logger.warning(
+                        "Reserved one structure from each of %s for training "
+                        "to avoid entirely excluding these config_types from "
+                        "train_atoms_list.",
+                        sorted(missing_types),
+                    )
+
+                # IsolatedAtom and other ineligible types always go to training
+                # so MACE can read E0s for every element from the training file.
+                train_xyzs = always_train_structures + eligible_train
 
         write(
             Path(work_dir, Path(self.initial_train_file_path).name),
@@ -379,16 +389,32 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         if "mace_fit_kwargs" not in mlip_committee_job_dict:
             mlip_committee_job_dict["mace_fit_kwargs"] = {}
         logger.debug("Working directory: %s", os.getcwd())
-        if (
-            len(
-                list(
-                    Path(f"results/{base_name}").glob(
-                        f"{mlip_committee_job_dict['name']}/fit_*/{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
-                    )
-                )
-            )
-            < mlip_committee_job_dict["size_of_committee"]
-        ):
+        configured_size = mlip_committee_job_dict["size_of_committee"]
+        model_glob = (
+            f"{mlip_committee_job_dict['name']}/fit_*/"
+            f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
+        )
+
+        def _found_fit_indices() -> set[int]:
+            if mlip_committee_job_dict.get("require_checkpoint_metrics", False):
+                from alomancy.mlip.evaluation import read_evaluation
+
+                found = set()
+                for i in range(configured_size):
+                    fit_dir = workdir / mlip_committee_job_dict["name"] / f"fit_{i}"
+                    try:
+                        read_evaluation(fit_dir, "valid")
+                        read_evaluation(fit_dir, "test")
+                    except (OSError, ValueError, KeyError):
+                        continue
+                    found.add(i)
+                return found
+            return {
+                int(p.parent.name.removeprefix("fit_"))
+                for p in workdir.glob(model_glob)
+            }
+
+        if len(_found_fit_indices()) < configured_size:
             committee_remote_submitter(
                 remote_info=get_remote_info(
                     mlip_committee_job_dict,
@@ -406,18 +432,6 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     "workdir_str": str(workdir),
                 },
             )
-
-        model_glob = (
-            f"{mlip_committee_job_dict['name']}/fit_*/"
-            f"{mlip_committee_job_dict['name']}_stagetwo_compiled.model"
-        )
-        configured_size = mlip_committee_job_dict["size_of_committee"]
-
-        def _found_fit_indices() -> set[int]:
-            return {
-                int(p.parent.name.removeprefix("fit_"))
-                for p in Path(f"results/{base_name}").glob(model_glob)
-            }
 
         found_fit_indices = _found_fit_indices()
 
@@ -640,56 +654,89 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
         committee_size = job_dict["mlip_committee"]["size_of_committee"]
         fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
 
+        method = job_dict["structure_generation"].get("method", "md")
+
         logger.info(
-            "Structure generation: MD will run with fit_%d (lowest test-set force "
-            "MAE) as the base model; the remaining %d committee member(s) %s will "
-            "be used afterwards to score MD-generated structures by force std dev.",
+            "Structure generation: %s will run with fit_%d "
+            "(lowest common-validation force MAE) as the base model; "
+            "the remaining %d committee member(s) %s will be used afterwards "
+            "to score generated structures by force std dev.",
+            method.upper(),
             best_fit_idx,
             len(fits_to_use),
             fits_to_use,
         )
 
-        if "run_md_kwargs" not in job_dict["structure_generation"]:
-            job_dict["structure_generation"]["run_md_kwargs"] = {}
+        if method == "md":
+            if "run_md_kwargs" not in job_dict["structure_generation"]:
+                job_dict["structure_generation"]["run_md_kwargs"] = {}
 
-        function_kwargs = {
-            "structure_generation_job_dict": job_dict["structure_generation"],
-            "total_md_runs": len(input_structures),
-            "model_path": [
-                base_mace_model_path
-            ],  # need to pass model path to preserve consistent dtype
-            **job_dict["structure_generation"]["run_md_kwargs"],
-        }
+            function_kwargs = {
+                "structure_generation_job_dict": job_dict["structure_generation"],
+                "total_md_runs": len(input_structures),
+                "model_path": [base_mace_model_path],
+                **job_dict["structure_generation"]["run_md_kwargs"],
+            }
 
-        logger.info(
-            "Structure generation: submitting %d MD run(s) from %d seed "
-            "structure(s) to generate candidate structures.",
-            len(input_structures),
-            len(input_structures),
-        )
+            logger.info(
+                "Structure generation: submitting %d MD run(s) from %d seed "
+                "structure(s) to generate candidate structures.",
+                len(input_structures),
+                len(input_structures),
+            )
 
-        md_trajectory_paths = md_remote_submitter(
-            remote_info=get_remote_info(
-                job_dict["structure_generation"], input_files=[base_mace_model_path]
-            ),
-            base_name=base_name,
-            target_file=f"{job_dict['structure_generation']['name']}.xyz",
-            input_atoms_list=input_structures,
-            function=run_md,
-            function_kwargs=function_kwargs,
-        )
+            md_trajectory_paths = md_remote_submitter(
+                remote_info=get_remote_info(
+                    job_dict["structure_generation"],
+                    input_files=[base_mace_model_path],
+                ),
+                base_name=base_name,
+                target_file=f"{job_dict['structure_generation']['name']}.xyz",
+                input_atoms_list=input_structures,
+                function=run_md,
+                function_kwargs=function_kwargs,
+            )
 
-        structure_list = []
-        for md_trajectory_path in md_trajectory_paths:
-            structures = read(md_trajectory_path, ":", format="extxyz")
-            structure_list.extend(structures)
+            structure_list = []
 
-        logger.info(
-            "Structure generation: MD produced %d candidate structure(s) across "
-            "%d trajectory file(s).",
-            len(structure_list),
-            len(md_trajectory_paths),
-        )
+            for md_trajectory_path in md_trajectory_paths:
+                structures = read(
+                    md_trajectory_path,
+                    ":",
+                    format="extxyz",
+                )
+                structure_list.extend(structures)
+
+            logger.info(
+                "Structure generation: MD produced %d candidate structure(s) "
+                "across %d trajectory file(s).",
+                len(structure_list),
+                len(md_trajectory_paths),
+            )
+
+        elif method == "ezga":
+            run_ezga_kwargs = job_dict["structure_generation"].get(
+                "run_ezga_kwargs", {}
+            )
+            logger.info(
+                "Structure generation: running EZGA from %d seed structure(s).",
+                len(input_structures),
+            )
+
+            structure_list = run_ezga(
+                initial_structures=input_structures,
+                model_path=base_mace_model_path,
+                output_dir=operating_dir / "ezga",
+                **run_ezga_kwargs,
+            )
+
+            logger.info(
+                "Structure generation: EZGA produced %d candidate structure(s).",
+                len(structure_list),
+            )
+
+        else:
+            raise ValueError(f"Unknown structure generation method: {method}")
 
         model_paths_list = list(
             Path.glob(
@@ -763,7 +810,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                 "high_accuracy_eval already done for %s, loading cached results.",
                 base_name,
             )
-            return list(read(sentinel_results, ":"))
+            return [
+                refresh_dft_labels(a, str(sentinel_results))
+                for a in read(sentinel_results, ":")
+            ]
 
         calculator = high_accuracy_eval_job_dict.get("calculator", "qe")
         warn_mismatched_kwargs(calculator, high_accuracy_eval_job_dict)
@@ -792,7 +842,10 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
                     len(found_structures),
                 )
 
-                atoms_list = [read(p, format="extxyz") for p in found_structures]
+                atoms_list = [
+                    refresh_dft_labels(read(p, format="extxyz"), str(p))
+                    for p in found_structures
+                ]
                 return atoms_list
 
             elif len(found_structures) > 0:
@@ -903,7 +956,9 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             completed_file = Path(directory, f"{output_name}.xyz")
             structure = None
             if completed_file.exists():
-                structure = read(completed_file, format="extxyz")
+                structure = refresh_dft_labels(
+                    read(completed_file, format="extxyz"), str(completed_file)
+                )
             if structure is not None:
                 high_accuracy_structures.append(structure)
 

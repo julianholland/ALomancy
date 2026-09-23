@@ -26,6 +26,8 @@ def run_md(
     friction: float = 0.002,
     ensemble: str = "nvt",
     pressure: float = 0.0,
+    equilibration_steps: int = 0,
+    equilibration_temperature: float = 300.0,
 ):
     """
     ensemble : {"nvt", "npt"}
@@ -36,6 +38,11 @@ def run_md(
         Target external pressure in GPa, only used when ensemble="npt".
         ASE's externalstress is the negative of pressure (positive pressure
         compresses), so it is derived here as -pressure * ase.units.GPa.
+    equilibration_steps : int
+        Number of initial fixed-cell NVT Langevin steps that are not written to
+        the production trajectory. Zero disables equilibration.
+    equilibration_temperature : float
+        Temperature in K used during the initial NVT equilibration.
     """
     if ensemble.lower() not in ("nvt", "npt"):
         raise ValueError(f"Unknown ensemble {ensemble!r}; must be 'nvt' or 'npt'.")
@@ -80,6 +87,28 @@ def run_md(
             f"{structure_generation_job_dict['name']}_{md_structure.info['job_id']}.log",
         )
     )
+
+    if equilibration_steps < 0:
+        raise ValueError("equilibration_steps must be non-negative.")
+    if equilibration_temperature <= 0:
+        raise ValueError("equilibration_temperature must be positive.")
+
+    if equilibration_steps:
+        logger.debug(
+            "Equilibrating MD run %s for %d NVT steps at %g K.",
+            structure_generation_job_dict["name"],
+            equilibration_steps,
+            equilibration_temperature,
+        )
+        equilibration = Langevin(
+            atoms=md_structure,
+            timestep=timestep_fs * fs,
+            temperature_K=equilibration_temperature,
+            friction=friction,
+            rng=rng,
+            logfile=logfile,
+        )
+        equilibration.run(steps=equilibration_steps)
 
     logger.debug(
         "MD run %s: ensemble=%s%s.",

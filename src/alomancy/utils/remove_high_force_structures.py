@@ -19,7 +19,7 @@ def remove_high_force_structures_from_partition(
     Args:
         db: GlobalDatabase instance.
         force_threshold: Maximum allowed force magnitude (eV/Å). Structures
-            whose maximum per-atom force component exceeds this are flagged.
+            whose maximum per-atom force norm exceeds this are flagged.
     """
     train_partition = db.get_split_partition("train")
     if len(train_partition) == 0:
@@ -28,12 +28,22 @@ def remove_high_force_structures_from_partition(
         )
         return
 
+    if not np.isfinite(force_threshold) or force_threshold <= 0:
+        raise ValueError("force_threshold must be finite and positive")
+
     # Collect local (partition-positional) indices of high-force structures.
     # Forces are stored in AtomPositionManager, not in metadata.
     high_force_local: list[int] = []
     for i, container in enumerate(train_partition.list_containers()):
         forces = container.AtomPositionManager.forces
-        if forces is not None and np.max(np.abs(forces)) >= force_threshold:
+        if (
+            forces is None
+            or np.asarray(forces).ndim != 2
+            or np.asarray(forces).shape[1] != 3
+            or np.asarray(forces).size == 0
+            or not np.isfinite(forces).all()
+            or np.linalg.norm(forces, axis=1).max() >= force_threshold
+        ):
             high_force_local.append(i)
 
     # Map local indices → positional indices in the global DB partition.
@@ -51,5 +61,8 @@ def remove_high_force_structures_from_partition(
         len(train_global_indices),
         force_threshold,
     )
-    if high_force_global:
-        db.flag_as_high_force(high_force_global)
+    rejected = set(high_force_global)
+    db.partition.set_metadata_bulk(
+        {i: {"is_high_force": i in rejected} for i in train_global_indices},
+        use_indices=True,
+    )

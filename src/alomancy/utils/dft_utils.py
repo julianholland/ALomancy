@@ -7,6 +7,8 @@ from ase import Atoms
 from ase.io import write
 from ase.optimize import BFGS
 
+from alomancy.utils.clean_structures import clean_structures
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +43,31 @@ def _build_srun_command(para_info_dict: dict, executable_and_flags: str) -> str:
     )
 
 
+def refresh_dft_labels(atoms: Atoms, source: str = "DFT") -> Atoms:
+    """Replace inherited labels from the current, explicitly DFT calculator.
+
+    Never call this on a generated candidate with a surrogate calculator.
+    Keep ASE's energy convention; store free_energy separately when available.
+    """
+    if atoms.calc is None:
+        raise ValueError("Cannot refresh DFT labels without a calculator")
+    if getattr(atoms.calc, "converged", None) is False:
+        raise ValueError("DFT electronic calculation did not converge")
+    clean = clean_structures([atoms], "DFT", label_source="calculator")[0]
+    atoms.info["REF_energy"] = clean.info["REF_energy"]
+    atoms.set_array("REF_forces", clean.arrays["REF_forces"].copy())
+    atoms.info["REF_label_source"] = source
+    if getattr(atoms.calc, "converged", None) is True:
+        atoms.info["dft_converged"] = True
+    atoms.info["REF_energy_convention"] = "energy"
+    free_energy = atoms.calc.results.get("free_energy")
+    if free_energy is not None and np.isfinite(free_energy):
+        atoms.info["REF_free_energy"] = float(free_energy)
+    else:
+        atoms.info.pop("REF_free_energy", None)
+    return atoms
+
+
 def _write_dft_result(atoms: Atoms, out_dir: str, name: str) -> None:
     write(Path(out_dir, f"{name}.xyz"), atoms, format="extxyz")
     logger.debug("Writing structures to %s as %s.xyz", out_dir, name)
@@ -55,6 +82,7 @@ def _run_sp(
     Path(out_dir).mkdir(exist_ok=True, parents=True)
     input_structure.calc = create_calc_fn(input_structure, job_dict, out_dir)
     input_structure.get_potential_energy()
+    refresh_dft_labels(input_structure, str(Path(out_dir).resolve()))
     _write_dft_result(input_structure, out_dir, job_dict["name"])
     return input_structure
 
@@ -73,6 +101,15 @@ def _run_go(
         logfile=str(Path(out_dir, f"{opt_prefix}.log")),
         trajectory=str(Path(out_dir, f"{opt_prefix}.traj")),
     )
-    opt.run(fmax=0.05, steps=200)
+    converged = opt.run(fmax=0.05, steps=200)
+    if not converged:
+        logger.warning(
+            "Geometry optimization in %s did not reach fmax=0.05 eV/Angstrom "
+            "within 200 steps; keeping the best structure found rather than "
+            "discarding the completed DFT computation.",
+            out_dir,
+        )
+    refresh_dft_labels(input_structure, str(Path(out_dir).resolve()))
+    input_structure.info["geometry_converged"] = bool(converged)
     _write_dft_result(input_structure, out_dir, job_dict["name"])
     return input_structure
