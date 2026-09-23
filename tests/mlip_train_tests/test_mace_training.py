@@ -1,12 +1,20 @@
 import json
 import logging
+import typing
 from pathlib import Path
 
 import numpy as np
 import pytest
 from ase import Atoms
 
-from alomancy.mlip.mace_wfl import _select_validation_split
+from alomancy.mlip.evaluation import prediction_metrics, save_evaluation
+from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
+from alomancy.mlip.mace.mace_wfl import (
+    _apply_compute_stress_defaults,
+    _compute_dynamic_epochs,
+    _select_validation_split,
+    _write_resolved_mace_epochs,
+)
 from alomancy.remote_submission import submitters
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 
@@ -158,7 +166,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_returns_dataframe_with_mae_columns(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         self._write_train_txt(
@@ -172,7 +180,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_averages_multiple_fits(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         for i in range(3):
@@ -190,7 +198,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_empty_dataframe_when_no_al_loop_dirs(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         df = get_mace_eval_info({"name": "mlip_committee"})
@@ -198,7 +206,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_one_row_per_al_loop(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         for loop in range(3):
@@ -217,7 +225,7 @@ class TestGetMaceEvalInfo:
 
     @pytest.mark.unit
     def test_loop_with_no_results_files_skipped(self, tmp_path, monkeypatch):
-        from alomancy.mlip.get_mace_eval_info import get_mace_eval_info
+        from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
         # Loop 0 has results; loop 1 directory exists but is empty
@@ -352,10 +360,267 @@ class TestSelectValidationSplit:
         assert not any(id(a) in isolated_ids for a in valid)
 
 
+class TestComputeDynamicEpochs:
+    """Tests for _compute_dynamic_epochs -- the max_num_epochs="dynamic" formula."""
+
+    @pytest.mark.unit
+    def test_typical_mid_run_value(self):
+        # 200_000 * 16 / 4000 = 800 -> capped to 300
+        assert _compute_dynamic_epochs(batch_size=16, n_training_structures=4000) == 300
+
+    @pytest.mark.unit
+    def test_large_training_set_hits_floor(self):
+        # 200_000 * 16 / 1_000_000 = 3.2 -> ceil 4 -> floored to 20
+        assert (
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=1_000_000)
+            == 20
+        )
+
+    @pytest.mark.unit
+    def test_small_training_set_hits_cap(self):
+        # 200_000 * 16 / 100 = 32_000 -> capped to 300
+        assert _compute_dynamic_epochs(batch_size=16, n_training_structures=100) == 300
+
+    @pytest.mark.unit
+    def test_uncapped_value_between_floor_and_cap(self):
+        # 200_000 * 16 / 20_000 = 160 -- within [20, 300], unclamped
+        assert (
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=20_000) == 160
+        )
+
+    @pytest.mark.unit
+    def test_rounds_up_not_down(self):
+        # 200_000 * 16 / 19_999 = 160.008... -> ceil to 161, not floor to 160
+        assert (
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=19_999) == 161
+        )
+
+    @pytest.mark.unit
+    def test_raises_on_zero_training_structures(self):
+        with pytest.raises(ValueError):
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=0)
+
+    @pytest.mark.unit
+    def test_raises_on_negative_training_structures(self):
+        with pytest.raises(ValueError):
+            _compute_dynamic_epochs(batch_size=16, n_training_structures=-5)
+
+
+class TestWriteResolvedMaceEpochs:
+    """Tests for _write_resolved_mace_epochs -- the resolved_mace_epochs.json sidecar."""
+
+    @pytest.mark.unit
+    def test_writes_max_num_epochs_and_start_swa(self, tmp_path):
+        _write_resolved_mace_epochs(
+            tmp_path, {"max_num_epochs": 160, "start_swa": 128, "other": "ignored"}
+        )
+        payload = json.loads((tmp_path / "resolved_mace_epochs.json").read_text())
+        assert payload == {"max_num_epochs": 160, "start_swa": 128}
+
+    @pytest.mark.unit
+    def test_written_unconditionally_for_fixed_epochs_too(self, tmp_path):
+        # Not just for max_num_epochs="dynamic" -- fixed-int runs get the
+        # sidecar too, so mlip_plots.py has one code path to read from.
+        _write_resolved_mace_epochs(tmp_path, {"max_num_epochs": 80, "start_swa": 64})
+        assert (tmp_path / "resolved_mace_epochs.json").exists()
+
+
+class TestApplyComputeStressDefaults:
+    """Tests for _apply_compute_stress_defaults -- the compute_stress opt-in wiring."""
+
+    @pytest.mark.unit
+    def test_noop_when_compute_stress_false(self):
+        params = {"loss": "weighted"}
+        _apply_compute_stress_defaults(params, False)
+        assert params == {"loss": "weighted"}
+
+    @pytest.mark.unit
+    def test_sets_stress_key_and_loss_when_enabled(self):
+        params = {}
+        _apply_compute_stress_defaults(params, True)
+        assert params["stress_key"] == "REF_stresses"
+        assert params["loss"] == "stress"
+
+    @pytest.mark.unit
+    def test_does_not_override_explicit_loss(self):
+        params = {"loss": "huber"}
+        _apply_compute_stress_defaults(params, True)
+        assert params["loss"] == "huber"
+        assert params["stress_key"] == "REF_stresses"
+
+    @pytest.mark.unit
+    def test_does_not_override_explicit_stress_key(self):
+        params = {"stress_key": "my_stress"}
+        _apply_compute_stress_defaults(params, True)
+        assert params["stress_key"] == "my_stress"
+        assert params["loss"] == "stress"
+
+
+class TestSelectBestCommitteeModel:
+    """Tests for select_best_committee_model — picks the fit with the lowest
+    checkpoint-evaluation error, read from each fit's evaluation_metrics.json."""
+
+    JOB_DICT: typing.ClassVar[dict] = {"name": "mlip_committee", "size_of_committee": 3}
+
+    @staticmethod
+    def _predicted(e_error: float, f_error: float | None = None) -> Atoms:
+        """A dimer whose per-atom energy MAE is e_error and force MAE is f_error."""
+        f_error = e_error if f_error is None else f_error
+        a = Atoms("Pd2", positions=[[0, 0, 0], [2.5, 0, 0]])
+        a.info.update(
+            REF_energy=-8.0, mace_energy=-8.0 + 2 * e_error, config_type="init_dimer"
+        )
+        a.set_array("REF_forces", np.zeros((2, 3)))
+        a.set_array("mace_forces", np.ones((2, 3)) * f_error)
+        return a
+
+    def _fit_dir(self, base: Path, fit_idx: int) -> Path:
+        return base / "results" / "al_loop_0" / "mlip_committee" / f"fit_{fit_idx}"
+
+    def _write_evaluation(
+        self,
+        base: Path,
+        fit_idx: int,
+        splits: dict[str, Atoms | list[Atoms]],
+    ) -> Path:
+        """Write a fit's stagetwo model plus the evaluation_metrics.json
+        that _save_mace_eval_predictions produces on the remote node.
+
+        select_best_committee_model reads this file (via read_evaluation,
+        which also checks the model exists and matches its recorded
+        checksum) rather than any *_test.txt training log.
+        """
+        fit_dir = self._fit_dir(base, fit_idx)
+        fit_dir.mkdir(parents=True, exist_ok=True)
+        model = fit_dir / "mlip_committee_stagetwo.model"
+        model.write_bytes(f"checkpoint {fit_idx}".encode())
+        save_evaluation(
+            fit_dir,
+            model,
+            {
+                split: prediction_metrics(atoms if isinstance(atoms, list) else [atoms])
+                for split, atoms in splits.items()
+            },
+        )
+        return model
+
+    @pytest.mark.unit
+    def test_selects_fit_with_lowest_mae_f(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        for i, error in enumerate([0.30, 0.10, 0.20]):
+            self._write_evaluation(tmp_path, i, {"test": self._predicted(error)})
+
+        best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+        assert best_idx == 1
+
+    @pytest.mark.unit
+    def test_returns_correct_model_path(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        for i, error in enumerate([0.30, 0.05, 0.20]):
+            self._write_evaluation(tmp_path, i, {"test": self._predicted(error)})
+
+        _, model_path = select_best_committee_model(
+            "al_loop_0", self.JOB_DICT, seed=803
+        )
+        assert "fit_1" in str(model_path)
+        assert model_path.name == "mlip_committee_stagetwo.model"
+
+    @pytest.mark.unit
+    def test_selects_by_requested_metric(self, tmp_path, monkeypatch):
+        """fit_0 has the lowest force error, fit_2 the lowest energy error —
+        which one wins must follow the `metric` argument."""
+        monkeypatch.chdir(tmp_path)
+        errors = [(0.30, 0.05), (0.20, 0.20), (0.05, 0.30)]
+        for i, (e_err, f_err) in enumerate(errors):
+            self._write_evaluation(tmp_path, i, {"test": self._predicted(e_err, f_err)})
+
+        by_force, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+        by_energy, _ = select_best_committee_model(
+            "al_loop_0", self.JOB_DICT, seed=803, metric="mae_e_per_atom"
+        )
+        assert by_force == 0
+        assert by_energy == 2
+
+    @pytest.mark.unit
+    def test_prefers_valid_split_over_test_split(self, tmp_path, monkeypatch):
+        """When every fit has a 'valid' split it decides the ranking, even if
+        'test' would rank the fits differently."""
+        monkeypatch.chdir(tmp_path)
+        for i, (valid_err, test_err) in enumerate([(0.30, 0.01), (0.10, 0.50)]):
+            self._write_evaluation(
+                tmp_path,
+                i,
+                {
+                    "valid": self._predicted(valid_err),
+                    "test": self._predicted(test_err),
+                },
+            )
+        self._write_evaluation(
+            tmp_path,
+            2,
+            {"valid": self._predicted(0.20), "test": self._predicted(0.30)},
+        )
+
+        best_idx, _ = select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+        assert best_idx == 1
+
+    @pytest.mark.unit
+    def test_raises_when_no_fit_has_an_evaluation(self, tmp_path, monkeypatch):
+        """Models on disk without evaluation_metrics.json are not enough — the
+        old behaviour of quietly defaulting to fit_0 is gone."""
+        monkeypatch.chdir(tmp_path)
+        for i in range(3):
+            fit_dir = self._fit_dir(tmp_path, i)
+            fit_dir.mkdir(parents=True)
+            (fit_dir / "mlip_committee_stagetwo.model").touch()
+
+        with pytest.raises(RuntimeError, match="complete checkpoint validation"):
+            select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+
+    @pytest.mark.unit
+    def test_raises_when_no_fit_directories_exist(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        with pytest.raises(RuntimeError, match="3 of 3 committee fit"):
+            select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+
+    @pytest.mark.unit
+    def test_raises_rather_than_returning_a_failed_fit_0(self, tmp_path, monkeypatch):
+        """Regression test for the production crash this guards against: fit_0
+        failed (no model, no evaluation) while fit_1/fit_2 trained fine. The
+        old unconditional 'default to fit_0' fallback returned fit_0's
+        nonexistent model path; a committee with a missing member must now
+        raise instead of silently picking from whoever remains."""
+        monkeypatch.chdir(tmp_path)
+        for i in (1, 2):
+            self._write_evaluation(tmp_path, i, {"test": self._predicted(0.1 * i)})
+
+        with pytest.raises(RuntimeError, match="1 of 3 committee fit"):
+            select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+
+    @pytest.mark.unit
+    def test_raises_when_checkpoint_changed_after_evaluation(
+        self, tmp_path, monkeypatch
+    ):
+        """A model whose bytes no longer match the checksum recorded with its
+        metrics must not be trusted — the fit counts as missing."""
+        monkeypatch.chdir(tmp_path)
+        models = [
+            self._write_evaluation(
+                tmp_path, i, {"test": self._predicted(0.1 * (i + 1))}
+            )
+            for i in range(3)
+        ]
+        models[0].write_bytes(b"retrained after evaluation")
+
+        with pytest.raises(RuntimeError, match="1 of 3 committee fit"):
+            select_best_committee_model("al_loop_0", self.JOB_DICT, seed=803)
+
+
 class TestLegacyMetricParsing:
     @pytest.mark.unit
     def test_reads_json_and_python_records_without_eval(self, tmp_path):
-        from alomancy.mlip.get_mace_eval_info import _read_last_metric_record
+        from alomancy.mlip.mace.get_mace_eval_info import _read_last_metric_record
 
         path = tmp_path / "metrics.txt"
         path.write_text(json.dumps({"mae_f": 0.3}) + "\n" + "[('mae_f', 0.2)]\n")
@@ -410,7 +675,7 @@ class TestSaveMaceEvalPredictions:
     def test_prefers_regular_model_over_compiled_model(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock, patch
 
-        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+        from alomancy.mlip.mace.mace_wfl import _save_mace_eval_predictions
 
         monkeypatch.chdir(tmp_path)
         regular_model = tmp_path / "test_name_stagetwo.model"
@@ -424,8 +689,8 @@ class TestSaveMaceEvalPredictions:
         )
 
         with (
-            patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls,
-            patch("alomancy.mlip.mace_wfl.write") as mock_write,
+            patch("alomancy.mlip.mace.mace_wfl.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace.mace_wfl.write") as mock_write,
         ):
             mock_calc_cls.return_value = MagicMock()
             _save_mace_eval_predictions("test_name", "train.xyz")
@@ -441,7 +706,7 @@ class TestSaveMaceEvalPredictions:
     ):
         from unittest.mock import MagicMock, patch
 
-        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+        from alomancy.mlip.mace.mace_wfl import _save_mace_eval_predictions
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -463,7 +728,7 @@ class TestSaveMaceEvalPredictions:
 
         al_logger, handler, records = self._collect_alomancy_logs()
         try:
-            with patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls:
+            with patch("alomancy.mlip.mace.mace_wfl.MACECalculator") as mock_calc_cls:
                 mock_calc_cls.return_value = MagicMock()
                 _save_mace_eval_predictions("test_name", "train.xyz")
         finally:
@@ -501,7 +766,7 @@ class TestSaveMaceEvalPredictions:
     def test_no_failure_logs_when_all_predictions_succeed(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock, patch
 
-        from alomancy.mlip.mace_wfl import _save_mace_eval_predictions
+        from alomancy.mlip.mace.mace_wfl import _save_mace_eval_predictions
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -515,7 +780,7 @@ class TestSaveMaceEvalPredictions:
 
         al_logger, handler, records = self._collect_alomancy_logs()
         try:
-            with patch("alomancy.mlip.mace_wfl.MACECalculator") as mock_calc_cls:
+            with patch("alomancy.mlip.mace.mace_wfl.MACECalculator") as mock_calc_cls:
                 mock_calc_cls.return_value = MagicMock()
                 _save_mace_eval_predictions("test_name", "train.xyz")
         finally:
@@ -538,7 +803,7 @@ class TestCleanupCommitteeCheckpoints:
     def test_removes_checkpoints_dir_when_compiled_model_exists(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import _cleanup_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -554,7 +819,7 @@ class TestCleanupCommitteeCheckpoints:
     def test_leaves_checkpoints_dir_when_compiled_model_missing(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import _cleanup_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         checkpoints_dir = tmp_path / "checkpoints"
@@ -567,7 +832,7 @@ class TestCleanupCommitteeCheckpoints:
 
     @pytest.mark.unit
     def test_no_error_when_checkpoints_dir_absent(self, tmp_path, monkeypatch):
-        from alomancy.mlip.mace_wfl import _cleanup_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import _cleanup_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / "test_name_stagetwo_compiled.model").touch()
@@ -590,7 +855,7 @@ class TestCleanupLocalCommitteeCheckpoints:
     def test_removes_local_checkpoints_for_fits_with_compiled_model(
         self, tmp_path, monkeypatch
     ):
-        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         for i in (1, 3, 4):
@@ -614,7 +879,7 @@ class TestCleanupLocalCommitteeCheckpoints:
         its checkpoints/, if any partial sync left one, must be left alone
         for postmortem, matching _cleanup_committee_checkpoints' own
         existence-gated behavior."""
-        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         fit_dir = self._fit_dir(tmp_path, 0)
@@ -629,7 +894,7 @@ class TestCleanupLocalCommitteeCheckpoints:
 
     @pytest.mark.unit
     def test_noop_for_fit_dir_with_no_checkpoints(self, tmp_path, monkeypatch):
-        from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints
+        from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints
 
         monkeypatch.chdir(tmp_path)
         fit_dir = self._fit_dir(tmp_path, 2)

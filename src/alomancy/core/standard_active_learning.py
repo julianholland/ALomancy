@@ -18,11 +18,11 @@ from alomancy.initialize.initialization_structure_list import (
     compute_initialization_needs,
     create_initialization_atoms_list,
 )
-from alomancy.mlip.get_mace_eval_info import (
+from alomancy.mlip.mace.get_mace_eval_info import (
     get_mace_eval_info,
     select_best_committee_model,
 )
-from alomancy.mlip.mace_wfl import cleanup_local_committee_checkpoints, mace_fit
+from alomancy.mlip.mace.mace_wfl import cleanup_local_committee_checkpoints, mace_fit
 from alomancy.remote_submission import (
     all_maces_remote_submitter,
     ase_remote_submitter,

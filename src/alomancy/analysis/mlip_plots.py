@@ -20,13 +20,45 @@ from alomancy.analysis.colors import (
 logger = logging.getLogger(__name__)
 
 
-def _get_stage_two_epoch(mlip_committee_job_dict: dict) -> int:
+def _read_resolved_epochs(fit_dir: Path) -> dict | None:
+    """Read the resolved_mace_epochs.json sidecar written by mace_fit.
+
+    Returns None gracefully if missing or unparseable -- fits trained before
+    this sidecar existed have no such file.
+    """
+    sidecar_path = fit_dir / "resolved_mace_epochs.json"
+    if not sidecar_path.exists():
+        return None
+    try:
+        with sidecar_path.open() as fh:
+            payload: dict = json.load(fh)
+            return payload
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Could not parse %s: %s", sidecar_path, exc)
+        return None
+
+
+def _get_stage_two_epoch(
+    mlip_committee_job_dict: dict, fit_dir: Path | None = None
+) -> int:
+    if fit_dir is not None:
+        resolved = _read_resolved_epochs(fit_dir)
+        if resolved is not None and "start_swa" in resolved:
+            return int(resolved["start_swa"])
+
     mace_kwargs = mlip_committee_job_dict.get("mace_fit_kwargs", {})
     if "start_swa" in mace_kwargs:
         return int(mace_kwargs["start_swa"])
     max_ep = mlip_committee_job_dict.get("max_num_epochs") or mace_kwargs.get(
         "max_num_epochs", 80
     )
+    if not isinstance(max_ep, int | float):
+        logger.warning(
+            "max_num_epochs is %r (not numeric) and no resolved_mace_epochs.json "
+            "sidecar was found; defaulting stage-two epoch marker to 80.",
+            max_ep,
+        )
+        max_ep = 80
     return math.floor(max_ep * 0.8)
 
 
@@ -91,19 +123,21 @@ def plot_training_curves(
 ) -> None:
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["size_of_committee"]
-    stage2_epoch = _get_stage_two_epoch(mlip_committee_job_dict)
 
     setup_alomancy_style()
     colors = PALETTE
 
     # --- collect per-fit data ---
     fit_data: list[tuple[int, pd.DataFrame, int | None]] = []
+    first_fit_dir: Path | None = None
     for i in range(n_fits):
         fit_dir = Path("results", base_name, name, f"fit_{i}")
         df = _parse_training_jsonl(fit_dir, name, seed + i)
         if df is None:
             logger.warning("Skipping fit_%d: no training data.", i)
             continue
+        if first_fit_dir is None:
+            first_fit_dir = fit_dir
         used_ep = _parse_used_epoch(fit_dir, name, seed + i)
         fit_data.append((i, df, used_ep))
 
@@ -112,6 +146,10 @@ def plot_training_curves(
             "No fit data available for %s — skipping training curve plots.", base_name
         )
         return
+
+    # Never assume fit_0 succeeded -- use the first successfully-collected
+    # fit's directory to look up the resolved_mace_epochs.json sidecar.
+    stage2_epoch = _get_stage_two_epoch(mlip_committee_job_dict, first_fit_dir)
 
     # --- Raw metrics, alongside the plots rendered from the same data ---
     # The PNGs above are the only durable record of loss/MAE today; the

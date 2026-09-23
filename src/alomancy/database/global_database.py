@@ -528,9 +528,14 @@ class GlobalDatabase:
         Return a copy of atoms ready for sage_lib storage, or None to skip.
 
         Normalises REF_energy / REF_forces from either atoms.info/arrays or a
-        calculator.  REF_forces are serialised into info["_REF_forces"] because
-        sage_lib only persists atoms.info, not atoms.arrays.  Returns None (and
-        logs a warning) if no energy source can be found.
+        calculator. REF_forces round-trip natively via
+        AtomPositionManager.configure(total_force=...)/apm.forces -- no
+        info-key workaround needed. REF_stresses has no native slot on
+        AtomPositionManager (only total_force exists for force-like data), so
+        it IS manually serialised into info["_REF_stresses"] (as a JSON-safe
+        list) because sage_lib only persists atoms.info, not atoms.arrays or
+        any other attribute. Returns None (and logs a warning) if no energy
+        source can be found.
         """
         formula = atoms.get_chemical_formula()
         config_type = atoms.info.get("config_type", "unknown")
@@ -576,6 +581,10 @@ class GlobalDatabase:
                 metadata[key] = value
         a.atoms.metadata = metadata
 
+        stress = atoms.info.get("REF_stresses")
+        if stress is not None:
+            a.atoms.metadata["_REF_stresses"] = np.asarray(stress).tolist()
+
         return a
 
     @staticmethod
@@ -590,6 +599,7 @@ class GlobalDatabase:
             pbc=[bool(p) for p in apm.pbc],
         )
         meta = dict(apm.metadata)
+        stress = meta.pop("_REF_stresses", None)
         energy = apm.energy
         forces = apm.forces
         atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)
@@ -597,5 +607,7 @@ class GlobalDatabase:
         atoms.info["REF_energy"] = energy
         if forces is not None:
             atoms.arrays["REF_forces"] = forces
+        if stress is not None:
+            atoms.info["REF_stresses"] = np.array(stress)
 
         return atoms

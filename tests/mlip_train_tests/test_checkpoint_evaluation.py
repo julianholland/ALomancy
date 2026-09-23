@@ -7,7 +7,7 @@ from alomancy.mlip.evaluation import (
     read_evaluation,
     save_evaluation,
 )
-from alomancy.mlip.get_mace_eval_info import select_best_committee_model
+from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 
 
 def predicted(error):

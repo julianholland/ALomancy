@@ -56,6 +56,65 @@ def test_get_stage_two_epoch_default_80_when_none():
     assert result == 64
 
 
+@pytest.mark.unit
+def test_get_stage_two_epoch_prefers_sidecar_over_config(tmp_path):
+    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
+
+    (tmp_path / "resolved_mace_epochs.json").write_text(
+        json.dumps({"max_num_epochs": 160, "start_swa": 128})
+    )
+    # Config says 80/64, but the sidecar (the actually-resolved value,
+    # e.g. from max_num_epochs="dynamic") should win.
+    result = _get_stage_two_epoch(
+        {"max_num_epochs": 80, "mace_fit_kwargs": {}}, tmp_path
+    )
+    assert result == 128
+
+
+@pytest.mark.unit
+def test_get_stage_two_epoch_falls_back_when_sidecar_missing(tmp_path):
+    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
+
+    # No resolved_mace_epochs.json in tmp_path -- falls back to config formula.
+    result = _get_stage_two_epoch(
+        {"max_num_epochs": 200, "mace_fit_kwargs": {}}, tmp_path
+    )
+    assert result == 160
+
+
+@pytest.mark.unit
+def test_get_stage_two_epoch_dynamic_with_no_sidecar_defaults_to_80_with_warning(
+    tmp_path,
+):
+    import logging
+
+    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
+
+    # max_num_epochs="dynamic" with no sidecar present (e.g. plotting ran
+    # before the sidecar was written) -- must not crash trying to do
+    # math.floor("dynamic" * 0.8); falls back to the 80-epoch default.
+    al_logger = logging.getLogger("alomancy")
+    al_logger.setLevel(logging.WARNING)
+    records: list[logging.LogRecord] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Collector()
+    handler.setLevel(logging.WARNING)
+    al_logger.addHandler(handler)
+    try:
+        result = _get_stage_two_epoch(
+            {"max_num_epochs": "dynamic", "mace_fit_kwargs": {}}, tmp_path
+        )
+    finally:
+        al_logger.removeHandler(handler)
+
+    assert result == 64
+    assert any("not numeric" in r.getMessage() for r in records)
+
+
 # ---------------------------------------------------------------------------
 # _parse_training_jsonl
 # ---------------------------------------------------------------------------
@@ -435,6 +494,60 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
     assert (plots_dir / "training_mae_demo.png").exists()
     assert (plots_dir / "training_loss_demo.png").exists()
     assert (plots_dir / "metrics" / "demo_fit_0_training_metrics.csv").exists()
+
+
+@pytest.mark.unit
+def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
+    tmp_path, monkeypatch
+):
+    """Regression test: max_num_epochs="dynamic" with no
+    resolved_mace_epochs.json sidecar (e.g. an older fit, or a plotting run
+    before mace_fit wrote the sidecar) must not crash trying to do
+    math.floor("dynamic" * 0.8) -- _get_stage_two_epoch must fall back to
+    the numeric default instead."""
+    from alomancy.analysis.mlip_plots import plot_training_curves
+
+    monkeypatch.chdir(tmp_path)
+    _write_fit_data(tmp_path, "mlip_committee", seed=803)
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {
+        "name": "mlip_committee",
+        "size_of_committee": 1,
+        "max_num_epochs": "dynamic",
+        "mace_fit_kwargs": {},
+    }
+    plot_training_curves("demo", job_dict, 803, plots_dir)
+
+    assert (plots_dir / "training_mae_demo.png").exists()
+    assert (plots_dir / "training_loss_demo.png").exists()
+
+
+@pytest.mark.unit
+def test_plot_training_curves_dynamic_epochs_uses_sidecar(tmp_path, monkeypatch):
+    """When a resolved_mace_epochs.json sidecar IS present (the normal case
+    for a fit trained after this feature landed), the Stage 2 marker must
+    come from the sidecar's actually-resolved start_swa, not a guess."""
+    from alomancy.analysis.mlip_plots import plot_training_curves
+
+    monkeypatch.chdir(tmp_path)
+    _write_fit_data(tmp_path, "mlip_committee", seed=803, n_epochs=5)
+    (
+        tmp_path / "results/demo/mlip_committee/fit_0/resolved_mace_epochs.json"
+    ).write_text(json.dumps({"max_num_epochs": 5, "start_swa": 3}))
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {
+        "name": "mlip_committee",
+        "size_of_committee": 1,
+        "max_num_epochs": "dynamic",
+        "mace_fit_kwargs": {},
+    }
+    plot_training_curves("demo", job_dict, 803, plots_dir)
+
+    assert (plots_dir / "training_mae_demo.png").exists()
 
 
 @pytest.mark.unit

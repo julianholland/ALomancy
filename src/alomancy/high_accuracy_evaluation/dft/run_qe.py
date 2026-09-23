@@ -83,7 +83,7 @@ def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
             "verbosity": "high",
             "prefix": "qe",
             "nstep": 999,
-            "tstress": False,
+            "tstress": True,
             "tprnfor": True,
             "disk_io": "none",
             "etot_conv_thr": 1.0e-5,

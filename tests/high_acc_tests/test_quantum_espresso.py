@@ -128,6 +128,11 @@ class TestGetQeInputData:
         result = get_qe_input_data("scf", {})
         assert result["electrons"]["conv_thr"] == pytest.approx(1.0e-12)
 
+    @pytest.mark.unit
+    def test_tstress_defaults_true(self):
+        result = get_qe_input_data("scf", {})
+        assert result["control"]["tstress"] is True
+
 
 class TestCreateEspressoProfile:
     def _para_info(self):
