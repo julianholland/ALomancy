@@ -491,10 +491,26 @@ class BaseActiveLearningWorkflow(ABC):
                 base_name, self.jobs_dict, train_xyzs, **kwargs
             )
 
+            # high_sd structures are relaxed (GO) to high_force_threshold rather
+            # than evaluated at a single point whenever a threshold is set (the
+            # default) -- see generate_structures' needs_relaxation assignment.
+            # fmax is injected here (not read from YAML) so high_force_threshold
+            # stays the one source of truth for both the post-hoc DB filter and
+            # this relaxation target. allow_relaxation must be passed explicitly
+            # here: unlike the initialization call site, this per-loop call
+            # never received it before, so needs_relaxation was previously inert.
+            high_accuracy_eval_job_dict = self.jobs_dict["high_accuracy_evaluation"]
+            if self.high_force_threshold is not None:
+                high_accuracy_eval_job_dict = {
+                    **high_accuracy_eval_job_dict,
+                    "fmax": self.high_force_threshold,
+                }
+
             new_training_data = self.high_accuracy_evaluation(
                 base_name,
-                self.jobs_dict["high_accuracy_evaluation"],
+                high_accuracy_eval_job_dict,
                 generated_structures,
+                allow_relaxation=True,
                 **kwargs,
             )
             logger.info(

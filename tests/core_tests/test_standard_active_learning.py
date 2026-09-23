@@ -1261,12 +1261,13 @@ class TestGenerateStructures:
             ),
         )
 
-    def _wf(self, tmp_path, minimal_jobs_dict):
+    def _wf(self, tmp_path, minimal_jobs_dict, high_force_threshold=100.0):
         return ActiveLearningStandardMACE(
             initial_train_file_path=str(tmp_path / "train.xyz"),
             initial_test_file_path=str(tmp_path / "test.xyz"),
             jobs_dict=minimal_jobs_dict,
             db_path=str(tmp_path / "db"),
+            high_force_threshold=high_force_threshold,
         )
 
     def _touch_committee_model(
@@ -1303,12 +1304,37 @@ class TestGenerateStructures:
         assert isinstance(result, list)
         assert len(result) == 1
 
-    def test_cached_high_sd_structures_forces_needs_relaxation_false(
+    def test_cached_high_sd_structures_set_needs_relaxation_true_by_default(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
-        """Cached high_sd_structures.xyz may carry a stale needs_relaxation=True
-        (inherited from an amorphous init structure via an earlier MD seed) — this
-        must be cleared so it is never routed to GO in high_accuracy_evaluation."""
+        """Cached high_sd_structures.xyz is always explicitly re-set (not just
+        left alone) regardless of any stale needs_relaxation value it carries.
+        With the default high_force_threshold set, this must be True so the
+        structure is relaxed to that threshold in high_accuracy_evaluation
+        instead of being evaluated at a single point."""
+        monkeypatch.chdir(tmp_path)
+        job_dict = minimal_jobs_dict.copy()
+        sg_name = job_dict["structure_generation"]["name"]
+        sd_dir = tmp_path / "results" / "test_base" / sg_name
+        sd_dir.mkdir(parents=True)
+        cached = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True)
+        cached.info["needs_relaxation"] = False
+        from ase.io import write as ase_write
+
+        ase_write(str(sd_dir / "high_sd_structures.xyz"), cached, format="extxyz")
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+        result = wf.generate_structures("test_base", job_dict, [])
+
+        assert all(s.info["needs_relaxation"] is True for s in result)
+
+    def test_cached_high_sd_structures_needs_relaxation_false_when_threshold_none(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """With high_force_threshold=None, cached high_sd structures must stay
+        needs_relaxation=False (unchanged legacy single-point-only behavior),
+        even if a stale needs_relaxation=True was inherited by the on-disk
+        copy from an earlier run."""
         monkeypatch.chdir(tmp_path)
         job_dict = minimal_jobs_dict.copy()
         sg_name = job_dict["structure_generation"]["name"]
@@ -1320,7 +1346,7 @@ class TestGenerateStructures:
 
         ase_write(str(sd_dir / "high_sd_structures.xyz"), cached, format="extxyz")
 
-        wf = self._wf(tmp_path, minimal_jobs_dict)
+        wf = self._wf(tmp_path, minimal_jobs_dict, high_force_threshold=None)
         result = wf.generate_structures("test_base", job_dict, [])
 
         assert all(s.info["needs_relaxation"] is False for s in result)
@@ -1458,13 +1484,57 @@ class TestGenerateStructures:
 
         assert [s.info["job_id"] for s in result] == [0, 1, 2]
 
-    def test_forces_needs_relaxation_false_on_fresh_pipeline(
+    def test_sets_needs_relaxation_true_on_fresh_pipeline_by_default(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
-        """MD seeds can inherit needs_relaxation=True from their source structure
-        (e.g. an amorphous init structure) via .copy(), and that flag survives the
-        MD trajectory. generate_structures must clear it on every returned
-        structure so MD output is never routed to GO in high_accuracy_evaluation."""
+        """MD seeds can inherit needs_relaxation from their source structure
+        (e.g. an amorphous init structure) via .copy(), and that flag survives
+        the MD trajectory unless overwritten. generate_structures must
+        explicitly set it on every returned structure -- with the default
+        high_force_threshold, that means True, routing MD output to GO
+        (relaxed to that threshold) in high_accuracy_evaluation."""
+        monkeypatch.chdir(tmp_path)
+        self._touch_committee_model(tmp_path, minimal_jobs_dict)
+        job_dict = minimal_jobs_dict.copy()
+
+        selected = Atoms(
+            "H2", positions=[[0, 0, 0], [1, 0, 0]], cell=[5, 5, 5], pbc=True
+        )
+        leaked_high_sd = selected.copy()
+        leaked_high_sd.info["needs_relaxation"] = False
+
+        wf = self._wf(tmp_path, minimal_jobs_dict)
+
+        with (
+            patch(
+                "alomancy.core.standard_active_learning.select_initial_structures",
+                return_value=[selected],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.md_remote_submitter",
+                return_value=[],
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.all_maces_remote_submitter",
+                return_value={},
+            ),
+            patch(
+                "alomancy.core.standard_active_learning.find_high_sd_structures",
+                return_value=[leaked_high_sd],
+            ),
+            patch("alomancy.core.standard_active_learning.get_remote_info"),
+            patch("alomancy.core.standard_active_learning.write"),
+        ):
+            result = wf.generate_structures("test_base", job_dict, [selected])
+
+        assert result[0].info["needs_relaxation"] is True
+
+    def test_needs_relaxation_false_on_fresh_pipeline_when_threshold_none(
+        self, tmp_path, minimal_jobs_dict, monkeypatch
+    ):
+        """With high_force_threshold=None, generate_structures must still
+        clear a leaked needs_relaxation=True to False (unchanged legacy
+        single-point-only behavior)."""
         monkeypatch.chdir(tmp_path)
         self._touch_committee_model(tmp_path, minimal_jobs_dict)
         job_dict = minimal_jobs_dict.copy()
@@ -1475,7 +1545,7 @@ class TestGenerateStructures:
         leaked_high_sd = selected.copy()
         leaked_high_sd.info["needs_relaxation"] = True
 
-        wf = self._wf(tmp_path, minimal_jobs_dict)
+        wf = self._wf(tmp_path, minimal_jobs_dict, high_force_threshold=None)
 
         with (
             patch(
