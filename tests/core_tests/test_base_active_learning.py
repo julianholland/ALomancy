@@ -662,6 +662,70 @@ class TestRunWorkflowStructure:
         assert all(a.info.get("config_type") == "high_sd" for a in all_db)
 
     @pytest.mark.unit
+    def test_per_loop_high_accuracy_evaluation_gets_allow_relaxation_and_fmax(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        """The per-loop high_accuracy_evaluation call must pass
+        allow_relaxation=True (previously missing entirely, making
+        needs_relaxation inert for this call site) and inject
+        high_force_threshold as "fmax" into the job dict it's called with,
+        so high_sd structures actually get relaxed to that threshold."""
+        monkeypatch.chdir(tmp_path)
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=1,
+            plots=False,
+            db=shared_db,
+            high_force_threshold=7.5,
+        )
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]) as mock_hae,
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        assert mock_hae.call_args.kwargs.get("allow_relaxation") is True
+        called_job_dict = mock_hae.call_args.args[1]
+        assert called_job_dict["fmax"] == 7.5
+
+    @pytest.mark.unit
+    def test_per_loop_high_accuracy_evaluation_job_dict_unchanged_when_threshold_none(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        """With high_force_threshold=None, the per-loop job dict must be
+        passed through unchanged (no "fmax" key added) -- unchanged legacy
+        single-point-only behavior."""
+        monkeypatch.chdir(tmp_path)
+        wf = ConcreteWorkflow(
+            initial_train_file_path=str(tmp_path / "train.xyz"),
+            initial_test_file_path=str(tmp_path / "test.xyz"),
+            jobs_dict=minimal_jobs_dict,
+            number_of_al_loops=1,
+            plots=False,
+            db=shared_db,
+            high_force_threshold=None,
+        )
+
+        with (
+            patch.object(wf, "initialize_training_set", return_value=([], [])),
+            patch.object(wf, "train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "generate_structures", return_value=[]),
+            patch.object(wf, "high_accuracy_evaluation", return_value=[]) as mock_hae,
+            patch("alomancy.core.base_active_learning.write"),
+        ):
+            wf.run()
+
+        assert mock_hae.call_args.kwargs.get("allow_relaxation") is True
+        called_job_dict = mock_hae.call_args.args[1]
+        assert "fmax" not in called_job_dict
+
+    @pytest.mark.unit
     def test_al_loop_metadata_stored_in_structures(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
