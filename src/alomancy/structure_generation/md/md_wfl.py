@@ -19,6 +19,16 @@ from alomancy.utils.seed_selection import select_diverse_seeds
 
 logger = logging.getLogger(__name__)
 
+# ALomancy's own defaults for the modular structure_generator entry point
+# (generate(), below) -- deliberately different from run_md's own built-in
+# defaults (steps=100), which are far too short for real production MD.
+_MD_KWARGS_DEFAULTS: dict[str, Any] = {
+    "steps": 20000,
+    "temperature": 300,
+    "timestep_fs": 0.5,
+}
+_DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS = 10
+
 
 def run_md(
     structure_generation_job_dict: dict,
@@ -465,14 +475,17 @@ def generate(
 
     config carries only generator-specific settings (md_kwargs);
     name/hpc/max_time are explicit kwargs. md_kwargs holds run_md's own
-    direct kwargs (steps, temperature, ensemble, pressure, ...) plus two
-    nested keys: structure_selection_kwargs (select_diverse_seeds' own
-    params -- max_number_of_concurrent_jobs, enforce_chemical_diversity,
-    seed) and trainer/trainer_config (which trainer registry entry built
-    the model this MD run's calculator should use). Both live under
-    md_kwargs rather than the top structure_generation level since they're
-    genuinely MD-specific -- EZGA never calls select_diverse_seeds or the
-    trainer registry (it loads its model directly, always assuming MACE).
+    direct kwargs (steps, temperature, ensemble, pressure, ...) -- defaults
+    to _MD_KWARGS_DEFAULTS (steps=20000, temperature=300, timestep_fs=0.5)
+    rather than run_md's own far-shorter defaults, merged with whatever the
+    config overrides -- plus two nested keys: structure_selection_kwargs
+    (select_diverse_seeds' own params -- max_number_of_concurrent_jobs,
+    defaulting here to 10, enforce_chemical_diversity, seed) and
+    trainer/trainer_config (which trainer registry entry built the model
+    this MD run's calculator should use). Both live under md_kwargs rather
+    than the top structure_generation level since they're genuinely
+    MD-specific -- EZGA never calls select_diverse_seeds or the trainer
+    registry (it loads its model directly, always assuming MACE).
     structure_generation's own top-level structure_selection_kwargs is
     unrelated and generator-agnostic (filter_eligible_structures, called
     once by the skeleton before any generator dispatch).
@@ -490,12 +503,16 @@ def generate(
     selection_kwargs = md_kwargs.pop("structure_selection_kwargs", {})
     trainer = md_kwargs.pop("trainer", "mace")
     trainer_config = md_kwargs.pop("trainer_config", {})
+    # ALomancy's own preferred defaults, not run_md's (its own steps=100
+    # default is far too short for real production MD) -- merged with user
+    # overrides, same pattern as trainer.py's mace_fit_params.
+    md_kwargs = {**_MD_KWARGS_DEFAULTS, **md_kwargs}
     selected = select_diverse_seeds(
         base_name=base_name,
         job_name=name,
         eligible_structures=seed_atoms,
         max_number_of_concurrent_jobs=selection_kwargs.get(
-            "max_number_of_concurrent_jobs", 5
+            "max_number_of_concurrent_jobs", _DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS
         ),
         enforce_chemical_diversity=selection_kwargs.get(
             "enforce_chemical_diversity", False

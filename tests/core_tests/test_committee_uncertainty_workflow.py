@@ -578,7 +578,7 @@ class TestGenerateStructures:
         wf._generate_structures("al_loop_0", [])
 
         assert (
-            wf.jobs_dict["structure_generation"]["desired_number_of_structures"] == 10
+            wf.jobs_dict["structure_generation"]["desired_number_of_structures"] == 50
         )
 
     def test_full_path_calls_generator_and_scores_committee(

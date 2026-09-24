@@ -99,7 +99,19 @@ they live nested inside `md_kwargs` too. `training.max_num_epochs`
 likewise moves inside `mace_kwargs`: it's a MACE-specific training
 control (not every trainer backend would necessarily have "epochs" at
 all), kept at the top level only incidentally because MACE is the only
-trainer today.
+trainer today. Omitting `mace_kwargs.max_num_epochs` entirely resolves
+dynamically (not a fixed number, and not MACE's own native default of
+2048) -- the same as explicitly setting it to `"dynamic"`.
+
+Other per-module defaults introduced alongside this: `structure_generation
+.desired_number_of_structures` defaults to 50 when omitted (applied once
+by the skeleton, so it's consistent regardless of which generator runs);
+`md_kwargs` defaults to `steps=20000`/`temperature=300`/`timestep_fs=0.5`
+(not `run_md`'s own far-shorter built-in defaults) and `md_kwargs.
+structure_selection_kwargs.max_number_of_concurrent_jobs` defaults to 10;
+`qe_kwargs`/`vasp_kwargs` need no explicit functional setting at all --
+both `get_qe_input_data` and `get_vasp_input_kwargs` (old, shared,
+unchanged) already default to PBE.
 
 `initialization` is architecturally unlike the other three sections: it
 has no dispatch key (trainer/generator/evaluator) because it isn't a
@@ -201,7 +213,7 @@ _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 # so the same value applies regardless of which generator module runs
 # (EZGA doesn't read it today, but would get the same default too if a
 # future version started to).
-_DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 10
+_DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 50
 
 
 def _needs_anything(needs: dict) -> bool:

@@ -461,6 +461,24 @@ class TestTrain:
         args = mock_run.call_args.args[0]
         assert args.valid_file == str(valid_path.resolve())
 
+    def test_max_num_epochs_defaults_to_dynamic_when_unset(self, tmp_path, monkeypatch):
+        """Omitting mace_kwargs.max_num_epochs entirely resolves dynamically
+        -- the same as explicitly setting "dynamic" -- rather than falling
+        back to a fixed epoch count (MACE's own native default, 2048, is
+        not a sensible fallback either)."""
+        _, mock_run, _ = self._run_train(
+            tmp_path,
+            monkeypatch,
+            config_overrides={
+                "mace_kwargs": {"energy_key": "REF_energy", "forces_key": "REF_forces"}
+            },
+        )
+        args = mock_run.call_args.args[0]
+        # _run_train writes 4 train structures; ceil(200_000*16/4) is way
+        # above the dynamic formula's cap, so this pins to the cap (300) --
+        # definitely not the old fixed fallback (80) or MACE's own (2048).
+        assert args.max_num_epochs == 300
+
     def test_dynamic_epochs_uses_train_plus_valid_count(self, tmp_path, monkeypatch):
         """Picks counts in the "uncapped" epoch range so "train+valid
         combined" (the correct, pre-carve-out pool size) and "train alone"

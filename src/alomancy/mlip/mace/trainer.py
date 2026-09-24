@@ -444,14 +444,16 @@ def train(
     # by _apply_compute_stress_defaults, not passed to MACE directly.
     configured_epochs = mace_kwargs.pop("max_num_epochs", None)
     compute_stress = mace_kwargs.pop("compute_stress", False)
-    if configured_epochs is None:
-        epochs = 80
-    elif configured_epochs == "dynamic":
-        # Uses the full pre-split pool passed to this loop's training
-        # (train + valid), matching mace_fit's historical use of
-        # len(all_training) *before* its own per-fit carve-out -- using
-        # only the post-split train count would silently shift the
-        # resolved epoch count by ~1/(1 - valid_fraction).
+    if configured_epochs is None or configured_epochs == "dynamic":
+        # Dynamic resolution is the default (not just an explicit opt-in):
+        # MACE's own native default (2048, meant to be paired with early
+        # stopping via patience) is not a sensible default here, so an
+        # unset mace_kwargs.max_num_epochs resolves the same way an
+        # explicit "dynamic" does. Uses the full pre-split pool passed to
+        # this loop's training (train + valid), matching mace_fit's
+        # historical use of len(all_training) *before* its own per-fit
+        # carve-out -- using only the post-split train count would
+        # silently shift the resolved epoch count by ~1/(1 - valid_fraction).
         epochs = _compute_dynamic_epochs(batch_size, len(all_training) + n_valid)
         logger.info(
             "Dynamic max_num_epochs resolved to %d (batch_size=%d, "

@@ -150,6 +150,34 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestGenerate:
+    def test_max_number_of_concurrent_jobs_defaults_to_ten(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        seeds = _seed_atoms(15)
+
+        def fake_submit_n(function, job_configs, remote_info, **kwargs):
+            for jc in job_configs:
+                out_dir = Path(jc["function_kwargs"]["out_dir"])
+                out_dir.mkdir(parents=True)
+                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+            return [None] * len(job_configs)
+
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n) as mock_submit_n,
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            generate(
+                seed_atoms=seeds,
+                model_path="model.pt",
+                config={},
+                base_name="al_loop_0",
+                name="md",
+                hpc={},
+                max_time="1H",
+            )
+
+        job_configs = mock_submit_n.call_args.args[1]
+        assert len(job_configs) == 10
+
     def test_selects_seeds_and_fans_out_one_job_per_seed(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         seeds = _seed_atoms(10)
@@ -279,6 +307,40 @@ class TestGenerate:
         function_kwargs = job_configs[0]["function_kwargs"]
         assert function_kwargs["trainer"] == "mace"
         assert function_kwargs["trainer_config"] == {}
+        # ALomancy's own defaults, not run_md's far-shorter built-in ones.
+        assert function_kwargs["steps"] == 20000
+        assert function_kwargs["temperature"] == 300
+        assert function_kwargs["timestep_fs"] == 0.5
+
+    def test_md_kwargs_defaults_overridden_by_config(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        def fake_submit_n(function, job_configs, remote_info, **kwargs):
+            for jc in job_configs:
+                out_dir = Path(jc["function_kwargs"]["out_dir"])
+                out_dir.mkdir(parents=True)
+                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+            return [None] * len(job_configs)
+
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n) as mock_submit_n,
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            generate(
+                seed_atoms=_seed_atoms(3),
+                model_path="model.pt",
+                config={"md_kwargs": {"steps": 500, "temperature": 1200}},
+                base_name="al_loop_0",
+                name="md",
+                hpc={},
+                max_time="1H",
+            )
+
+        function_kwargs = mock_submit_n.call_args.args[1][0]["function_kwargs"]
+        assert function_kwargs["steps"] == 500
+        assert function_kwargs["temperature"] == 1200
+        # Untouched default still applies for whatever wasn't overridden.
+        assert function_kwargs["timestep_fs"] == 0.5
 
     def test_reuses_cached_candidates_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
