@@ -127,3 +127,13 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
 )
+
+register(
+    "initialiser",
+    "default",
+    "alomancy.initialize.initialiser_interface",
+    compute_needs="compute_needs",
+    generate="generate",
+    output_paths="output_paths",
+    read_existing_result="read_existing_result",
+)
