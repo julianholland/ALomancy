@@ -244,7 +244,7 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
     """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft, f_pred).
 
     Written by mace_fit after training completes on the remote node. Looks for
-    mace_energy / mace_forces keys. Returns None if the file has no usable rows.
+    model_energy / model_forces keys. Returns None if the file has no usable rows.
 
     Energy values are per-atom eV/atom. If `e0` (element -> isolated-atom
     energy) is given, each structure's per-element E0 sum is subtracted before
@@ -264,7 +264,7 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
     rows = [
         atoms
         for atoms in atoms_list
-        if "REF_energy" in atoms.info and "mace_energy" in atoms.info
+        if "REF_energy" in atoms.info and "model_energy" in atoms.info
     ]
     if not rows:
         return None
@@ -289,10 +289,10 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
         n = len(atoms)
         shift = sum(e0_map[s] for s in atoms.get_chemical_symbols()) if use_e0 else 0.0
         e_dft.append((atoms.info["REF_energy"] - shift) / n)
-        e_pred.append((float(atoms.info["mace_energy"]) - shift) / n)
-        if "REF_forces" in atoms.arrays and "mace_forces" in atoms.arrays:
+        e_pred.append((float(atoms.info["model_energy"]) - shift) / n)
+        if "REF_forces" in atoms.arrays and "model_forces" in atoms.arrays:
             f_dft.extend(atoms.arrays["REF_forces"].flatten().tolist())
-            f_pred.extend(atoms.arrays["mace_forces"].flatten().tolist())
+            f_pred.extend(atoms.arrays["model_forces"].flatten().tolist())
 
     return (
         np.array(e_dft),
@@ -422,7 +422,7 @@ def plot_dft_vs_model(
     for i in range(n_fits):
         # Primary: use stored DB predictions — no model load or GPU needed.
         if db is not None and loop_idx is not None:
-            stored = db.get_mace_predictions(loop_idx, i, e0=e0)
+            stored = db.get_model_predictions(loop_idx, i, e0=e0)
             if stored is not None:
                 train_results.append(stored.get("train"))
                 test_results.append(stored.get("test"))

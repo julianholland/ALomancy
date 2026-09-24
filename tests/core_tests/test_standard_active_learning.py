@@ -1854,18 +1854,18 @@ class TestStoreMlipPredictions:
 
     @pytest.mark.unit
     def test_skips_if_sentinel_exists(self, tmp_path, minimal_jobs_dict, monkeypatch):
-        """Returns immediately without any inference when mace_predictions.done exists."""
+        """Returns immediately without any inference when model_predictions.done exists."""
         monkeypatch.chdir(tmp_path)
         wf = self._wf(tmp_path, minimal_jobs_dict)
 
         loop_dir = tmp_path / "results" / "al_loop_0"
         loop_dir.mkdir(parents=True)
-        (loop_dir / "mace_predictions.done").touch()
+        (loop_dir / "model_predictions.done").touch()
 
         store_calls = []
         with patch.object(
             wf.db,
-            "store_mace_predictions",
+            "store_model_predictions",
             side_effect=lambda *a: store_calls.append(a),
         ):
             wf.store_mlip_predictions(0, "al_loop_0", minimal_jobs_dict)
@@ -1887,19 +1887,19 @@ class TestStoreMlipPredictions:
         store_calls = []
         with patch.object(
             wf.db,
-            "store_mace_predictions",
+            "store_model_predictions",
             side_effect=lambda *a: store_calls.append(a),
         ):
             wf.store_mlip_predictions(0, "al_loop_0", minimal_jobs_dict)
 
         assert store_calls == []
-        assert (loop_dir / "mace_predictions.done").exists()
+        assert (loop_dir / "model_predictions.done").exists()
 
     @pytest.mark.unit
     def test_reads_predictions_from_eval_xyz(
         self, tmp_path, minimal_jobs_dict, monkeypatch
     ):
-        """Reads mace_energy/mace_forces from train_pred.xyz and stores them in DB."""
+        """Reads model_energy/model_forces from train_pred.xyz and stores them in DB."""
         monkeypatch.chdir(tmp_path)
         wf = self._wf(tmp_path, minimal_jobs_dict)
 
@@ -1910,10 +1910,10 @@ class TestStoreMlipPredictions:
 
         atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
         atoms.info["REF_energy"] = -1.0
-        atoms.info["mace_energy"] = -1.05
+        atoms.info["model_energy"] = -1.05
         atoms.info["global_db_id"] = 42
         atoms.arrays["REF_forces"] = np.zeros((1, 3))
-        atoms.arrays["mace_forces"] = np.ones((1, 3)) * 0.01
+        atoms.arrays["model_forces"] = np.ones((1, 3)) * 0.01
         write(str(fit_dir / "train_pred.xyz"), [atoms], format="extxyz")
 
         stored: dict = {}
@@ -1921,10 +1921,10 @@ class TestStoreMlipPredictions:
         def mock_store(loop_idx, fit_idx, preds):
             stored[(loop_idx, fit_idx)] = preds
 
-        with patch.object(wf.db, "store_mace_predictions", side_effect=mock_store):
+        with patch.object(wf.db, "store_model_predictions", side_effect=mock_store):
             wf.store_mlip_predictions(0, "al_loop_0", minimal_jobs_dict)
 
-        assert (loop_dir / "mace_predictions.done").exists()
+        assert (loop_dir / "model_predictions.done").exists()
         assert (0, 0) in stored
         assert 42 in stored[(0, 0)]
         assert stored[(0, 0)][42]["energy"] == pytest.approx(-1.05)

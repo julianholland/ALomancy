@@ -44,9 +44,10 @@ def _save_mace_eval_predictions(
     """Evaluate the trained stagetwo model on train and test sets; write predictions.
 
     Called from inside mace_fit while os.chdir'd into mlip_dir. Writes
-    train_pred.xyz and test_pred.xyz in the current directory with mace_energy
-    and mace_forces keys so store_mlip_predictions can read them locally without
-    re-running inference.
+    train_pred.xyz and test_pred.xyz in the current directory with model_energy
+    and model_forces keys (generalized, not MACE-specific -- see
+    mlip.evaluation.prediction_metrics) so store_mlip_predictions can read
+    them locally without re-running inference.
     """
     # Deliberately load the UNCOMPILED model (plain torch.save'd nn.Module)
     # rather than the TorchScript-compiled one used for production
@@ -116,12 +117,12 @@ def _save_mace_eval_predictions(
         n_failed = 0
         for atoms in atoms_list:
             a = atoms.copy()
-            a.info.pop("mace_energy", None)
-            a.arrays.pop("mace_forces", None)
+            a.info.pop("model_energy", None)
+            a.arrays.pop("model_forces", None)
             a.calc = calc
             try:
-                a.info["mace_energy"] = float(a.get_potential_energy())
-                a.arrays["mace_forces"] = a.get_forces()
+                a.info["model_energy"] = float(a.get_potential_energy())
+                a.arrays["model_forces"] = a.get_forces()
                 n_ok += 1
             except Exception as exc:
                 n_failed += 1
@@ -157,7 +158,7 @@ def _save_mace_eval_predictions(
                         exc,
                     )
             finally:
-                # Keep only the explicit mace_energy/mace_forces fields above.
+                # Keep only the explicit model_energy/model_forces fields above.
                 # Otherwise ASE also tries to serialize MACECalculator.results;
                 # some model-internal arrays are not per-atom and make EXTXYZ
                 # writing fail with a shape-broadcasting error.

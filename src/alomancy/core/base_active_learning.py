@@ -625,7 +625,12 @@ class BaseActiveLearningWorkflow(ABC):
                 for key in ("split", "global_db_id", "is_duplicate", "is_high_force"):
                     atoms.info.pop(key, None)
                 for key in list(atoms.info):
-                    if key.startswith("mace_"):
+                    # Strip both the current ("model_") and legacy
+                    # ("mace_", pre-migration -- see the DB key migration
+                    # script) prediction-key prefixes, so this works
+                    # correctly regardless of whether the DB being reset
+                    # from has already been migrated.
+                    if key.startswith(("model_", "mace_")):
                         del atoms.info[key]
         added = self.db.add_structures(all_atoms, skip_duplicates=True)
         skipped = len(all_atoms) - added

@@ -468,10 +468,10 @@ class TestSelectBestCommitteeModel:
         f_error = e_error if f_error is None else f_error
         a = Atoms("Pd2", positions=[[0, 0, 0], [2.5, 0, 0]])
         a.info.update(
-            REF_energy=-8.0, mace_energy=-8.0 + 2 * e_error, config_type="init_dimer"
+            REF_energy=-8.0, model_energy=-8.0 + 2 * e_error, config_type="init_dimer"
         )
         a.set_array("REF_forces", np.zeros((2, 3)))
-        a.set_array("mace_forces", np.ones((2, 3)) * f_error)
+        a.set_array("model_forces", np.ones((2, 3)) * f_error)
         return a
 
     def _fit_dir(self, base: Path, fit_idx: int) -> Path:

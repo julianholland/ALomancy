@@ -17,9 +17,9 @@ def prediction_metrics(atoms_list: list) -> dict:
     for atoms in atoms_list:
         n = len(atoms)
         e = atoms.info.get("REF_energy")
-        p = atoms.info.get("mace_energy")
+        p = atoms.info.get("model_energy")
         f = atoms.arrays.get("REF_forces")
-        pf = atoms.arrays.get("mace_forces")
+        pf = atoms.arrays.get("model_forces")
         if (
             not n
             or e is None

@@ -339,7 +339,7 @@ def test_parse_eval_xyz_missing_file(tmp_path):
 def test_parse_eval_xyz_skips_missing_keys(tmp_path):
     from alomancy.analysis.mlip_plots import _parse_eval_xyz
 
-    # Structure has REF_energy but no mace_energy — should be skipped
+    # Structure has REF_energy but no model_energy — should be skipped
     atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
     atoms.info["REF_energy"] = -1.0
     xyz_path = tmp_path / "pred.xyz"
@@ -355,9 +355,9 @@ def test_parse_eval_xyz_returns_per_atom_energy(tmp_path):
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
-    atoms.info["mace_energy"] = -3.8
+    atoms.info["model_energy"] = -3.8
     atoms.arrays["REF_forces"] = np.zeros((2, 3))
-    atoms.arrays["mace_forces"] = np.ones((2, 3)) * 0.01
+    atoms.arrays["model_forces"] = np.ones((2, 3)) * 0.01
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -376,8 +376,8 @@ def test_parse_eval_xyz_no_forces_still_returns_energy(tmp_path):
 
     atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
     atoms.info["REF_energy"] = -1.0
-    atoms.info["mace_energy"] = -1.05
-    # deliberately no mace_forces / REF_forces
+    atoms.info["model_energy"] = -1.05
+    # deliberately no model_forces / REF_forces
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -395,7 +395,7 @@ def test_parse_eval_xyz_with_e0_returns_formation_energy(tmp_path):
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
-    atoms.info["mace_energy"] = -3.8
+    atoms.info["model_energy"] = -3.8
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -414,7 +414,7 @@ def test_parse_eval_xyz_missing_e0_element_falls_back(tmp_path):
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
-    atoms.info["mace_energy"] = -3.8
+    atoms.info["model_energy"] = -3.8
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -732,7 +732,7 @@ def test_plot_dft_vs_model_uses_formation_energy_when_isolated_atoms_present(
         for a in db.get_all_as_atoms()
         if a.info.get("config_type") == "init_dimer"
     )
-    db.store_mace_predictions(
+    db.store_model_predictions(
         0,
         0,
         {dimer_id: {"energy": -30.0, "forces": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}},
@@ -785,7 +785,7 @@ def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
     db.add_structures([h2_dimer], split="train", skip_duplicates=False)
     db.assign_global_db_ids()
     dimer_id = db.get_all_as_atoms()[0].info["global_db_id"]
-    db.store_mace_predictions(
+    db.store_model_predictions(
         0,
         0,
         {dimer_id: {"energy": -30.0, "forces": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}},

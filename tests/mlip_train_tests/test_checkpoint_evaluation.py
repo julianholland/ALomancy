@@ -13,10 +13,10 @@ from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 def predicted(error):
     a = Atoms("Pd2", positions=[[0, 0, 0], [2.5, 0, 0]])
     a.info.update(
-        REF_energy=-8.0, mace_energy=-8.0 + 2 * error, config_type="init_dimer"
+        REF_energy=-8.0, model_energy=-8.0 + 2 * error, config_type="init_dimer"
     )
     a.set_array("REF_forces", np.zeros((2, 3)))
-    a.set_array("mace_forces", np.ones((2, 3)) * error)
+    a.set_array("model_forces", np.ones((2, 3)) * error)
     return a
 
 
@@ -95,7 +95,7 @@ def test_refuses_when_fits_disagree_on_having_a_validation_split(tmp_path, monke
 @pytest.mark.unit
 def test_invalid_prediction_is_not_silently_omitted():
     a = predicted(0.1)
-    del a.info["mace_energy"]
+    del a.info["model_energy"]
     with pytest.raises(ValueError, match="Missing or invalid"):
         prediction_metrics([predicted(0.1), a])
 

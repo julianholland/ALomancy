@@ -64,7 +64,7 @@ def _needs_anything(needs: dict) -> bool:
 
 
 def _read_mace_eval_predictions(fit_dir: Path) -> dict[int, dict]:
-    """Read per-structure MACE predictions from train_pred.xyz / test_pred.xyz.
+    """Read per-structure trainer predictions from train_pred.xyz / test_pred.xyz.
 
     These files are written by mace_fit on the remote GPU node immediately after
     training, so predictions are available locally without re-running inference.
@@ -82,11 +82,11 @@ def _read_mace_eval_predictions(fit_dir: Path) -> dict[int, dict]:
             continue
         for atoms in atoms_list:
             gid = atoms.info.get("global_db_id")
-            if gid is None or "mace_energy" not in atoms.info:
+            if gid is None or "model_energy" not in atoms.info:
                 continue
-            forces = atoms.arrays.get("mace_forces")
+            forces = atoms.arrays.get("model_forces")
             preds[int(gid)] = {
-                "energy": float(atoms.info["mace_energy"]),
+                "energy": float(atoms.info["model_energy"]),
                 "forces": forces.tolist() if forces is not None else [],
             }
     return preds
@@ -508,7 +508,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
     def store_mlip_predictions(
         self, loop_idx: int, base_name: str, job_dict: dict
     ) -> None:
-        done_file = Path(f"results/{base_name}/mace_predictions.done")
+        done_file = Path(f"results/{base_name}/model_predictions.done")
         if done_file.exists():
             logger.info("MACE predictions already stored for %s, skipping.", base_name)
             return
@@ -523,7 +523,7 @@ class ActiveLearningStandardMACE(BaseActiveLearningWorkflow):
             fit_dir = workdir / name / f"fit_{fit_idx}"
             preds = _read_mace_eval_predictions(fit_dir)
             if preds:
-                self.db.store_mace_predictions(loop_idx, fit_idx, preds)
+                self.db.store_model_predictions(loop_idx, fit_idx, preds)
                 logger.info(
                     "Stored MACE predictions from eval files: loop %d fit %d (%d structures).",
                     loop_idx,
