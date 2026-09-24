@@ -245,8 +245,11 @@ class TestTrain:
         _write_structures(test_path, 2)
 
         config = {
-            "mace_kwargs": {"energy_key": "REF_energy", "forces_key": "REF_forces"},
-            "max_num_epochs": 40,
+            "mace_kwargs": {
+                "energy_key": "REF_energy",
+                "forces_key": "REF_forces",
+                "max_num_epochs": 40,
+            },
         }
         config.update(overrides.pop("config_overrides", {}))
 
@@ -319,6 +322,24 @@ class TestTrain:
         )
         args = mock_run.call_args.args[0]
         assert args.forces_key == "REF_forces"
+
+    def test_compute_stress_read_from_mace_kwargs(self, tmp_path, monkeypatch):
+        _, mock_run, _ = self._run_train(
+            tmp_path,
+            monkeypatch,
+            config_overrides={
+                "mace_kwargs": {
+                    "energy_key": "REF_energy",
+                    "forces_key": "REF_forces",
+                    "compute_stress": True,
+                }
+            },
+        )
+        args = mock_run.call_args.args[0]
+        assert args.stress_key == "REF_stresses"
+        assert args.loss == "stress"
+        # compute_stress itself is consumed, not forwarded to MACE's argparse.
+        assert not hasattr(args, "compute_stress")
 
     def test_raises_when_e0s_missing_element(self, tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="E0s"):
@@ -485,8 +506,8 @@ class TestTrain:
                         "energy_key": "REF_energy",
                         "forces_key": "REF_forces",
                         "batch_size": 16,
+                        "max_num_epochs": "dynamic",
                     },
-                    "max_num_epochs": "dynamic",
                 },
                 fit_seed=803,
                 base_name="al_loop_0",

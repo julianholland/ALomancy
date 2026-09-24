@@ -463,18 +463,19 @@ def generate(
     resolve its calculator through the trainer registry instead of a
     hardcoded MACECalculator.
 
-    config carries only generator-specific settings (md_kwargs, trainer,
-    trainer_config); name/hpc/max_time are explicit kwargs. md_kwargs holds
-    run_md's own direct kwargs (steps, temperature, ensemble, pressure,
-    ...) plus one nested key, structure_selection_kwargs, for
-    select_diverse_seeds' own params (max_number_of_concurrent_jobs,
-    enforce_chemical_diversity, seed) -- nested here rather than at the
-    top structure_generation level since it's genuinely MD-specific
-    (EZGA never calls select_diverse_seeds, so it would make no sense
-    inside ezga_kwargs). This is unrelated to structure_generation's own
-    top-level structure_selection_kwargs, which is generator-agnostic
-    (filter_eligible_structures, called once by the skeleton before any
-    generator dispatch).
+    config carries only generator-specific settings (md_kwargs);
+    name/hpc/max_time are explicit kwargs. md_kwargs holds run_md's own
+    direct kwargs (steps, temperature, ensemble, pressure, ...) plus two
+    nested keys: structure_selection_kwargs (select_diverse_seeds' own
+    params -- max_number_of_concurrent_jobs, enforce_chemical_diversity,
+    seed) and trainer/trainer_config (which trainer registry entry built
+    the model this MD run's calculator should use). Both live under
+    md_kwargs rather than the top structure_generation level since they're
+    genuinely MD-specific -- EZGA never calls select_diverse_seeds or the
+    trainer registry (it loads its model directly, always assuming MACE).
+    structure_generation's own top-level structure_selection_kwargs is
+    unrelated and generator-agnostic (filter_eligible_structures, called
+    once by the skeleton before any generator dispatch).
     """
     candidates_path = _candidates_path(base_name, name)
     if candidates_path.exists():
@@ -487,6 +488,8 @@ def generate(
 
     md_kwargs = dict(config.get("md_kwargs", {}))
     selection_kwargs = md_kwargs.pop("structure_selection_kwargs", {})
+    trainer = md_kwargs.pop("trainer", "mace")
+    trainer_config = md_kwargs.pop("trainer_config", {})
     selected = select_diverse_seeds(
         base_name=base_name,
         job_name=name,
@@ -511,8 +514,6 @@ def generate(
 
     if n_existing < len(selected):
         remaining = selected[n_existing:]
-        trainer = config.get("trainer", "mace")
-        trainer_config = config.get("trainer_config", {})
 
         remote_info = get_remote_info(
             {"hpc": hpc, "name": name, "max_time": max_time},

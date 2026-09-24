@@ -23,6 +23,23 @@ shared element identity, not initialiser-specific config, so it lives in
 Bootstrap generation is structurally a different problem from the AL-loop
 structure_generator abstraction (no trained model, no uncertainty-based
 selection) -- generate() here does not take seed_atoms/model_path.
+
+Unlike training/structure_generation/high_accuracy_evaluation (each a
+choice between interchangeable backends, dispatched via trainer/generator/
+evaluator), initialisation is structurally a single method that always
+runs every structure-generating sub-task it's configured for, to differing
+degrees depending on settings -- there's no dispatch key here. So
+creation_kwargs is namespaced per *structure type* rather than per
+backend: `isolated_atom_kwargs`, `dimer_kwargs`, `trimer_kwargs`,
+`amorphous_kwargs`, `mp_kwargs` (with `mp_kwargs.stretch_compress_kwargs`
+nested inside it, since stretch/compress variants are only ever generated
+from MP-fetched structures) -- each holding only the settings that
+sub-task actually reads, mirroring the <method>_kwargs convention used
+elsewhere. This is deliberately designed to extend cleanly: a future
+sub-task (surfaces, rattled structures, interfaces) adds its own
+`surface_kwargs`/`rattle_kwargs`/`interface_kwargs` sibling here and a
+matching branch in create_initialization_atoms_list, without touching any
+other namespace.
 """
 
 import logging
@@ -50,14 +67,19 @@ def compute_needs(db: "GlobalDatabase", config: dict, elements: list[str]) -> di
     returned dict's shape.
     """
     creation_kwargs = config["creation_kwargs"]
+    isolated_atom_kwargs = creation_kwargs.get("isolated_atom_kwargs", {})
+    dimer_kwargs = creation_kwargs.get("dimer_kwargs", {})
+    trimer_kwargs = creation_kwargs.get("trimer_kwargs", {})
+    amorphous_kwargs = creation_kwargs.get("amorphous_kwargs", {})
+    mp_kwargs = creation_kwargs.get("mp_kwargs", {})
     return compute_initialization_needs(
         db=db,
         elements=elements,
-        _single_atoms=creation_kwargs.get("single_atoms", True),
-        mp_structures=creation_kwargs.get("mp_structures", True),
-        num_dimers_per_combo=creation_kwargs.get("num_dimers_per_combo", 10),
-        num_trimers_per_combo=creation_kwargs.get("num_trimers_per_combo", 5),
-        num_amorphous=creation_kwargs.get("num_amorphous", 100),
+        _single_atoms=isolated_atom_kwargs.get("enabled", True),
+        mp_structures=mp_kwargs.get("enabled", True),
+        num_dimers_per_combo=dimer_kwargs.get("num_dimers_per_combo", 10),
+        num_trimers_per_combo=trimer_kwargs.get("num_trimers_per_combo", 5),
+        num_amorphous=amorphous_kwargs.get("num_amorphous", 100),
     )
 
 
@@ -103,6 +125,12 @@ def generate(
     work_dir = Path("results", base_name)
     work_dir.mkdir(exist_ok=True, parents=True)
     creation_kwargs = config["creation_kwargs"]
+    isolated_atom_kwargs = creation_kwargs.get("isolated_atom_kwargs", {})
+    dimer_kwargs = creation_kwargs.get("dimer_kwargs", {})
+    trimer_kwargs = creation_kwargs.get("trimer_kwargs", {})
+    amorphous_kwargs = creation_kwargs.get("amorphous_kwargs", {})
+    mp_kwargs = creation_kwargs.get("mp_kwargs", {})
+    stretch_compress_kwargs = mp_kwargs.get("stretch_compress_kwargs", {})
 
     return create_initialization_atoms_list(
         work_dir=str(work_dir),
@@ -110,27 +138,27 @@ def generate(
         mp_structures=(
             needs["mp_structures"]
             if needs is not None
-            else creation_kwargs.get("mp_structures", True)
+            else mp_kwargs.get("enabled", True)
         ),
         single_atoms=(
             bool(needs["isolated_atoms"])
             if needs is not None
-            else creation_kwargs.get("single_atoms", True)
+            else isolated_atom_kwargs.get("enabled", True)
         ),
-        num_dimers_per_combo=creation_kwargs.get("num_dimers_per_combo", 10),
-        num_trimers_per_combo=creation_kwargs.get("num_trimers_per_combo", 5),
-        num_amorphous=creation_kwargs.get("num_amorphous", 100),
-        num_stretch_compress_per_mp=creation_kwargs.get(
+        num_dimers_per_combo=dimer_kwargs.get("num_dimers_per_combo", 10),
+        num_trimers_per_combo=trimer_kwargs.get("num_trimers_per_combo", 5),
+        num_amorphous=amorphous_kwargs.get("num_amorphous", 100),
+        num_stretch_compress_per_mp=stretch_compress_kwargs.get(
             "num_stretch_compress_per_mp", 5
         ),
-        densities_list=creation_kwargs.get("densities_list"),
-        deform_xyz=creation_kwargs.get("deform_xyz", False),
-        max_deformation=creation_kwargs.get("max_deformation", 0.2),
-        max_atom_number=creation_kwargs.get("max_atom_number", 20),
-        amorphous_atom_number=creation_kwargs.get("amorphous_atom_number", 20),
-        mp_max_energy_above_hull=creation_kwargs.get("mp_max_energy_above_hull", 0.1),
-        composition_list=creation_kwargs.get("composition_list"),
-        seed=creation_kwargs.get("seed", 803),
+        densities_list=amorphous_kwargs.get("densities_list"),
+        deform_xyz=stretch_compress_kwargs.get("deform_xyz", False),
+        max_deformation=stretch_compress_kwargs.get("max_deformation", 0.2),
+        max_atom_number=mp_kwargs.get("max_atom_number", 20),
+        amorphous_atom_number=amorphous_kwargs.get("amorphous_atom_number", 20),
+        mp_max_energy_above_hull=mp_kwargs.get("mp_max_energy_above_hull", 0.1),
+        composition_list=amorphous_kwargs.get("composition_list"),
+        seed=amorphous_kwargs.get("seed", 803),
         isolated_atoms_override=(
             (needs["isolated_atoms"] or None) if needs is not None else None
         ),

@@ -91,7 +91,28 @@ dispatch) stay at the top `structure_generation` level rather than being
 duplicated per-generator; MD-specific settings that would make no sense
 for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
 `max_number_of_concurrent_jobs`/`enforce_chemical_diversity`/`seed`) live
-nested inside `md_kwargs` instead.
+nested inside `md_kwargs` instead. `structure_generation.trainer`/
+`trainer_config` (which trainer registry entry built the model MD's own
+dynamics calculator should use) are the same story -- MD-only, since EZGA
+loads its model directly rather than through the trainer registry -- so
+they live nested inside `md_kwargs` too. `training.max_num_epochs`
+likewise moves inside `mace_kwargs`: it's a MACE-specific training
+control (not every trainer backend would necessarily have "epochs" at
+all), kept at the top level only incidentally because MACE is the only
+trainer today.
+
+`initialization` is architecturally unlike the other three sections: it
+has no dispatch key (trainer/generator/evaluator) because it isn't a
+choice between interchangeable backends -- it's a single method that
+always runs every structure-generating sub-task it's configured for, to
+differing degrees. So its `creation_kwargs` is namespaced per *structure
+type* instead: `isolated_atom_kwargs`, `dimer_kwargs`, `trimer_kwargs`,
+`amorphous_kwargs`, `mp_kwargs` (with `stretch_compress_kwargs` nested
+inside `mp_kwargs`, since those variants are only ever derived from
+MP-fetched structures). Designed to extend cleanly as new sub-tasks are
+added (surfaces, rattled structures, interfaces): each gets its own
+sibling `*_kwargs` namespace here and a matching branch in
+`create_initialization_atoms_list`, without touching the others.
 """
 
 import hashlib

@@ -226,6 +226,8 @@ class TestGenerate:
                         "structure_selection_kwargs": {
                             "max_number_of_concurrent_jobs": 3
                         },
+                        "trainer": "mace",
+                        "trainer_config": {"device": "cpu"},
                     }
                 },
                 base_name="al_loop_0",
@@ -238,10 +240,45 @@ class TestGenerate:
         function_kwargs = job_configs[0]["function_kwargs"]
         assert function_kwargs["steps"] == 2000
         assert function_kwargs["temperature"] == 1000
-        # structure_selection_kwargs is consumed by select_diverse_seeds
-        # inside generate() itself -- it must not also be forwarded on to
-        # run_md, which has no such parameter.
+        assert function_kwargs["trainer"] == "mace"
+        assert function_kwargs["trainer_config"] == {"device": "cpu"}
+        # structure_selection_kwargs/trainer/trainer_config are consumed
+        # inside generate() itself (the first for select_diverse_seeds, the
+        # rest passed as their own explicit function_kwargs above) -- they
+        # must not also be forwarded a second time via **md_kwargs, which
+        # run_md has no matching parameters for.
         assert "structure_selection_kwargs" not in function_kwargs
+
+    def test_trainer_defaults_to_mace_when_absent_from_md_kwargs(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+
+        def fake_submit_n(function, job_configs, remote_info, **kwargs):
+            for jc in job_configs:
+                out_dir = Path(jc["function_kwargs"]["out_dir"])
+                out_dir.mkdir(parents=True)
+                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+            return [None] * len(job_configs)
+
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n) as mock_submit_n,
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            generate(
+                seed_atoms=_seed_atoms(3),
+                model_path="model.pt",
+                config={},
+                base_name="al_loop_0",
+                name="md",
+                hpc={},
+                max_time="1H",
+            )
+
+        job_configs = mock_submit_n.call_args.args[1]
+        function_kwargs = job_configs[0]["function_kwargs"]
+        assert function_kwargs["trainer"] == "mace"
+        assert function_kwargs["trainer_config"] == {}
 
     def test_reuses_cached_candidates_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

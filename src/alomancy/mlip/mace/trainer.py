@@ -438,7 +438,12 @@ def train(
     )
 
     batch_size = mace_kwargs.get("batch_size", 16)
-    configured_epochs = config.get("max_num_epochs")
+    # Popped (not just read) so these control values never leak through the
+    # **mace_kwargs spread below into mace_fit_params -- max_num_epochs is
+    # resolved to a real epoch count first, and compute_stress is consumed
+    # by _apply_compute_stress_defaults, not passed to MACE directly.
+    configured_epochs = mace_kwargs.pop("max_num_epochs", None)
+    compute_stress = mace_kwargs.pop("compute_stress", False)
     if configured_epochs is None:
         epochs = 80
     elif configured_epochs == "dynamic":
@@ -490,7 +495,7 @@ def train(
     if valid_path is not None:
         mace_fit_params["valid_file"] = str(valid_path)
 
-    _apply_compute_stress_defaults(mace_fit_params, config.get("compute_stress", False))
+    _apply_compute_stress_defaults(mace_fit_params, compute_stress)
     _write_resolved_mace_epochs(fit_dir, mace_fit_params)
 
     logger.debug("MACE fit parameters:")
