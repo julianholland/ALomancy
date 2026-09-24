@@ -29,11 +29,14 @@ Owns:
 
 Config schema (breaking, see the plan's "Config schema changes" section):
 split-building parameters that used to live in `initialization`/
-`mlip_committee` now live in `workflow` (test_config_types,
-test_to_train_ratio, grouped_splits, valid_fraction, valid_config_types,
-grouped_validation), alongside the existing `train_only`/`fixed_test`
-flags and the new `skeleton` key. `mlip_committee` gains a `trainer` key
-(defaults to "mace" if absent, for configs written before this existed).
+`mlip_committee` now live in `workflow` (target_config_types, test_ratio,
+grouped_splits, valid_fraction, valid_config_types, grouped_validation),
+alongside the existing `train_only`/`fixed_test` flags and the new
+`al_workflow` key. `size_of_committee` also moves to `workflow` --
+committee-ness is a skeleton concept, not something a single-model
+skeleton would have. `mlip_committee` is renamed `training` (usable by a
+future non-committee skeleton too) and gains a `trainer` key (defaults to
+"mace" if absent, for configs written before this existed).
 """
 
 import hashlib
@@ -99,7 +102,7 @@ logger = logging.getLogger(__name__)
 
 _PHASE_LABELS: dict[str, str] = {
     "initialization": "Initialisation",
-    "mlip_committee": "MLIP Committee Trainer",
+    "training": "Model Trainer",
     "structure_generation": "Structure Generation",
     "high_accuracy_evaluation": "High-Accuracy Evaluation",
 }
@@ -575,30 +578,30 @@ class CommitteeUncertaintyWorkflow:
 
         if workflow_config.get("grouped_splits", False):
             train_xyzs, test_xyzs = grouped_split(
-                all_evaluated, workflow_config["test_to_train_ratio"], self.seed
+                all_evaluated, workflow_config["test_ratio"], self.seed
             )
         else:
-            test_config_types = set(workflow_config["test_config_types"])
+            target_config_types = set(workflow_config["target_config_types"])
             eligible_test_structures: list[Atoms] = []
             always_train_structures: list[Atoms] = []
             for atoms in all_evaluated:
                 (
                     eligible_test_structures
-                    if atoms.info.get("config_type") in test_config_types
+                    if atoms.info.get("config_type") in target_config_types
                     else always_train_structures
                 ).append(atoms)
 
             if not eligible_test_structures:
                 logger.warning(
                     "No eligible test structures found for the specified "
-                    "test_config_types. All structures will be used for training."
+                    "target_config_types. All structures will be used for training."
                 )
                 train_xyzs = all_evaluated
                 test_xyzs = []
             else:
                 eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
                     eligible_test_structures,
-                    workflow_config["test_to_train_ratio"],
+                    workflow_config["test_ratio"],
                     self.seed,
                 )
                 train_config_types = {
@@ -638,13 +641,13 @@ class CommitteeUncertaintyWorkflow:
     # -- Committee training (decisions 2, 3, 6, 7) --
 
     def _train_mlip(self, base_name: str) -> pd.DataFrame:
-        committee_config = self.jobs_dict["mlip_committee"]
-        name = committee_config["name"]
-        committee_size = committee_config["size_of_committee"]
-        hpc = committee_config["hpc"]
-        max_time = committee_config["max_time"]
-        trainer_name = committee_config.get("trainer", "mace")
+        training_config = self.jobs_dict["training"]
         workflow_config = self.jobs_dict.get("workflow", {})
+        name = training_config["name"]
+        committee_size = workflow_config["size_of_committee"]
+        hpc = training_config["hpc"]
+        max_time = training_config["max_time"]
+        trainer_name = training_config.get("trainer", "mace")
 
         workdir = Path("results", base_name)
 
@@ -658,7 +661,7 @@ class CommitteeUncertaintyWorkflow:
         test_path = workdir / "test_set.xyz"
 
         valid_config_types = workflow_config.get(
-            "valid_config_types", workflow_config.get("test_config_types", [])
+            "valid_config_types", workflow_config.get("target_config_types", [])
         )
         acceptable_configs = [*valid_config_types, "high_sd"]
         valid_fraction = workflow_config.get("valid_fraction", 0.05)
@@ -684,12 +687,12 @@ class CommitteeUncertaintyWorkflow:
         missing: list[int] = []
         for fit_idx in range(committee_size):
             paths = trainer_entry.output_paths(
-                committee_config, base_name=base_name, name=name, fit_idx=fit_idx
+                training_config, base_name=base_name, name=name, fit_idx=fit_idx
             )
             if all(p.exists() for p in paths):
                 try:
                     results[fit_idx] = trainer_entry.read_existing_result(
-                        committee_config,
+                        training_config,
                         base_name=base_name,
                         name=name,
                         fit_idx=fit_idx,
@@ -722,7 +725,7 @@ class CommitteeUncertaintyWorkflow:
                         "train_atoms_path": str(train_path),
                         "valid_atoms_path": valid_path_str,
                         "test_atoms_path": str(test_path),
-                        "config": committee_config,
+                        "config": training_config,
                         "fit_seed": self.seed + fit_idx,
                         "base_name": base_name,
                         "name": name,
@@ -757,8 +760,14 @@ class CommitteeUncertaintyWorkflow:
 
         self._store_predictions_and_cleanup(base_name, name, results)
 
-        if committee_config.get("quality_gate"):
-            check_quality_gate(workdir, committee_config)
+        if training_config.get("quality_gate"):
+            # check_quality_gate (mlip/evaluation.py, unchanged/untouched)
+            # reads committee["size_of_committee"] from whatever dict it's
+            # given -- that key now lives in workflow, not training, so
+            # merge it in here rather than changing that function.
+            check_quality_gate(
+                workdir, {**training_config, "size_of_committee": committee_size}
+            )
 
         self._mark_phase_done(base_name, "train_mlip")
         return self._cross_loop_metrics_dataframe(name)
@@ -845,7 +854,7 @@ class CommitteeUncertaintyWorkflow:
         best_fit_idx: int,
         fits_to_use: list[int],
         trainer_name: str,
-        committee_config: dict,
+        training_config: dict,
         name: str,
         sg_hpc: dict,
         sg_max_time: str,
@@ -855,7 +864,7 @@ class CommitteeUncertaintyWorkflow:
         member_paths: dict[int, str] = {}
         for fit_idx in order:
             model_path, _, _ = trainer_entry.read_existing_result(
-                committee_config, base_name=base_name, name=name, fit_idx=fit_idx
+                training_config, base_name=base_name, name=name, fit_idx=fit_idx
             )
             member_paths[fit_idx] = model_path
 
@@ -869,7 +878,7 @@ class CommitteeUncertaintyWorkflow:
                     "structure_list": structure_list,
                     "model_path": member_paths[fit_idx],
                     "trainer": trainer_name,
-                    "trainer_config": committee_config,
+                    "trainer_config": training_config,
                 }
             }
             for fit_idx in order
@@ -927,13 +936,19 @@ class CommitteeUncertaintyWorkflow:
             atom_number_range=tuple(selection_kwargs.get("atom_number_range", (0, 0))),
         )
 
-        committee_config = self.jobs_dict["mlip_committee"]
+        training_config = self.jobs_dict["training"]
+        workflow_config = self.jobs_dict.get("workflow", {})
+        committee_size = workflow_config["size_of_committee"]
         best_fit_idx, best_model_path = select_best_committee_model(
-            base_name, committee_config, seed=self.seed
+            base_name,
+            # select_best_committee_model (mlip/mace/get_mace_eval_info.py,
+            # unchanged/untouched) reads committee["size_of_committee"] --
+            # that key now lives in workflow, not training.
+            {**training_config, "size_of_committee": committee_size},
+            seed=self.seed,
         )
-        committee_size = committee_config["size_of_committee"]
         fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
-        trainer_name = committee_config.get("trainer", "mace")
+        trainer_name = training_config.get("trainer", "mace")
 
         generator_entry = resolve("structure_generator", method)
         structure_list = generator_entry.generate(
@@ -960,8 +975,8 @@ class CommitteeUncertaintyWorkflow:
             best_fit_idx,
             fits_to_use,
             trainer_name,
-            committee_config,
-            committee_config["name"],
+            training_config,
+            training_config["name"],
             hpc,
             max_time,
         )
@@ -1032,7 +1047,8 @@ class CommitteeUncertaintyWorkflow:
 
         if self.remove_redundancy:
             remove_redundancy_from_partition(
-                self.db, config_list=workflow_config["test_config_types"] + ["high_sd"]
+                self.db,
+                config_list=workflow_config["target_config_types"] + ["high_sd"],
             )
         if self.high_force_threshold is not None:
             remove_high_force_structures_from_partition(
@@ -1081,7 +1097,7 @@ class CommitteeUncertaintyWorkflow:
             if self.plots:
                 mae_al_loop_plot(
                     evaluation_results,
-                    self.jobs_dict["mlip_committee"],
+                    self.jobs_dict["training"],
                     directory=loop_plots_dir,
                 )
                 from alomancy.analysis.mlip_plots import (
@@ -1091,13 +1107,13 @@ class CommitteeUncertaintyWorkflow:
 
                 plot_training_curves(
                     base_name,
-                    self.jobs_dict["mlip_committee"],
+                    self.jobs_dict["training"],
                     self.seed,
                     loop_plots_dir,
                 )
                 plot_dft_vs_model(
                     base_name,
-                    self.jobs_dict["mlip_committee"],
+                    self.jobs_dict["training"],
                     self.seed,
                     loop_plots_dir,
                     db=self.db,
@@ -1166,7 +1182,7 @@ class CommitteeUncertaintyWorkflow:
             else:
                 new_train_data, new_test_data = split_atoms_list_into_test_and_train(
                     new_training_data,
-                    test_fraction=workflow_config["test_to_train_ratio"],
+                    test_fraction=workflow_config["test_ratio"],
                     seed=self.seed,
                 )
 
@@ -1176,7 +1192,7 @@ class CommitteeUncertaintyWorkflow:
             if self.remove_redundancy:
                 remove_redundancy_from_partition(
                     self.db,
-                    config_list=workflow_config["test_config_types"] + ["high_sd"],
+                    config_list=workflow_config["target_config_types"] + ["high_sd"],
                 )
             if self.high_force_threshold is not None:
                 remove_high_force_structures_from_partition(
@@ -1199,13 +1215,16 @@ class CommitteeUncertaintyWorkflow:
 
 
 def build_workflow(jobs_dict: dict, **init_kwargs: Any) -> CommitteeUncertaintyWorkflow:
-    """Factory dispatching on workflow.skeleton (inside the existing
-    `workflow` config section). Currently the only registered skeleton is
-    "committee_uncertainty"; a future FurthestPointSamplingWorkflow would
-    add its own name here."""
-    skeleton = jobs_dict.get("workflow", {}).get("skeleton", "committee_uncertainty")
-    if skeleton != "committee_uncertainty":
+    """Factory dispatching on workflow.al_workflow (inside the existing
+    `workflow` config section). Currently the only registered al_workflow
+    is "committee_uncertainty"; a future FurthestPointSamplingWorkflow
+    would add its own name here."""
+    al_workflow = jobs_dict.get("workflow", {}).get(
+        "al_workflow", "committee_uncertainty"
+    )
+    if al_workflow != "committee_uncertainty":
         raise ValueError(
-            f"Unknown workflow.skeleton {skeleton!r}. Available: ['committee_uncertainty']"
+            f"Unknown workflow.al_workflow {al_workflow!r}. "
+            "Available: ['committee_uncertainty']"
         )
     return CommitteeUncertaintyWorkflow(jobs_dict=jobs_dict, **init_kwargs)

@@ -1,0 +1,87 @@
+# Minimal single-element (Carbon) example config for the new
+# CommitteeUncertaintyWorkflow skeleton (src/alomancy/core/
+# committee_uncertainty_workflow.py), built via registry.resolve(...)
+# instead of a hardcoded ActiveLearningStandardMACE subclass.
+#
+# Sizes here (committee, epochs, MD steps, structure counts) are kept
+# small on purpose for a quick end-to-end smoke test, not production
+# accuracy -- scale them up once you've confirmed the pipeline runs.
+#
+# hpc: values below are string references, resolved against
+# ~/.alomancy/hpc_config.yaml (see `alomancy add-hpc`) by
+# load_dictionaries(). Replace "my_hpc" with the profile name you set up,
+# or inline a full hpc dict per-section instead (see CLAUDE.md's "HPC
+# string resolution" note) if you'd rather not use the global profile store.
+
+workflow:
+  al_workflow: "committee_uncertainty"
+  # Split-building parameters, plus size_of_committee, live here (not under
+  # initialization/training) for this skeleton -- a future non-committee
+  # skeleton (e.g. single-model furthest-point-sampling) would have no
+  # size_of_committee at all.
+  target_config_types:
+    - "IsolatedAtom"
+    - "init_dimer"
+  test_ratio: 0.1
+  valid_fraction: 0.1
+  size_of_committee: 3  # 3 is the minimum for a usable force std-dev
+
+initialization:
+  name: "initialization"
+  max_time: "1H"
+  hpc: "my_hpc"
+  creation_kwargs:
+    elements: [6]  # Carbon only
+    mp_structures: false  # skip the Materials Project fetch (needs an API key) to keep this example self-contained
+    single_atoms: true
+    num_dimers_per_combo: 5
+    num_trimers_per_combo: 3
+    num_amorphous: 20
+    amorphous_atom_number: 12
+    max_atom_number: 12
+
+training:
+  # Not named "mlip_committee": this section is just "train one model" --
+  # committee-ness (looping this N times) is entirely the skeleton's
+  # business (see workflow.size_of_committee above), so the same section
+  # name works for a future non-committee skeleton too.
+  name: "training"
+  trainer: "mace"  # selects the registered mlip_trainer backend (registry.py)
+  max_time: "2H"
+  max_num_epochs: "dynamic"
+  mace_fit_kwargs:
+    # Only what MACE can't infer on its own: energy_key/forces_key are
+    # required (no default), and E0s is a physical reference value MACE
+    # has no way to know without being told. Everything else (model,
+    # r_max, batch_size, num_channels, ...) already has a sensible default
+    # baked into mlip/mace/trainer.py -- only override what you actually
+    # want to change from that.
+    energy_key: "REF_energy"
+    forces_key: "REF_forces"
+    E0s:
+      6: -148.31447017  # replace with your own isolated-C DFT reference energy
+  hpc: "my_hpc"
+
+structure_generation:
+  name: "structure_generation"
+  method: "md"  # selects the registered structure_generator backend (registry.py); "ezga" also available
+  desired_number_of_structures: 10
+  max_time: "1H"
+  structure_selection_kwargs:
+    max_number_of_concurrent_jobs: 3
+    atom_number_range: [0, 13]
+  run_md_kwargs:
+    steps: 2000
+    temperature: 1000
+  hpc: "my_hpc"
+
+high_accuracy_evaluation:
+  # name must be exactly "high_accuracy_evaluation" -- the evaluator
+  # orchestrator hardcodes this as its results subdirectory.
+  name: "high_accuracy_evaluation"
+  calculator: "qe"  # selects the registered dft_evaluator backend (registry.py); "vasp" also available
+  max_time: "30m"
+  qe_input_kwargs:
+    system:
+      input_dft: "pbe"
+  hpc: "my_hpc"

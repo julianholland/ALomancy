@@ -38,14 +38,19 @@ _MODULE = "alomancy.core.committee_uncertainty_workflow"
 @pytest.fixture
 def workflow_jobs_dict(minimal_jobs_dict):
     """minimal_jobs_dict plus the new `workflow` section (decision 14: split-
-    building parameters move here from initialization/mlip_committee)."""
+    building parameters and size_of_committee move here from
+    initialization/mlip_committee; mlip_committee is renamed training)."""
+    committee_size = minimal_jobs_dict["mlip_committee"]["size_of_committee"]
     minimal_jobs_dict["workflow"] = {
-        "skeleton": "committee_uncertainty",
-        "test_config_types": ["IsolatedAtom"],
-        "test_to_train_ratio": 0.1,
+        "al_workflow": "committee_uncertainty",
+        "target_config_types": ["IsolatedAtom"],
+        "test_ratio": 0.1,
         "valid_fraction": 0.05,
+        "size_of_committee": committee_size,
     }
-    minimal_jobs_dict["mlip_committee"]["trainer"] = "mace"
+    minimal_jobs_dict["training"] = minimal_jobs_dict.pop("mlip_committee")
+    del minimal_jobs_dict["training"]["size_of_committee"]
+    minimal_jobs_dict["training"]["trainer"] = "mace"
     return minimal_jobs_dict
 
 
@@ -99,9 +104,11 @@ class TestBuildWorkflow:
         )
         assert isinstance(wf, CommitteeUncertaintyWorkflow)
 
-    def test_raises_on_unknown_skeleton(self, tmp_path, minimal_jobs_dict, shared_db):
-        minimal_jobs_dict["workflow"] = {"skeleton": "furthest_point_sampling"}
-        with pytest.raises(ValueError, match=r"Unknown workflow\.skeleton"):
+    def test_raises_on_unknown_al_workflow(
+        self, tmp_path, minimal_jobs_dict, shared_db
+    ):
+        minimal_jobs_dict["workflow"] = {"al_workflow": "furthest_point_sampling"}
+        with pytest.raises(ValueError, match=r"Unknown workflow\.al_workflow"):
             build_workflow(
                 jobs_dict=minimal_jobs_dict,
                 initial_train_file_path=str(tmp_path / "train.xyz"),
@@ -351,10 +358,7 @@ class TestTrainMlip:
             wf._train_mlip("al_loop_0")
 
         job_configs = mock_submit_n.call_args.args[1]
-        assert (
-            len(job_configs)
-            == workflow_jobs_dict["mlip_committee"]["size_of_committee"]
-        )
+        assert len(job_configs) == workflow_jobs_dict["workflow"]["size_of_committee"]
 
     def test_reuses_cached_fits_and_only_submits_missing(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
@@ -551,10 +555,10 @@ class TestGenerateStructures:
         assert all(a.info.get("needs_relaxation") is True for a in result)
 
     def test_full_path_calls_generator_and_scores_committee(
-        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
         train_atoms = [_atoms() for _ in range(5)]
         generated = [_atoms(), _atoms()]
 
