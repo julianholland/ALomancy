@@ -338,6 +338,7 @@ def train(
     hpc: dict,  # noqa: ARG001 -- unused here; uniform across module categories
     max_time: str,  # noqa: ARG001 -- unused here; uniform across module categories
     elements: list[str] | None = None,
+    isolated_atom_e0s: dict[str, float] | None = None,
 ) -> tuple[str, str | None, dict]:
     """Train one MACE model. The remote-executed worker function the
     skeleton drives its N-times committee loop with (one call = one fit).
@@ -349,31 +350,52 @@ def train(
     (mirrors mace_fit's `_select_validation_split` legitimately skipping
     the carve-out) -- not an error, just no `valid_file` passed to MACE.
 
-    `elements` (workflow.elements, the shared element list) is used only for
-    a sanity check: if `mace_fit_kwargs.E0s` is given explicitly, every
-    element must have an entry, since a missing one is a silent MACE
-    training bug (E0s is a physical reference value MACE cannot infer for
-    an element it never sees isolated). Not otherwise used -- MACE itself
-    auto-detects the training set's element set.
-
-    Returns (model_path, compiled_model_path_or_None, metrics_dict), where
-    metrics_dict is the same {split: prediction_metrics(...)} shape
-    persisted to evaluation_metrics.json.
+    `elements` (workflow.elements, the shared element list) is used for a
+    safety-net check (see below). `isolated_atom_e0s` ({symbol: REF_energy},
+    from GlobalDatabase.get_isolated_atom_energies() -- computed locally by
+    the skeleton and passed down as a plain dict, never a live DB, which
+    must not cross the ExPyRe boundary) is the fallback E0s source when
+    `mace_kwargs.E0s` isn't set explicitly: MACE cannot infer this
+    physical reference value on its own, but isolated-atom DFT energies
+    already in the database are exactly what it needs. Safety net: if E0s
+    is neither given explicitly nor available from the database for every
+    element in `elements`, this raises rather than letting MACE either fail
+    obscurely or silently train against a wrong/missing reference.
     """
-    mace_fit_kwargs = dict(config.get("mace_fit_kwargs", {}))
-    if "seed" in mace_fit_kwargs:
+    mace_kwargs = dict(config.get("mace_kwargs", {}))
+    if "seed" in mace_kwargs:
         raise ValueError(
-            "mace_fit_kwargs must not set 'seed' -- it is derived and passed "
+            "mace_kwargs must not set 'seed' -- it is derived and passed "
             "separately (fit_seed)."
         )
     # Default to this codebase's own standard REF_energy/REF_forces keys
     # (see CLAUDE.md's "Never use bare 'energy' as an info key" convention)
     # rather than requiring every config to repeat them explicitly.
-    mace_fit_kwargs.setdefault("energy_key", "REF_energy")
-    mace_fit_kwargs.setdefault("forces_key", "REF_forces")
+    mace_kwargs.setdefault("energy_key", "REF_energy")
+    mace_kwargs.setdefault("forces_key", "REF_forces")
 
-    e0s = mace_fit_kwargs.get("E0s")
+    if "E0s" not in mace_kwargs:
+        if isolated_atom_e0s:
+            mace_kwargs["E0s"] = isolated_atom_e0s
+        elif elements:
+            # Safety net: no E0s given and no isolated-atom reference
+            # energies available either -- MACE cannot proceed without one
+            # or the other (it has no way to infer this physical value).
+            raise ValueError(
+                "mace_kwargs.E0s is not set, and no IsolatedAtom "
+                "structures with REF_energy were found in the "
+                "GlobalDatabase to default it from. Either set E0s "
+                "explicitly in mace_kwargs (e.g. 'average', or a "
+                "{element: energy} dict), or make sure IsolatedAtom "
+                "structures for every element in workflow.elements "
+                f"({elements}) have been DFT-evaluated first."
+            )
+
+    e0s = mace_kwargs.get("E0s")
     if elements and isinstance(e0s, dict):
+        # Coverage check only applies to an explicit/defaulted {element:
+        # energy} dict -- a string value like "average" (MACE's own
+        # built-in linear-regression E0 estimate) has nothing to check here.
         from ase.data import atomic_numbers
 
         missing = [
@@ -381,9 +403,12 @@ def train(
         ]
         if missing:
             raise ValueError(
-                f"mace_fit_kwargs.E0s is missing an entry for element(s) "
+                f"mace_kwargs.E0s is missing an entry for element(s) "
                 f"{missing} (from workflow.elements={elements}). E0s is a "
-                "physical reference value MACE cannot infer on its own."
+                "physical reference value MACE cannot infer on its own -- "
+                "either add it explicitly to mace_kwargs.E0s, or make "
+                "sure an IsolatedAtom structure for that element has been "
+                "DFT-evaluated into the GlobalDatabase."
             )
 
     fit_dir = _fit_dir(base_name, name, fit_idx)
@@ -412,7 +437,7 @@ def train(
         n_valid,
     )
 
-    batch_size = mace_fit_kwargs.get("batch_size", 16)
+    batch_size = mace_kwargs.get("batch_size", 16)
     configured_epochs = config.get("max_num_epochs")
     if configured_epochs is None:
         epochs = 80
@@ -460,7 +485,7 @@ def train(
         "valid_batch_size": 16,
         "distributed": None,
         "seed": fit_seed,
-        **mace_fit_kwargs,
+        **mace_kwargs,
     }
     if valid_path is not None:
         mace_fit_params["valid_file"] = str(valid_path)

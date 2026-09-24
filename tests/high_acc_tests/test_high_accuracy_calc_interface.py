@@ -99,6 +99,46 @@ class TestHighAccuracyEvaluation:
         mock_sub.assert_not_called()
         assert len(result) == 2
 
+    def test_qe_kwargs_translated_to_legacy_qe_input_kwargs(
+        self, tmp_path, monkeypatch
+    ):
+        """run_sp_qe/run_go_qe (unchanged, shared with the old production
+        path) still read "qe_input_kwargs" directly -- new-style config
+        uses the standardized "qe_kwargs" name, translated here."""
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+            _call(
+                [_atoms()],
+                tmp_path,
+                config={
+                    "evaluator": "qe",
+                    "qe_kwargs": {"system": {"input_dft": "pbe"}},
+                },
+            )
+
+        job_dict = mock_sub.call_args.kwargs["function_kwargs"][
+            "high_accuracy_eval_job_dict"
+        ]
+        assert job_dict["qe_input_kwargs"] == {"system": {"input_dft": "pbe"}}
+        assert "qe_kwargs" not in job_dict
+
+    def test_vasp_kwargs_translated_to_legacy_vasp_input_kwargs(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+            _call(
+                [_atoms()],
+                tmp_path,
+                config={"evaluator": "vasp", "vasp_kwargs": {"encut": 520}},
+            )
+
+        job_dict = mock_sub.call_args.kwargs["function_kwargs"][
+            "high_accuracy_eval_job_dict"
+        ]
+        assert job_dict["vasp_input_kwargs"] == {"encut": 520}
+        assert "vasp_kwargs" not in job_dict
+
     def test_partial_existing_trims_structures_list(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         d = Path(

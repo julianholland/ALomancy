@@ -170,7 +170,11 @@ class TestGenerate:
                 seed_atoms=seeds,
                 model_path="model.pt",
                 config={
-                    "structure_selection_kwargs": {"max_number_of_concurrent_jobs": 3}
+                    "md_kwargs": {
+                        "structure_selection_kwargs": {
+                            "max_number_of_concurrent_jobs": 3
+                        }
+                    }
                 },
                 base_name="al_loop_0",
                 name="md",
@@ -187,6 +191,57 @@ class TestGenerate:
             "name": "md",
             "max_time": "1H",
         }
+        # run_md (unchanged, shared with the old production path) reads its
+        # own "name" out of structure_generation_job_dict -- config itself
+        # carries no "name" key (hardcoded by the skeleton, not user
+        # config), so generate() must merge it in.
+        assert (
+            job_configs[0]["function_kwargs"]["structure_generation_job_dict"]["name"]
+            == "md"
+        )
+
+    def test_md_kwargs_forwarded_to_run_md_excluding_selection_kwargs(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+
+        def fake_submit_n(function, job_configs, remote_info, **kwargs):
+            for jc in job_configs:
+                out_dir = Path(jc["function_kwargs"]["out_dir"])
+                out_dir.mkdir(parents=True)
+                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+            return [None] * len(job_configs)
+
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n) as mock_submit_n,
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            generate(
+                seed_atoms=_seed_atoms(3),
+                model_path="model.pt",
+                config={
+                    "md_kwargs": {
+                        "steps": 2000,
+                        "temperature": 1000,
+                        "structure_selection_kwargs": {
+                            "max_number_of_concurrent_jobs": 3
+                        },
+                    }
+                },
+                base_name="al_loop_0",
+                name="md",
+                hpc={},
+                max_time="1H",
+            )
+
+        job_configs = mock_submit_n.call_args.args[1]
+        function_kwargs = job_configs[0]["function_kwargs"]
+        assert function_kwargs["steps"] == 2000
+        assert function_kwargs["temperature"] == 1000
+        # structure_selection_kwargs is consumed by select_diverse_seeds
+        # inside generate() itself -- it must not also be forwarded on to
+        # run_md, which has no such parameter.
+        assert "structure_selection_kwargs" not in function_kwargs
 
     def test_reuses_cached_candidates_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -232,7 +287,11 @@ class TestGenerate:
                 seed_atoms=_seed_atoms(10),
                 model_path="model.pt",
                 config={
-                    "structure_selection_kwargs": {"max_number_of_concurrent_jobs": 3}
+                    "md_kwargs": {
+                        "structure_selection_kwargs": {
+                            "max_number_of_concurrent_jobs": 3
+                        }
+                    }
                 },
                 base_name="al_loop_0",
                 name="md",

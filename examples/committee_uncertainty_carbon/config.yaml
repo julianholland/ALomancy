@@ -34,7 +34,9 @@ workflow:
   size_of_committee: 3  # 3 is the minimum for a usable force std-dev
 
 initialization:
-  name: "initialization"
+  # No "name" here: each section's name is hardcoded to match its own
+  # config key (e.g. this section is always "initialization") rather than
+  # being user-configurable.
   # No hpc/max_time here: initialization runs entirely in the local driver
   # process (dimer/trimer/amorphous generation, or a plain Materials
   # Project network call) -- it never submits a remote job itself. The
@@ -54,38 +56,48 @@ training:
   # committee-ness (looping this N times) is entirely the skeleton's
   # business (see workflow.size_of_committee above), so the same section
   # name works for a future non-committee skeleton too.
-  name: "training"
   trainer: "mace"  # selects the registered mlip_trainer backend (registry.py)
   max_num_epochs: "dynamic"
-  mace_fit_kwargs:
-    # Only E0s needs to be given: it's a physical reference value MACE
-    # cannot infer on its own. energy_key/forces_key already default to
-    # this codebase's standard REF_energy/REF_forces; everything else
-    # (model, r_max, batch_size, num_channels, ...) already has a sensible
-    # default baked into mlip/mace/trainer.py -- only override what you
-    # actually want to change from that.
-    E0s:
-      C: -148.31447017  # replace with your own isolated-C DFT reference energy
+  # No mace_kwargs needed here at all: energy_key/forces_key already
+  # default to this codebase's standard REF_energy/REF_forces, and
+  # E0s -- a physical reference value MACE cannot infer on its own -- is
+  # defaulted automatically from the IsolatedAtom structure this example's
+  # initialization.creation_kwargs.single_atoms already generates and
+  # DFT-evaluates before training ever runs. Set mace_kwargs.E0s
+  # explicitly (a {element: energy} dict, or MACE's own "average" estimate)
+  # to override that, or if no IsolatedAtom structures are available.
+  # Everything else (model, r_max, batch_size, num_channels, ...) already
+  # has a sensible default baked into mlip/mace/trainer.py too.
   hpc: "my_hpc"
 
 structure_generation:
-  name: "structure_generation"
   generator: "md"  # selects the registered structure_generator backend (registry.py); "ezga" also available
+  # desired_number_of_structures is optional -- defaults to 10 if omitted
+  # (the skeleton applies this default once, consistently, regardless of
+  # which generator runs). Set explicitly here since 10 is a bit small for
+  # a real run.
   desired_number_of_structures: 10
+  # Generator-agnostic: filter_eligible_structures is called once by the
+  # skeleton before dispatching to whichever generator is selected, so
+  # these apply the same way to "md" or "ezga".
   structure_selection_kwargs:
-    max_number_of_concurrent_jobs: 3
     atom_number_range: [0, 13]
-  run_md_kwargs:
+  # md_kwargs: only read when generator: "md" above. Holds run_md's own
+  # direct kwargs (steps, temperature, ensemble, pressure, ...) plus one
+  # nested key, structure_selection_kwargs, for select_diverse_seeds' own
+  # params (max_number_of_concurrent_jobs, enforce_chemical_diversity,
+  # seed) -- nested here, not at the top level above, since EZGA never
+  # calls select_diverse_seeds (it would make no sense inside ezga_kwargs).
+  md_kwargs:
     steps: 2000
     temperature: 1000
+    structure_selection_kwargs:
+      max_number_of_concurrent_jobs: 3
   hpc: "my_hpc"
 
 high_accuracy_evaluation:
-  # name must be exactly "high_accuracy_evaluation" -- the evaluator
-  # orchestrator hardcodes this as its results subdirectory.
-  name: "high_accuracy_evaluation"
   evaluator: "qe"  # selects the registered dft_evaluator backend (registry.py); "vasp" also available
-  qe_input_kwargs:
+  qe_kwargs:
     system:
       input_dft: "pbe"
   hpc: "my_hpc"

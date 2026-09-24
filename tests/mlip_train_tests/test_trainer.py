@@ -245,7 +245,7 @@ class TestTrain:
         _write_structures(test_path, 2)
 
         config = {
-            "mace_fit_kwargs": {"energy_key": "REF_energy", "forces_key": "REF_forces"},
+            "mace_kwargs": {"energy_key": "REF_energy", "forces_key": "REF_forces"},
             "max_num_epochs": 40,
         }
         config.update(overrides.pop("config_overrides", {}))
@@ -306,7 +306,7 @@ class TestTrain:
         _, mock_run, _ = self._run_train(
             tmp_path,
             monkeypatch,
-            config_overrides={"mace_fit_kwargs": {"forces_key": "REF_forces"}},
+            config_overrides={"mace_kwargs": {"forces_key": "REF_forces"}},
         )
         args = mock_run.call_args.args[0]
         assert args.energy_key == "REF_energy"
@@ -315,7 +315,7 @@ class TestTrain:
         _, mock_run, _ = self._run_train(
             tmp_path,
             monkeypatch,
-            config_overrides={"mace_fit_kwargs": {"energy_key": "REF_energy"}},
+            config_overrides={"mace_kwargs": {"energy_key": "REF_energy"}},
         )
         args = mock_run.call_args.args[0]
         assert args.forces_key == "REF_forces"
@@ -327,7 +327,7 @@ class TestTrain:
                 monkeypatch,
                 elements=["H", "O"],
                 config_overrides={
-                    "mace_fit_kwargs": {
+                    "mace_kwargs": {
                         "energy_key": "REF_energy",
                         "forces_key": "REF_forces",
                         "E0s": {"H": -1.0},
@@ -341,7 +341,7 @@ class TestTrain:
             monkeypatch,
             elements=["H", "O"],
             config_overrides={
-                "mace_fit_kwargs": {
+                "mace_kwargs": {
                     "energy_key": "REF_energy",
                     "forces_key": "REF_forces",
                     "E0s": {"H": -1.0, "O": -2.0},
@@ -349,13 +349,61 @@ class TestTrain:
             },
         )
 
-    def test_raises_when_seed_in_mace_fit_kwargs(self, tmp_path, monkeypatch):
+    def test_defaults_e0s_from_isolated_atom_energies_when_unset(
+        self, tmp_path, monkeypatch
+    ):
+        _, mock_run, _ = self._run_train(
+            tmp_path,
+            monkeypatch,
+            elements=["H"],
+            isolated_atom_e0s={"H": -13.6},
+        )
+        args = mock_run.call_args.args[0]
+        assert args.E0s == {"H": -13.6}
+
+    def test_explicit_e0s_wins_over_isolated_atom_default(self, tmp_path, monkeypatch):
+        _, mock_run, _ = self._run_train(
+            tmp_path,
+            monkeypatch,
+            elements=["H"],
+            isolated_atom_e0s={"H": -13.6},
+            config_overrides={
+                "mace_kwargs": {
+                    "energy_key": "REF_energy",
+                    "forces_key": "REF_forces",
+                    "E0s": {"H": -1.0},
+                }
+            },
+        )
+        args = mock_run.call_args.args[0]
+        assert args.E0s == {"H": -1.0}
+
+    def test_raises_when_no_e0s_and_no_isolated_atom_energies(
+        self, tmp_path, monkeypatch
+    ):
+        with pytest.raises(ValueError, match="E0s"):
+            self._run_train(
+                tmp_path,
+                monkeypatch,
+                elements=["H"],
+                isolated_atom_e0s={},
+            )
+
+    def test_no_raise_when_e0s_missing_and_elements_not_given(
+        self, tmp_path, monkeypatch
+    ):
+        """elements is None (e.g. an older/direct caller) -> the safety net
+        is skipped entirely, matching pre-existing behavior where E0s was
+        always optional."""
+        self._run_train(tmp_path, monkeypatch, isolated_atom_e0s={})
+
+    def test_raises_when_seed_in_mace_kwargs(self, tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="seed"):
             self._run_train(
                 tmp_path,
                 monkeypatch,
                 config_overrides={
-                    "mace_fit_kwargs": {
+                    "mace_kwargs": {
                         "energy_key": "REF_energy",
                         "forces_key": "REF_forces",
                         "seed": 1,
@@ -433,7 +481,7 @@ class TestTrain:
                 valid_atoms_path=str(valid_path),
                 test_atoms_path=str(test_path),
                 config={
-                    "mace_fit_kwargs": {
+                    "mace_kwargs": {
                         "energy_key": "REF_energy",
                         "forces_key": "REF_forces",
                         "batch_size": 16,

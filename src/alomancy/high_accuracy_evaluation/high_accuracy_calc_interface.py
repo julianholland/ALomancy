@@ -54,6 +54,19 @@ logger = logging.getLogger(__name__)
 
 _PHASE = "high_accuracy_eval"
 
+# The shared, unchanged run_sp/run_go workers (run_qe.py/run_vasp.py, also
+# used by the old production path) read their own calculator-specific
+# kwargs under legacy key names ("qe_input_kwargs"/"vasp_input_kwargs")
+# that predate this refactor and can't be renamed without touching those
+# shared functions. New-style config instead uses the standardized
+# "<evaluator>_kwargs" naming (matching training.mace_kwargs,
+# structure_generation.md_kwargs/ezga_kwargs) -- translated to the legacy
+# key here, at the one place both naming schemes have to meet.
+_LEGACY_EVALUATOR_KWARGS_KEY = {
+    "qe": "qe_input_kwargs",
+    "vasp": "vasp_input_kwargs",
+}
+
 
 def _sentinel_results_path(base_name: str) -> Path:
     return Path("results", base_name, "high_accuracy_eval_results.xyz")
@@ -111,11 +124,13 @@ def high_accuracy_evaluation(
     ``needs_relaxation`` when ``allow_relaxation`` is set. Reuses whatever a
     prior partial run already completed (globbing existing batch
     directories) rather than an all-or-nothing restart. ``config`` carries
-    only evaluator-specific settings (``evaluator``, ``qe_input_kwargs``/
-    ``vasp_input_kwargs``, ``fmax``, ``relax_max_steps``, ``max_go_time``);
+    only evaluator-specific settings (``evaluator``, ``qe_kwargs``/
+    ``vasp_kwargs``, ``fmax``, ``relax_max_steps``, ``max_go_time``);
     ``name``/``hpc``/``max_time`` are explicit kwargs, reassembled into the
     single config dict the calculator-specific ``sp``/``go`` workers still
-    expect (unchanged from today).
+    expect (unchanged from today) -- including translating
+    ``qe_kwargs``/``vasp_kwargs`` to the legacy key names those workers
+    still read directly (see ``_LEGACY_EVALUATOR_KWARGS_KEY``).
     """
     worker_config = {**config, "name": name, "hpc": hpc, "max_time": max_time}
 
@@ -129,6 +144,11 @@ def high_accuracy_evaluation(
     evaluator = worker_config.get("evaluator", "qe")
     entry = resolve("dft_evaluator", evaluator)
     run_sp, run_go = entry.sp, entry.go
+
+    legacy_kwargs_key = _LEGACY_EVALUATOR_KWARGS_KEY.get(evaluator)
+    new_kwargs_key = f"{evaluator}_kwargs"
+    if legacy_kwargs_key and new_kwargs_key in worker_config:
+        worker_config[legacy_kwargs_key] = worker_config.pop(new_kwargs_key)
 
     logger.debug(
         "Starting high accuracy evaluation with %d structures (evaluator=%s).",

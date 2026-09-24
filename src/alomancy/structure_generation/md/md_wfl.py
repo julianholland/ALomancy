@@ -463,9 +463,18 @@ def generate(
     resolve its calculator through the trainer registry instead of a
     hardcoded MACECalculator.
 
-    config carries only generator-specific settings
-    (structure_selection_kwargs, run_md_kwargs, trainer, trainer_config);
-    name/hpc/max_time are explicit kwargs.
+    config carries only generator-specific settings (md_kwargs, trainer,
+    trainer_config); name/hpc/max_time are explicit kwargs. md_kwargs holds
+    run_md's own direct kwargs (steps, temperature, ensemble, pressure,
+    ...) plus one nested key, structure_selection_kwargs, for
+    select_diverse_seeds' own params (max_number_of_concurrent_jobs,
+    enforce_chemical_diversity, seed) -- nested here rather than at the
+    top structure_generation level since it's genuinely MD-specific
+    (EZGA never calls select_diverse_seeds, so it would make no sense
+    inside ezga_kwargs). This is unrelated to structure_generation's own
+    top-level structure_selection_kwargs, which is generator-agnostic
+    (filter_eligible_structures, called once by the skeleton before any
+    generator dispatch).
     """
     candidates_path = _candidates_path(base_name, name)
     if candidates_path.exists():
@@ -476,7 +485,8 @@ def generate(
         )
         return list(read(candidates_path, ":", format="extxyz"))
 
-    selection_kwargs = config.get("structure_selection_kwargs", {})
+    md_kwargs = dict(config.get("md_kwargs", {}))
+    selection_kwargs = md_kwargs.pop("structure_selection_kwargs", {})
     selected = select_diverse_seeds(
         base_name=base_name,
         job_name=name,
@@ -501,7 +511,6 @@ def generate(
 
     if n_existing < len(selected):
         remaining = selected[n_existing:]
-        run_md_kwargs = config.get("run_md_kwargs", {})
         trainer = config.get("trainer", "mace")
         trainer_config = config.get("trainer_config", {})
 
@@ -509,6 +518,13 @@ def generate(
             {"hpc": hpc, "name": name, "max_time": max_time},
             input_files=[str(model_path)],
         )
+
+        # run_md (unchanged, shared with the old production path) still
+        # reads its own "name" out of structure_generation_job_dict rather
+        # than taking it as an explicit kwarg -- config itself no longer
+        # carries "name" (it's hardcoded by the skeleton, not user config),
+        # so it's merged in here rather than changing run_md.
+        structure_generation_job_dict = {**config, "name": name}
 
         # output_files is set explicitly per job (keyed by the real
         # n_existing + i directory name), matching md_remote_submitter's
@@ -518,14 +534,14 @@ def generate(
         job_configs = [
             {
                 "function_kwargs": {
-                    "structure_generation_job_dict": config,
+                    "structure_generation_job_dict": structure_generation_job_dict,
                     "initial_structure": atoms,
                     "total_md_runs": len(selected),
                     "out_dir": str(md_dir / f"md_output_{n_existing + i}"),
                     "model_path": model_path,
                     "trainer": trainer,
                     "trainer_config": trainer_config,
-                    **run_md_kwargs,
+                    **md_kwargs,
                 },
                 "output_files": [str(md_dir / f"md_output_{n_existing + i}")],
             }

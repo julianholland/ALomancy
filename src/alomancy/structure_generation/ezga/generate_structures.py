@@ -409,7 +409,9 @@ def generate(
     """Local orchestrator: run EZGA once against the full eligible
     population. hpc/max_time are accepted for interface uniformity across
     generator categories (a future remotely-run generator would need them)
-    but are unused here.
+    but are unused here. config carries only ezga_kwargs (run_ezga's own
+    direct kwargs -- max_generations, population_size, min_atoms,
+    max_atoms, mutation_operators).
     """
     output_dir = Path("results", base_name, name, "ezga")
     candidates_path = output_dir / "ezga_candidates.xyz"
@@ -417,10 +419,10 @@ def generate(
         candidates = read(candidates_path, index=":", format="extxyz")
         return [candidates] if isinstance(candidates, Atoms) else list(candidates)
 
-    run_ezga_kwargs = config.get("run_ezga_kwargs", {})
+    ezga_kwargs = config.get("ezga_kwargs", {})
     return run_ezga(
         initial_structures=seed_atoms,
         model_path=model_path,
         output_dir=output_dir,
-        **run_ezga_kwargs,
+        **ezga_kwargs,
     )

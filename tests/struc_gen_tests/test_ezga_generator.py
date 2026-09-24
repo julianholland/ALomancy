@@ -66,7 +66,7 @@ class TestGenerate:
             result = generate(
                 seed_atoms=seeds,
                 model_path="model.pt",
-                config={"run_ezga_kwargs": {"max_generations": 4}},
+                config={"ezga_kwargs": {"max_generations": 4}},
                 base_name="al_loop_0",
                 name="structure_generation",
                 hpc={},

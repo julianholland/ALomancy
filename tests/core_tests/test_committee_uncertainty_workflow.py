@@ -360,6 +360,13 @@ class TestTrainMlip:
 
         job_configs = mock_submit_n.call_args.args[1]
         assert len(job_configs) == workflow_jobs_dict["workflow"]["size_of_committee"]
+        # isolated_atom_e0s is computed once locally from the DB and passed
+        # to every fit so trainer.train() can default mace_fit_kwargs.E0s
+        # when the config doesn't set it explicitly.
+        assert (
+            job_configs[0]["function_kwargs"]["isolated_atom_e0s"]
+            == wf.db.get_isolated_atom_energies()
+        )
 
     def test_reuses_cached_fits_and_only_submits_missing(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
@@ -554,6 +561,25 @@ class TestGenerateStructures:
 
         assert len(result) == 2
         assert all(a.info.get("needs_relaxation") is True for a in result)
+
+    def test_defaults_desired_number_of_structures_when_absent(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        """find_high_sd_structures/run_md (old, shared) both require this
+        key with no default of their own -- the skeleton must apply one
+        consistent default regardless of which generator module runs."""
+        monkeypatch.chdir(tmp_path)
+        del minimal_jobs_dict["structure_generation"]["desired_number_of_structures"]
+        sg_dir = Path("results/al_loop_0/structure_generation")
+        sg_dir.mkdir(parents=True)
+        write(str(sg_dir / "high_sd_structures.xyz"), [_atoms()], format="extxyz")
+
+        wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+        wf._generate_structures("al_loop_0", [])
+
+        assert (
+            wf.jobs_dict["structure_generation"]["desired_number_of_structures"] == 10
+        )
 
     def test_full_path_calls_generator_and_scores_committee(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db

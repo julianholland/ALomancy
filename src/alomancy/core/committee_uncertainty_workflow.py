@@ -42,13 +42,56 @@ future non-committee skeleton too) and gains a `trainer` key (defaults to
 atomic numbers) is the single shared source of element identity across
 modules: passed as an explicit `elements` kwarg to the initialiser
 (replacing `initialization.creation_kwargs.elements`) and to the trainer
-(used there only for an optional E0s-coverage sanity check, since MACE
-itself auto-detects the element set from the training data).
+(used there for an E0s-coverage safety-net check, since MACE itself
+auto-detects the element set from the training data but cannot infer E0s,
+a physical reference value).
 
 `structure_generation.method` is renamed `generator`, and
 `high_accuracy_evaluation.calculator` is renamed `evaluator` -- matching
 `training.trainer`'s existing naming pattern (each section names the
 registry entry it dispatches to with a key matching what it selects).
+
+No section takes a `name` key any more: each one's name is hardcoded to
+match its own config section key (`_INITIALIZATION_NAME` etc., below) --
+there is exactly one of each section per run, so a user-supplied name added
+nothing but another place to typo (and `high_accuracy_evaluation`'s already
+had to equal this literal anyway). Old shared functions that still read
+`config["name"]` internally (`find_high_sd_structures`, `run_md`,
+`check_quality_gate`, `select_best_committee_model`, the plotting
+functions) get it merged into a shallow config copy at each call site
+instead of being changed themselves.
+
+`mace_kwargs.E0s` defaults to isolated-atom reference energies already
+in the `GlobalDatabase` (`db.get_isolated_atom_energies()`, computed once
+locally per training call and passed to the trainer as a plain dict) when
+not set explicitly -- MACE cannot infer this physical value on its own, but
+it's exactly what `IsolatedAtom` structures already generated/DFT-evaluated
+by the initialiser provide. This is the first of what will grow into a
+general config safety-net: mechanical per-module defaults, applied after
+config overrides, catching conflicting/missing settings with a clear error
+rather than a cryptic failure deep inside a remote job. Kept deliberately
+inline per-module (not a centralized pre-flight registry entry point):
+some checks would need to actually construct a calculator or invoke
+software (GPU-bound MACE, QE/VASP binaries) that isn't available on the
+local driver machine, so there's no way to validate everything before
+remote submission without running it somewhere first anyway.
+
+Per-module kwargs are named `<method>_kwargs` (`mace_kwargs`, `md_kwargs`,
+`ezga_kwargs`, `qe_kwargs`, `vasp_kwargs`), matching the dispatch key each
+section resolves against (`training.trainer`, `structure_generation.
+generator`, `high_accuracy_evaluation.evaluator`). `qe_kwargs`/
+`vasp_kwargs` are translated to the legacy `qe_input_kwargs`/
+`vasp_input_kwargs` names at the evaluator orchestrator boundary (see
+`high_accuracy_calc_interface.py`), since the shared, unchanged `run_sp`/
+`run_go` workers still read those directly. Settings genuinely
+generator-agnostic (`structure_generation.desired_number_of_structures`,
+`structure_generation.structure_selection_kwargs` for the skeleton's own
+`filter_eligible_structures` pre-filter, called once before any generator
+dispatch) stay at the top `structure_generation` level rather than being
+duplicated per-generator; MD-specific settings that would make no sense
+for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
+`max_number_of_concurrent_jobs`/`enforce_chemical_diversity`/`seed`) live
+nested inside `md_kwargs` instead.
 """
 
 import hashlib
@@ -118,6 +161,26 @@ _PHASE_LABELS: dict[str, str] = {
     "structure_generation": "Structure Generation",
     "high_accuracy_evaluation": "High-Accuracy Evaluation",
 }
+
+# Each module's "name" (used for result-directory naming, MACE run names,
+# etc.) is hardcoded to match its config section key rather than being a
+# separate config field -- there is exactly one of each section per run, so
+# a user-supplied name added nothing but another place to typo (and
+# high_accuracy_evaluation's already had to equal this literal anyway, see
+# CLAUDE.md).
+_INITIALIZATION_NAME = "initialization"
+_TRAINING_NAME = "training"
+_STRUCTURE_GENERATION_NAME = "structure_generation"
+_HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
+
+# structure_generation.desired_number_of_structures is generator-agnostic
+# (find_high_sd_structures' post-generation selection cap, and run_md's own
+# trajectory-sampling stride -- both old/shared, both require this key with
+# no default of their own). Defaulted once here, before generator dispatch,
+# so the same value applies regardless of which generator module runs
+# (EZGA doesn't read it today, but would get the same default too if a
+# future version started to).
+_DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 10
 
 
 def _needs_anything(needs: dict) -> bool:
@@ -540,7 +603,7 @@ class CommitteeUncertaintyWorkflow:
                 generated_atoms_list = initialiser_entry.generate(
                     init_config,
                     base_name=base_name,
-                    name=init_config["name"],
+                    name=_INITIALIZATION_NAME,
                     elements=elements,
                     hpc=init_config.get("hpc"),
                     max_time=init_config.get("max_time"),
@@ -556,7 +619,7 @@ class CommitteeUncertaintyWorkflow:
                 generated_atoms_list,
                 self.jobs_dict["high_accuracy_evaluation"],
                 base_name=base_name,
-                name=self.jobs_dict["high_accuracy_evaluation"]["name"],
+                name=_HIGH_ACCURACY_EVALUATION_NAME,
                 hpc=self.jobs_dict["high_accuracy_evaluation"]["hpc"],
                 max_time=self.jobs_dict["high_accuracy_evaluation"]["max_time"],
                 allow_relaxation=True,
@@ -662,7 +725,7 @@ class CommitteeUncertaintyWorkflow:
     def _train_mlip(self, base_name: str) -> pd.DataFrame:
         training_config = self.jobs_dict["training"]
         workflow_config = self.jobs_dict.get("workflow", {})
-        name = training_config["name"]
+        name = _TRAINING_NAME
         committee_size = workflow_config["size_of_committee"]
         hpc = training_config["hpc"]
         max_time = training_config["max_time"]
@@ -738,6 +801,12 @@ class CommitteeUncertaintyWorkflow:
                 {"hpc": hpc, "name": name, "max_time": max_time},
                 input_files=input_files,
             )
+            # Computed once, locally, and passed down as a plain dict
+            # (not a live GlobalDatabase, which must never cross the ExPyRe
+            # boundary) so trainer.train() can default mace_kwargs.E0s
+            # to isolated-atom reference energies when the config doesn't
+            # set E0s explicitly.
+            isolated_atom_e0s = self.db.get_isolated_atom_energies()
             job_configs = [
                 {
                     "function_kwargs": {
@@ -752,6 +821,7 @@ class CommitteeUncertaintyWorkflow:
                         "hpc": hpc,
                         "max_time": max_time,
                         "elements": workflow_config.get("elements"),
+                        "isolated_atom_e0s": isolated_atom_e0s,
                     },
                     "output_files": [str(workdir / name / f"fit_{fit_idx}")],
                 }
@@ -782,11 +852,14 @@ class CommitteeUncertaintyWorkflow:
 
         if training_config.get("quality_gate"):
             # check_quality_gate (mlip/evaluation.py, unchanged/untouched)
-            # reads committee["size_of_committee"] from whatever dict it's
-            # given -- that key now lives in workflow, not training, so
-            # merge it in here rather than changing that function.
+            # reads committee["size_of_committee"] and committee["name"]
+            # from whatever dict it's given -- size_of_committee now lives
+            # in workflow (not training) and name is hardcoded (not config)
+            # for this skeleton, so both are merged in here rather than
+            # changing that function.
             check_quality_gate(
-                workdir, {**training_config, "size_of_committee": committee_size}
+                workdir,
+                {**training_config, "size_of_committee": committee_size, "name": name},
             )
 
         self._mark_phase_done(base_name, "train_mlip")
@@ -926,7 +999,10 @@ class CommitteeUncertaintyWorkflow:
         self, base_name: str, train_atoms_list: list[Atoms]
     ) -> list[Atoms]:
         sg_config = self.jobs_dict["structure_generation"]
-        name = sg_config["name"]
+        sg_config.setdefault(
+            "desired_number_of_structures", _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES
+        )
+        name = _STRUCTURE_GENERATION_NAME
         generator = sg_config.get("generator", "md")
         hpc = sg_config["hpc"]
         max_time = sg_config["max_time"]
@@ -962,9 +1038,15 @@ class CommitteeUncertaintyWorkflow:
         best_fit_idx, best_model_path = select_best_committee_model(
             base_name,
             # select_best_committee_model (mlip/mace/get_mace_eval_info.py,
-            # unchanged/untouched) reads committee["size_of_committee"] --
-            # that key now lives in workflow, not training.
-            {**training_config, "size_of_committee": committee_size},
+            # unchanged/untouched) reads committee["size_of_committee"] and
+            # committee["name"] -- size_of_committee now lives in workflow
+            # (not training) and name is hardcoded (not config) for this
+            # skeleton, so both are merged in here.
+            {
+                **training_config,
+                "size_of_committee": committee_size,
+                "name": _TRAINING_NAME,
+            },
             seed=self.seed,
         )
         fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
@@ -996,15 +1078,24 @@ class CommitteeUncertaintyWorkflow:
             fits_to_use,
             trainer_name,
             training_config,
-            training_config["name"],
+            _TRAINING_NAME,
             hpc,
             max_time,
         )
 
+        # find_high_sd_structures (unchanged, shared with the old production
+        # path) still reads structure_generation["name"] out of the job_dict
+        # it's given rather than an explicit kwarg -- sg_config no longer
+        # carries "name" (hardcoded above, not user config), so it's merged
+        # into a shallow copy here rather than changing that function.
+        find_high_sd_job_dict = {
+            **self.jobs_dict,
+            "structure_generation": {**sg_config, "name": name},
+        }
         high_sd_structures = find_high_sd_structures(
             structure_list=structure_list,
             base_name=base_name,
-            job_dict=self.jobs_dict,
+            job_dict=find_high_sd_job_dict,
             structure_forces_dict=structure_forces_dict,
         )
 
@@ -1115,9 +1206,18 @@ class CommitteeUncertaintyWorkflow:
             logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
 
             if self.plots:
+                # mae_al_loop_plot/plot_training_curves/plot_dft_vs_model
+                # (analysis/plotting.py, analysis/mlip_plots.py -- unchanged,
+                # shared with the old production path) all read
+                # mlip_committee_job_dict["name"], which is hardcoded (not
+                # config) for this skeleton, so it's merged in here.
+                training_config_with_name = {
+                    **self.jobs_dict["training"],
+                    "name": _TRAINING_NAME,
+                }
                 mae_al_loop_plot(
                     evaluation_results,
-                    self.jobs_dict["training"],
+                    training_config_with_name,
                     directory=loop_plots_dir,
                 )
                 from alomancy.analysis.mlip_plots import (
@@ -1127,13 +1227,13 @@ class CommitteeUncertaintyWorkflow:
 
                 plot_training_curves(
                     base_name,
-                    self.jobs_dict["training"],
+                    training_config_with_name,
                     self.seed,
                     loop_plots_dir,
                 )
                 plot_dft_vs_model(
                     base_name,
-                    self.jobs_dict["training"],
+                    training_config_with_name,
                     self.seed,
                     loop_plots_dir,
                     db=self.db,
@@ -1159,7 +1259,7 @@ class CommitteeUncertaintyWorkflow:
                 generated_structures,
                 high_accuracy_eval_config,
                 base_name=base_name,
-                name=high_accuracy_eval_config["name"],
+                name=_HIGH_ACCURACY_EVALUATION_NAME,
                 hpc=high_accuracy_eval_config["hpc"],
                 max_time=high_accuracy_eval_config["max_time"],
                 allow_relaxation=True,
