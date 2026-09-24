@@ -11,9 +11,12 @@ logger = logging.getLogger(__name__)
 _JOB_SECTIONS = (
     "initialization",
     "mlip_committee",
+    "training",
     "structure_generation",
     "high_accuracy_evaluation",
 )
+
+_DEFAULT_MAX_TIME = "24:00:00"
 
 
 def load_dictionaries(config_path: Path) -> dict[str, Any]:
@@ -22,6 +25,12 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
     If a job section's ``hpc:`` value is a string, it is looked up in
     ``~/.alomancy/hpc_config.yaml`` and replaced with the full profile dict.
     Dict values are passed through unchanged (backwards compatible).
+
+    If a section's ``max_time`` is missing (or falsy), it defaults to that
+    section's resolved HPC profile's own ``default_max_time`` if the profile
+    defines one, else the hardcoded fallback ``"24:00:00"``. A section with
+    no ``hpc`` at all (e.g. ``initialization``, which runs locally) gets no
+    ``max_time`` default either -- there is nothing for it to bound.
 
     Raises
     ------
@@ -35,7 +44,8 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
     for section in _JOB_SECTIONS:
         if section not in jobs_dict:
             continue
-        hpc_ref = jobs_dict[section].get("hpc")
+        section_dict = jobs_dict[section]
+        hpc_ref = section_dict.get("hpc")
         if isinstance(hpc_ref, str):
             if hpc_ref not in hpc_config:
                 raise ValueError(
@@ -43,7 +53,13 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
                     f"found in ~/.alomancy/hpc_config.yaml. "
                     f"Run 'alomancy add-hpc' to add it."
                 )
-            jobs_dict[section]["hpc"] = hpc_config[hpc_ref].copy()
+            section_dict["hpc"] = hpc_config[hpc_ref].copy()
+
+        resolved_hpc = section_dict.get("hpc")
+        if isinstance(resolved_hpc, dict) and not section_dict.get("max_time"):
+            section_dict["max_time"] = resolved_hpc.get(
+                "default_max_time", _DEFAULT_MAX_TIME
+            )
 
     return jobs_dict
 

@@ -43,20 +43,19 @@ class TestComputeNeeds:
         db = _mock_db({})
         config = {
             "creation_kwargs": {
-                "elements": ["H", "O"],
                 "num_dimers_per_combo": 3,
                 "num_trimers_per_combo": 2,
                 "num_amorphous": 10,
             }
         }
-        needs = compute_needs(db, config)
+        needs = compute_needs(db, config, ["H", "O"])
         assert needs["isolated_atoms"] == ["H", "O"]
         assert needs["amorphous_override"] == 10
 
     def test_uses_defaults_when_not_specified(self):
         db = _mock_db({})
-        config = {"creation_kwargs": {"elements": ["H"]}}
-        needs = compute_needs(db, config)
+        config = {"creation_kwargs": {}}
+        needs = compute_needs(db, config, ["H"])
         # Defaults match compute_initialization_needs' own defaults, applied
         # here since config doesn't override them.
         assert needs["amorphous_override"] == 100
@@ -68,8 +67,8 @@ class TestComputeNeeds:
                 "init_amorphous": {"H100": 100},
             }
         )
-        config = {"creation_kwargs": {"elements": ["H"], "num_amorphous": 100}}
-        needs = compute_needs(db, config)
+        config = {"creation_kwargs": {"num_amorphous": 100}}
+        needs = compute_needs(db, config, ["H"])
         assert needs["isolated_atoms"] == []
         assert needs["amorphous_override"] == 0
 
@@ -101,7 +100,7 @@ class TestOutputPathsAndReadExistingResult:
 @pytest.mark.unit
 class TestGenerate:
     def _config(self, **creation_overrides):
-        creation_kwargs = {"elements": ["H", "O"]}
+        creation_kwargs: dict = {}
         creation_kwargs.update(creation_overrides)
         return {"creation_kwargs": creation_kwargs}
 
@@ -113,6 +112,7 @@ class TestGenerate:
                 self._config(),
                 base_name="al_loop_0",
                 name="initialization",
+                elements=["H", "O"],
                 hpc={},
                 max_time="1H",
             )
@@ -139,6 +139,7 @@ class TestGenerate:
                 self._config(),
                 base_name="al_loop_0",
                 name="initialization",
+                elements=["H", "O"],
                 hpc={},
                 max_time="1H",
                 needs=needs,
@@ -160,6 +161,7 @@ class TestGenerate:
                 self._config(),
                 base_name="al_loop_0",
                 name="initialization",
+                elements=["H", "O"],
                 hpc={},
                 max_time="1H",
             )

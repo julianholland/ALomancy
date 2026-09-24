@@ -12,9 +12,16 @@
 # load_dictionaries(). Replace "my_hpc" with the profile name you set up,
 # or inline a full hpc dict per-section instead (see CLAUDE.md's "HPC
 # string resolution" note) if you'd rather not use the global profile store.
+# max_time is optional on any section below -- if omitted, it defaults to
+# that section's HPC profile's own "default_max_time" (if set in
+# ~/.alomancy/hpc_config.yaml) or "24:00:00" otherwise.
 
 workflow:
   al_workflow: "committee_uncertainty"
+  # Shared element identity (atomic symbols, not atomic numbers) -- read by
+  # the initialiser (bootstrap structure generation) and the trainer (E0s
+  # coverage check).
+  elements: ["C"]
   # Split-building parameters, plus size_of_committee, live here (not under
   # initialization/training) for this skeleton -- a future non-committee
   # skeleton (e.g. single-model furthest-point-sampling) would have no
@@ -28,10 +35,12 @@ workflow:
 
 initialization:
   name: "initialization"
-  max_time: "1H"
-  hpc: "my_hpc"
+  # No hpc/max_time here: initialization runs entirely in the local driver
+  # process (dimer/trimer/amorphous generation, or a plain Materials
+  # Project network call) -- it never submits a remote job itself. The
+  # structures it produces are DFT-evaluated afterward using
+  # high_accuracy_evaluation's own hpc below.
   creation_kwargs:
-    elements: [6]  # Carbon only
     mp_structures: false  # skip the Materials Project fetch (needs an API key) to keep this example self-contained
     single_atoms: true
     num_dimers_per_combo: 5
@@ -47,26 +56,22 @@ training:
   # name works for a future non-committee skeleton too.
   name: "training"
   trainer: "mace"  # selects the registered mlip_trainer backend (registry.py)
-  max_time: "2H"
   max_num_epochs: "dynamic"
   mace_fit_kwargs:
-    # Only what MACE can't infer on its own: energy_key/forces_key are
-    # required (no default), and E0s is a physical reference value MACE
-    # has no way to know without being told. Everything else (model,
-    # r_max, batch_size, num_channels, ...) already has a sensible default
-    # baked into mlip/mace/trainer.py -- only override what you actually
-    # want to change from that.
-    energy_key: "REF_energy"
-    forces_key: "REF_forces"
+    # Only E0s needs to be given: it's a physical reference value MACE
+    # cannot infer on its own. energy_key/forces_key already default to
+    # this codebase's standard REF_energy/REF_forces; everything else
+    # (model, r_max, batch_size, num_channels, ...) already has a sensible
+    # default baked into mlip/mace/trainer.py -- only override what you
+    # actually want to change from that.
     E0s:
-      6: -148.31447017  # replace with your own isolated-C DFT reference energy
+      C: -148.31447017  # replace with your own isolated-C DFT reference energy
   hpc: "my_hpc"
 
 structure_generation:
   name: "structure_generation"
-  method: "md"  # selects the registered structure_generator backend (registry.py); "ezga" also available
+  generator: "md"  # selects the registered structure_generator backend (registry.py); "ezga" also available
   desired_number_of_structures: 10
-  max_time: "1H"
   structure_selection_kwargs:
     max_number_of_concurrent_jobs: 3
     atom_number_range: [0, 13]
@@ -79,8 +84,7 @@ high_accuracy_evaluation:
   # name must be exactly "high_accuracy_evaluation" -- the evaluator
   # orchestrator hardcodes this as its results subdirectory.
   name: "high_accuracy_evaluation"
-  calculator: "qe"  # selects the registered dft_evaluator backend (registry.py); "vasp" also available
-  max_time: "30m"
+  evaluator: "qe"  # selects the registered dft_evaluator backend (registry.py); "vasp" also available
   qe_input_kwargs:
     system:
       input_dft: "pbe"

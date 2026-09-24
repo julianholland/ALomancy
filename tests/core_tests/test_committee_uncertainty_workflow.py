@@ -47,6 +47,7 @@ def workflow_jobs_dict(minimal_jobs_dict):
         "test_ratio": 0.1,
         "valid_fraction": 0.05,
         "size_of_committee": committee_size,
+        "elements": ["H"],
     }
     minimal_jobs_dict["training"] = minimal_jobs_dict.pop("mlip_committee")
     del minimal_jobs_dict["training"]["size_of_committee"]
@@ -625,7 +626,6 @@ class TestInitializeTrainingSet:
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        workflow_jobs_dict["initialization"]["creation_kwargs"] = {"elements": ["H"]}
 
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
 

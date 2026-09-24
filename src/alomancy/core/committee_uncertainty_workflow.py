@@ -37,6 +37,18 @@ committee-ness is a skeleton concept, not something a single-model
 skeleton would have. `mlip_committee` is renamed `training` (usable by a
 future non-committee skeleton too) and gains a `trainer` key (defaults to
 "mace" if absent, for configs written before this existed).
+
+`workflow.elements` (list of atomic symbols, e.g. `["C", "O"]` -- not
+atomic numbers) is the single shared source of element identity across
+modules: passed as an explicit `elements` kwarg to the initialiser
+(replacing `initialization.creation_kwargs.elements`) and to the trainer
+(used there only for an optional E0s-coverage sanity check, since MACE
+itself auto-detects the element set from the training data).
+
+`structure_generation.method` is renamed `generator`, and
+`high_accuracy_evaluation.calculator` is renamed `evaluator` -- matching
+`training.trainer`'s existing naming pattern (each section names the
+registry entry it dispatches to with a key matching what it selects).
 """
 
 import hashlib
@@ -480,6 +492,12 @@ class CommitteeUncertaintyWorkflow:
             return train_xyzs, test_xyzs
 
         initialiser_entry = resolve("initialiser", "default")
+        elements = workflow_config.get("elements")
+        if not elements:
+            raise ValueError(
+                "workflow.elements is required (list of atomic symbols, e.g. "
+                '["C", "O"]).'
+            )
 
         if self.db.size > 0:
             logger.info(
@@ -487,13 +505,13 @@ class CommitteeUncertaintyWorkflow:
                 self.db.size,
             )
 
-        needs = initialiser_entry.compute_needs(self.db, init_config)
+        needs = initialiser_entry.compute_needs(self.db, init_config, elements)
 
         extra_datasets = init_config.get("extra_datasets") or []
         if extra_datasets:
             for extra_dataset in extra_datasets:
                 self._seed_db_from_extra_dataset(extra_dataset)
-            needs = initialiser_entry.compute_needs(self.db, init_config)
+            needs = initialiser_entry.compute_needs(self.db, init_config, elements)
 
         if _needs_anything(needs):
             logger.info(
@@ -523,8 +541,9 @@ class CommitteeUncertaintyWorkflow:
                     init_config,
                     base_name=base_name,
                     name=init_config["name"],
-                    hpc=init_config["hpc"],
-                    max_time=init_config["max_time"],
+                    elements=elements,
+                    hpc=init_config.get("hpc"),
+                    max_time=init_config.get("max_time"),
                     needs=needs,
                 )
 
@@ -732,6 +751,7 @@ class CommitteeUncertaintyWorkflow:
                         "fit_idx": fit_idx,
                         "hpc": hpc,
                         "max_time": max_time,
+                        "elements": workflow_config.get("elements"),
                     },
                     "output_files": [str(workdir / name / f"fit_{fit_idx}")],
                 }
@@ -907,7 +927,7 @@ class CommitteeUncertaintyWorkflow:
     ) -> list[Atoms]:
         sg_config = self.jobs_dict["structure_generation"]
         name = sg_config["name"]
-        method = sg_config.get("method", "md")
+        generator = sg_config.get("generator", "md")
         hpc = sg_config["hpc"]
         max_time = sg_config["max_time"]
 
@@ -950,7 +970,7 @@ class CommitteeUncertaintyWorkflow:
         fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
         trainer_name = training_config.get("trainer", "mace")
 
-        generator_entry = resolve("structure_generator", method)
+        generator_entry = resolve("structure_generator", generator)
         structure_list = generator_entry.generate(
             eligible,
             str(best_model_path),

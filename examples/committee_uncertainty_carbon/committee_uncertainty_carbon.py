@@ -4,16 +4,17 @@ see src/alomancy/core/committee_uncertainty_workflow.py.
 
 Unlike the old examples/basic_use/basic_use.py (which instantiates
 ActiveLearningStandardMACE directly), build_workflow() reads
-config["workflow"]["skeleton"] to pick the workflow class, and that class
-in turn resolves its trainer/structure-generator/DFT-evaluator/initialiser
-from config via registry.resolve(...) rather than Python subclassing.
+config["workflow"]["al_workflow"] to pick the workflow class, and that
+class in turn resolves its trainer/structure-generator/DFT-evaluator/
+initialiser from config via registry.resolve(...) rather than Python
+subclassing.
 
 initial_train_file_path/initial_test_file_path below point at files that
 don't exist yet -- that's expected for a first run: the skeleton falls
-through to the DB-driven path (initialization.creation_kwargs) and
-generates + DFT-evaluates a bootstrap dataset itself. Point them at
-existing xyz files instead to skip that and start straight from a
-pre-built training set.
+through to the DB-driven path (initialization.creation_kwargs plus
+workflow.elements) and generates + DFT-evaluates a bootstrap dataset
+itself. Point them at existing xyz files instead to skip that and start
+straight from a pre-built training set.
 """
 
 from pathlib import Path

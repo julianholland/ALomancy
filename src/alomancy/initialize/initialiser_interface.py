@@ -13,7 +13,12 @@ standard_active_learning.initialize_training_set -- move to skeleton-level
 orchestration, not here.
 
 Self-contained config surface: reads only initialiser-specific settings
-(creation_kwargs), never reaching into another module's section.
+(creation_kwargs), never reaching into another module's section. The one
+exception is `elements` (workflow.elements, a list of atomic symbols e.g.
+["C", "O"]), passed as an explicit keyword argument by the skeleton --
+shared element identity, not initialiser-specific config, so it lives in
+`workflow` rather than `creation_kwargs` (matching how `name`/`hpc`/
+`max_time` are already explicit kwargs rather than config-dict reads).
 
 Bootstrap generation is structurally a different problem from the AL-loop
 structure_generator abstraction (no trained model, no uncertainty-based
@@ -38,15 +43,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def compute_needs(db: "GlobalDatabase", config: dict) -> dict:
+def compute_needs(db: "GlobalDatabase", config: dict, elements: list[str]) -> dict:
     """Compare DB contents against initialization targets (config's
-    creation_kwargs) and return what still needs to be generated -- see
-    compute_initialization_needs for the returned dict's shape.
+    creation_kwargs, plus the shared workflow.elements list) and return what
+    still needs to be generated -- see compute_initialization_needs for the
+    returned dict's shape.
     """
     creation_kwargs = config["creation_kwargs"]
     return compute_initialization_needs(
         db=db,
-        elements=creation_kwargs["elements"],
+        elements=elements,
         _single_atoms=creation_kwargs.get("single_atoms", True),
         mp_structures=creation_kwargs.get("mp_structures", True),
         num_dimers_per_combo=creation_kwargs.get("num_dimers_per_combo", 10),
@@ -77,20 +83,22 @@ def generate(
     *,
     base_name: str,
     name: str,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
-    hpc: dict,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
-    max_time: str,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
+    elements: list[str],
+    hpc: dict | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
+    max_time: str | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     needs: dict | None = None,
 ) -> list[Atoms]:
     """Generate bootstrap structures (dimers/trimers/amorphous/MP/isolated
-    atoms), reading targets from config's creation_kwargs.
+    atoms), reading targets from config's creation_kwargs plus the shared
+    workflow.elements list.
 
     When `needs` is given (from compute_needs), only the missing subset
     (relative to what's already in the DB) is generated -- enabling
     idempotent restarts. When None, the full target set is generated.
-    hpc/max_time are accepted for interface uniformity across module
-    categories but unused: initialisation runs entirely in the local
-    driver process (the Materials Project fetch is a plain network call,
-    not an ExPyRe remote job).
+    hpc/max_time are accepted (and optional, defaulting to None) for
+    interface uniformity across module categories but unused: initialisation
+    runs entirely in the local driver process (the Materials Project fetch
+    is a plain network call, not an ExPyRe remote job).
     """
     work_dir = Path("results", base_name)
     work_dir.mkdir(exist_ok=True, parents=True)
@@ -98,7 +106,7 @@ def generate(
 
     return create_initialization_atoms_list(
         work_dir=str(work_dir),
-        elements=creation_kwargs["elements"],
+        elements=elements,
         mp_structures=(
             needs["mp_structures"]
             if needs is not None

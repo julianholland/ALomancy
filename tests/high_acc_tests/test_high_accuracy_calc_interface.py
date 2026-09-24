@@ -27,7 +27,7 @@ _MODULE = "alomancy.high_accuracy_evaluation.high_accuracy_calc_interface"
 
 
 def _config():
-    return {"calculator": "qe"}
+    return {"evaluator": "qe"}
 
 
 def _atoms(symbol="H"):
@@ -200,7 +200,7 @@ class TestHighAccuracyEvaluation:
             _call(
                 [go_atom],
                 tmp_path,
-                config={"calculator": "qe", "max_go_time": "8H"},
+                config={"evaluator": "qe", "max_go_time": "8H"},
                 allow_relaxation=True,
             )
 

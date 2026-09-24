@@ -111,7 +111,7 @@ def high_accuracy_evaluation(
     ``needs_relaxation`` when ``allow_relaxation`` is set. Reuses whatever a
     prior partial run already completed (globbing existing batch
     directories) rather than an all-or-nothing restart. ``config`` carries
-    only evaluator-specific settings (``calculator``, ``qe_input_kwargs``/
+    only evaluator-specific settings (``evaluator``, ``qe_input_kwargs``/
     ``vasp_input_kwargs``, ``fmax``, ``relax_max_steps``, ``max_go_time``);
     ``name``/``hpc``/``max_time`` are explicit kwargs, reassembled into the
     single config dict the calculator-specific ``sp``/``go`` workers still
@@ -126,14 +126,14 @@ def high_accuracy_evaluation(
         )
         return read_existing_result(config, base_name=base_name, name=name)
 
-    calculator = worker_config.get("calculator", "qe")
-    entry = resolve("dft_evaluator", calculator)
+    evaluator = worker_config.get("evaluator", "qe")
+    entry = resolve("dft_evaluator", evaluator)
     run_sp, run_go = entry.sp, entry.go
 
     logger.debug(
-        "Starting high accuracy evaluation with %d structures (calculator=%s).",
+        "Starting high accuracy evaluation with %d structures (evaluator=%s).",
         len(structures),
-        calculator,
+        evaluator,
     )
 
     function_kwargs = {"high_accuracy_eval_job_dict": worker_config}

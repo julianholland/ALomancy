@@ -302,21 +302,52 @@ class TestTrain:
             result = train(**kwargs)
         return result, mock_run, fit_dir
 
-    def test_raises_when_energy_key_missing(self, tmp_path, monkeypatch):
-        with pytest.raises(ValueError, match="energy_key"):
+    def test_defaults_energy_key_when_missing(self, tmp_path, monkeypatch):
+        _, mock_run, _ = self._run_train(
+            tmp_path,
+            monkeypatch,
+            config_overrides={"mace_fit_kwargs": {"forces_key": "REF_forces"}},
+        )
+        args = mock_run.call_args.args[0]
+        assert args.energy_key == "REF_energy"
+
+    def test_defaults_forces_key_when_missing(self, tmp_path, monkeypatch):
+        _, mock_run, _ = self._run_train(
+            tmp_path,
+            monkeypatch,
+            config_overrides={"mace_fit_kwargs": {"energy_key": "REF_energy"}},
+        )
+        args = mock_run.call_args.args[0]
+        assert args.forces_key == "REF_forces"
+
+    def test_raises_when_e0s_missing_element(self, tmp_path, monkeypatch):
+        with pytest.raises(ValueError, match="E0s"):
             self._run_train(
                 tmp_path,
                 monkeypatch,
-                config_overrides={"mace_fit_kwargs": {"forces_key": "REF_forces"}},
+                elements=["H", "O"],
+                config_overrides={
+                    "mace_fit_kwargs": {
+                        "energy_key": "REF_energy",
+                        "forces_key": "REF_forces",
+                        "E0s": {"H": -1.0},
+                    }
+                },
             )
 
-    def test_raises_when_forces_key_missing(self, tmp_path, monkeypatch):
-        with pytest.raises(ValueError, match="forces_key"):
-            self._run_train(
-                tmp_path,
-                monkeypatch,
-                config_overrides={"mace_fit_kwargs": {"energy_key": "REF_energy"}},
-            )
+    def test_e0s_covering_all_elements_does_not_raise(self, tmp_path, monkeypatch):
+        self._run_train(
+            tmp_path,
+            monkeypatch,
+            elements=["H", "O"],
+            config_overrides={
+                "mace_fit_kwargs": {
+                    "energy_key": "REF_energy",
+                    "forces_key": "REF_forces",
+                    "E0s": {"H": -1.0, "O": -2.0},
+                }
+            },
+        )
 
     def test_raises_when_seed_in_mace_fit_kwargs(self, tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="seed"):
