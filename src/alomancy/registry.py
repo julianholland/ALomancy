@@ -77,3 +77,36 @@ def registered(category: str | None = None) -> dict:
     if category is None:
         return {cat: dict(names) for cat, names in _REGISTRY.items()}
     return dict(_REGISTRY.get(category, {}))
+
+
+# ---------------------------------------------------------------------------
+# Registration: every currently-known backend, added incrementally as each
+# module lands. One place answers "what does ALomancy support" -- adding a
+# backend means editing this file plus the new module, never scattering
+# registration calls across the codebase (see module docstring).
+# ---------------------------------------------------------------------------
+
+register(
+    "mlip_trainer",
+    "mace",
+    "alomancy.mlip.mace.trainer",
+    train="train",
+    get_calculator="get_calculator",
+    output_paths="output_paths",
+    read_existing_result="read_existing_result",
+)
+
+register(
+    "dft_evaluator",
+    "qe",
+    "alomancy.high_accuracy_evaluation.dft.run_qe",
+    sp="run_sp_qe",
+    go="run_go_qe",
+)
+register(
+    "dft_evaluator",
+    "vasp",
+    "alomancy.high_accuracy_evaluation.dft.run_vasp",
+    sp="run_sp_vasp",
+    go="run_go_vasp",
+)
