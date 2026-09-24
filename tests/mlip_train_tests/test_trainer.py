@@ -7,6 +7,7 @@ still what production train_mlip calls until the skeleton lands), train()
 has zero committee awareness and receives an already-built, explicit
 train/valid/test split as file paths rather than deriving one itself."""
 
+import argparse
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -278,8 +279,22 @@ class TestTrain:
         with (
             patch("alomancy.mlip.mace.trainer.run", side_effect=fake_run) as mock_run,
             patch("alomancy.mlip.mace.trainer.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace.trainer.tools") as mock_tools,
         ):
             mock_calc_cls.return_value = MagicMock()
+            # A real, empty argparse.Namespace -- not a MagicMock -- so
+            # hasattr()/getattr() on `args` behave like real argparse
+            # (unset attributes genuinely don't exist) regardless of
+            # whether some other test file's module-level
+            # sys.modules.setdefault("mace", MagicMock()) has already run
+            # in this pytest session (a real, session-wide ordering hazard:
+            # whichever test file is collected first determines whether
+            # `mace` resolves to the real package or a permanent mock for
+            # every test after it -- this makes TestTrain's own tests
+            # independent of that).
+            mock_tools.build_default_arg_parser.return_value.parse_args.return_value = (
+                argparse.Namespace()
+            )
             monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.0)
             monkeypatch.setattr(
                 Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False
@@ -372,8 +387,12 @@ class TestTrain:
         with (
             patch("alomancy.mlip.mace.trainer.run", side_effect=fake_run),
             patch("alomancy.mlip.mace.trainer.MACECalculator") as mock_calc_cls,
+            patch("alomancy.mlip.mace.trainer.tools") as mock_tools,
         ):
             mock_calc_cls.return_value = MagicMock()
+            mock_tools.build_default_arg_parser.return_value.parse_args.return_value = (
+                argparse.Namespace()
+            )
             monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 1.0)
             monkeypatch.setattr(
                 Atoms, "get_forces", lambda self: np.zeros((1, 3)), raising=False

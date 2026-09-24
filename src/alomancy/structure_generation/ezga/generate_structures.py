@@ -366,3 +366,61 @@ def run_ezga(
         raise RuntimeError("EZGA returned no candidate structures.")
 
     return list(candidates)
+
+
+# ---------------------------------------------------------------------------
+# Modular AL architecture: structure_generator registry entry points.
+#
+# EZGA runs entirely in the local driver process (no remote submission --
+# see CLAUDE.md's note on this), so its orchestrator entry point is a thin
+# wrapper: it uses the full eligible seed population directly (a
+# population-based genetic search, unlike MD, needs no per-seed diversity
+# selection via utils.seed_selection -- see the architecture plan's
+# structure-generation decision), and run_ezga already receives model_path
+# as a plain string (it loads the model itself via its own YAML-driven
+# config, never a live calculator object).
+# ---------------------------------------------------------------------------
+
+
+def output_paths(config: dict, *, base_name: str, name: str) -> list[Path]:  # noqa: ARG001
+    """Restart check: the consolidated candidates file run_ezga itself
+    already writes unconditionally."""
+    return [Path("results", base_name, name, "ezga", "ezga_candidates.xyz")]
+
+
+def read_existing_result(config: dict, *, base_name: str, name: str) -> list[Atoms]:  # noqa: ARG001
+    path = Path("results", base_name, name, "ezga", "ezga_candidates.xyz")
+    if not path.exists():
+        raise ValueError(f"No cached EZGA result at {path}.")
+    candidates = read(path, index=":", format="extxyz")
+    return [candidates] if isinstance(candidates, Atoms) else list(candidates)
+
+
+def generate(
+    seed_atoms: list[Atoms],
+    model_path: str,
+    config: dict,
+    *,
+    base_name: str,
+    name: str,
+    hpc: dict,  # noqa: ARG001 -- unused (EZGA runs locally); uniform across module categories
+    max_time: str,  # noqa: ARG001 -- unused (EZGA runs locally); uniform across module categories
+) -> list[Atoms]:
+    """Local orchestrator: run EZGA once against the full eligible
+    population. hpc/max_time are accepted for interface uniformity across
+    generator categories (a future remotely-run generator would need them)
+    but are unused here.
+    """
+    output_dir = Path("results", base_name, name, "ezga")
+    candidates_path = output_dir / "ezga_candidates.xyz"
+    if candidates_path.exists():
+        candidates = read(candidates_path, index=":", format="extxyz")
+        return [candidates] if isinstance(candidates, Atoms) else list(candidates)
+
+    run_ezga_kwargs = config.get("run_ezga_kwargs", {})
+    return run_ezga(
+        initial_structures=seed_atoms,
+        model_path=model_path,
+        output_dir=output_dir,
+        **run_ezga_kwargs,
+    )

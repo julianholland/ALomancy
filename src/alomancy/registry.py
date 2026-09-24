@@ -110,3 +110,20 @@ register(
     sp="run_sp_vasp",
     go="run_go_vasp",
 )
+
+register(
+    "structure_generator",
+    "md",
+    "alomancy.structure_generation.md.md_wfl",
+    generate="generate",
+    output_paths="output_paths",
+    read_existing_result="read_existing_result",
+)
+register(
+    "structure_generator",
+    "ezga",
+    "alomancy.structure_generation.ezga.generate_structures",
+    generate="generate",
+    output_paths="output_paths",
+    read_existing_result="read_existing_result",
+)
