@@ -162,31 +162,8 @@ def test_quality_gate_rejects_different_validation_sets(tmp_path):
         check_quality_gate(tmp_path, committee)
 
 
-@pytest.mark.unit
-def test_train_only_recognizes_evaluated_stage_one_checkpoint(tmp_path, monkeypatch):
-    from unittest.mock import patch
-
-    from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
-
-    monkeypatch.chdir(tmp_path)
-    committee = {
-        "name": "c",
-        "size_of_committee": 3,
-        "require_checkpoint_metrics": True,
-    }
-    for i in range(3):
-        fit = tmp_path / "results/al_loop_0/c" / f"fit_{i}"
-        fit.mkdir(parents=True)
-        model = fit / "c.model"
-        model.write_bytes(b"stage one checkpoint")
-        metrics = prediction_metrics([predicted(0.01)])
-        save_evaluation(fit, model, {"valid": metrics, "test": metrics})
-    workflow = ActiveLearningStandardMACE(
-        "train.xyz", "test.xyz", {"mlip_committee": committee}, plots=False
-    )
-    with patch(
-        "alomancy.core.standard_active_learning.committee_remote_submitter"
-    ) as submit:
-        metrics = workflow.train_mlip("al_loop_0", workflow.jobs_dict)
-    submit.assert_not_called()
-    assert metrics.iloc[0]["metric_source"] == "checkpoint_test"
+# Restart-recognizes-evaluated-checkpoint coverage for the current skeleton
+# now lives in test_committee_uncertainty_workflow.py's TestTrainMlip.
+# test_recognizes_real_checkpoint_evaluation_on_restart (ported from the
+# now-removed standard_active_learning.py/ActiveLearningStandardMACE.
+# train_mlip, which this module previously tested directly).

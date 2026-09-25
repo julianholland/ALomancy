@@ -147,8 +147,8 @@ def ensure_ssh_connectivity(hpc_profiles: dict[str, dict]) -> None:
     Skipped outright under ALOMANCY_TEST_MODE/ALOMANCY_MOCK_EXTERNAL
     (set autouse for the whole test suite, see tests/conftest.py), same
     as every other real-network call in this module and in
-    core/base_active_learning.py -- tests must never shell out to ssh or
-    block waiting on a password prompt.
+    core/committee_uncertainty_workflow.py -- tests must never shell out to
+    ssh or block waiting on a password prompt.
     """
     if (
         os.getenv("ALOMANCY_TEST_MODE") == "1"
@@ -198,8 +198,9 @@ def get_alomancy_version_for_profile(profile: dict) -> str | None:
     Skipped outright under ALOMANCY_TEST_MODE/ALOMANCY_MOCK_EXTERNAL (set
     autouse for the whole test suite, see tests/conftest.py) so tests never
     make a real ssh call, mirroring _fetch_latest_pypi_version's identical
-    guard in core/base_active_learning.py. Never raises -- a workflow's
-    startup summary must not crash a run over an unreachable HPC host.
+    guard in core/committee_uncertainty_workflow.py. Never raises -- a
+    workflow's startup summary must not crash a run over an unreachable
+    HPC host.
     """
     if (
         os.getenv("ALOMANCY_TEST_MODE") == "1"

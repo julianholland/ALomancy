@@ -11,6 +11,9 @@
 - [ ] check we can initialize froma a sage lib db. i.e. if I wanted to pickup from a former run it should be sufficient to use the global database folder alone
 - [ ] save the md trajectories somewhere
 - [ ] don't recalculae the descriptors every loop/restart they should be sotored in the db alongside the structure
+- [ ] rattle option for initialisatoin
+- [ ] save a copy of the best model per loop to a directory called best_model once copied delete the older model in that directory
+- [ ] add hpc list cli
 
 ### Refactor 
 

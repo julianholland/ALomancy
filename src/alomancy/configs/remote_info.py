@@ -146,48 +146,16 @@ _DEFAULT_MAX_CONCURRENT_JOBS = 20
 def _resolve_max_concurrent_jobs(job_dict: dict) -> int:
     """Resolve the concurrency cap for a job dict.
 
-    Precedence: an explicit ``max_concurrent_jobs`` on the HPC profile
-    (``job_dict["hpc"]``) always wins when present -- it is the sole
-    authoritative, current-format home for this setting. The legacy
-    job-dict-level ``max_batch_size`` key is only consulted as a fallback
-    when the profile doesn't define the new key, so a leftover key a user
-    forgot to delete can't silently override a value they've since migrated
-    into their HPC profile. ``max_batch_size`` is deprecated and will be
-    removed in ALomancy 1.0.0 -- see docs/deprecations.md.
+    ``max_concurrent_jobs`` on the HPC profile (``job_dict["hpc"]``) is the
+    sole home for this setting -- a property of the HPC system/account, not
+    of any one workflow phase. The legacy job-dict-level ``max_batch_size``
+    fallback (deprecated since v0.4.8) was removed for the 1.0.0 release --
+    see docs/deprecations.md.
     """
     hpc = job_dict["hpc"]
     explicit_cap = hpc.get("max_concurrent_jobs")
-    legacy_cap = job_dict.get("max_batch_size")
-
-    if legacy_cap is not None:
-        if explicit_cap is not None:
-            logger.warning(
-                "'max_batch_size' on job '%s' is deprecated and ignored because "
-                "HPC profile '%s' already defines max_concurrent_jobs=%s. Remove "
-                "'max_batch_size' from your job config -- it will be removed "
-                "entirely in ALomancy 1.0.0. See docs/deprecations.md.",
-                job_dict.get("name"),
-                hpc.get("hpc_name"),
-                explicit_cap,
-            )
-        else:
-            logger.warning(
-                "'max_batch_size' on job '%s' is deprecated. Using its value "
-                "(%s) as max_concurrent_jobs because HPC profile '%s' does not "
-                "define max_concurrent_jobs. Move this setting into "
-                "~/.alomancy/hpc_config.yaml under the '%s' profile's hpc dict "
-                "instead; 'max_batch_size' will be removed entirely in "
-                "ALomancy 1.0.0. See docs/deprecations.md.",
-                job_dict.get("name"),
-                legacy_cap,
-                hpc.get("hpc_name"),
-                hpc.get("hpc_name"),
-            )
-
     if explicit_cap is not None:
         return explicit_cap
-    if legacy_cap is not None:
-        return legacy_cap
     return _DEFAULT_MAX_CONCURRENT_JOBS
 
 

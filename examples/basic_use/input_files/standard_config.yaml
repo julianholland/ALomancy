@@ -1,88 +1,76 @@
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "Na"]  # atomic symbols, not atomic numbers -- match your system
+  committee_uncertainty_kwargs:
+    number_models_in_committee: 5
+    target_config_types:
+      - "IsolatedAtom"
+      - "init_dimer"
+    test_ratio: 0.1
+
 initialization:
   name: "initialization"
   max_time: "2H"
-  test_to_train_ratio: 0.1
-  test_config_types:
-    - "IsolatedAtom"
-    - "init_dimer"
-  creation_kwargs:
-    elements: [6, 11]  # Na, C by atomic number — match your system
-    mp_structures: true
-    single_atoms: true
-    num_dimers_per_combo: 10
-    num_trimers_per_combo: 5
-    num_amorphous: 300
-    num_stretch_compress_per_mp: 5
+  mp_kwargs:
     max_atom_number: 20
-    amorphous_atom_number: 20
     mp_max_energy_above_hull: 0.1
+  dimer_kwargs:
+    num_dimers_per_combo: 10
+  trimer_kwargs:
+    num_trimers_per_combo: 5
+  amorphous_kwargs:
+    num_amorphous: 300
+    amorphous_atom_number: 20
     densities_list: [1.0, 2.0, 3.0]
+  stretch_compress_targets_kwargs:
+    num_stretch_compress_per_mp: 5
     deform_xyz: false
     max_deformation: 0.2
   hpc: 'raven'
 
-mlip_committee:
-  name: "mlip_committee"
-  size_of_committee: 5
+training:
+  name: "training"
+  trainer: "mace"
   max_time: "5H"
-  max_num_epochs: "dynamic"
-  compute_stress: true
-  mace_fit_kwargs:
-    E0s:
-      6: -241.94038776317848
-      11: -1296.5877903540002
-    model: "MACE"
-    energy_key: "REF_energy"
-    forces_key: "REF_forces"
-    atomic_numbers: [6, 11]
-    correlation: 3
-    device: "cuda"
-    ema: null
-    energy_weight: 1
-    forces_weight: 10
-    error_table: "PerAtomMAE"
-    eval_interval: 1
-    max_L: 2
-    num_channels: 128
-    num_interactions: 2
-    patience: 30
-    r_max: 5.0
-    restart_latest: null
-    save_cpu: null
-    scheduler_patience: 15
-    swa: null
-    batch_size: 16
-    valid_batch_size: 16
-    distributed: null
+  # Every mace_kwargs field below not shown already matches trainer.py's
+  # own _MACE_KWARGS_DEFAULTS -- E0s in particular needs no explicit value
+  # at all now, since it's auto-resolved from IsolatedAtom structures
+  # already in the GlobalDatabase.
+  mace_kwargs:
+    max_num_epochs: "dynamic"
+    compute_stress: true
   hpc: 'raccoon_big'
 
 structure_generation:
   name: "structure_generation"
+  generator: "md"
   desired_number_of_structures: 50
   max_time: "10H"
   structure_selection_kwargs:
-    max_number_of_concurrent_jobs: 5
     chem_formula_list: null
     atom_number_range: [0, 21]
-    enforce_chemical_diversity: True
-  run_md_kwargs:
+  md_kwargs:
     steps: 20000
     temperature: 1200
     timestep_fs: 0.5
     friction: 0.002
     ensemble: "nvt"   # "nvt" (fixed cell, default) or "npt" (variable cell)
     # pressure: 0.0   # GPa; only used when ensemble is "npt"
+    structure_selection_kwargs:
+      max_number_of_concurrent_jobs: 5
+      enforce_chemical_diversity: True
   hpc: 'raccoon_small'
 
 high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
+  evaluator: "qe"
   max_time: "30m"
-  # get_qe_input_data's **qe_input_kwargs merge is shallow at the top level
+  # get_qe_input_data's **qe_kwargs merge is shallow at the top level
   # (control/system/electrons) -- a "system" override here replaces that
   # whole sub-dict, it doesn't patch just input_dft. Stress is computed by
   # default (control.tstress: true); opting back out means passing the
   # whole control dict here, not just {tstress: false}.
-  qe_input_kwargs:
+  qe_kwargs:
     system:
       input_dft: "pbe"
   hpc: 'raven'

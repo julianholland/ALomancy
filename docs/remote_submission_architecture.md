@@ -5,12 +5,14 @@ This document is a from-source audit of `src/alomancy/remote_submission/` (`subm
 Every claim below is anchored to a specific file:line or a specific test name — nothing here is inferred from memory or documentation comments alone.
 
 > **Status (2026-08-15): all Tier 1/Tier 2 fixes from §9's strategy memo, and its full sequencing plan (steps 0–4, §9.3), have been implemented and are covered by regression tests.** The gaps and case studies below are kept as-written — they're the evidence trail that justified each fix — but are now historical: §6's case studies describe bugs that have since been fixed, and §8's gap list is annotated with each item's resolution. Read this document as "what was wrong and why" plus "what's now true instead," not as an open TODO list. Anything not explicitly marked fixed below is still open.
+>
+> **Update (1.0.0 release): `core/standard_active_learning.py` and `core/base_active_learning.py`, referenced throughout this audit as the caller of `remote_submission/`, have since been deleted.** `core/committee_uncertainty_workflow.py` (built via `build_workflow()`) is now the sole caller, having absorbed the same `train_mlip`/`generate_structures`/`high_accuracy_evaluation` orchestration this document describes. File:line references below to the removed module are kept as-written for historical accuracy (they were correct when each incident/fix happened) — read `standard_active_learning.py` as "the workflow's orchestration code, now in committee_uncertainty_workflow.py" wherever it appears below.
 
 ## 1. Architecture overview
 
 ```
-core/standard_active_learning.py
-   │  (train_mlip, generate_structures, high_accuracy_evaluation)
+core/committee_uncertainty_workflow.py
+   │  (_train_mlip, _generate_structures, high_accuracy_evaluation)
    ▼
 remote_submission/submitters.py          ◄── one function per AL phase
    │  committee_remote_submitter()           (mlip_committee)

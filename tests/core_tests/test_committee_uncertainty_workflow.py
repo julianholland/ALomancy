@@ -2,12 +2,11 @@
 skeleton for the modular architecture.
 
 The loop-control logic in run() (restart, plotting call sites, train_only/
-fixed_test branching, DB writes) is copied largely as-is from
-BaseActiveLearningWorkflow.run() (still covered by test_base_active_
-learning.py) -- these tests focus on what's new: registry-resolved module
-dispatch, the shared validation split, the partial-aware per-fit restart
-mechanism, generalized committee scoring, and cross-loop metrics
-aggregation.
+fixed_test branching, DB writes) was originally copied largely as-is from
+the now-removed BaseActiveLearningWorkflow.run() -- these tests focus on
+what's new: registry-resolved module dispatch, the shared validation
+split, the partial-aware per-fit restart mechanism, generalized committee
+scoring, and cross-loop metrics aggregation.
 """
 
 from pathlib import Path
@@ -21,6 +20,9 @@ from ase.io import write
 
 from alomancy.core.committee_uncertainty_workflow import (
     CommitteeUncertaintyWorkflow,
+    _flatten_settings,
+    _is_user_specified,
+    _resolve_effective_phase_dict,
     _score_structures_with_member,
     _select_validation_split,
     build_workflow,
@@ -37,17 +39,22 @@ _MODULE = "alomancy.core.committee_uncertainty_workflow"
 
 @pytest.fixture
 def workflow_jobs_dict(minimal_jobs_dict):
-    """minimal_jobs_dict plus the new `workflow` section (decision 14: split-
-    building parameters and size_of_committee move here from
-    initialization/mlip_committee; mlip_committee is renamed training)."""
+    """minimal_jobs_dict plus the new `general` section (renamed from
+    `workflow`; decision 14: split-building parameters and
+    number_models_in_committee -- renamed from size_of_committee -- move
+    here from initialization/mlip_committee, nested under
+    committee_uncertainty_kwargs to match the <dispatch_value>_kwargs
+    convention; mlip_committee is renamed training)."""
     committee_size = minimal_jobs_dict["mlip_committee"]["size_of_committee"]
-    minimal_jobs_dict["workflow"] = {
+    minimal_jobs_dict["general"] = {
         "al_workflow": "committee_uncertainty",
-        "target_config_types": ["IsolatedAtom"],
-        "test_ratio": 0.1,
-        "valid_fraction": 0.05,
-        "size_of_committee": committee_size,
         "elements": ["H"],
+        "committee_uncertainty_kwargs": {
+            "target_config_types": ["IsolatedAtom"],
+            "test_ratio": 0.1,
+            "valid_fraction": 0.05,
+            "number_models_in_committee": committee_size,
+        },
     }
     minimal_jobs_dict["training"] = minimal_jobs_dict.pop("mlip_committee")
     del minimal_jobs_dict["training"]["size_of_committee"]
@@ -108,8 +115,8 @@ class TestBuildWorkflow:
     def test_raises_on_unknown_al_workflow(
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
-        minimal_jobs_dict["workflow"] = {"al_workflow": "furthest_point_sampling"}
-        with pytest.raises(ValueError, match=r"Unknown workflow\.al_workflow"):
+        minimal_jobs_dict["general"] = {"al_workflow": "furthest_point_sampling"}
+        with pytest.raises(ValueError, match=r"Unknown general\.al_workflow"):
             build_workflow(
                 jobs_dict=minimal_jobs_dict,
                 initial_train_file_path=str(tmp_path / "train.xyz"),
@@ -283,7 +290,7 @@ class TestStorePredictionsAndCleanup:
 
         with (
             patch(
-                f"{_MODULE}._read_mace_eval_predictions",
+                f"{_MODULE}.read_mace_eval_predictions",
                 return_value={0: {"energy": -1.0, "forces": [[0.0, 0.0, 0.0]]}},
             ),
             patch.object(wf.db, "store_model_predictions") as mock_store,
@@ -306,7 +313,7 @@ class TestStorePredictionsAndCleanup:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         results = {0: ("model.pt", None, {"test": {}})}
 
-        with patch(f"{_MODULE}._read_mace_eval_predictions", return_value={}):
+        with patch(f"{_MODULE}.read_mace_eval_predictions", return_value={}):
             wf._store_predictions_and_cleanup("al_loop_0", "committee", results)
 
         assert checkpoints_dir.exists()
@@ -359,7 +366,12 @@ class TestTrainMlip:
             wf._train_mlip("al_loop_0")
 
         job_configs = mock_submit_n.call_args.args[1]
-        assert len(job_configs) == workflow_jobs_dict["workflow"]["size_of_committee"]
+        assert (
+            len(job_configs)
+            == workflow_jobs_dict["general"]["committee_uncertainty_kwargs"][
+                "number_models_in_committee"
+            ]
+        )
         # isolated_atom_e0s is computed once locally from the DB and passed
         # to every fit so trainer.train() can default mace_fit_kwargs.E0s
         # when the config doesn't set it explicitly.
@@ -414,6 +426,40 @@ class TestTrainMlip:
         assert len(job_configs) == 2  # only fit_1 and fit_2 submitted
         fit_indices_submitted = {jc["function_kwargs"]["fit_idx"] for jc in job_configs}
         assert fit_indices_submitted == {1, 2}
+
+    def test_recognizes_real_checkpoint_evaluation_on_restart(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """End-to-end restart recognition through the real mlip_trainer
+        registry entry (trainer.py's output_paths/read_existing_result),
+        not a mocked-away resolve() -- ported from the now-removed
+        standard_active_learning.py/test_checkpoint_evaluation.py's
+        test_train_only_recognizes_evaluated_stage_one_checkpoint, which
+        exercised the same real-on-disk-checkpoint scenario against
+        ActiveLearningStandardMACE.train_mlip before that class existed
+        here as CommitteeUncertaintyWorkflow._train_mlip."""
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        for fit_idx in range(3):
+            fit_dir = Path("results/al_loop_0/training", f"fit_{fit_idx}")
+            fit_dir.mkdir(parents=True)
+            model = fit_dir / "training_stagetwo.model"
+            model.write_bytes(b"stage one checkpoint")
+            metrics = prediction_metrics([_atoms_scored()])
+            save_evaluation(fit_dir, model, {"test": metrics})
+
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+        with (
+            patch(f"{_MODULE}.submit_n") as mock_submit_n,
+            patch.object(wf, "_store_predictions_and_cleanup"),
+            patch.object(
+                wf, "_cross_loop_metrics_dataframe", return_value=pd.DataFrame()
+            ),
+        ):
+            wf._train_mlip("al_loop_0")
+
+        mock_submit_n.assert_not_called()
 
     def test_raises_when_fewer_than_three_succeed(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
@@ -682,9 +728,9 @@ class TestInitializeTrainingSet:
 
 
 # ---------------------------------------------------------------------------
-# run() -- loop control flow, largely copied from BaseActiveLearningWorkflow
-# (test_base_active_learning.py covers that version); these confirm the copy
-# still wires correctly to this skeleton's own internal method names.
+# run() -- loop control flow, originally copied from the now-removed
+# BaseActiveLearningWorkflow; these confirm the copy wires correctly to
+# this skeleton's own internal method names.
 # ---------------------------------------------------------------------------
 
 
@@ -764,7 +810,9 @@ class TestRun:
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
         monkeypatch.chdir(tmp_path)
-        workflow_jobs_dict["workflow"]["train_only"] = True
+        workflow_jobs_dict["general"]["committee_uncertainty_kwargs"]["train_only"] = (
+            True
+        )
         wf = self._wf_with_mocks(tmp_path, workflow_jobs_dict, shared_db)
         generate_calls = []
 
@@ -817,3 +865,228 @@ class TestRun:
         # and only loops 1, 2 run.
         assert init_calls == []
         assert len(train_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# _is_user_specified / _resolve_effective_phase_dict / display_workflow_summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestIsUserSpecified:
+    def test_absent_key_is_not_user_specified(self):
+        assert _is_user_specified({}, "mace_kwargs.max_num_epochs") is False
+
+    def test_present_nested_key_is_user_specified(self):
+        raw = {"mace_kwargs": {"max_num_epochs": 40}}
+        assert _is_user_specified(raw, "mace_kwargs.max_num_epochs") is True
+
+    def test_sibling_key_not_present_is_not_user_specified(self):
+        raw = {"mace_kwargs": {"batch_size": 8}}
+        assert _is_user_specified(raw, "mace_kwargs.max_num_epochs") is False
+
+    def test_whole_subdict_user_supplied_marks_every_key_beneath(self):
+        # get_qe_input_data's shallow per-section merge replaces "system"
+        # wholesale -- any key surviving under it in the effective dict came
+        # entirely from the user, even if they only wrote one of several.
+        raw = {"qe_kwargs": {"system": {"input_dft": "pbe"}}}
+        assert _is_user_specified(raw, "qe_kwargs.system.input_dft") is True
+
+    def test_top_level_key_present(self):
+        assert _is_user_specified({"trainer": "mace"}, "trainer") is True
+
+    def test_top_level_key_absent(self):
+        assert _is_user_specified({}, "trainer") is False
+
+
+@pytest.mark.unit
+class TestResolveEffectivePhaseDict:
+    def test_initialization_merges_defaults_per_namespace(self):
+        phase_dict = {
+            "dimer_kwargs": {"num_dimers_per_combo": 3},
+            "mp_kwargs": {"enabled": False},
+        }
+        effective = _resolve_effective_phase_dict("initialization", phase_dict)
+        assert effective["dimer_kwargs"]["num_dimers_per_combo"] == 3
+        assert effective["dimer_kwargs"]["enabled"] is True  # default, not overridden
+        assert effective["mp_kwargs"]["enabled"] is False
+        assert effective["mp_kwargs"]["max_atom_number"] == 20  # default
+        assert "stretch_compress_targets_kwargs" in effective
+        assert "isolated_atom_kwargs" in effective
+
+    def test_training_merges_mace_defaults_and_e0s_placeholder(self):
+        phase_dict = {"trainer": "mace", "mace_kwargs": {"max_num_epochs": 40}}
+        effective = _resolve_effective_phase_dict("training", phase_dict)
+        mk = effective["mace_kwargs"]
+        assert mk["max_num_epochs"] == 40
+        assert mk["energy_key"] == "REF_energy"  # default
+        assert mk["E0s"] == "<resolved at train time from IsolatedAtom structures>"
+
+    def test_training_e0s_not_placeholder_when_user_sets_it(self):
+        phase_dict = {"trainer": "mace", "mace_kwargs": {"E0s": {"H": -1.0}}}
+        effective = _resolve_effective_phase_dict("training", phase_dict)
+        assert effective["mace_kwargs"]["E0s"] == {"H": -1.0}
+
+    def test_structure_generation_merges_md_defaults_and_desired_number(self):
+        phase_dict = {"generator": "md", "md_kwargs": {"steps": 500}}
+        effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
+        assert effective["md_kwargs"]["steps"] == 500
+        assert effective["md_kwargs"]["temperature"] == 300  # default
+        assert effective["desired_number_of_structures"] == 50  # default
+
+    def test_structure_generation_respects_existing_desired_number(self):
+        phase_dict = {"generator": "md", "desired_number_of_structures": 10}
+        effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
+        assert effective["desired_number_of_structures"] == 10
+
+    def test_structure_generation_ezga_defaults(self):
+        phase_dict = {"generator": "ezga", "ezga_kwargs": {"population_size": 10}}
+        effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
+        ek = effective["ezga_kwargs"]
+        assert ek["population_size"] == 10
+        assert ek["max_generations"] == 2  # default
+
+    def test_high_accuracy_evaluation_merges_qe_defaults(self):
+        phase_dict = {
+            "evaluator": "qe",
+            "qe_kwargs": {"system": {"input_dft": "pbesol"}},
+        }
+        effective = _resolve_effective_phase_dict(
+            "high_accuracy_evaluation", phase_dict
+        )
+        system = effective["qe_kwargs"]["system"]
+        assert system == {"input_dft": "pbesol"}  # shallow replace, matches runtime
+        assert effective["qe_kwargs"]["control"]["calculation"] == "scf"  # default
+
+    def test_high_accuracy_evaluation_merges_vasp_defaults(self):
+        phase_dict = {"evaluator": "vasp", "vasp_kwargs": {"encut": 600}}
+        effective = _resolve_effective_phase_dict(
+            "high_accuracy_evaluation", phase_dict
+        )
+        vk = effective["vasp_kwargs"]
+        assert vk["encut"] == 600
+        assert vk["pp"] == "PBE"  # default
+
+    def test_does_not_mutate_input_phase_dict(self):
+        phase_dict = {"generator": "md", "md_kwargs": {"steps": 500}}
+        _resolve_effective_phase_dict("structure_generation", phase_dict)
+        assert phase_dict == {"generator": "md", "md_kwargs": {"steps": 500}}
+
+    def test_general_merges_committee_uncertainty_kwargs_defaults(self):
+        phase_dict = {
+            "al_workflow": "committee_uncertainty",
+            "elements": ["H"],
+            "committee_uncertainty_kwargs": {"test_ratio": 0.2},
+        }
+        effective = _resolve_effective_phase_dict("general", phase_dict)
+        cuk = effective["committee_uncertainty_kwargs"]
+        assert cuk["test_ratio"] == 0.2
+        assert cuk["number_models_in_committee"] == 3  # default
+        assert cuk["valid_fraction"] == 0.05  # default
+        assert effective["elements"] == ["H"]  # untouched sibling
+
+    def test_general_defaults_al_workflow_to_committee_uncertainty(self):
+        phase_dict = {"elements": ["H"]}
+        effective = _resolve_effective_phase_dict("general", phase_dict)
+        assert "committee_uncertainty_kwargs" in effective
+        assert (
+            effective["committee_uncertainty_kwargs"]["number_models_in_committee"] == 3
+        )
+
+
+@pytest.mark.unit
+class TestDisplayWorkflowSummary:
+    def _capture(self, fn):
+        # setup_logging sets propagate=False on the "alomancy" logger, so
+        # records are captured by attaching a handler directly to it,
+        # rather than via pytest's caplog (see CLAUDE.md's logging note).
+        import logging
+
+        al_logger = logging.getLogger("alomancy")
+        records: list[str] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record.getMessage())
+
+        handler = _Collector()
+        al_logger.addHandler(handler)
+        try:
+            fn()
+        finally:
+            al_logger.removeHandler(handler)
+        return "\n".join(records)
+
+    def test_marks_user_specified_values_and_shows_defaults(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        workflow_jobs_dict["structure_generation"]["md_kwargs"] = {"steps": 500}
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+        summary = self._capture(wf.display_workflow_summary)
+
+        assert "md_kwargs.steps: 500  [user-specified]" in summary
+        # temperature wasn't set by the user -- shown, but unmarked.
+        assert "md_kwargs.temperature: 300\n" in summary + "\n"
+        assert "md_kwargs.temperature: 300  [user-specified]" not in summary
+
+    def test_max_time_never_marked(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        workflow_jobs_dict["training"]["max_time"] = "12:00:00"
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+        summary = self._capture(wf.display_workflow_summary)
+
+        assert "max_time: 12:00:00\n" in summary + "\n"
+        assert "max_time: 12:00:00  [user-specified]" not in summary
+
+    def test_empty_but_present_initialization_still_shown(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """An empty initialization section ("initialization: {}") is a
+        valid, meaningful config now -- every one of its settings defaults
+        to enabled -- so it must still show its resolved defaults, not be
+        silently skipped the way a genuinely absent section is."""
+        monkeypatch.chdir(tmp_path)
+        workflow_jobs_dict["initialization"] = {}
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+        summary = self._capture(wf.display_workflow_summary)
+
+        assert "--- Initialisation (initialization) ---" in summary
+        assert "dimer_kwargs.enabled: True" in summary
+
+    def test_general_block_shown_first_with_defaults_and_markers(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+        summary = self._capture(wf.display_workflow_summary)
+
+        general_pos = summary.index("--- General ---")
+        first_phase_pos = summary.index("--- Initialisation")
+        assert general_pos < first_phase_pos
+        # test_ratio was set by workflow_jobs_dict's fixture -- user-specified.
+        assert (
+            "committee_uncertainty_kwargs.test_ratio: 0.1  [user-specified]" in summary
+        )
+        # number_models_in_committee was also set by the fixture.
+        assert "committee_uncertainty_kwargs.number_models_in_committee:" in summary
+        # grouped_splits wasn't set by the user -- shown, but unmarked.
+        assert "committee_uncertainty_kwargs.grouped_splits: False\n" in summary + "\n"
+        assert (
+            "committee_uncertainty_kwargs.grouped_splits: False  [user-specified]"
+            not in summary
+        )
+        assert "elements: ['H']  [user-specified]" in summary
+
+
+@pytest.mark.unit
+class TestFlattenSettingsDepth:
+    def test_flattens_three_levels_deep(self):
+        d = {"a": {"b": {"c": 1}}}
+        assert _flatten_settings(d) == [("a.b.c", 1)]

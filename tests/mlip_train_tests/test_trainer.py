@@ -287,14 +287,7 @@ class TestTrain:
             mock_calc_cls.return_value = MagicMock()
             # A real, empty argparse.Namespace -- not a MagicMock -- so
             # hasattr()/getattr() on `args` behave like real argparse
-            # (unset attributes genuinely don't exist) regardless of
-            # whether some other test file's module-level
-            # sys.modules.setdefault("mace", MagicMock()) has already run
-            # in this pytest session (a real, session-wide ordering hazard:
-            # whichever test file is collected first determines whether
-            # `mace` resolves to the real package or a permanent mock for
-            # every test after it -- this makes TestTrain's own tests
-            # independent of that).
+            # (unset attributes genuinely don't exist).
             mock_tools.build_default_arg_parser.return_value.parse_args.return_value = (
                 argparse.Namespace()
             )

@@ -19,15 +19,27 @@ from alomancy.utils.seed_selection import select_diverse_seeds
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS = 10
+
 # ALomancy's own defaults for the modular structure_generator entry point
 # (generate(), below) -- deliberately different from run_md's own built-in
 # defaults (steps=100), which are far too short for real production MD.
+# Mirrors md_kwargs' actual runtime shape (including the two nested keys
+# generate() pops out before spreading the rest onto run_md's own kwargs)
+# so it can also be used, as-is, to display the fully-resolved effective
+# config (see committee_uncertainty_workflow.py's display_workflow_summary).
 _MD_KWARGS_DEFAULTS: dict[str, Any] = {
     "steps": 20000,
     "temperature": 300,
     "timestep_fs": 0.5,
+    "trainer": "mace",
+    "trainer_config": {},
+    "structure_selection_kwargs": {
+        "max_number_of_concurrent_jobs": _DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS,
+        "enforce_chemical_diversity": False,
+        "seed": 803,
+    },
 }
-_DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS = 10
 
 
 def run_md(
@@ -501,12 +513,24 @@ def generate(
 
     md_kwargs = dict(config.get("md_kwargs", {}))
     selection_kwargs = md_kwargs.pop("structure_selection_kwargs", {})
-    trainer = md_kwargs.pop("trainer", "mace")
-    trainer_config = md_kwargs.pop("trainer_config", {})
-    # ALomancy's own preferred defaults, not run_md's (its own steps=100
-    # default is far too short for real production MD) -- merged with user
-    # overrides, same pattern as trainer.py's mace_fit_params.
-    md_kwargs = {**_MD_KWARGS_DEFAULTS, **md_kwargs}
+    trainer = md_kwargs.pop("trainer", _MD_KWARGS_DEFAULTS["trainer"])
+    trainer_config = md_kwargs.pop(
+        "trainer_config", _MD_KWARGS_DEFAULTS["trainer_config"]
+    )
+    # Only run_md's own flat kwargs (steps, temperature, ...) get
+    # ALomancy's defaults merged in here (deliberately different from
+    # run_md's own steps=100 default, far too short for real production
+    # MD) -- structure_selection_kwargs/trainer/trainer_config above
+    # already have their own dedicated defaults, resolved separately, and
+    # must not leak back in via this merge: **md_kwargs is spread after
+    # the explicit "trainer"/"trainer_config" function_kwargs below, so a
+    # leaked-back default would silently clobber an explicit user value.
+    _run_md_kwargs_defaults = {
+        k: v
+        for k, v in _MD_KWARGS_DEFAULTS.items()
+        if k not in ("structure_selection_kwargs", "trainer", "trainer_config")
+    }
+    md_kwargs = {**_run_md_kwargs_defaults, **md_kwargs}
     selected = select_diverse_seeds(
         base_name=base_name,
         job_name=name,

@@ -1,18 +1,20 @@
-"""Minimal single-element (Carbon) run using the new CommitteeUncertaintyWorkflow
+"""Minimal single-element (Carbon) run using the CommitteeUncertaintyWorkflow
 skeleton, dispatched via build_workflow() + the shared module registry --
 see src/alomancy/core/committee_uncertainty_workflow.py.
 
-Unlike the old examples/basic_use/basic_use.py (which instantiates
-ActiveLearningStandardMACE directly), build_workflow() reads
-config["workflow"]["al_workflow"] to pick the workflow class, and that
-class in turn resolves its trainer/structure-generator/DFT-evaluator/
-initialiser from config via registry.resolve(...) rather than Python
-subclassing.
+build_workflow() reads config["general"]["al_workflow"] to pick the
+workflow class, and that class in turn resolves its trainer/structure-
+generator/DFT-evaluator/initialiser from config via registry.resolve(...)
+rather than Python subclassing -- there is no other workflow class or
+config schema in this codebase (examples/basic_use/ and examples/ezga_use/
+use the same build_workflow() entry point, just with more elaborate
+configs).
 
 initial_train_file_path/initial_test_file_path below point at files that
 don't exist yet -- that's expected for a first run: the skeleton falls
-through to the DB-driven path (initialization.creation_kwargs plus
-workflow.elements) and generates + DFT-evaluates a bootstrap dataset
+through to the DB-driven path (initialization's own structure-type
+settings, e.g. dimer_kwargs/amorphous_kwargs/mp_kwargs, plus
+general.elements) and generates + DFT-evaluates a bootstrap dataset
 itself. Point them at existing xyz files instead to skip that and start
 straight from a pre-built training set.
 """

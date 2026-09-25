@@ -39,14 +39,12 @@ def _atoms(n=2):
 
 @pytest.mark.unit
 class TestComputeNeeds:
-    def test_reads_targets_from_creation_kwargs(self):
+    def test_reads_targets_from_structure_type_namespaces(self):
         db = _mock_db({})
         config = {
-            "creation_kwargs": {
-                "dimer_kwargs": {"num_dimers_per_combo": 3},
-                "trimer_kwargs": {"num_trimers_per_combo": 2},
-                "amorphous_kwargs": {"num_amorphous": 10},
-            }
+            "dimer_kwargs": {"num_dimers_per_combo": 3},
+            "trimer_kwargs": {"num_trimers_per_combo": 2},
+            "amorphous_kwargs": {"num_amorphous": 10},
         }
         needs = compute_needs(db, config, ["H", "O"])
         assert needs["isolated_atoms"] == ["H", "O"]
@@ -54,8 +52,7 @@ class TestComputeNeeds:
 
     def test_uses_defaults_when_not_specified(self):
         db = _mock_db({})
-        config = {"creation_kwargs": {}}
-        needs = compute_needs(db, config, ["H"])
+        needs = compute_needs(db, {}, ["H"])
         # Defaults match compute_initialization_needs' own defaults, applied
         # here since config doesn't override them.
         assert needs["amorphous_override"] == 100
@@ -67,7 +64,7 @@ class TestComputeNeeds:
                 "init_amorphous": {"H100": 100},
             }
         )
-        config = {"creation_kwargs": {"amorphous_kwargs": {"num_amorphous": 100}}}
+        config = {"amorphous_kwargs": {"num_amorphous": 100}}
         needs = compute_needs(db, config, ["H"])
         assert needs["isolated_atoms"] == []
         assert needs["amorphous_override"] == 0
@@ -75,11 +72,9 @@ class TestComputeNeeds:
     def test_disabled_sub_tasks_need_nothing_regardless_of_configured_count(self):
         db = _mock_db({})
         config = {
-            "creation_kwargs": {
-                "dimer_kwargs": {"enabled": False, "num_dimers_per_combo": 5},
-                "trimer_kwargs": {"enabled": False, "num_trimers_per_combo": 5},
-                "amorphous_kwargs": {"enabled": False, "num_amorphous": 100},
-            }
+            "dimer_kwargs": {"enabled": False, "num_dimers_per_combo": 5},
+            "trimer_kwargs": {"enabled": False, "num_trimers_per_combo": 5},
+            "amorphous_kwargs": {"enabled": False, "num_amorphous": 100},
         }
         needs = compute_needs(db, config, ["H", "O"])
         assert needs["dimer_override"] == {}
@@ -113,10 +108,8 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestGenerate:
-    def _config(self, **creation_overrides):
-        creation_kwargs: dict = {}
-        creation_kwargs.update(creation_overrides)
-        return {"creation_kwargs": creation_kwargs}
+    def _config(self, **overrides):
+        return dict(overrides)
 
     def test_full_generation_when_no_needs_given(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

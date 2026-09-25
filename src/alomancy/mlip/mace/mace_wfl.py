@@ -190,6 +190,41 @@ def _save_mace_eval_predictions(
     save_evaluation(Path.cwd(), model_path, split_results)
 
 
+def read_mace_eval_predictions(fit_dir: Path) -> dict[int, dict]:
+    """Read per-structure trainer predictions from train_pred.xyz / test_pred.xyz.
+
+    These files are written by _save_mace_eval_predictions above on the
+    remote GPU node immediately after training, so predictions are
+    available locally without re-running inference. Returns
+    {global_db_id: {"energy": float, "forces": list}} or empty dict.
+
+    Relocated from the now-removed standard_active_learning.py (originally
+    private, _read_mace_eval_predictions) -- committee_uncertainty_workflow.
+    py is its only remaining caller; living next to the function that
+    writes these files is the natural home.
+    """
+    preds: dict[int, dict] = {}
+    for tag in ("train", "test"):
+        xyz = fit_dir / f"{tag}_pred.xyz"
+        if not xyz.exists():
+            continue
+        try:
+            atoms_list = list(read(xyz, ":", format="extxyz"))
+        except Exception as exc:
+            logger.warning("Failed to read %s: %s", xyz, exc)
+            continue
+        for atoms in atoms_list:
+            gid = atoms.info.get("global_db_id")
+            if gid is None or "model_energy" not in atoms.info:
+                continue
+            forces = atoms.arrays.get("model_forces")
+            preds[int(gid)] = {
+                "energy": float(atoms.info["model_energy"]),
+                "forces": forces.tolist() if forces is not None else [],
+            }
+    return preds
+
+
 def _remove_checkpoints_dir_if_model_exists(
     model_path: Path, checkpoints_dir: Path, location: str = ""
 ) -> None:

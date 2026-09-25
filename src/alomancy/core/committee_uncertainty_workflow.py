@@ -1,13 +1,12 @@
 """CommitteeUncertaintyWorkflow: the concrete AL skeleton for the modular
 architecture (see TODO.md's Refactor section / the associated plan).
 
-Replaces the abstract BaseActiveLearningWorkflow + its ActiveLearningStandardMACE
-subclass (both still in place, unchanged, and still what production runs
-use until this skeleton is explicitly cut over to). Subclassing goes away
-entirely: this is one concrete class that resolves its trainer/structure
-generator/DFT evaluator/initialiser from config via the shared registry,
-instead of a different Python subclass per MACE+QE+MD-vs-MACE+VASP+EZGA
-combination.
+Replaced the abstract BaseActiveLearningWorkflow + its ActiveLearningStandardMACE
+subclass (both fully removed as of the 1.0 release -- this is now the only
+workflow implementation). Subclassing is gone entirely: this is one
+concrete class that resolves its trainer/structure generator/DFT
+evaluator/initialiser from config via the shared registry, instead of a
+different Python subclass per MACE+QE+MD-vs-MACE+VASP+EZGA combination.
 
 Owns:
 - The shared submit_n-driven committee training loop (N calls to the
@@ -28,23 +27,35 @@ Owns:
   AL-loop-generated structures identically.
 
 Config schema (breaking, see the plan's "Config schema changes" section):
-split-building parameters that used to live in `initialization`/
-`mlip_committee` now live in `workflow` (target_config_types, test_ratio,
-grouped_splits, valid_fraction, valid_config_types, grouped_validation),
-alongside the existing `train_only`/`fixed_test` flags and the new
-`al_workflow` key. `size_of_committee` also moves to `workflow` --
-committee-ness is a skeleton concept, not something a single-model
-skeleton would have. `mlip_committee` is renamed `training` (usable by a
-future non-committee skeleton too) and gains a `trainer` key (defaults to
-"mace" if absent, for configs written before this existed).
+a new top-level `general` section (renamed from an earlier `workflow`)
+holds `al_workflow` (the dispatch key selecting which skeleton class
+build_workflow() returns -- currently only "committee_uncertainty" is
+registered) and `elements` (see below) directly, plus a nested
+`committee_uncertainty_kwargs` dict for everything specific to *this*
+skeleton (`number_models_in_committee` -- renamed from `size_of_
+committee`, since committee-ness is a skeleton concept, not something a
+single-model skeleton would have -- `target_config_types`, `test_ratio`,
+`grouped_splits`, `valid_fraction`, `valid_config_types`,
+`grouped_validation`, `train_only`, `fixed_test`): matching the
+`<dispatch_value>_kwargs` convention used everywhere else in this schema
+(`mace_kwargs`, `md_kwargs`, ...), since "committee_uncertainty" is itself
+a dispatch value, just like "mace"/"md"/"qe" are for their own categories.
+A future `FurthestPointSamplingWorkflow` would add its own
+`furthest_point_sampling_kwargs` sibling here rather than reusing this
+one. `mlip_committee` is renamed `training` (usable by a future
+non-committee skeleton too) and gains a `trainer` key (defaults to "mace"
+if absent, for configs written before this existed).
 
-`workflow.elements` (list of atomic symbols, e.g. `["C", "O"]` -- not
+`general.elements` (list of atomic symbols, e.g. `["C", "O"]` -- not
 atomic numbers) is the single shared source of element identity across
-modules: passed as an explicit `elements` kwarg to the initialiser
-(replacing `initialization.creation_kwargs.elements`) and to the trainer
-(used there for an E0s-coverage safety-net check, since MACE itself
-auto-detects the element set from the training data but cannot infer E0s,
-a physical reference value).
+modules -- a direct sibling of `al_workflow`, not nested inside
+`committee_uncertainty_kwargs`, since it's genuinely universal (any future
+AL workflow would need it too, not just this one): passed as an explicit
+`elements` kwarg to the initialiser (replacing the old `initialization.
+creation_kwargs.elements`) and to the trainer (used there for an
+E0s-coverage safety-net check, since MACE itself auto-detects the element
+set from the training data but cannot infer E0s, a physical reference
+value).
 
 `structure_generation.method` is renamed `generator`, and
 `high_accuracy_evaluation.calculator` is renamed `evaluator` -- matching
@@ -117,14 +128,18 @@ unchanged) already default to PBE.
 has no dispatch key (trainer/generator/evaluator) because it isn't a
 choice between interchangeable backends -- it's a single method that
 always runs every structure-generating sub-task it's configured for, to
-differing degrees. So its `creation_kwargs` is namespaced per *structure
-type* instead: `isolated_atom_kwargs`, `dimer_kwargs`, `trimer_kwargs`,
-`amorphous_kwargs`, `mp_kwargs`, `stretch_compress_targets_kwargs` --
-each with its own `enabled` flag (default `True`), so a sub-task can be
-toggled off without zeroing out its count field. `stretch_compress_
-targets_kwargs` (`deform_xyz`, `max_deformation`, `num_stretch_compress_
-per_mp`) is a top-level sibling, not nested inside `mp_kwargs`, despite
-`create_initialization_atoms_list` (old, shared) only ever deriving those
+differing degrees. So its settings are namespaced per *structure type*
+directly under `initialization` (no `creation_kwargs` wrapper -- nothing
+else in this section needed the extra nesting level, unlike
+training/structure_generation/high_accuracy_evaluation, which each hold
+more than one kind of setting): `isolated_atom_kwargs`, `dimer_kwargs`,
+`trimer_kwargs`, `amorphous_kwargs`, `mp_kwargs`,
+`stretch_compress_targets_kwargs` -- each with its own `enabled` flag
+(default `True`), so a sub-task can be toggled off without zeroing out
+its count field. `stretch_compress_targets_kwargs` (`deform_xyz`,
+`max_deformation`, `num_stretch_compress_per_mp`) is a sibling of
+`mp_kwargs`, not nested inside it, despite `create_initialization_atoms_
+list` (old, shared) only ever deriving those
 variants from MP-fetched structures -- its own `enabled=True` still
 produces nothing whenever `mp_kwargs.enabled` is `False`, a hard
 constraint of that shared function this module doesn't hide or override.
@@ -153,7 +168,6 @@ from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.configs.remote_info import get_remote_info
-from alomancy.core.standard_active_learning import _read_mace_eval_predictions
 from alomancy.database.global_database import (
     _DEFAULT_DEDUP_CONFIG_TYPES,
     GlobalDatabase,
@@ -163,6 +177,7 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 )
 from alomancy.mlip.evaluation import check_quality_gate, read_evaluation
 from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
+from alomancy.mlip.mace.mace_wfl import read_mace_eval_predictions
 from alomancy.registry import resolve
 from alomancy.remote_submission.executor import acquire_local_expyre_lock, submit_n
 from alomancy.structure_generation.find_high_sd_structures import (
@@ -222,6 +237,24 @@ _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 # future version started to).
 _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 50
 
+# general.committee_uncertainty_kwargs' own defaults -- matching the
+# <dispatch_value>_kwargs convention used elsewhere (mace_kwargs, md_kwargs,
+# qe_kwargs, ...), since "committee_uncertainty" is itself a dispatch value
+# (general.al_workflow). Keys with no entry here (test_ratio,
+# target_config_types, valid_config_types) stay required -- a silently
+# guessed test/validation split policy is worse than a clear KeyError.
+# number_models_in_committee defaults to 3 (the minimum for a usable force
+# std-dev); the other four already had these exact fallback values before
+# they lived in a dedicated defaults dict.
+_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS: dict[str, Any] = {
+    "number_models_in_committee": 3,
+    "valid_fraction": 0.05,
+    "grouped_splits": False,
+    "grouped_validation": False,
+    "train_only": False,
+    "fixed_test": False,
+}
+
 
 def _needs_anything(needs: dict) -> bool:
     return bool(
@@ -234,7 +267,7 @@ def _needs_anything(needs: dict) -> bool:
 
 
 def _flatten_settings(
-    d: dict, prefix: str = "", max_depth: int = 2
+    d: dict, prefix: str = "", max_depth: int = 3
 ) -> list[tuple[str, object]]:
     items: list[tuple[str, object]] = []
     for key, value in d.items():
@@ -248,6 +281,100 @@ def _flatten_settings(
         else:
             items.append((full_key, value))
     return items
+
+
+def _is_user_specified(raw_phase_dict: dict, dotted_key: str) -> bool:
+    """Whether dotted_key (e.g. "mace_kwargs.max_num_epochs", as produced
+    by _flatten_settings) was present verbatim in raw_phase_dict -- the
+    config exactly as the user wrote it, before _resolve_effective_phase_
+    dict merged in any per-module defaults for display. A dict-valued
+    override (e.g. setting qe_kwargs.system at all) makes every key
+    currently under it count as user-specified too, since that's exactly
+    what a shallow merge like get_qe_input_data's actually does at
+    runtime: replace the whole sub-dict, not merge individual keys within
+    it -- there's no "which of these particular keys did the user type"
+    once that's happened.
+    """
+    node: Any = raw_phase_dict
+    for part in dotted_key.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            # Not a dict any more -> already inside a dict the user
+            # supplied wholesale (see docstring), so every key beneath it
+            # counts as user-specified. Still a dict but missing this key
+            # -> genuinely not user-specified.
+            return not isinstance(node, dict)
+    return True
+
+
+def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
+    """Return phase_dict with its <method>_kwargs (or, for
+    "initialization", each of its structure-type namespaces -- see
+    initialiser_interface.py's module docstring; or, for "general",
+    committee_uncertainty_kwargs -- see this module's own docstring)
+    replaced by the fully defaults-merged version the corresponding module
+    actually uses at runtime -- everything else in phase_dict passes
+    through unchanged.
+
+    Display-only (used by display_workflow_summary below): never mutates
+    self.jobs_dict or feeds any module's real runtime call. Each module
+    already independently merges its own defaults with its own user
+    overrides at the point it actually reads config (trainer.py's
+    mace_kwargs, md_wfl.py's md_kwargs, initialiser_interface.py's
+    isolated_atom_kwargs/dimer_kwargs/..., ...) -- this reads each module's
+    defaults back out via the shared registry (resolve(category, name).
+    kwargs_defaults, or .resolve_effective_kwargs(...) for the two DFT
+    evaluators, whose own merge is shallow-per-section rather than a flat
+    dict) purely to mirror that same merge for the summary, so the two
+    can't silently diverge beyond what's noted below.
+
+    Known gaps, not attempted here: hpc/max_time defaults (see
+    config_dictionaries.py) are resolved before the workflow object even
+    exists, mutating jobs_dict in place -- by the time this runs, there's
+    no way to tell whether a value already in jobs_dict was user-written
+    or auto-filled, so those two keys are shown plain, never marked either
+    way. structure_generation.structure_selection_kwargs (the top-level,
+    generator-agnostic one feeding filter_eligible_structures, not
+    generator_kwargs' own nested copy) is shown as given, un-defaulted.
+    """
+    effective = dict(phase_dict)
+    if phase == "general":
+        al_workflow = effective.get("al_workflow", "committee_uncertainty")
+        if al_workflow == "committee_uncertainty":
+            kwargs_key = f"{al_workflow}_kwargs"
+            effective[kwargs_key] = {
+                **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+                **effective.get(kwargs_key, {}),
+            }
+    elif phase == "initialization":
+        namespace_defaults = resolve("initialiser", "default").kwargs_defaults
+        for namespace, defaults in namespace_defaults.items():
+            effective[namespace] = {**defaults, **effective.get(namespace, {})}
+    elif phase == "training":
+        trainer_name = effective.get("trainer", "mace")
+        kwargs_key = f"{trainer_name}_kwargs"
+        defaults = resolve("mlip_trainer", trainer_name).kwargs_defaults
+        merged = {**defaults, **effective.get(kwargs_key, {})}
+        if trainer_name == "mace" and "E0s" not in merged:
+            merged["E0s"] = "<resolved at train time from IsolatedAtom structures>"
+        effective[kwargs_key] = merged
+    elif phase == "structure_generation":
+        generator = effective.get("generator", "md")
+        kwargs_key = f"{generator}_kwargs"
+        defaults = resolve("structure_generator", generator).kwargs_defaults
+        effective[kwargs_key] = {**defaults, **effective.get(kwargs_key, {})}
+        effective.setdefault(
+            "desired_number_of_structures", _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES
+        )
+    elif phase == "high_accuracy_evaluation":
+        evaluator = effective.get("evaluator", "qe")
+        kwargs_key = f"{evaluator}_kwargs"
+        entry = resolve("dft_evaluator", evaluator)
+        effective[kwargs_key] = entry.resolve_effective_kwargs(
+            effective.get(kwargs_key, {})
+        )
+    return effective
 
 
 def _collect_hpc_profiles(jobs_dict: dict) -> dict[str, dict]:
@@ -429,15 +556,50 @@ class CommitteeUncertaintyWorkflow:
             f"ALomancy Workflow Summary (v{__version__})",
             "=" * 70,
         ]
+        general_dict = self.jobs_dict.get("general")
+        if general_dict is not None:
+            lines.append("")
+            lines.append("--- General ---")
+            effective_general = _resolve_effective_phase_dict("general", general_dict)
+            for key, value in _flatten_settings(effective_general):
+                marker = (
+                    "  [user-specified]"
+                    if _is_user_specified(general_dict, key)
+                    else ""
+                )
+                lines.append(f"  {key}: {value}{marker}")
+
         hpc_usage: dict[str, dict] = {}
         for phase, heading in _PHASE_LABELS.items():
             phase_dict = self.jobs_dict.get(phase)
-            if not phase_dict:
+            # Not `if not phase_dict`: an empty-but-present section (e.g.
+            # "initialization: {}", now valid -- every one of its settings
+            # defaults to enabled) must still show its resolved defaults,
+            # not be silently skipped. Only a genuinely absent section key
+            # (phase_dict is None) is skipped here.
+            if phase_dict is None:
                 continue
             lines.append("")
             lines.append(f"--- {heading} ({phase_dict.get('name', phase)}) ---")
-            for key, value in _flatten_settings(phase_dict):
-                lines.append(f"  {key}: {value}")
+            # Shows the fully-resolved effective config (per-module
+            # defaults merged in, not just what's in self.jobs_dict) --
+            # see _resolve_effective_phase_dict's docstring for exactly
+            # what is and isn't covered. Values the user actually wrote
+            # are marked explicitly; unmarked lines are values filled in
+            # purely from a module's own defaults.
+            effective_phase_dict = _resolve_effective_phase_dict(phase, phase_dict)
+            for key, value in _flatten_settings(effective_phase_dict):
+                # max_time is never marked either way (see
+                # _resolve_effective_phase_dict's docstring): it's already
+                # been defaulted-or-not by config_dictionaries.py, in
+                # place, before this workflow object even existed, so
+                # there's no way to tell here which one happened.
+                marker = (
+                    "  [user-specified]"
+                    if key != "max_time" and _is_user_specified(phase_dict, key)
+                    else ""
+                )
+                lines.append(f"  {key}: {value}{marker}")
             hpc = phase_dict.get("hpc")
             if hpc:
                 name = (
@@ -569,7 +731,11 @@ class CommitteeUncertaintyWorkflow:
         work_dir = Path("results", base_name)
         work_dir.mkdir(exist_ok=True, parents=True)
         init_config = self.jobs_dict["initialization"]
-        workflow_config = self.jobs_dict.get("workflow", {})
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
 
         if (
             self.initial_train_file_path.exists()
@@ -595,10 +761,10 @@ class CommitteeUncertaintyWorkflow:
             return train_xyzs, test_xyzs
 
         initialiser_entry = resolve("initialiser", "default")
-        elements = workflow_config.get("elements")
+        elements = general_config.get("elements")
         if not elements:
             raise ValueError(
-                "workflow.elements is required (list of atomic symbols, e.g. "
+                "general.elements is required (list of atomic symbols, e.g. "
                 '["C", "O"]).'
             )
 
@@ -698,12 +864,12 @@ class CommitteeUncertaintyWorkflow:
 
         all_evaluated = self.db.get_all_as_atoms()
 
-        if workflow_config.get("grouped_splits", False):
+        if committee_kwargs["grouped_splits"]:
             train_xyzs, test_xyzs = grouped_split(
-                all_evaluated, workflow_config["test_ratio"], self.seed
+                all_evaluated, committee_kwargs["test_ratio"], self.seed
             )
         else:
-            target_config_types = set(workflow_config["target_config_types"])
+            target_config_types = set(committee_kwargs["target_config_types"])
             eligible_test_structures: list[Atoms] = []
             always_train_structures: list[Atoms] = []
             for atoms in all_evaluated:
@@ -723,7 +889,7 @@ class CommitteeUncertaintyWorkflow:
             else:
                 eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
                     eligible_test_structures,
-                    workflow_config["test_ratio"],
+                    committee_kwargs["test_ratio"],
                     self.seed,
                 )
                 train_config_types = {
@@ -764,9 +930,13 @@ class CommitteeUncertaintyWorkflow:
 
     def _train_mlip(self, base_name: str) -> pd.DataFrame:
         training_config = self.jobs_dict["training"]
-        workflow_config = self.jobs_dict.get("workflow", {})
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
         name = _TRAINING_NAME
-        committee_size = workflow_config["size_of_committee"]
+        committee_size = committee_kwargs["number_models_in_committee"]
         hpc = training_config["hpc"]
         max_time = training_config["max_time"]
         trainer_name = training_config.get("trainer", "mace")
@@ -782,13 +952,13 @@ class CommitteeUncertaintyWorkflow:
         all_training = list(read(workdir / "train_set.xyz", ":", format="extxyz"))
         test_path = workdir / "test_set.xyz"
 
-        valid_config_types = workflow_config.get(
-            "valid_config_types", workflow_config.get("target_config_types", [])
+        valid_config_types = committee_kwargs.get(
+            "valid_config_types", committee_kwargs.get("target_config_types", [])
         )
         acceptable_configs = [*valid_config_types, "high_sd"]
-        valid_fraction = workflow_config.get("valid_fraction", 0.05)
+        valid_fraction = committee_kwargs["valid_fraction"]
         rng = np.random.default_rng(self.seed)
-        if workflow_config.get("grouped_validation", False):
+        if committee_kwargs["grouped_validation"]:
             new_train_set, valid_set = grouped_split(
                 all_training, valid_fraction, self.seed
             )
@@ -860,7 +1030,7 @@ class CommitteeUncertaintyWorkflow:
                         "fit_idx": fit_idx,
                         "hpc": hpc,
                         "max_time": max_time,
-                        "elements": workflow_config.get("elements"),
+                        "elements": general_config.get("elements"),
                         "isolated_atom_e0s": isolated_atom_e0s,
                     },
                     "output_files": [str(workdir / name / f"fit_{fit_idx}")],
@@ -958,7 +1128,7 @@ class CommitteeUncertaintyWorkflow:
         loop_idx = int(base_name.rsplit("_", 1)[-1]) if "al_loop_" in base_name else 0
         for fit_idx, (_model_path, compiled_model_path, _metrics) in results.items():
             fit_dir = Path("results", base_name, name, f"fit_{fit_idx}")
-            preds = _read_mace_eval_predictions(fit_dir)
+            preds = read_mace_eval_predictions(fit_dir)
             if preds:
                 self.db.store_model_predictions(loop_idx, fit_idx, preds)
             if compiled_model_path is not None:
@@ -1073,15 +1243,21 @@ class CommitteeUncertaintyWorkflow:
         )
 
         training_config = self.jobs_dict["training"]
-        workflow_config = self.jobs_dict.get("workflow", {})
-        committee_size = workflow_config["size_of_committee"]
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
+        committee_size = committee_kwargs["number_models_in_committee"]
         best_fit_idx, best_model_path = select_best_committee_model(
             base_name,
             # select_best_committee_model (mlip/mace/get_mace_eval_info.py,
             # unchanged/untouched) reads committee["size_of_committee"] and
-            # committee["name"] -- size_of_committee now lives in workflow
-            # (not training) and name is hardcoded (not config) for this
-            # skeleton, so both are merged in here.
+            # committee["name"] -- that setting now lives in general.
+            # committee_uncertainty_kwargs.number_models_in_committee (not
+            # training) and name is hardcoded (not config) for this
+            # skeleton, so both are merged in here under the legacy key
+            # name that function still expects.
             {
                 **training_config,
                 "size_of_committee": committee_size,
@@ -1163,7 +1339,11 @@ class CommitteeUncertaintyWorkflow:
         self.pre_run_checks()
 
         last_complete = self._last_complete_loop()
-        workflow_config = self.jobs_dict.get("workflow", {})
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
 
         if last_complete >= 0:
             train_xyzs = self.db.get_train_atoms()
@@ -1199,7 +1379,7 @@ class CommitteeUncertaintyWorkflow:
         if self.remove_redundancy:
             remove_redundancy_from_partition(
                 self.db,
-                config_list=workflow_config["target_config_types"] + ["high_sd"],
+                config_list=committee_kwargs["target_config_types"] + ["high_sd"],
             )
         if self.high_force_threshold is not None:
             remove_high_force_structures_from_partition(
@@ -1280,7 +1460,7 @@ class CommitteeUncertaintyWorkflow:
                     loop_idx=loop,
                 )
 
-            if workflow_config.get("train_only", False):
+            if committee_kwargs["train_only"]:
                 logger.info(
                     "Initial committee training complete; train_only stops before generation."
                 )
@@ -1318,7 +1498,7 @@ class CommitteeUncertaintyWorkflow:
                 extra_metadata={"al_loop": loop},
             )
 
-            if workflow_config.get("fixed_test", False):
+            if committee_kwargs["fixed_test"]:
                 archive = self.db.get_all_as_atoms()
                 known = {geometry_digest(a) for a in archive}
                 held_groups = {
@@ -1342,7 +1522,7 @@ class CommitteeUncertaintyWorkflow:
             else:
                 new_train_data, new_test_data = split_atoms_list_into_test_and_train(
                     new_training_data,
-                    test_fraction=workflow_config["test_ratio"],
+                    test_fraction=committee_kwargs["test_ratio"],
                     seed=self.seed,
                 )
 
@@ -1352,7 +1532,7 @@ class CommitteeUncertaintyWorkflow:
             if self.remove_redundancy:
                 remove_redundancy_from_partition(
                     self.db,
-                    config_list=workflow_config["target_config_types"] + ["high_sd"],
+                    config_list=committee_kwargs["target_config_types"] + ["high_sd"],
                 )
             if self.high_force_threshold is not None:
                 remove_high_force_structures_from_partition(
@@ -1375,16 +1555,15 @@ class CommitteeUncertaintyWorkflow:
 
 
 def build_workflow(jobs_dict: dict, **init_kwargs: Any) -> CommitteeUncertaintyWorkflow:
-    """Factory dispatching on workflow.al_workflow (inside the existing
-    `workflow` config section). Currently the only registered al_workflow
-    is "committee_uncertainty"; a future FurthestPointSamplingWorkflow
-    would add its own name here."""
-    al_workflow = jobs_dict.get("workflow", {}).get(
+    """Factory dispatching on general.al_workflow. Currently the only
+    registered al_workflow is "committee_uncertainty"; a future
+    FurthestPointSamplingWorkflow would add its own name here."""
+    al_workflow = jobs_dict.get("general", {}).get(
         "al_workflow", "committee_uncertainty"
     )
     if al_workflow != "committee_uncertainty":
         raise ValueError(
-            f"Unknown workflow.al_workflow {al_workflow!r}. "
+            f"Unknown general.al_workflow {al_workflow!r}. "
             "Available: ['committee_uncertainty']"
         )
     return CommitteeUncertaintyWorkflow(jobs_dict=jobs_dict, **init_kwargs)

@@ -94,6 +94,7 @@ register(
     get_calculator="get_calculator",
     output_paths="output_paths",
     read_existing_result="read_existing_result",
+    kwargs_defaults="_MACE_KWARGS_DEFAULTS",
 )
 
 register(
@@ -102,6 +103,7 @@ register(
     "alomancy.high_accuracy_evaluation.dft.run_qe",
     sp="run_sp_qe",
     go="run_go_qe",
+    resolve_effective_kwargs="resolve_effective_kwargs",
 )
 register(
     "dft_evaluator",
@@ -109,6 +111,7 @@ register(
     "alomancy.high_accuracy_evaluation.dft.run_vasp",
     sp="run_sp_vasp",
     go="run_go_vasp",
+    resolve_effective_kwargs="resolve_effective_kwargs",
 )
 
 register(
@@ -118,6 +121,7 @@ register(
     generate="generate",
     output_paths="output_paths",
     read_existing_result="read_existing_result",
+    kwargs_defaults="_MD_KWARGS_DEFAULTS",
 )
 register(
     "structure_generator",
@@ -126,6 +130,7 @@ register(
     generate="generate",
     output_paths="output_paths",
     read_existing_result="read_existing_result",
+    kwargs_defaults="_EZGA_KWARGS_DEFAULTS",
 )
 
 register(
@@ -136,4 +141,5 @@ register(
     generate="generate",
     output_paths="output_paths",
     read_existing_result="read_existing_result",
+    kwargs_defaults="_CREATION_KWARGS_DEFAULTS",
 )

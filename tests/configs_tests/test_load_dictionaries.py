@@ -118,6 +118,50 @@ def test_partial_sections_only(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_empty_section_normalized_to_empty_dict_not_none(tmp_path, monkeypatch):
+    """A section written with nothing indented under it (e.g.
+    "initialization:" followed directly by the next top-level key) parses
+    from YAML as None, not {} -- this used to crash section_dict.get("hpc")
+    with AttributeError; every section's own settings are optional now, so
+    a genuinely empty section is valid input, not a config error."""
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(
+        global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "nonexistent.yaml"
+    )
+
+    run_cfg = tmp_path / "config.yaml"
+    run_cfg.write_text("initialization:\ntraining:\n  trainer: mace\n")
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["initialization"] == {}
+    assert result["training"]["trainer"] == "mace"
+
+
+@pytest.mark.unit
+def test_empty_workflow_section_also_normalized(tmp_path, monkeypatch):
+    """Normalization isn't limited to the four HPC-bearing job sections --
+    every top-level key in the loaded YAML gets the same treatment, so e.g.
+    an empty workflow: section doesn't crash downstream .get() calls
+    either, even though load_dictionaries itself never reads workflow."""
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(
+        global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "nonexistent.yaml"
+    )
+
+    run_cfg = tmp_path / "config.yaml"
+    run_cfg.write_text("workflow:\ntraining:\n  trainer: mace\n")
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["workflow"] == {}
+
+
+@pytest.mark.unit
 def test_training_section_hpc_resolved(tmp_path, monkeypatch):
     """The renamed "training" section (mlip_committee's replacement) also
     gets hpc string resolution -- it must be in _JOB_SECTIONS too."""

@@ -47,6 +47,43 @@ _DYNAMIC_EPOCHS_TARGET_SAMPLES = 200_000
 _DYNAMIC_EPOCHS_CAP = 300
 _DYNAMIC_EPOCHS_FLOOR = 20
 
+# Named, reusable defaults for mace_kwargs -- merged with user overrides
+# below, and also used by the skeleton's pre-run config summary
+# (committee_uncertainty_workflow.py's display_workflow_summary) to show
+# the fully-resolved effective config, not just what the user wrote.
+# max_num_epochs: "dynamic" is the *behavioral* default (see train()'s own
+# dynamic-epoch resolution below), not a fixed number -- MACE's own native
+# default (2048) assumes early stopping is separately tuned. E0s has no
+# static default here at all: it's resolved from IsolatedAtom structures
+# already in the GlobalDatabase (see train()'s isolated_atom_e0s param),
+# not a literal this dict could sensibly express.
+_MACE_KWARGS_DEFAULTS: dict[str, Any] = {
+    "energy_key": "REF_energy",
+    "forces_key": "REF_forces",
+    "max_num_epochs": "dynamic",
+    "compute_stress": False,
+    "model": "MACE",
+    "correlation": 3,
+    "device": "cuda",
+    "ema": None,
+    "energy_weight": 1,
+    "forces_weight": 10,
+    "error_table": "PerAtomMAE",
+    "eval_interval": 1,
+    "max_L": 2,
+    "num_channels": 128,
+    "num_interactions": 2,
+    "patience": 30,
+    "r_max": 5.0,
+    "restart_latest": None,
+    "save_cpu": None,
+    "scheduler_patience": 15,
+    "swa": None,
+    "batch_size": 16,
+    "valid_batch_size": 16,
+    "distributed": None,
+}
+
 if (
     importlib.util.find_spec("torch._native") is not None
     and "TRITON_CACHE_DIR" not in os.environ
@@ -248,11 +285,11 @@ def _evaluate_and_save_predictions(
 
 
 def output_paths(
-    config: dict,
+    config: dict,  # noqa: ARG001
     *,
     base_name: str,
     name: str,
-    fit_idx: int,  # noqa: ARG001
+    fit_idx: int,
 ) -> list[Path]:
     """Files that exist once this fit has genuinely completed -- used by the
     skeleton's restart mechanism. The uncompiled model (what every current
@@ -271,11 +308,11 @@ def output_paths(
 
 
 def read_existing_result(
-    config: dict,
+    config: dict,  # noqa: ARG001
     *,
     base_name: str,
     name: str,
-    fit_idx: int,  # noqa: ARG001
+    fit_idx: int,
 ) -> tuple[str, str | None, dict]:
     """Reconstruct this fit's (model_path, compiled_model_path, metrics_dict)
     from real, already-on-disk output for the skeleton's restart mechanism.
@@ -362,17 +399,17 @@ def train(
     element in `elements`, this raises rather than letting MACE either fail
     obscurely or silently train against a wrong/missing reference.
     """
-    mace_kwargs = dict(config.get("mace_kwargs", {}))
-    if "seed" in mace_kwargs:
+    user_mace_kwargs = dict(config.get("mace_kwargs", {}))
+    if "seed" in user_mace_kwargs:
         raise ValueError(
             "mace_kwargs must not set 'seed' -- it is derived and passed "
             "separately (fit_seed)."
         )
-    # Default to this codebase's own standard REF_energy/REF_forces keys
-    # (see CLAUDE.md's "Never use bare 'energy' as an info key" convention)
-    # rather than requiring every config to repeat them explicitly.
-    mace_kwargs.setdefault("energy_key", "REF_energy")
-    mace_kwargs.setdefault("forces_key", "REF_forces")
+    # _MACE_KWARGS_DEFAULTS covers energy_key/forces_key (this codebase's
+    # own standard REF_energy/REF_forces keys -- see CLAUDE.md's "Never use
+    # bare 'energy' as an info key" convention) and everything else MACE
+    # can already infer a sensible default for; user_mace_kwargs overrides.
+    mace_kwargs = {**_MACE_KWARGS_DEFAULTS, **user_mace_kwargs}
 
     if "E0s" not in mace_kwargs:
         if isolated_atom_e0s:

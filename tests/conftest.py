@@ -147,7 +147,6 @@ def minimal_jobs_dict():
         "high_accuracy_evaluation": {
             "name": "high_accuracy_evaluation",
             "max_time": "10m",
-            "max_batch_size": 10,
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
     }

@@ -32,6 +32,11 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
     no ``hpc`` at all (e.g. ``initialization``, which runs locally) gets no
     ``max_time`` default either -- there is nothing for it to bound.
 
+    An empty section (``"initialization:"`` with nothing indented under it)
+    is normalized to ``{}`` rather than left as YAML's ``None`` -- every
+    top-level key in the loaded YAML, not just the four processed here, so
+    e.g. an empty ``workflow:`` section doesn't crash downstream either.
+
     Raises
     ------
     ValueError
@@ -39,6 +44,16 @@ def load_dictionaries(config_path: Path) -> dict[str, Any]:
     """
     with open(config_path) as f:
         jobs_dict: dict[str, Any] = safe_load(f)
+
+    # An empty section (e.g. "initialization:" with nothing indented under
+    # it -- entirely valid now that every section's own settings are
+    # optional/defaulted) parses from YAML as None, not {}. Every section
+    # reader downstream (including this function's own section_dict.get
+    # below) assumes a dict -- normalize once here rather than requiring
+    # every section, in every module, to guard against None individually.
+    for key, value in jobs_dict.items():
+        if value is None:
+            jobs_dict[key] = {}
 
     hpc_config = _load_global_hpc_config()
     for section in _JOB_SECTIONS:

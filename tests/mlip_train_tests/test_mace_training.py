@@ -646,7 +646,8 @@ class TestSaveMaceEvalPredictions:
         """setup_logging sets propagate=False on the root "alomancy" logger
         elsewhere in the process, so pytest's caplog can't reliably see
         these records -- attach a handler directly, matching the pattern in
-        test_base_active_learning.py's test_seed_logs_message."""
+        test_committee_uncertainty_workflow.py's TestDisplayWorkflowSummary.
+        _capture helper."""
         al_logger = logging.getLogger("alomancy")
         al_logger.setLevel(logging.DEBUG)
         records: list[logging.LogRecord] = []

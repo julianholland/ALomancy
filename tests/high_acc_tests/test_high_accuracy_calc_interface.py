@@ -1,10 +1,11 @@
 """Tests for high_accuracy_evaluation/high_accuracy_calc_interface.py --
 the modular AL architecture's DFT-evaluator orchestrator entry point.
 
-Extracted largely as-is from standard_active_learning.py's
-high_accuracy_evaluation method (still covered by
-TestHighAccuracyEvaluationCoverage in test_standard_active_learning.py --
-these tests mirror that coverage against the new free-function interface).
+Originally extracted largely as-is from the now-removed
+standard_active_learning.py's high_accuracy_evaluation method -- these
+tests mirror that coverage (previously TestHighAccuracyEvaluationCoverage
+in the now-deleted test_standard_active_learning.py) against this module's
+free-function interface.
 """
 
 from pathlib import Path

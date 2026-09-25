@@ -1,126 +1,20 @@
-# Minimal single-element (Carbon) example config for the new
-# CommitteeUncertaintyWorkflow skeleton (src/alomancy/core/
-# committee_uncertainty_workflow.py), built via registry.resolve(...)
-# instead of a hardcoded ActiveLearningStandardMACE subclass.
-#
-# Sizes here (committee, epochs, MD steps, structure counts) are kept
-# small on purpose for a quick end-to-end smoke test, not production
-# accuracy -- scale them up once you've confirmed the pipeline runs.
-#
-# hpc: values below are string references, resolved against
-# ~/.alomancy/hpc_config.yaml (see `alomancy add-hpc`) by
-# load_dictionaries(). Replace "my_hpc" with the profile name you set up,
-# or inline a full hpc dict per-section instead (see CLAUDE.md's "HPC
-# string resolution" note) if you'd rather not use the global profile store.
-# max_time is optional on any section below -- if omitted, it defaults to
-# that section's HPC profile's own "default_max_time" (if set in
-# ~/.alomancy/hpc_config.yaml) or "24:00:00" otherwise.
-
-workflow:
+general:
   al_workflow: "committee_uncertainty"
-  # Shared element identity (atomic symbols, not atomic numbers) -- read by
-  # the initialiser (bootstrap structure generation) and the trainer (E0s
-  # coverage check).
   elements: ["C", "S"]
-  # Split-building parameters, plus size_of_committee, live here (not under
-  # initialization/training) for this skeleton -- a future non-committee
-  # skeleton (e.g. single-model furthest-point-sampling) would have no
-  # size_of_committee at all.
-  target_config_types:
-    - "init_MP"
-    
-
+  committee_uncertainty_kwargs:
+    target_config_types:
+      - "init_MP"
 
 initialization:
-  # No "name" here: each section's name is hardcoded to match its own
-  # config key (e.g. this section is always "initialization") rather than
-  # being user-configurable.
-  # No hpc/max_time here: initialization runs entirely in the local driver
-  # process (dimer/trimer/amorphous generation, or a plain Materials
-  # Project network call) -- it never submits a remote job itself. The
-  # structures it produces are DFT-evaluated afterward using
-  # high_accuracy_evaluation's own hpc below.
-  # creation_kwargs is namespaced per structure type (not per backend --
-  # initialization has no dispatch key like trainer/generator/evaluator,
-  # it's a single method that runs every sub-task it's configured for, to
-  # differing degrees). Each nested *_kwargs only holds settings that
-  # sub-task actually reads and has its own "enabled" flag (default true,
-  # so omitted below wherever a sub-task should just run) -- extends
-  # cleanly to future types (e.g. surface_kwargs, rattle_kwargs,
-  # interface_kwargs) without touching the others. stretch_compress_
-  # targets_kwargs (deform_xyz, max_deformation, num_stretch_compress_
-  # per_mp) is one such sibling namespace, omitted here since it would do
-  # nothing anyway while mp_kwargs.enabled is false below -- MP structures
-  # are the only thing stretch/compress variants are ever derived from.
-  creation_kwargs:
-    dimer_kwargs:
-      num_dimers_per_combo: 5
-    trimer_kwargs:
-      num_trimers_per_combo: 3
-    amorphous_kwargs:
-      num_amorphous: 20
-      amorphous_atom_number: 12
-    mp_kwargs:
-      enabled: false  # skip the Materials Project fetch (needs an API key) to keep this example self-contained
-      max_atom_number: 12
 
 training:
-  # Not named "mlip_committee": this section is just "train one model" --
-  # committee-ness (looping this N times) is entirely the skeleton's
-  # business (see workflow.size_of_committee above), so the same section
-  # name works for a future non-committee skeleton too.
   trainer: "mace"  # selects the registered mlip_trainer backend (registry.py)
-  # No mace_kwargs needed here at all. max_num_epochs (a MACE-specific
-  # training control, not something every trainer backend would
-  # necessarily have, hence living inside mace_kwargs rather than at the
-  # top level) already defaults to dynamic resolution when omitted -- not
-  # MACE's own native default (2048), which assumes early stopping is
-  # separately tuned. energy_key/forces_key default to this codebase's
-  # standard REF_energy/REF_forces, and E0s -- a physical reference value
-  # MACE cannot infer on its own -- is defaulted automatically from the
-  # IsolatedAtom structure this example's initialization.creation_kwargs.
-  # isolated_atom_kwargs already generates and DFT-evaluates before
-  # training ever runs. Set mace_kwargs.max_num_epochs/E0s explicitly to
-  # override either of those. Everything else (model, r_max, batch_size,
-  # num_channels, ...) already has a sensible default baked into
-  # mlip/mace/trainer.py too.
-  hpc: "my_hpc"
+  hpc: "raccoon_big"
 
 structure_generation:
-  generator: "md"  # selects the registered structure_generator backend (registry.py); "ezga" also available
-  # desired_number_of_structures is optional -- defaults to 50 if omitted
-  # (the skeleton applies this default once, consistently, regardless of
-  # which generator runs). Set explicitly smaller here for a quick smoke
-  # test; scale back up to (or past) the default for a real run.
-  desired_number_of_structures: 10
-  # structure_selection_kwargs (generator-agnostic: filter_eligible_
-  # structures is called once by the skeleton before dispatching to
-  # whichever generator is selected, so it applies the same way to "md" or
-  # "ezga") is entirely optional -- atom_number_range is uncapped unless
-  # given explicitly, so it's omitted here.
-  # md_kwargs: only read when generator: "md" above. Holds run_md's own
-  # direct kwargs (steps, temperature, ensemble, pressure, ...) -- default
-  # steps=20000/temperature=300/timestep_fs=0.5, overridden smaller/hotter
-  # here for a quick smoke test -- plus two nested keys:
-  # structure_selection_kwargs (select_diverse_seeds' own params --
-  # max_number_of_concurrent_jobs, default 10, overridden smaller here;
-  # enforce_chemical_diversity; seed) and trainer/trainer_config (which
-  # trainer registry entry built the model MD's own dynamics calculator
-  # should use -- defaults to "mace", not set explicitly here). Both
-  # nested here rather than at the top level above since EZGA never calls
-  # select_diverse_seeds or the trainer registry (it would make no sense
-  # inside ezga_kwargs).
-  md_kwargs:
-    steps: 2000
-    temperature: 1000
-    structure_selection_kwargs:
-      max_number_of_concurrent_jobs: 3
-  hpc: "my_hpc"
+  generator: "md"  
+  hpc: "raccoon_big"
 
 high_accuracy_evaluation:
-  # No qe_kwargs needed here at all: PBE is already the default exchange-
-  # correlation functional for both "qe" and "vasp" (get_qe_input_data's
-  # input_dft/get_vasp_input_kwargs's pp both already default to it) --
-  # set qe_kwargs/vasp_kwargs explicitly only to use something else.
-  evaluator: "qe"  # selects the registered dft_evaluator backend (registry.py); "vasp" also available
-  hpc: "my_hpc"
+  evaluator: "qe"  
+  hpc: "raven"

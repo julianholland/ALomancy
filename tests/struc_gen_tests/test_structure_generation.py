@@ -379,7 +379,8 @@ class TestFindHighSdStructures:
 
         # setup_logging (when called) sets propagate=False on the "alomancy"
         # logger, so capture records by attaching a handler directly to it —
-        # see test_seed_logs_message in test_base_active_learning.py.
+        # see TestDisplayWorkflowSummary's _capture helper in
+        # test_committee_uncertainty_workflow.py.
         al_logger = logging.getLogger("alomancy")
         records: list[logging.LogRecord] = []
 

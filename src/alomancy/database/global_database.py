@@ -410,8 +410,9 @@ class GlobalDatabase:
         for any container that happens to carry a legacy prediction key.
         Leaving them is harmless -- every reader now looks only for the
         model_* names, and the DB-seeding key-strippers
-        (base_active_learning._seed_db_from_extra_dataset,
-        utils.recover_dft_labels) strip both prefixes.
+        (committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.
+        _seed_db_from_extra_dataset, utils.recover_dft_labels) strip both
+        prefixes.
 
         Idempotent -- safe to call more than once. Already-migrated
         containers (whose model_* key already has the same value) are

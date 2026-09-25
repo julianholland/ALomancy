@@ -1,11 +1,12 @@
 """DFT evaluator module: the shared high-accuracy-evaluation orchestrator
 implementing the modular AL architecture's evaluator entry points.
 
-Extracted largely as-is from
-``core.standard_active_learning.ActiveLearningStandardMACE.high_accuracy_evaluation``,
-unchanged in behavior -- it was already skeleton-agnostic (batches
-structures across GO/SP dispatch, bond-distance filtering, cell-wrapping,
-restart via existing-batch reuse).
+Originally extracted largely as-is from
+``core.standard_active_learning.ActiveLearningStandardMACE.high_accuracy_evaluation``
+(that module has since been removed along with the rest of the pre-1.0
+workflow it belonged to), unchanged in behavior -- it was already
+skeleton-agnostic (batches structures across GO/SP dispatch, bond-distance
+filtering, cell-wrapping, restart via existing-batch reuse).
 
 The evaluator category has two kinds of entry points:
 - ``high_accuracy_evaluation`` (this module): the orchestrator, calculator-

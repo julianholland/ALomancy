@@ -8,6 +8,20 @@ from ase import Atoms
 from ase.io import read, write
 from ezga.factory import build_default_engine, load_config
 
+# run_ezga's own signature defaults, mirrored here (rather than
+# introspected via inspect.signature, which this codebase doesn't use
+# elsewhere) so the modular structure_generator entry point (generate(),
+# below) and the skeleton's pre-run config summary (committee_uncertainty_
+# workflow.py's display_workflow_summary) have one obvious, named place to
+# read ezga_kwargs' defaults from. Keep in sync with run_ezga's own
+# defaults below if those ever change.
+_EZGA_KWARGS_DEFAULTS: dict[str, Any] = {
+    "max_generations": 2,
+    "population_size": 2,
+    "min_atoms": 2,
+    "max_atoms": 41,
+}
+
 
 def objective_energy_per_atom(scale: float = 1.0) -> Callable[[Any], np.ndarray]:
     """Return an EZGA objective based on potential energy per atom."""
