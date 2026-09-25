@@ -119,12 +119,19 @@ choice between interchangeable backends -- it's a single method that
 always runs every structure-generating sub-task it's configured for, to
 differing degrees. So its `creation_kwargs` is namespaced per *structure
 type* instead: `isolated_atom_kwargs`, `dimer_kwargs`, `trimer_kwargs`,
-`amorphous_kwargs`, `mp_kwargs` (with `stretch_compress_kwargs` nested
-inside `mp_kwargs`, since those variants are only ever derived from
-MP-fetched structures). Designed to extend cleanly as new sub-tasks are
-added (surfaces, rattled structures, interfaces): each gets its own
-sibling `*_kwargs` namespace here and a matching branch in
-`create_initialization_atoms_list`, without touching the others.
+`amorphous_kwargs`, `mp_kwargs`, `stretch_compress_targets_kwargs` --
+each with its own `enabled` flag (default `True`), so a sub-task can be
+toggled off without zeroing out its count field. `stretch_compress_
+targets_kwargs` (`deform_xyz`, `max_deformation`, `num_stretch_compress_
+per_mp`) is a top-level sibling, not nested inside `mp_kwargs`, despite
+`create_initialization_atoms_list` (old, shared) only ever deriving those
+variants from MP-fetched structures -- its own `enabled=True` still
+produces nothing whenever `mp_kwargs.enabled` is `False`, a hard
+constraint of that shared function this module doesn't hide or override.
+Designed to extend cleanly as new sub-tasks are added (surfaces, rattled
+structures, interfaces): each gets its own sibling `*_kwargs` namespace
+here and a matching branch in `create_initialization_atoms_list`, without
+touching the others.
 """
 
 import hashlib

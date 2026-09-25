@@ -21,17 +21,15 @@ workflow:
   # Shared element identity (atomic symbols, not atomic numbers) -- read by
   # the initialiser (bootstrap structure generation) and the trainer (E0s
   # coverage check).
-  elements: ["C"]
+  elements: ["C", "S"]
   # Split-building parameters, plus size_of_committee, live here (not under
   # initialization/training) for this skeleton -- a future non-committee
   # skeleton (e.g. single-model furthest-point-sampling) would have no
   # size_of_committee at all.
   target_config_types:
-    - "IsolatedAtom"
-    - "init_dimer"
-  test_ratio: 0.1
-  valid_fraction: 0.1
-  size_of_committee: 3  # 3 is the minimum for a usable force std-dev
+    - "init_MP"
+    
+
 
 initialization:
   # No "name" here: each section's name is hardcoded to match its own
@@ -46,12 +44,15 @@ initialization:
   # initialization has no dispatch key like trainer/generator/evaluator,
   # it's a single method that runs every sub-task it's configured for, to
   # differing degrees). Each nested *_kwargs only holds settings that
-  # sub-task actually reads -- extends cleanly to future types (e.g.
-  # surface_kwargs, rattle_kwargs, interface_kwargs) without touching the
-  # others.
+  # sub-task actually reads and has its own "enabled" flag (default true,
+  # so omitted below wherever a sub-task should just run) -- extends
+  # cleanly to future types (e.g. surface_kwargs, rattle_kwargs,
+  # interface_kwargs) without touching the others. stretch_compress_
+  # targets_kwargs (deform_xyz, max_deformation, num_stretch_compress_
+  # per_mp) is one such sibling namespace, omitted here since it would do
+  # nothing anyway while mp_kwargs.enabled is false below -- MP structures
+  # are the only thing stretch/compress variants are ever derived from.
   creation_kwargs:
-    isolated_atom_kwargs:
-      enabled: true
     dimer_kwargs:
       num_dimers_per_combo: 5
     trimer_kwargs:

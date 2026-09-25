@@ -72,6 +72,20 @@ class TestComputeNeeds:
         assert needs["isolated_atoms"] == []
         assert needs["amorphous_override"] == 0
 
+    def test_disabled_sub_tasks_need_nothing_regardless_of_configured_count(self):
+        db = _mock_db({})
+        config = {
+            "creation_kwargs": {
+                "dimer_kwargs": {"enabled": False, "num_dimers_per_combo": 5},
+                "trimer_kwargs": {"enabled": False, "num_trimers_per_combo": 5},
+                "amorphous_kwargs": {"enabled": False, "num_amorphous": 100},
+            }
+        }
+        needs = compute_needs(db, config, ["H", "O"])
+        assert needs["dimer_override"] == {}
+        assert needs["trimer_override"] == {}
+        assert needs["amorphous_override"] == 0
+
 
 @pytest.mark.unit
 class TestOutputPathsAndReadExistingResult:
@@ -129,6 +143,9 @@ class TestGenerate:
         config = self._config(
             isolated_atom_kwargs={"enabled": False},
             mp_kwargs={"enabled": False},
+            dimer_kwargs={"enabled": False, "num_dimers_per_combo": 5},
+            trimer_kwargs={"enabled": False, "num_trimers_per_combo": 3},
+            amorphous_kwargs={"enabled": False, "num_amorphous": 20},
         )
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
             mock_create.return_value = []
@@ -144,20 +161,49 @@ class TestGenerate:
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs["single_atoms"] is False
         assert call_kwargs["mp_structures"] is False
+        # Disabled sub-tasks force their count to 0 rather than passing
+        # their configured value through -- create_initialization_atoms_list
+        # has no separate "enabled" concept of its own for these.
+        assert call_kwargs["num_dimers_per_combo"] == 0
+        assert call_kwargs["num_trimers_per_combo"] == 0
+        assert call_kwargs["num_amorphous"] == 0
 
-    def test_stretch_compress_kwargs_nested_under_mp_kwargs(
+    def test_enabled_defaults_to_true_for_dimer_trimer_amorphous(
         self, tmp_path, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
         config = self._config(
-            mp_kwargs={
-                "max_atom_number": 30,
-                "stretch_compress_kwargs": {
-                    "num_stretch_compress_per_mp": 7,
-                    "deform_xyz": True,
-                    "max_deformation": 0.5,
-                },
-            }
+            dimer_kwargs={"num_dimers_per_combo": 5},
+            trimer_kwargs={"num_trimers_per_combo": 3},
+            amorphous_kwargs={"num_amorphous": 20},
+        )
+        with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
+            mock_create.return_value = []
+            generate(
+                config,
+                base_name="al_loop_0",
+                name="initialization",
+                elements=["H"],
+                hpc={},
+                max_time="1H",
+            )
+
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs["num_dimers_per_combo"] == 5
+        assert call_kwargs["num_trimers_per_combo"] == 3
+        assert call_kwargs["num_amorphous"] == 20
+
+    def test_stretch_compress_targets_kwargs_is_a_top_level_namespace(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        config = self._config(
+            mp_kwargs={"max_atom_number": 30},
+            stretch_compress_targets_kwargs={
+                "num_stretch_compress_per_mp": 7,
+                "deform_xyz": True,
+                "max_deformation": 0.5,
+            },
         )
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
             mock_create.return_value = []
@@ -175,6 +221,29 @@ class TestGenerate:
         assert call_kwargs["num_stretch_compress_per_mp"] == 7
         assert call_kwargs["deform_xyz"] is True
         assert call_kwargs["max_deformation"] == 0.5
+
+    def test_stretch_compress_targets_disabled_forces_count_to_zero(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        config = self._config(
+            stretch_compress_targets_kwargs={
+                "enabled": False,
+                "num_stretch_compress_per_mp": 7,
+            },
+        )
+        with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
+            mock_create.return_value = []
+            generate(
+                config,
+                base_name="al_loop_0",
+                name="initialization",
+                elements=["H"],
+                hpc={},
+                max_time="1H",
+            )
+
+        assert mock_create.call_args.kwargs["num_stretch_compress_per_mp"] == 0
 
     def test_partial_generation_when_needs_given(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
