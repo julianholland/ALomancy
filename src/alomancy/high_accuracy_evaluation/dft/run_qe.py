@@ -115,6 +115,24 @@ def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
     }
 
 
+def resolve_effective_kwargs(qe_kwargs: dict) -> dict:
+    """The dft_evaluator registry's uniform defaults-resolution entry point
+    (see registry.py) -- used only by the skeleton's pre-run config summary
+    (committee_uncertainty_workflow.py's display_workflow_summary) to show
+    the fully-resolved effective qe_kwargs, not just what the user wrote.
+    get_qe_input_data (above, unchanged) already merges its own defaults
+    with whatever's passed to it, including its section-shallow merge
+    behavior (overriding e.g. "system" replaces that whole sub-dict rather
+    than merging individual keys within it) -- calling it directly here,
+    rather than re-deriving the same defaults separately, means this
+    display can never drift out of sync with the real merge, quirks
+    included. "scf" is passed as calculation_type since it doesn't affect
+    the input_data defaults shown (control.calculation itself does vary by
+    scf/relax, but that distinction isn't relevant to a settings summary).
+    """
+    return get_qe_input_data("scf", qe_kwargs)
+
+
 def create_qe_calc_object(
     atoms: Atoms, high_accuracy_eval_job_dict: dict, out_dir: str
 ) -> Espresso:

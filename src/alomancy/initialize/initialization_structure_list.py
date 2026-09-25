@@ -9,6 +9,7 @@ from ase.io import write
 
 from alomancy.initialize.amorphize import create_amorphous_atoms_list
 from alomancy.initialize.mp_interface import atoms_list_from_mp
+from alomancy.initialize.rattle import create_rattle_atoms_list
 from alomancy.initialize.singles_dimers_trimers import (
     create_dimer_atoms_list,
     create_single_atoms_list,
@@ -94,15 +95,18 @@ def create_initialization_atoms_list(
     num_dimers_per_combo: int = 10,
     num_trimers_per_combo: int = 5,
     num_amorphous: int = 100,
-    num_stretch_compress_per_mp: int = 5,
+    num_stretch_compress_per_target: int = 5,
     densities_list: list[float] | None = None,
-    deform_xyz: bool | list[bool] = False,
-    max_deformation: float = 0.2,
+    max_lattice_deformation: float = 0.2,
     max_atom_number: int = 20,
     amorphous_atom_number: int = 20,
     composition_list: list[list[str]] | None = None,
     seed: int = 803,
     mp_max_energy_above_hull: float = 0.1,
+    target_config_types: list[str] | None = None,
+    num_rattled_per_target: int = 0,
+    rattle_standard_deviation: float | None = None,
+    rattle_seed: int = 803,
     # Override kwargs supplied by compute_initialization_needs to skip
     # already-completed subsets.  When None, the full target is used.
     isolated_atoms_override: list[str] | None = None,
@@ -127,8 +131,9 @@ def create_initialization_atoms_list(
         Number of trimer structures to generate per element combination.
     num_amorphous
         Total number of amorphous structures to generate.
-    num_stretch_compress_per_mp
-        Number of stretched/compressed variants per MP structure.
+    num_stretch_compress_per_target
+        Number of stretched/compressed variants per target structure (see
+        target_config_types).
     max_atom_number
         Maximum atom count for structures fetched from the Materials Project
         (passed to `atoms_list_from_mp` as `max_num_atoms`). Independent of
@@ -140,6 +145,24 @@ def create_initialization_atoms_list(
         Target atom count per generated amorphous cell (passed to
         `create_amorphous_atoms_list` as `atom_number`). Independent of
         max_atom_number — does not affect the MP fetch cap.
+    target_config_types
+        config_type values (e.g. "init_MP", "init_amorphous") identifying
+        which of this call's freshly-generated structures count as "target"
+        structures -- every one of them (not just Materials Project ones)
+        is fed through both stretch/compress and rattle. Structures already
+        resident in the DB from an earlier run are not re-derived from here
+        (matches this function's existing restart behavior: only the
+        subset generated in this call is ever subject to these two
+        transforms).
+    num_rattled_per_target
+        Number of independently-rattled copies per target structure.
+    rattle_standard_deviation
+        Standard deviation (Angstrom) for ase.Atoms.rattle, applied to each
+        target structure. Only read when num_rattled_per_target > 0.
+    rattle_seed
+        Base seed for rattle (copy i of a given target uses rattle_seed +
+        i); independent of `seed` above, which is amorphous generation's
+        own seed.
     isolated_atoms_override
         If provided, only generate isolated atoms for these elements.
     dimer_override
@@ -254,34 +277,57 @@ def create_initialization_atoms_list(
         )
     logger.info("Created %d amorphous structures.", len(amorphous_atoms_list))
 
-    # --- Stretch / compress MP structures ------------------------------
+    # --- Assemble the base pool -----------------------------------------
+    # Built before stretch/compress and rattle below, since both draw from
+    # whichever of these freshly-generated structures count as "target"
+    # structures (target_config_types), not just Materials Project ones.
+    base_atoms_list: list[Atoms] = []
+    if single_atoms:
+        base_atoms_list.extend(single_atoms_list)
+    if mp_structures:
+        base_atoms_list.extend(mp_atoms_list)
+    base_atoms_list.extend(dimer_atoms_list)
+    base_atoms_list.extend(trimer_atoms_list)
+    base_atoms_list.extend(amorphous_atoms_list)
+
+    # --- Stretch/compress + rattle on target structures -----------------
+    target_config_type_set = set(target_config_types or [])
+    target_atoms_list = [
+        a
+        for a in base_atoms_list
+        if a.info.get("config_type") in target_config_type_set
+    ]
+
     stretch_compress_atoms_list: list[Atoms] = []
-    if mp_structures and len(mp_atoms_list) > 0:
-        for mp in mp_atoms_list:
-            stretch_compress_atoms_list.extend(
-                create_stretch_compress_atoms_list(
-                    atoms=mp,
-                    deform_xyz=deform_xyz,
-                    max_deformation=max_deformation,
-                    num_structures=num_stretch_compress_per_mp,
-                )
+    rattle_atoms_list: list[Atoms] = []
+    for target in target_atoms_list:
+        stretch_compress_atoms_list.extend(
+            create_stretch_compress_atoms_list(
+                atoms=target,
+                max_lattice_deformation=max_lattice_deformation,
+                num_structures=num_stretch_compress_per_target,
             )
+        )
+        rattle_atoms_list.extend(
+            create_rattle_atoms_list(
+                atoms=target,
+                rattle_standard_deviation=rattle_standard_deviation or 0.0,
+                num_structures=num_rattled_per_target,
+                seed=rattle_seed,
+            )
+        )
     logger.info(
-        "Created %d stretch/compress structures from %d MP structures.",
+        "Created %d stretch/compress and %d rattle structures from %d target "
+        "structures.",
         len(stretch_compress_atoms_list),
-        len(mp_atoms_list),
+        len(rattle_atoms_list),
+        len(target_atoms_list),
     )
 
-    # --- Assemble ------------------------------------------------------
-    total_atoms_list: list[Atoms] = []
-    if single_atoms:
-        total_atoms_list.extend(single_atoms_list)
-    if mp_structures:
-        total_atoms_list.extend(mp_atoms_list)
-    total_atoms_list.extend(dimer_atoms_list)
-    total_atoms_list.extend(trimer_atoms_list)
-    total_atoms_list.extend(amorphous_atoms_list)
+    # --- Assemble --------------------------------------------------------
+    total_atoms_list = list(base_atoms_list)
     total_atoms_list.extend(stretch_compress_atoms_list)
+    total_atoms_list.extend(rattle_atoms_list)
 
     logger.info(
         "Created %d total structures for initialization.", len(total_atoms_list)

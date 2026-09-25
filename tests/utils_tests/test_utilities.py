@@ -757,6 +757,109 @@ class TestRemoteJobExecutor:
 
 
 @pytest.mark.unit
+class TestSubmitN:
+    """submit_n is the shared, generic remote-submission primitive the
+    modular AL architecture is built from (see the registry/skeleton
+    design): the skeleton drives a trainer's N-times committee loop with
+    it directly, while a generator/evaluator module's own local
+    orchestrator entry point calls it internally to fan out its own jobs.
+    Its own logic is a thin wrapper -- these tests verify it constructs a
+    RemoteJobExecutor from the given remote_info and forwards `function`/
+    `job_configs`/kwargs through to run_and_wait unchanged, which is the
+    only behavior submit_n itself is responsible for (run_and_wait's own
+    internals are already covered by TestRemoteJobExecutor above)."""
+
+    def test_constructs_executor_from_remote_info_and_forwards_arguments(self):
+        from alomancy.remote_submission.executor import submit_n
+
+        captured = {}
+
+        class _RecordingExecutor:
+            def __init__(self, remote_info):
+                captured["remote_info"] = remote_info
+
+            def run_and_wait(self, function, job_configs, **kwargs):
+                captured["function"] = function
+                captured["job_configs"] = job_configs
+                captured["kwargs"] = kwargs
+                return [
+                    "result_for_" + cfg["function_kwargs"]["tag"] for cfg in job_configs
+                ]
+
+        remote_info = SimpleNamespace(sys_name="test-hpc")
+        job_configs = [
+            {"function_kwargs": {"tag": "a"}},
+            {"function_kwargs": {"tag": "b"}},
+        ]
+
+        def do_work(tag):
+            return tag
+
+        with patch(
+            "alomancy.remote_submission.executor.RemoteJobExecutor", _RecordingExecutor
+        ):
+            results = submit_n(
+                do_work, job_configs, remote_info, common_input_files=["shared.xyz"]
+            )
+
+        assert captured["remote_info"] is remote_info
+        assert captured["function"] is do_work
+        assert captured["job_configs"] is job_configs
+        assert captured["kwargs"] == {"common_input_files": ["shared.xyz"]}
+        assert results == ["result_for_a", "result_for_b"]
+
+    def test_end_to_end_returns_index_aligned_results_with_none_for_failures(
+        self, tmp_path
+    ):
+        """A real (fake-ExPyRe-backed) run confirming submit_n's contract
+        end to end: index-aligned results, a failed job contributing None
+        rather than raising or shifting the other results' positions --
+        exactly the shape the plan's partial-aware restart design relies
+        on ("count failures, keep moving forward")."""
+        from alomancy.remote_submission.executor import submit_n
+
+        jobs = [
+            _FakeExPyReJob("job0", tmp_path / "job0", duration=0.0, result="ok0"),
+            _FakeExPyReJob(
+                "job1",
+                tmp_path / "job1",
+                duration=0.0,
+                get_results_side_effects=[(ExPyReJobDiedError("dead"), "died")],
+            ),
+            _FakeExPyReJob("job2", tmp_path / "job2", duration=0.0, result="ok2"),
+        ]
+        remote_info = SimpleNamespace(
+            resources={},
+            sys_name="test-hpc",
+            job_name="test-job",
+            timeout=10,
+            check_interval=0.001,
+            header_extra=[],
+            exact_fit=True,
+            partial_node=False,
+            max_concurrent_jobs=3,
+            lock_timeout=None,
+            resubmit_killed_jobs=False,
+        )
+
+        job_iter = iter(jobs)
+
+        def fake_submit_job(self, function, function_kwargs, **kwargs):
+            job = next(job_iter)
+            self.jobs.append(job)
+            return job
+
+        with patch.object(RemoteJobExecutor, "submit_job", fake_submit_job):
+            results = submit_n(
+                lambda **kw: None,
+                [{"function_kwargs": {}} for _ in jobs],
+                remote_info,
+            )
+
+        assert results == ["ok0", None, "ok2"]
+
+
+@pytest.mark.unit
 class TestSalvagePartialOutput:
     """A died/failed job's on-disk output must still be salvaged into cwd
     when possible: expyre's own output_files stage-out only runs for

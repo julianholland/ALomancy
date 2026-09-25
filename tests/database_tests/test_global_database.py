@@ -956,7 +956,7 @@ class TestGlobalDbId:
 
 
 class TestMacePredictions:
-    """Tests for store_mace_predictions and get_mace_predictions."""
+    """Tests for store_model_predictions and get_model_predictions."""
 
     def _make_db_with_one_structure(self, tmp_path, split="train"):
         atoms = make_atoms(
@@ -974,24 +974,24 @@ class TestMacePredictions:
     def test_store_writes_keys(self, tmp_path):
         db = self._make_db_with_one_structure(tmp_path)
         preds = {0: {"energy": -2.0, "forces": [[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]]}}
-        db.store_mace_predictions(0, 0, preds)
+        db.store_model_predictions(0, 0, preds)
         container = next(iter(db.partition.list_containers()))
         meta = container.AtomPositionManager.metadata
-        assert "mace_energy_loop_0_fit_0" in meta
-        assert meta["mace_energy_loop_0_fit_0"] == pytest.approx(-2.0)
-        assert meta["mace_forces_loop_0_fit_0"][0] == pytest.approx([0.2, 0.0, 0.0])
+        assert "model_energy_loop_0_fit_0" in meta
+        assert meta["model_energy_loop_0_fit_0"] == pytest.approx(-2.0)
+        assert meta["model_forces_loop_0_fit_0"][0] == pytest.approx([0.2, 0.0, 0.0])
 
     @pytest.mark.unit
     def test_get_returns_none_when_missing(self, tmp_path):
         db = self._make_db_with_one_structure(tmp_path)
-        assert db.get_mace_predictions(0, 0) is None
+        assert db.get_model_predictions(0, 0) is None
 
     @pytest.mark.unit
     def test_round_trip_values(self, tmp_path):
         db = self._make_db_with_one_structure(tmp_path, split="train")
         forces = [[0.3, 0.1, 0.0], [-0.3, -0.1, 0.0]]
-        db.store_mace_predictions(1, 2, {0: {"energy": -3.0, "forces": forces}})
-        result = db.get_mace_predictions(1, 2)
+        db.store_model_predictions(1, 2, {0: {"energy": -3.0, "forces": forces}})
+        result = db.get_model_predictions(1, 2)
         assert result is not None
         assert "train" in result
         e_dft, e_pred, f_dft, f_pred = result["train"]
@@ -1004,10 +1004,10 @@ class TestMacePredictions:
     @pytest.mark.unit
     def test_e0_computes_formation_energy(self, tmp_path):
         db = self._make_db_with_one_structure(tmp_path, split="train")
-        db.store_mace_predictions(
+        db.store_model_predictions(
             1, 2, {0: {"energy": -3.0, "forces": [[0.0, 0.0, 0.0]] * 2}}
         )
-        result = db.get_mace_predictions(1, 2, e0={"H": -0.3})
+        result = db.get_model_predictions(1, 2, e0={"H": -0.3})
         assert result is not None
         e_dft, e_pred, _, _ = result["train"]
         # 2-atom H2: dft formation = (-1.0 - 2*(-0.3))/2 = -0.2
@@ -1020,7 +1020,7 @@ class TestMacePredictions:
         import logging
 
         db = self._make_db_with_one_structure(tmp_path, split="train")
-        db.store_mace_predictions(
+        db.store_model_predictions(
             1, 2, {0: {"energy": -3.0, "forces": [[0.0, 0.0, 0.0]] * 2}}
         )
 
@@ -1034,7 +1034,7 @@ class TestMacePredictions:
         handler = _Collector()
         db_logger.addHandler(handler)
         try:
-            result = db.get_mace_predictions(1, 2, e0={"O": -1.0})
+            result = db.get_model_predictions(1, 2, e0={"O": -1.0})
         finally:
             db_logger.removeHandler(handler)
 
@@ -1056,7 +1056,7 @@ class TestMacePredictions:
         db.add_structures([train_a], split="train", skip_duplicates=False)
         db.add_structures([test_a], split="test", skip_duplicates=False)
         db.assign_global_db_ids()
-        db.store_mace_predictions(
+        db.store_model_predictions(
             0,
             0,
             {
@@ -1064,7 +1064,81 @@ class TestMacePredictions:
                 1: {"energy": -1.9, "forces": [[0.0, 0.0, 0.0]]},
             },
         )
-        result = db.get_mace_predictions(0, 0)
+        result = db.get_model_predictions(0, 0)
         assert result is not None
         assert "train" in result
         assert "test" in result
+
+
+class TestMigrateMacePredictionKeys:
+    """GlobalDatabase.migrate_mace_prediction_keys -- the mace_* -> model_*
+    metadata-key rename (see database/migrate_mace_prediction_keys.py)."""
+
+    def _make_db_with_legacy_keys(self, tmp_path):
+        atoms = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-1.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([atoms], split="train", skip_duplicates=False)
+        db.assign_global_db_ids()
+        # Write directly under the legacy mace_* names -- as a pre-migration
+        # DB would actually have, before store_model_predictions existed.
+        db.partition.set_metadata_bulk(
+            {
+                0: {
+                    "mace_energy_loop_0_fit_0": -2.0,
+                    "mace_forces_loop_0_fit_0": [[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]],
+                }
+            },
+            use_indices=True,
+        )
+        return db
+
+    @pytest.mark.unit
+    def test_copies_legacy_keys_to_generalized_names(self, tmp_path):
+        db = self._make_db_with_legacy_keys(tmp_path)
+        updated = db.migrate_mace_prediction_keys()
+        assert updated == 1
+        meta = next(iter(db.partition.list_containers())).AtomPositionManager.metadata
+        assert meta["model_energy_loop_0_fit_0"] == pytest.approx(-2.0)
+        assert meta["model_forces_loop_0_fit_0"][0] == pytest.approx([0.2, 0.0, 0.0])
+
+    @pytest.mark.unit
+    def test_leaves_legacy_keys_in_place(self, tmp_path):
+        """Old mace_* keys are not deleted (no safe per-key delete exists) --
+        just left as harmless, inert leftovers."""
+        db = self._make_db_with_legacy_keys(tmp_path)
+        db.migrate_mace_prediction_keys()
+        meta = next(iter(db.partition.list_containers())).AtomPositionManager.metadata
+        assert meta["mace_energy_loop_0_fit_0"] == pytest.approx(-2.0)
+
+    @pytest.mark.unit
+    def test_idempotent_second_call_updates_nothing(self, tmp_path):
+        db = self._make_db_with_legacy_keys(tmp_path)
+        db.migrate_mace_prediction_keys()
+        assert db.migrate_mace_prediction_keys() == 0
+
+    @pytest.mark.unit
+    def test_does_not_touch_unrelated_metadata(self, tmp_path):
+        """Regression guard: migration must merge, never clear=True-overwrite
+        a container's metadata (which would silently wipe config_type etc.)."""
+        db = self._make_db_with_legacy_keys(tmp_path)
+        db.migrate_mace_prediction_keys()
+        meta = next(iter(db.partition.list_containers())).AtomPositionManager.metadata
+        assert meta.get("config_type") == "init_dimer"
+        assert "global_db_id" in meta
+
+    @pytest.mark.unit
+    def test_no_legacy_keys_is_a_no_op(self, tmp_path):
+        db = self._make_db_with_one_structure(tmp_path)  # inherited helper name below
+        assert db.migrate_mace_prediction_keys() == 0
+
+    def _make_db_with_one_structure(self, tmp_path):
+        atoms = make_atoms(["H", "H"], config_type="init_dimer", ref_energy=-1.0)
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([atoms], split="train", skip_duplicates=False)
+        db.assign_global_db_ids()
+        return db

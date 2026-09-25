@@ -97,7 +97,7 @@ Python executable path on remote [/u/jholl/.venvs/alomancy/bin/python]:
   Done.
 
 Setup complete! Use 'raven_gpu' in your run YAML:
-  mlip_committee:
+  training:
     hpc: 'raven_gpu'
   structure_generation:
     hpc: 'raven_gpu'
@@ -169,21 +169,16 @@ Here's a simple example of running an active learning workflow:
 
 ```python
 from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+from alomancy.core.committee_uncertainty_workflow import build_workflow
 
-# Load configuration from YAML file
+# Load configuration from YAML file -- every workflow-level setting
+# (initial_train_file_path, number_of_al_loops, verbose, log_file,
+# db_path, ...) lives under the YAML's `general:` section; build_workflow()
+# takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
 
 # Create and run the workflow
-workflow = ActiveLearningStandardMACE(
-    initial_train_file_path="results/initialization/train_set.xyz",
-    initial_test_file_path="results/initialization/test_set.xyz",
-    jobs_dict=jobs_dict,
-    number_of_al_loops=5,
-    verbose=1,  # 0=silent, 1=INFO progress, 2=DEBUG
-    log_file="results/alomancy.log",  # file always captures DEBUG
-    db_path="results/global_database",
-)
+workflow = build_workflow(jobs_dict=jobs_dict)
 
 workflow.run()
 ```
@@ -193,59 +188,70 @@ workflow.run()
 The configuration YAML file defines all the stages of the active learning workflow. Here's a complete example:
 
 ```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["H", "O"]   # atomic symbols, not atomic numbers
+  committee_uncertainty_kwargs:
+    number_models_in_committee: 5
+    target_config_types:
+      - "IsolatedAtom"
+      - "init_dimer"
+    test_ratio: 0.1
+
 initialization:
   name: "initialization"
   max_time: "2H"
-  test_to_train_ratio: 0.1
-  test_config_types:
-    - "IsolatedAtom"
-    - "init_dimer"
-  creation_kwargs:
-    elements: ["H", "O"]
-    mp_structures: true
-    single_atoms: true
-    num_dimers_per_combo: 10
-    num_trimers_per_combo: 5
-    num_amorphous: 300
-    num_stretch_compress_per_mp: 5
+  mp_kwargs:
     max_atom_number: 20
-    amorphous_atom_number: 20
     mp_max_energy_above_hull: 0.1
+  dimer_kwargs:
+    num_dimers_per_combo: 10
+  trimer_kwargs:
+    num_trimers_per_combo: 5
+  amorphous_kwargs:
+    num_amorphous: 300
+    amorphous_atom_number: 20
+  stretch_compress_targets_kwargs:
+    num_stretch_compress_per_mp: 5
   hpc: 'my_hpc'
 
-mlip_committee:
-  name: "mlip_committee"
-  size_of_committee: 5
+training:
+  name: "training"
+  trainer: "mace"
   max_time: "5H"
   hpc: 'my_gpu_hpc'
 
 structure_generation:
   name: "structure_generation"
+  generator: "md"   # "md" (default) or "ezga"
   desired_number_of_structures: 50
   max_time: "10H"
   hpc: 'my_gpu_hpc'
 
 high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
-  calculator: "qe"   # "qe" (default) or "vasp"
+  evaluator: "qe"   # "qe" (default) or "vasp"
   max_time: "30m"
   hpc: 'my_cpu_hpc'   # concurrency is set on the HPC profile, see max_concurrent_jobs above
 ```
 
 ### Configuration Key Descriptions
 
-- **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures. The `test_to_train_ratio` determines the split between test and training data.
+- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `build_workflow()` returns (currently only `"committee_uncertainty"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `number_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
 
-- **mlip_committee**: Trains an ensemble (committee) of MACE interatomic potentials. The `size_of_committee` parameter determines how many committee members are trained in parallel.
+- **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 
-- **structure_generation**: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `run_md_kwargs`:
+- **training**: Trains an ensemble (committee) of interatomic potentials. `trainer` selects the registered `mlip_trainer` backend (currently only `"mace"`); backend-specific settings go under `mace_kwargs`.
+
+- **structure_generation**: Generates candidate structures for labeling. `generator` selects the registered `structure_generator` backend (`"md"`, the default, or `"ezga"` for genetic-algorithm search); uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `md_kwargs`:
 
   ```yaml
   structure_generation:
     name: "structure_generation"
+    generator: "md"
     desired_number_of_structures: 50
     max_time: "10H"
-    run_md_kwargs:
+    md_kwargs:
       steps: 20000
       temperature: 1200
       timestep_fs: 0.5
@@ -257,18 +263,18 @@ high_accuracy_evaluation:
 
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `calculator` key selects the backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — not a per-workflow-phase setting, since it's a property of the HPC system/account. The older job-dict-level `max_batch_size` key is deprecated and will be removed in 1.0.0; see [Deprecations](deprecations.md). If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
 
 ## Using VASP as the DFT Backend
 
-To switch from Quantum Espresso to VASP, set `calculator: vasp` in the `high_accuracy_evaluation` block and replace the QE-specific HPC keys:
+To switch from Quantum Espresso to VASP, set `evaluator: "vasp"` in the `high_accuracy_evaluation` block and replace the QE-specific HPC keys:
 
 ```yaml
 high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
-  calculator: "vasp"
+  evaluator: "vasp"
   max_time: "30m"
-  vasp_input_kwargs:          # INCAR overrides (optional)
+  vasp_kwargs:                # INCAR overrides (optional)
     encut: 600
     ediff: 1.0e-7
   hpc:
@@ -296,108 +302,13 @@ high_accuracy_evaluation:
 > fall back to the default (unsuffixed) POTCAR under that path — if that directory doesn't
 > carry a given element (e.g. `Pd`), VASP fails with `No pseudopotential for <element>!`.
 
-QE configs work unchanged — `calculator: qe` is the default and can be omitted.
+QE configs work unchanged — `evaluator: "qe"` is the default and can be omitted.
 
-## Custom Workflows
+## Adding a New Backend
 
-You can create custom active learning workflows by extending `BaseActiveLearningWorkflow`. You must implement four abstract methods:
+There's no subclassing to extend ALomancy — `CommitteeUncertaintyWorkflow` (built via `build_workflow()`) is the only workflow implementation, and each pluggable category (`mlip_trainer`, `structure_generator`, `dft_evaluator`, `initialiser`) is a module registered against a name in `src/alomancy/registry.py`, resolved lazily from config at runtime (`training.trainer`, `structure_generation.generator`, `high_accuracy_evaluation.evaluator`).
 
-```python
-from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
-import pandas as pd
-from ase.atoms import Atoms
-
-
-class MyCustomWorkflow(BaseActiveLearningWorkflow):
-    def initialize_training_set(
-        self, base_name, **kwargs
-    ) -> tuple[list[Atoms], list[Atoms]]:
-        """
-        Generate initial training and test sets.
-
-        Args:
-            base_name: Name used for output directories
-            **kwargs: Additional configuration parameters
-
-        Returns:
-            Tuple of (train_atoms_list, test_atoms_list)
-        """
-        # Your custom initialization logic
-        train_atoms = []  # Load or generate training structures
-        test_atoms = []  # Load or generate test structures
-        return train_atoms, test_atoms
-
-    def train_mlip(self, base_name, job_dict, **kwargs) -> pd.DataFrame:
-        """
-        Train the machine-learned interatomic potential (MLIP).
-
-        Args:
-            base_name: Name used for output directories
-            job_dict: Configuration dictionary for this job
-            **kwargs: Additional parameters
-
-        Returns:
-            DataFrame with training metrics (MAE, RMSE, etc.)
-        """
-        # Your custom MLIP training logic
-        metrics = pd.DataFrame(
-            {
-                "train_mae": [0.01],
-                "test_mae": [0.02],
-            }
-        )
-        return metrics
-
-    def generate_structures(
-        self, base_name, job_dict, train_data, **kwargs
-    ) -> list[Atoms]:
-        """
-        Generate candidate structures for labeling based on uncertainty.
-
-        Args:
-            base_name: Name used for output directories
-            job_dict: Configuration dictionary for this job
-            train_data: Current training set (list[Atoms])
-            **kwargs: Additional parameters
-
-        Returns:
-            List of candidate Atoms objects
-        """
-        # Your custom structure generation logic
-        candidates = []  # Generate structures using MD or other methods
-        return candidates
-
-    def high_accuracy_evaluation(
-        self, base_name, job_dict, structures, **kwargs
-    ) -> list[Atoms]:
-        """
-        Perform high-accuracy evaluation (e.g., DFT) on selected structures.
-
-        Args:
-            base_name: Name used for output directories
-            job_dict: Configuration dictionary for this job
-            structures: List of Atoms objects to evaluate
-            **kwargs: Additional parameters
-
-        Returns:
-            List of Atoms objects with energy and force labels in:
-            - atoms.info["REF_energy"]
-            - atoms.arrays["REF_forces"]
-        """
-        # Your custom high-accuracy evaluation logic
-        evaluated = []  # Run DFT and attach results
-        return evaluated
-```
-
-### Method Signatures and Responsibilities
-
-- **initialize_training_set**: Called once at the start. Should return initial train/test splits. Results are written to `results/<base_name>/initialization/`.
-
-- **train_mlip**: Called once per AL loop. Should train your MLIP on the current training set and return a DataFrame with performance metrics.
-
-- **generate_structures**: Called once per AL loop. Should use MD, Monte Carlo, or other methods to generate high-uncertainty candidates from the current committee.
-
-- **high_accuracy_evaluation**: Called once per AL loop. Should evaluate structures with DFT (or equivalent high-accuracy method) and attach energies and forces to the Atoms objects.
+Adding a new backend means writing a new module that implements the category's expected entry points — typically `output_paths(config, *, base_name, name, ...)` and `read_existing_result(config, *, base_name, name, ...)` for the skeleton's restart mechanism, plus the category-specific worker function (`train`, `generate`, or `sp`/`go`) — and registering it in `registry.py`. See any existing module under `mlip/` (e.g. `mlip/mace/trainer.py`), `structure_generation/` (`structure_generation/md/md_wfl.py`, `structure_generation/ezga/generate_structures.py`), or `high_accuracy_evaluation/dft/` (`run_qe.py`, `run_vasp.py`) for the pattern to follow.
 
 ## Extra Datasets
 
@@ -406,16 +317,19 @@ The initialization configuration can include external datasets via an `extra_dat
 Example configuration:
 
 ```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["H", "O"]
+  committee_uncertainty_kwargs:
+    test_ratio: 0.1
+    # ... other options ...
+
 initialization:
   name: "initialization"
   max_time: "2H"
-  test_to_train_ratio: 0.1
   extra_datasets:
     - "path/to/external_structures.xyz"
     - "path/to/another_dataset.xyz"
-  creation_kwargs:
-    elements: ["H", "O"]
-    # ... other options ...
 ```
 
 Structures in extra datasets should have:
@@ -427,14 +341,14 @@ Structures in extra datasets should have:
 
 After each AL loop's MACE committee training finishes on the remote GPU node, ALomancy evaluates every committee model on the training and test sets **before returning from the remote job** and saves the per-structure predictions to `train_pred.xyz` / `test_pred.xyz` inside each fit directory. These files are synced back to your local machine by ExPyRe alongside the model files.
 
-`store_mlip_predictions` then reads those files locally and stores the predicted energies and forces in the GlobalDatabase — no model loading or local GPU required. Parity plots (`plot_dft_vs_model`) read from the DB first, then fall back to the eval xyz files, and never run local inference.
+The skeleton then reads those files locally and stores the predicted energies and forces in the GlobalDatabase via `store_model_predictions` — no model loading or local GPU required. Parity plots (`plot_dft_vs_model`) read from the DB first, then fall back to the eval xyz files, and never run local inference.
 
 > **Resuming from before v0.4.2**: loops trained without the post-training eval step will not have `train_pred.xyz` / `test_pred.xyz`. The sentinel `mace_predictions.done` is written and those loops are skipped gracefully; parity plots show "No predictions available" for them. Only future loops (trained with the updated remote package) will have predictions stored.
 
-The stored metadata keys follow the pattern:
+The stored metadata keys follow the pattern (generalized to `model_*` since the trainer backend is no longer assumed to be MACE — see the module registry):
 ```
-mace_energy_loop_{N}_fit_{i}   # predicted energy (eV, raw)
-mace_forces_loop_{N}_fit_{i}   # predicted forces ([[fx,fy,fz], ...], eV/Å)
+model_energy_loop_{N}_fit_{i}   # predicted energy (eV, raw)
+model_forces_loop_{N}_fit_{i}   # predicted forces ([[fx,fy,fz], ...], eV/Å)
 ```
 
 You can retrieve predictions programmatically:
@@ -446,7 +360,7 @@ db = GlobalDatabase("results/global_database")
 
 # Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)}
 # where each element is a numpy array; e values are per-atom (eV/atom)
-preds = db.get_mace_predictions(loop_idx=0, fit_idx=0)
+preds = db.get_model_predictions(loop_idx=0, fit_idx=0)
 
 e_dft, e_pred, f_dft, f_pred = preds["train"]
 print(f"Train energy MAE: {abs(e_dft - e_pred).mean():.4f} eV/atom")

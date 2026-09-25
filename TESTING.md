@@ -10,7 +10,7 @@ The alomancy package uses **pytest** as the primary testing framework. The test 
 - **Integration tests**: Component interactions (marked `@pytest.mark.integration`)
 - **External tests**: Require external software like MACE or Quantum Espresso (marked `@pytest.mark.requires_external`)
 
-**Current test results**: 155 passed, 4 skipped (requires_external), 0 failed
+Run `pytest -m unit --no-cov` for current pass/fail counts (the suite has grown substantially since this doc was first written).
 
 ## Test Structure
 
@@ -18,8 +18,7 @@ The alomancy package uses **pytest** as the primary testing framework. The test 
 tests/
 ├── conftest.py                      # Shared fixtures
 ├── core_tests/
-│   ├── test_base_active_learning.py
-│   └── test_standard_active_learning.py
+│   └── test_committee_uncertainty_workflow.py
 ├── database_tests/
 │   └── test_global_database.py
 ├── initialize_tests/
@@ -212,12 +211,7 @@ def test_logging_output():
 
 ### Pattern 5: MACE and wfl Handling
 
-MACE is patched at the top of `test_standard_active_learning.py`:
-
-```python
-sys.modules.setdefault("mace", MagicMock())
-sys.modules.setdefault("mace.calculators", MagicMock())
-```
+MACE is a real dev dependency and is installed in the test environment (`pip install -e ".[dev]"`) -- tests import it directly rather than mocking `sys.modules`.
 
 **Never** import wfl in tests — it is not installed. If you need to mock wfl behavior, patch it via sys.modules.
 

@@ -225,22 +225,24 @@ class GlobalDatabase:
     # In-place metadata update helpers
     # ------------------------------------------------------------------
 
-    def store_mace_predictions(
+    def store_model_predictions(
         self,
         loop_idx: int,
         fit_idx: int,
         predictions: dict[int, dict],
     ) -> None:
-        """Write per-structure MACE predictions for one committee member.
+        """Write per-structure trainer predictions for one committee member.
 
         predictions: {global_db_id: {"energy": float, "forces": list[list[float]]}}
-        Writes keys mace_energy_loop_{loop_idx}_fit_{fit_idx} and
-        mace_forces_loop_{loop_idx}_fit_{fit_idx} into each container's metadata.
+        Writes keys model_energy_loop_{loop_idx}_fit_{fit_idx} and
+        model_forces_loop_{loop_idx}_fit_{fit_idx} into each container's
+        metadata. Named generically (not mace_*) since the trainer backend
+        is no longer assumed to be MACE -- see the module registry.
         """
         id_meta_map = {
             gid: {
-                f"mace_energy_loop_{loop_idx}_fit_{fit_idx}": p["energy"],
-                f"mace_forces_loop_{loop_idx}_fit_{fit_idx}": p["forces"],
+                f"model_energy_loop_{loop_idx}_fit_{fit_idx}": p["energy"],
+                f"model_forces_loop_{loop_idx}_fit_{fit_idx}": p["forces"],
             }
             for gid, p in predictions.items()
         }
@@ -262,13 +264,13 @@ class GlobalDatabase:
             e0[atoms.get_chemical_formula()] = atoms.info["REF_energy"]
         return e0
 
-    def get_mace_predictions(
+    def get_model_predictions(
         self,
         loop_idx: int,
         fit_idx: int,
         e0: dict[str, float] | None = None,
     ) -> dict[str, tuple] | None:
-        """Retrieve stored MACE predictions for parity plotting, split by train/test.
+        """Retrieve stored trainer predictions for parity plotting, split by train/test.
 
         Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)} where
         each element is a numpy array (f values flat eV/Å). Energy values are
@@ -280,8 +282,8 @@ class GlobalDatabase:
         rather than mixing formation- and raw-energy points in one figure.
         Returns None if no predictions are stored for this loop/fit.
         """
-        energy_key = f"mace_energy_loop_{loop_idx}_fit_{fit_idx}"
-        forces_key = f"mace_forces_loop_{loop_idx}_fit_{fit_idx}"
+        energy_key = f"model_energy_loop_{loop_idx}_fit_{fit_idx}"
+        forces_key = f"model_forces_loop_{loop_idx}_fit_{fit_idx}"
 
         buckets: dict[str, dict] = {
             "train": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
@@ -392,6 +394,51 @@ class GlobalDatabase:
             self.partition.set_metadata_bulk(untagged, use_indices=True)
         logger.info("assign_global_db_ids: tagged %d container(s).", len(untagged))
         return len(untagged)
+
+    def migrate_mace_prediction_keys(self) -> int:
+        """One-time migration: copy every legacy mace_energy_loop_*/
+        mace_forces_loop_* metadata key to its generalized
+        model_energy_loop_*/model_forces_loop_* name (the trainer backend is
+        no longer assumed to be MACE -- see the module registry;
+        store_model_predictions/get_model_predictions above write/read only
+        the new names).
+
+        The old mace_* keys are deliberately left in place rather than
+        deleted: set_metadata_bulk has no per-key delete, only a
+        whole-container clear=True overwrite, which would risk silently
+        wiping unrelated metadata (config_type, global_db_id, split, ...)
+        for any container that happens to carry a legacy prediction key.
+        Leaving them is harmless -- every reader now looks only for the
+        model_* names, and the DB-seeding key-strippers
+        (committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.
+        _seed_db_from_extra_dataset, utils.recover_dft_labels) strip both
+        prefixes.
+
+        Idempotent -- safe to call more than once. Already-migrated
+        containers (whose model_* key already has the same value) are
+        skipped. Returns the number of containers updated.
+        """
+        updates: dict[int, dict] = {}
+        for i, c in enumerate(self.partition.list_containers()):
+            meta = c.AtomPositionManager.metadata
+            new_keys = {}
+            for key, value in meta.items():
+                if key.startswith("mace_energy_loop_"):
+                    new_key = key.replace("mace_energy_loop_", "model_energy_loop_", 1)
+                elif key.startswith("mace_forces_loop_"):
+                    new_key = key.replace("mace_forces_loop_", "model_forces_loop_", 1)
+                else:
+                    continue
+                if meta.get(new_key) != value:
+                    new_keys[new_key] = value
+            if new_keys:
+                updates[i] = new_keys
+        if updates:
+            self.partition.set_metadata_bulk(updates, use_indices=True)
+        logger.info(
+            "migrate_mace_prediction_keys: updated %d container(s).", len(updates)
+        )
+        return len(updates)
 
     def apply_train_test_split(
         self,

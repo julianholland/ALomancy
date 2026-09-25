@@ -832,3 +832,42 @@ class RemoteJobExecutor:
         results = self.run_all_jobs_bounded()
         self.cleanup_jobs()
         return results
+
+
+def submit_n(
+    function: Callable,
+    job_configs: list[dict[str, Any]],
+    remote_info: RemoteInfo,
+    **kwargs: Any,
+) -> list[Any]:
+    """Generic N-times remote submission primitive: submit `function` once
+    per entry in `job_configs`, wait for every result, and clean up.
+
+    This is the one shared mechanism the modular AL architecture's
+    submission shapes are built from (see the registry/skeleton design):
+    the skeleton calls it directly to drive a trainer's N-times committee
+    loop (one job_configs entry per fit); a generator/evaluator module's
+    own local orchestrator entry point calls it internally to fan out
+    however many jobs it needs (one per selected MD seed, one per DFT
+    structure) -- the caller decides the shape, this function only handles
+    "submit these, wait, return index-aligned results, clean up".
+
+    Each entry of `job_configs` is the same shape `submit_multiple_jobs`/
+    `run_and_wait` already accept: a dict with `function_kwargs` (required)
+    and optionally `input_files`, `output_files`, `job_name`, `function`
+    (a per-job override of `function`, e.g. for mixed GO/SP batches).
+
+    Returns a list aligned to `job_configs` by index; a job whose worker
+    raised, or that could not be resumed to completion, contributes `None`
+    at its index rather than raising -- callers are expected to count
+    failures themselves and decide whether enough of the batch succeeded
+    to proceed (see the plan's partial-aware, failure-counted restart
+    design), not to treat a `None` as fatal on its own.
+
+    A thin wrapper around `RemoteJobExecutor.run_and_wait` -- it exists as
+    its own function so module entry points (trainer, generator, evaluator)
+    can depend on one stable, generic submission primitive without each
+    needing to know about `RemoteJobExecutor`/`RemoteInfo` construction
+    directly.
+    """
+    return RemoteJobExecutor(remote_info).run_and_wait(function, job_configs, **kwargs)

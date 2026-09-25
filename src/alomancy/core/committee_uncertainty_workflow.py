@@ -1,0 +1,1636 @@
+"""CommitteeUncertaintyWorkflow: the concrete AL skeleton for the modular
+architecture (see TODO.md's Refactor section / the associated plan).
+
+Replaced the abstract BaseActiveLearningWorkflow + its ActiveLearningStandardMACE
+subclass (both fully removed as of the 1.0 release -- this is now the only
+workflow implementation). Subclassing is gone entirely: this is one
+concrete class that resolves its trainer/structure generator/DFT
+evaluator/initialiser from config via the shared registry, instead of a
+different Python subclass per MACE+QE+MD-vs-MACE+VASP+EZGA combination.
+
+Owns:
+- The shared submit_n-driven committee training loop (N calls to the
+  trainer's train(), aggregated, quality-gated, backfilled, hard-failing
+  under 3 successful fits).
+- The one-time shared train/valid/test split per loop, written to disk
+  once and passed to every fit as file paths.
+- The partial-aware restart mechanism around each module call
+  (output_paths/read_existing_result).
+- Committee force-std-dev scoring (resolving each member's calculator via
+  the trainer registry, not a hardcoded MACECalculator) and post-generation
+  high-uncertainty selection.
+- Storing predictions in the GlobalDatabase and local checkpoint cleanup --
+  local, post-sync, committee-shaped operations needing db/loop_idx/
+  base_name, so skeleton-level rather than trainer-internal.
+- Orchestrating initialiser -> evaluator (bootstrap structures need DFT
+  labels before they can seed training) and calling the evaluator on
+  AL-loop-generated structures identically.
+
+Config schema (breaking, see the plan's "Config schema changes" section):
+a new top-level `general` section (renamed from an earlier `workflow`)
+holds `al_workflow` (the dispatch key selecting which skeleton class
+build_workflow() returns -- currently only "committee_uncertainty" is
+registered) and `elements` (see below) directly, plus a nested
+`committee_uncertainty_kwargs` dict for everything specific to *this*
+skeleton (`number_models_in_committee` -- renamed from `size_of_
+committee`, since committee-ness is a skeleton concept, not something a
+single-model skeleton would have -- `target_config_types`, `test_ratio`,
+`grouped_splits`, `valid_fraction`, `valid_config_types`,
+`grouped_validation`, `train_only`, `fixed_test`): matching the
+`<dispatch_value>_kwargs` convention used everywhere else in this schema
+(`mace_kwargs`, `md_kwargs`, ...), since "committee_uncertainty" is itself
+a dispatch value, just like "mace"/"md"/"qe" are for their own categories.
+A future `FurthestPointSamplingWorkflow` would add its own
+`furthest_point_sampling_kwargs` sibling here rather than reusing this
+one. `mlip_committee` is renamed `training` (usable by a future
+non-committee skeleton too) and gains a `trainer` key (defaults to "mace"
+if absent, for configs written before this existed).
+
+`general.elements` (list of atomic symbols, e.g. `["C", "O"]` -- not
+atomic numbers) is the single shared source of element identity across
+modules -- a direct sibling of `al_workflow`, not nested inside
+`committee_uncertainty_kwargs`, since it's genuinely universal (any future
+AL workflow would need it too, not just this one): passed as an explicit
+`elements` kwarg to the initialiser (replacing the old `initialization.
+creation_kwargs.elements`) and to the trainer (used there for an
+E0s-coverage safety-net check, since MACE itself auto-detects the element
+set from the training data but cannot infer E0s, a physical reference
+value). `general.seed` is similarly universal, defaulting to 803 --
+threaded down to the initialiser's `rattle_target_structures` step, and
+used for every other random-selection point in the workflow (`self.seed`)
+too.
+
+`CommitteeUncertaintyWorkflow.__init__` takes only `jobs_dict` -- every
+setting that used to be a separate Python constructor kwarg
+(`initial_train_file_path`, `initial_test_file_path`,
+`number_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
+`seed`, `db_path`, `remove_redundancy`, `high_force_threshold`,
+`skip_initialization`) now lives as a direct child of `general` (see
+`_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
+`elements`, since none of these are specific to the committee-uncertainty
+skeleton either -- any future AL workflow would need them too.
+`initial_train_file_path`/`initial_test_file_path` have no default (the
+one thing only the user can know); every other key falls back to its old
+constructor default. The sole exception is `db`: a live `GlobalDatabase`
+instance can't be a config value, so it's no longer constructor-settable
+at all -- `self.db` is a lazily-constructed property (built from
+`general.db_path` on first access), and a caller needing to inject an
+already-built instance (mainly tests, to skip GlobalDatabase's real
+construction cost) sets `wf.db = ...` after construction instead.
+
+`structure_generation.method` is renamed `generator`, and
+`high_accuracy_evaluation.calculator` is renamed `evaluator` -- matching
+`training.trainer`'s existing naming pattern (each section names the
+registry entry it dispatches to with a key matching what it selects).
+
+No section takes a `name` key any more: each one's name is hardcoded to
+match its own config section key (`_INITIALIZATION_NAME` etc., below) --
+there is exactly one of each section per run, so a user-supplied name added
+nothing but another place to typo (and `high_accuracy_evaluation`'s already
+had to equal this literal anyway). Old shared functions that still read
+`config["name"]` internally (`find_high_sd_structures`, `run_md`,
+`check_quality_gate`, `select_best_committee_model`, the plotting
+functions) get it merged into a shallow config copy at each call site
+instead of being changed themselves.
+
+`mace_kwargs.E0s` defaults to isolated-atom reference energies already
+in the `GlobalDatabase` (`db.get_isolated_atom_energies()`, computed once
+locally per training call and passed to the trainer as a plain dict) when
+not set explicitly -- MACE cannot infer this physical value on its own, but
+it's exactly what `IsolatedAtom` structures already generated/DFT-evaluated
+by the initialiser provide. This is the first of what will grow into a
+general config safety-net: mechanical per-module defaults, applied after
+config overrides, catching conflicting/missing settings with a clear error
+rather than a cryptic failure deep inside a remote job. Kept deliberately
+inline per-module (not a centralized pre-flight registry entry point):
+some checks would need to actually construct a calculator or invoke
+software (GPU-bound MACE, QE/VASP binaries) that isn't available on the
+local driver machine, so there's no way to validate everything before
+remote submission without running it somewhere first anyway.
+
+Per-module kwargs are named `<method>_kwargs` (`mace_kwargs`, `md_kwargs`,
+`ezga_kwargs`, `qe_kwargs`, `vasp_kwargs`), matching the dispatch key each
+section resolves against (`training.trainer`, `structure_generation.
+generator`, `high_accuracy_evaluation.evaluator`). `qe_kwargs`/
+`vasp_kwargs` are translated to the legacy `qe_input_kwargs`/
+`vasp_input_kwargs` names at the evaluator orchestrator boundary (see
+`high_accuracy_calc_interface.py`), since the shared, unchanged `run_sp`/
+`run_go` workers still read those directly. Settings genuinely
+generator-agnostic (`structure_generation.desired_number_of_structures`,
+`structure_generation.structure_selection_kwargs` for the skeleton's own
+`filter_eligible_structures` pre-filter, called once before any generator
+dispatch) stay at the top `structure_generation` level rather than being
+duplicated per-generator; MD-specific settings that would make no sense
+for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
+`max_number_of_concurrent_jobs`/`enforce_chemical_diversity`/`seed`) live
+nested inside `md_kwargs` instead. `structure_generation.trainer`/
+`trainer_config` (which trainer registry entry built the model MD's own
+dynamics calculator should use) are the same story -- MD-only, since EZGA
+loads its model directly rather than through the trainer registry -- so
+they live nested inside `md_kwargs` too. `training.max_num_epochs`
+likewise moves inside `mace_kwargs`: it's a MACE-specific training
+control (not every trainer backend would necessarily have "epochs" at
+all), kept at the top level only incidentally because MACE is the only
+trainer today. Omitting `mace_kwargs.max_num_epochs` entirely resolves
+dynamically (not a fixed number, and not MACE's own native default of
+2048) -- the same as explicitly setting it to `"dynamic"`.
+
+Other per-module defaults introduced alongside this: `structure_generation
+.desired_number_of_structures` defaults to 50 when omitted (applied once
+by the skeleton, so it's consistent regardless of which generator runs);
+`md_kwargs` defaults to `steps=20000`/`temperature=300`/`timestep_fs=0.5`
+(not `run_md`'s own far-shorter built-in defaults) and `md_kwargs.
+structure_selection_kwargs.max_number_of_concurrent_jobs` defaults to 10;
+`qe_kwargs`/`vasp_kwargs` need no explicit functional setting at all --
+both `get_qe_input_data` and `get_vasp_input_kwargs` (old, shared,
+unchanged) already default to PBE.
+
+`initialization` is architecturally unlike the other three sections: it
+has no dispatch key (trainer/generator/evaluator) because it isn't a
+choice between interchangeable backends -- it's a single method that
+always runs every structure-generating sub-task it's configured for, to
+differing degrees. So its settings are namespaced per *structure type*
+directly under `initialization` (no `creation_kwargs` wrapper -- nothing
+else in this section needed the extra nesting level, unlike
+training/structure_generation/high_accuracy_evaluation, which each hold
+more than one kind of setting): `isolated_atom_kwargs`, `dimer_kwargs`,
+`trimer_kwargs`, `amorphous_kwargs`, `mp_kwargs`,
+`stretch_compress_targets_kwargs`, `rattle_target_structures` -- each
+with its own `enabled` flag (default `True`, except `rattle_target_
+structures` which defaults `False` as a new capability with no prior
+behavior to preserve), so a sub-task can be toggled off without zeroing
+out its count field. `stretch_compress_targets_kwargs`
+(`max_lattice_deformation`, `num_stretch_compress_per_target`) and
+`rattle_target_structures` (`rattle_standard_deviation`,
+`num_rattled_per_target`) are each a sibling of `mp_kwargs`, not nested
+inside it -- both apply to every structure this call generates whose
+config_type is listed in `general.committee_uncertainty_kwargs.
+target_config_types`, not just Materials Project ones. Designed to
+extend cleanly as new sub-tasks are added (surfaces, interfaces): each
+gets its own sibling `*_kwargs` namespace here and a matching branch in
+`create_initialization_atoms_list`, without touching the others.
+"""
+
+import hashlib
+import json
+import logging
+import os
+import shutil
+import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import polars as pl
+from ase import Atoms
+from ase.io import read, write
+
+from alomancy.analysis.plotting import mae_al_loop_plot
+from alomancy.configs.remote_info import get_remote_info
+from alomancy.database.global_database import (
+    _DEFAULT_DEDUP_CONFIG_TYPES,
+    GlobalDatabase,
+)
+from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
+    high_accuracy_evaluation as _evaluator_orchestrate,
+)
+from alomancy.mlip.evaluation import check_quality_gate, read_evaluation
+from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
+from alomancy.mlip.mace.mace_wfl import read_mace_eval_predictions
+from alomancy.registry import resolve
+from alomancy.remote_submission.executor import acquire_local_expyre_lock, submit_n
+from alomancy.structure_generation.find_high_sd_structures import (
+    find_high_sd_structures,
+)
+from alomancy.utils.clean_structures import (
+    clean_structures,
+    filter_structures_by_min_bond_distance,
+)
+from alomancy.utils.dataset_curation import (
+    curate_database,
+    geometry_digest,
+    grouped_split,
+    structure_domain,
+    validate_policy,
+)
+from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+from alomancy.utils.logging_config import setup_logging
+from alomancy.utils.remote_ssh import (
+    ensure_ssh_connectivity,
+    get_alomancy_version_for_profile,
+)
+from alomancy.utils.remove_high_force_structures import (
+    remove_high_force_structures_from_partition,
+)
+from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+from alomancy.utils.seed_selection import filter_eligible_structures
+from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
+from alomancy.version import __version__, __version_tuple__
+
+logger = logging.getLogger(__name__)
+
+_PHASE_LABELS: dict[str, str] = {
+    "initialization": "Initialisation",
+    "training": "Model Trainer",
+    "structure_generation": "Structure Generation",
+    "high_accuracy_evaluation": "High-Accuracy Evaluation",
+}
+
+# Each module's "name" (used for result-directory naming, MACE run names,
+# etc.) is hardcoded to match its config section key rather than being a
+# separate config field -- there is exactly one of each section per run, so
+# a user-supplied name added nothing but another place to typo (and
+# high_accuracy_evaluation's already had to equal this literal anyway, see
+# CLAUDE.md).
+_INITIALIZATION_NAME = "initialization"
+_TRAINING_NAME = "training"
+_STRUCTURE_GENERATION_NAME = "structure_generation"
+_HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
+
+# structure_generation.desired_number_of_structures is generator-agnostic
+# (find_high_sd_structures' post-generation selection cap, and run_md's own
+# trajectory-sampling stride -- both old/shared, both require this key with
+# no default of their own). Defaulted once here, before generator dispatch,
+# so the same value applies regardless of which generator module runs
+# (EZGA doesn't read it today, but would get the same default too if a
+# future version started to).
+_DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 50
+
+# general.committee_uncertainty_kwargs' own defaults -- matching the
+# <dispatch_value>_kwargs convention used elsewhere (mace_kwargs, md_kwargs,
+# qe_kwargs, ...), since "committee_uncertainty" is itself a dispatch value
+# (general.al_workflow). Keys with no entry here (test_ratio,
+# target_config_types, valid_config_types) stay required -- a silently
+# guessed test/validation split policy is worse than a clear KeyError.
+# number_models_in_committee defaults to 3 (the minimum for a usable force
+# std-dev); the other four already had these exact fallback values before
+# they lived in a dedicated defaults dict.
+_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS: dict[str, Any] = {
+    "number_models_in_committee": 3,
+    "valid_fraction": 0.05,
+    "grouped_splits": False,
+    "grouped_validation": False,
+    "train_only": False,
+    "fixed_test": False,
+}
+
+# general's own direct-child defaults, for every setting that used to be a
+# CommitteeUncertaintyWorkflow constructor kwarg -- these apply regardless
+# of which AL workflow is chosen (matching elements/seed's precedent), so
+# they're not nested inside committee_uncertainty_kwargs. The constructor
+# now takes only jobs_dict; everything it used to accept as a Python kwarg
+# is read from here instead. initial_train_file_path/initial_test_file_path
+# have no entry -- they're genuinely required, matching this module's
+# no-invented-defaults convention for things only the user can know.
+_GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
+    "number_of_al_loops": 5,
+    "verbose": 0,
+    "log_file": "results/alomancy.log",
+    "start_loop": 0,
+    "plots": True,
+    "seed": 803,
+    "db_path": "results/global_database",
+    "remove_redundancy": True,
+    "high_force_threshold": 100.0,
+    "skip_initialization": False,
+}
+
+
+def _needs_anything(needs: dict) -> bool:
+    return bool(
+        needs["isolated_atoms"]
+        or needs["dimer_override"]
+        or needs["trimer_override"]
+        or needs["amorphous_override"] > 0
+        or needs["mp_structures"]
+    )
+
+
+def _flatten_settings(
+    d: dict, prefix: str = "", max_depth: int = 3
+) -> list[tuple[str, object]]:
+    items: list[tuple[str, object]] = []
+    for key, value in d.items():
+        if key in ("hpc", "name"):
+            continue
+        full_key = f"{prefix}{key}"
+        if isinstance(value, dict) and max_depth > 0:
+            items.extend(
+                _flatten_settings(value, prefix=f"{full_key}.", max_depth=max_depth - 1)
+            )
+        else:
+            items.append((full_key, value))
+    return items
+
+
+def _is_user_specified(raw_phase_dict: dict, dotted_key: str) -> bool:
+    """Whether dotted_key (e.g. "mace_kwargs.max_num_epochs", as produced
+    by _flatten_settings) was present verbatim in raw_phase_dict -- the
+    config exactly as the user wrote it, before _resolve_effective_phase_
+    dict merged in any per-module defaults for display. A dict-valued
+    override (e.g. setting qe_kwargs.system at all) makes every key
+    currently under it count as user-specified too, since that's exactly
+    what a shallow merge like get_qe_input_data's actually does at
+    runtime: replace the whole sub-dict, not merge individual keys within
+    it -- there's no "which of these particular keys did the user type"
+    once that's happened.
+    """
+    node: Any = raw_phase_dict
+    for part in dotted_key.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            # Not a dict any more -> already inside a dict the user
+            # supplied wholesale (see docstring), so every key beneath it
+            # counts as user-specified. Still a dict but missing this key
+            # -> genuinely not user-specified.
+            return not isinstance(node, dict)
+    return True
+
+
+def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
+    """Return phase_dict with its <method>_kwargs (or, for
+    "initialization", each of its structure-type namespaces -- see
+    initialiser_interface.py's module docstring; or, for "general",
+    committee_uncertainty_kwargs -- see this module's own docstring)
+    replaced by the fully defaults-merged version the corresponding module
+    actually uses at runtime -- everything else in phase_dict passes
+    through unchanged.
+
+    Display-only (used by display_workflow_summary below): never mutates
+    self.jobs_dict or feeds any module's real runtime call. Each module
+    already independently merges its own defaults with its own user
+    overrides at the point it actually reads config (trainer.py's
+    mace_kwargs, md_wfl.py's md_kwargs, initialiser_interface.py's
+    isolated_atom_kwargs/dimer_kwargs/..., ...) -- this reads each module's
+    defaults back out via the shared registry (resolve(category, name).
+    kwargs_defaults, or .resolve_effective_kwargs(...) for the two DFT
+    evaluators, whose own merge is shallow-per-section rather than a flat
+    dict) purely to mirror that same merge for the summary, so the two
+    can't silently diverge beyond what's noted below.
+
+    Known gaps, not attempted here: hpc/max_time defaults (see
+    config_dictionaries.py) are resolved before the workflow object even
+    exists, mutating jobs_dict in place -- by the time this runs, there's
+    no way to tell whether a value already in jobs_dict was user-written
+    or auto-filled, so those two keys are shown plain, never marked either
+    way. structure_generation.structure_selection_kwargs (the top-level,
+    generator-agnostic one feeding filter_eligible_structures, not
+    generator_kwargs' own nested copy) is shown as given, un-defaulted.
+    """
+    effective = dict(phase_dict)
+    if phase == "general":
+        effective = {**_GENERAL_KWARGS_DEFAULTS, **effective}
+        al_workflow = effective.get("al_workflow", "committee_uncertainty")
+        if al_workflow == "committee_uncertainty":
+            kwargs_key = f"{al_workflow}_kwargs"
+            effective[kwargs_key] = {
+                **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+                **effective.get(kwargs_key, {}),
+            }
+    elif phase == "initialization":
+        namespace_defaults = resolve("initialiser", "default").kwargs_defaults
+        for namespace, defaults in namespace_defaults.items():
+            effective[namespace] = {**defaults, **effective.get(namespace, {})}
+    elif phase == "training":
+        trainer_name = effective.get("trainer", "mace")
+        kwargs_key = f"{trainer_name}_kwargs"
+        defaults = resolve("mlip_trainer", trainer_name).kwargs_defaults
+        merged = {**defaults, **effective.get(kwargs_key, {})}
+        if trainer_name == "mace" and "E0s" not in merged:
+            merged["E0s"] = "<resolved at train time from IsolatedAtom structures>"
+        effective[kwargs_key] = merged
+    elif phase == "structure_generation":
+        generator = effective.get("generator", "md")
+        kwargs_key = f"{generator}_kwargs"
+        defaults = resolve("structure_generator", generator).kwargs_defaults
+        effective[kwargs_key] = {**defaults, **effective.get(kwargs_key, {})}
+        effective.setdefault(
+            "desired_number_of_structures", _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES
+        )
+    elif phase == "high_accuracy_evaluation":
+        evaluator = effective.get("evaluator", "qe")
+        kwargs_key = f"{evaluator}_kwargs"
+        entry = resolve("dft_evaluator", evaluator)
+        effective[kwargs_key] = entry.resolve_effective_kwargs(
+            effective.get(kwargs_key, {})
+        )
+    return effective
+
+
+def _collect_hpc_profiles(jobs_dict: dict) -> dict[str, dict]:
+    profiles: dict[str, dict] = {}
+    for phase in _PHASE_LABELS:
+        phase_dict = jobs_dict.get(phase)
+        if not phase_dict:
+            continue
+        hpc = phase_dict.get("hpc")
+        if not isinstance(hpc, dict):
+            continue
+        name = hpc.get("hpc_name", "<unnamed>")
+        profiles.setdefault(name, hpc)
+    return profiles
+
+
+def _fetch_latest_pypi_version(
+    package: str = "alomancy", timeout: float = 3.0
+) -> str | None:
+    if (
+        os.getenv("ALOMANCY_TEST_MODE") == "1"
+        or os.getenv("ALOMANCY_MOCK_EXTERNAL") == "1"
+    ):
+        return None
+    try:
+        with urllib.request.urlopen(
+            f"https://pypi.org/pypi/{package}/json", timeout=timeout
+        ) as response:
+            data = json.loads(response.read())
+        return data["info"]["version"]
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+    ) as exc:
+        logger.debug("Could not check PyPI for latest %s version: %s", package, exc)
+        return None
+
+
+def _flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
+    return np.reshape(forces, (1, forces.shape[0] * 3))
+
+
+def _score_structures_with_member(
+    structure_list: list[Atoms],
+    model_path: str,
+    trainer: str,
+    trainer_config: dict,
+) -> dict:
+    """Remote worker: evaluate structure_list's forces/energy against ONE
+    committee member's model, resolving the calculator via the trainer
+    registry -- never a hardcoded MACECalculator -- see the architecture
+    plan's committee-scoring decision. Returns
+    {"forces": [...], "energies": [...]}, index-aligned with structure_list.
+    """
+    entry = resolve("mlip_trainer", trainer)
+    calc = entry.get_calculator(model_path, trainer_config)
+    forces = []
+    energies = []
+    for atoms in structure_list:
+        atoms.calc = calc
+        forces.append(_flatten_array_of_forces(atoms.get_forces()))
+        energies.append(np.array(atoms.get_potential_energy()))
+    return {"forces": forces, "energies": energies}
+
+
+def _select_validation_split(
+    all_training: list[Atoms],
+    acceptable_configs: list[str],
+    valid_fraction: float,
+    rng: np.random.Generator,
+) -> tuple[list[Atoms], list[Atoms]]:
+    """Carve the shared validation set from all_training. Only structures
+    with config_type in acceptable_configs are eligible; the rest always
+    stay in training. Returns (new_train_set, valid_set). Built ONCE per
+    loop by the skeleton (decision 6) -- not re-derived per committee
+    member -- and the same (train, valid) lists are then written to disk
+    once and passed as file paths to every trainer.train() call.
+    """
+    eligible = [
+        a for a in all_training if a.info.get("config_type") in acceptable_configs
+    ]
+    if not eligible:
+        logger.warning(
+            "No structures with config_type in %s found; skipping validation split.",
+            acceptable_configs,
+        )
+        return all_training, []
+
+    n_valid = int(np.floor(valid_fraction * len(eligible)))
+    if n_valid == 0:
+        logger.warning(
+            "%.0f%% of %d eligible structure(s) rounds to 0; skipping validation split.",
+            valid_fraction * 100,
+            len(eligible),
+        )
+        return all_training, []
+
+    chosen = rng.choice(len(eligible), size=n_valid, replace=False)
+    valid_set = [eligible[i] for i in chosen]
+    valid_ids = {id(a) for a in valid_set}
+    new_train_set = [a for a in all_training if id(a) not in valid_ids]
+
+    logger.info(
+        "Validation split: %d valid, %d train (from %d total, %d eligible).",
+        len(valid_set),
+        len(new_train_set),
+        len(all_training),
+        len(eligible),
+    )
+    return new_train_set, valid_set
+
+
+class CommitteeUncertaintyWorkflow:
+    """Concrete AL skeleton: committee-uncertainty selection, resolving its
+    trainer/structure-generator/DFT-evaluator/initialiser from config via
+    the shared registry."""
+
+    def __init__(self, jobs_dict: dict):
+        self.jobs_dict = jobs_dict
+        if jobs_dict.get("dataset_curation"):
+            validate_policy(jobs_dict["dataset_curation"])
+
+        general_config = jobs_dict.get("general", {})
+        general_kwargs = {**_GENERAL_KWARGS_DEFAULTS, **general_config}
+
+        for key in ("initial_train_file_path", "initial_test_file_path"):
+            if key not in general_config:
+                raise ValueError(
+                    f"general.{key} is required (a path to an xyz file -- it "
+                    "need not exist yet, the workflow falls through to the "
+                    "DB-driven bootstrap path when it doesn't)."
+                )
+        self.initial_train_file_path = Path(general_kwargs["initial_train_file_path"])
+        self.initial_test_file_path = Path(general_kwargs["initial_test_file_path"])
+        self.number_of_al_loops = general_kwargs["number_of_al_loops"]
+        self.verbose = general_kwargs["verbose"]
+        self.start_loop = general_kwargs["start_loop"]
+        self.plots = general_kwargs["plots"]
+        self.seed = general_kwargs["seed"]
+        self._db: GlobalDatabase | None = None
+        self._db_path = general_kwargs["db_path"]
+        self.remove_redundancy = general_kwargs["remove_redundancy"]
+        self.high_force_threshold = general_kwargs["high_force_threshold"]
+        self.skip_initialization = general_kwargs["skip_initialization"]
+        self.log_file = general_kwargs["log_file"]
+        setup_logging(verbose=self.verbose, log_file=self.log_file)
+
+    @property
+    def db(self) -> GlobalDatabase:
+        """Lazily constructed from general.db_path on first access -- never
+        pays GlobalDatabase's real construction cost (observed ~1-3s) when
+        a caller (mainly tests) overrides this with an already-built
+        instance via the setter before ever reading it."""
+        if self._db is None:
+            self._db = GlobalDatabase(self._db_path)
+        return self._db
+
+    @db.setter
+    def db(self, value: GlobalDatabase) -> None:
+        self._db = value
+
+    # -- Phase/loop bookkeeping (unchanged from BaseActiveLearningWorkflow) --
+
+    def _phase_done(self, base_name: str, phase: str) -> bool:
+        return Path("results", base_name, f"{phase}.done").exists()
+
+    def _mark_phase_done(self, base_name: str, phase: str) -> None:
+        sentinel = Path("results", base_name, f"{phase}.done")
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_text(datetime.now().isoformat() + "\n")
+        logger.debug("Phase %s marked complete for %s.", phase, base_name)
+
+    def _last_complete_loop(self) -> int:
+        last = -1
+        for loop in range(self.number_of_al_loops):
+            if (Path("results", f"al_loop_{loop}") / "loop.done").exists():
+                last = loop
+            else:
+                break
+        return last
+
+    def display_workflow_summary(self) -> None:
+        lines: list[str] = [
+            "",
+            "=" * 70,
+            f"ALomancy Workflow Summary (v{__version__})",
+            "=" * 70,
+        ]
+        general_dict = self.jobs_dict.get("general")
+        if general_dict is not None:
+            lines.append("")
+            lines.append("--- General ---")
+            effective_general = _resolve_effective_phase_dict("general", general_dict)
+            for key, value in _flatten_settings(effective_general):
+                marker = (
+                    "  [user-specified]"
+                    if _is_user_specified(general_dict, key)
+                    else ""
+                )
+                lines.append(f"  {key}: {value}{marker}")
+
+        hpc_usage: dict[str, dict] = {}
+        for phase, heading in _PHASE_LABELS.items():
+            phase_dict = self.jobs_dict.get(phase)
+            # Not `if not phase_dict`: an empty-but-present section (e.g.
+            # "initialization: {}", now valid -- every one of its settings
+            # defaults to enabled) must still show its resolved defaults,
+            # not be silently skipped. Only a genuinely absent section key
+            # (phase_dict is None) is skipped here.
+            if phase_dict is None:
+                continue
+            lines.append("")
+            lines.append(f"--- {heading} ({phase_dict.get('name', phase)}) ---")
+            # Shows the fully-resolved effective config (per-module
+            # defaults merged in, not just what's in self.jobs_dict) --
+            # see _resolve_effective_phase_dict's docstring for exactly
+            # what is and isn't covered. Values the user actually wrote
+            # are marked explicitly; unmarked lines are values filled in
+            # purely from a module's own defaults.
+            effective_phase_dict = _resolve_effective_phase_dict(phase, phase_dict)
+            for key, value in _flatten_settings(effective_phase_dict):
+                # max_time is never marked either way (see
+                # _resolve_effective_phase_dict's docstring): it's already
+                # been defaulted-or-not by config_dictionaries.py, in
+                # place, before this workflow object even existed, so
+                # there's no way to tell here which one happened.
+                marker = (
+                    "  [user-specified]"
+                    if key != "max_time" and _is_user_specified(phase_dict, key)
+                    else ""
+                )
+                lines.append(f"  {key}: {value}{marker}")
+            hpc = phase_dict.get("hpc")
+            if hpc:
+                name = (
+                    hpc.get("hpc_name", "<unnamed>")
+                    if isinstance(hpc, dict)
+                    else str(hpc)
+                )
+                entry = hpc_usage.setdefault(
+                    name,
+                    {"profile": hpc if isinstance(hpc, dict) else {}, "phases": []},
+                )
+                entry["phases"].append(heading)
+
+        lines.append("")
+        lines.append("--- HPC Profiles ---")
+        if hpc_usage:
+            rows = []
+            for name, entry in hpc_usage.items():
+                profile = entry["profile"]
+                node_info = profile.get("node_info", {})
+                rows.append(
+                    {
+                        "hpc_name": name,
+                        "alomancy_version": get_alomancy_version_for_profile(profile)
+                        or "?",
+                        "gpu": profile.get("gpu", "?"),
+                        "partitions": ", ".join(profile.get("partitions", []) or [])
+                        or "?",
+                        "ranks_per_node": node_info.get("ranks_per_node", "?"),
+                        "max_mem_per_node": node_info.get("max_mem_per_node", "?"),
+                        "job_types": "\n".join(entry["phases"]),
+                    }
+                )
+            with pl.Config(
+                fmt_str_lengths=200, tbl_width_chars=200, tbl_hide_dataframe_shape=True
+            ):
+                lines.append(str(pl.DataFrame(rows)))
+        else:
+            lines.append("  No HPC profiles configured.")
+        lines.append("=" * 70)
+        logger.info("\n".join(lines))
+
+    def pre_run_checks(self) -> None:
+        acquire_local_expyre_lock()
+        self.display_workflow_summary()
+        ensure_ssh_connectivity(_collect_hpc_profiles(self.jobs_dict))
+
+        latest_version = _fetch_latest_pypi_version()
+        if latest_version is None:
+            return
+
+        current_major, current_minor = __version_tuple__[0], __version_tuple__[1]
+        try:
+            latest_tuple = tuple(int(part) for part in latest_version.split(".")[:3])
+        except ValueError:
+            logger.debug(
+                "Could not parse latest PyPI version %r; skipping version check.",
+                latest_version,
+            )
+            return
+        latest_major, latest_minor = latest_tuple[0], latest_tuple[1]
+
+        if latest_major > current_major:
+            raise RuntimeError(
+                f"Installed alomancy version {__version__} is a major release "
+                f"behind the latest available version {latest_version}. "
+                "Breaking changes are likely — please upgrade "
+                "(`pip install -U alomancy`) before running."
+            )
+        if latest_major == current_major and latest_minor > current_minor:
+            logger.warning(
+                "Installed alomancy version %s is a minor release behind the "
+                "latest available version %s. Consider upgrading "
+                "(`pip install -U alomancy`).",
+                __version__,
+                latest_version,
+            )
+
+    def _seed_db_from_extra_dataset(self, extra_dataset: str) -> None:
+        all_atoms: list[Atoms] = read(extra_dataset, ":", format="extxyz")
+        if isinstance(all_atoms, Atoms):
+            all_atoms = [all_atoms]
+
+        digest = hashlib.sha256(Path(extra_dataset).read_bytes()).hexdigest()
+        existing = {
+            a.info.get("source_dataset_sha256") for a in self.db.get_all_as_atoms()
+        }
+        if digest in existing:
+            logger.info(
+                "Extra dataset %s already imported (sha256=%s)", extra_dataset, digest
+            )
+            return
+        reset_splits = self.jobs_dict["initialization"].get("reset_extra_splits", False)
+        for atoms in all_atoms:
+            atoms.info["source_dataset_sha256"] = digest
+            atoms.info.setdefault("domain", structure_domain(atoms))
+            if reset_splits:
+                for key in ("split", "global_db_id", "is_duplicate", "is_high_force"):
+                    atoms.info.pop(key, None)
+                for key in list(atoms.info):
+                    if key.startswith(("model_", "mace_")):
+                        del atoms.info[key]
+        added = self.db.add_structures(all_atoms, skip_duplicates=True)
+        skipped = len(all_atoms) - added
+        msg = f"Seeded DB from {extra_dataset}: {added} structure(s) added"
+        if skipped:
+            msg += f", {skipped} duplicate(s) skipped"
+        logger.info("%s.", msg)
+
+    def load_initial_train_test_sets(
+        self, dummy_run: bool = False
+    ) -> tuple[list[Atoms], list[Atoms]]:
+        train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file_path)
+        test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file_path)
+        if train_xyzs is None or test_xyzs is None:
+            raise FileNotFoundError(
+                "Initial training or test file not found. Please provide valid file paths."
+            )
+        if dummy_run:
+            train_xyzs = train_xyzs[:500]
+            test_xyzs = test_xyzs[:200]
+        return train_xyzs, test_xyzs
+
+    # -- Initialiser -> evaluator orchestration (decision 10) --
+
+    def _initialize_training_set(
+        self, base_name: str
+    ) -> tuple[list[Atoms], list[Atoms]]:
+        work_dir = Path("results", base_name)
+        work_dir.mkdir(exist_ok=True, parents=True)
+        init_config = self.jobs_dict["initialization"]
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
+
+        if (
+            self.initial_train_file_path.exists()
+            and self.initial_test_file_path.exists()
+        ):
+            train_xyzs, test_xyzs = self.load_initial_train_test_sets()
+            logger.info(
+                "Initial train and test sets loaded from files: %s, %s",
+                self.initial_train_file_path,
+                self.initial_test_file_path,
+            )
+            write(
+                work_dir / self.initial_train_file_path.name,
+                train_xyzs,
+                format="extxyz",
+            )
+            write(
+                work_dir / self.initial_test_file_path.name, test_xyzs, format="extxyz"
+            )
+            if self.db.size == 0:
+                self.db.add_structures(train_xyzs, split="train", skip_duplicates=True)
+                self.db.add_structures(test_xyzs, split="test", skip_duplicates=True)
+            return train_xyzs, test_xyzs
+
+        initialiser_entry = resolve("initialiser", "default")
+        elements = general_config.get("elements")
+        if not elements:
+            raise ValueError(
+                "general.elements is required (list of atomic symbols, e.g. "
+                '["C", "O"]).'
+            )
+
+        if self.db.size > 0:
+            logger.info(
+                "Global DB has %d existing structures; reading those in first.",
+                self.db.size,
+            )
+
+        needs = initialiser_entry.compute_needs(self.db, init_config, elements)
+
+        extra_datasets = init_config.get("extra_datasets") or []
+        if extra_datasets:
+            for extra_dataset in extra_datasets:
+                self._seed_db_from_extra_dataset(extra_dataset)
+            needs = initialiser_entry.compute_needs(self.db, init_config, elements)
+
+        if _needs_anything(needs):
+            logger.info(
+                "DB check: %d structure(s) already evaluated. Generating missing "
+                "structures: %d isolated atoms, %d dimers, %d trimers, %d amorphous.",
+                self.db.size,
+                len(needs["isolated_atoms"]),
+                sum(needs["dimer_override"].values()),
+                sum(needs["trimer_override"].values()),
+                needs["amorphous_override"],
+            )
+
+            generated_atoms_list = None
+            if init_config.get("read_generated_file") is not None:
+                generated_atoms_list = read_atoms_file_if_enabled(
+                    True, work_dir / init_config["read_generated_file"]
+                )
+                if generated_atoms_list:
+                    logger.info(
+                        "Read %d pre-generated structures from file: %s",
+                        len(generated_atoms_list),
+                        init_config["read_generated_file"],
+                    )
+
+            if not generated_atoms_list:
+                generated_atoms_list = initialiser_entry.generate(
+                    init_config,
+                    base_name=base_name,
+                    name=_INITIALIZATION_NAME,
+                    elements=elements,
+                    hpc=init_config.get("hpc"),
+                    max_time=init_config.get("max_time"),
+                    needs=needs,
+                    target_config_types=committee_kwargs["target_config_types"],
+                    seed=self.seed,
+                )
+
+            if not generated_atoms_list:
+                raise ValueError(
+                    "No structures were generated. Check initialization configuration."
+                )
+
+            high_accuracy_structures = _evaluator_orchestrate(
+                generated_atoms_list,
+                self.jobs_dict["high_accuracy_evaluation"],
+                base_name=base_name,
+                name=_HIGH_ACCURACY_EVALUATION_NAME,
+                hpc=self.jobs_dict["high_accuracy_evaluation"]["hpc"],
+                max_time=self.jobs_dict["high_accuracy_evaluation"]["max_time"],
+                allow_relaxation=True,
+                start_index=0,
+            )
+
+            if not high_accuracy_structures:
+                raise ValueError(
+                    "No high-accuracy structures returned. Check HPC configuration "
+                    "and make sure remote jobs are running correctly."
+                )
+
+            logger.info(
+                "config_type of first evaluated structure: %s",
+                high_accuracy_structures[0].info.get("config_type"),
+            )
+
+            high_accuracy_structures = clean_structures(
+                high_accuracy_structures,
+                base_name,
+                override_config_type=False,
+                already_computed=True,
+            )
+            added = self.db.add_structures(
+                high_accuracy_structures,
+                skip_duplicates=True,
+                config_types_to_dedup=_DEFAULT_DEDUP_CONFIG_TYPES,
+            )
+            logger.info("Added %d new structure(s) to the global database.", added)
+        else:
+            logger.info(
+                "All initialization targets already met in global DB "
+                "(%d structures). Skipping generation and DFT.",
+                self.db.size,
+            )
+
+        all_evaluated = self.db.get_all_as_atoms()
+
+        if committee_kwargs["grouped_splits"]:
+            train_xyzs, test_xyzs = grouped_split(
+                all_evaluated, committee_kwargs["test_ratio"], self.seed
+            )
+        else:
+            target_config_types = set(committee_kwargs["target_config_types"])
+            eligible_test_structures: list[Atoms] = []
+            always_train_structures: list[Atoms] = []
+            for atoms in all_evaluated:
+                (
+                    eligible_test_structures
+                    if atoms.info.get("config_type") in target_config_types
+                    else always_train_structures
+                ).append(atoms)
+
+            if not eligible_test_structures:
+                logger.warning(
+                    "No eligible test structures found for the specified "
+                    "target_config_types. All structures will be used for training."
+                )
+                train_xyzs = all_evaluated
+                test_xyzs = []
+            else:
+                eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
+                    eligible_test_structures,
+                    committee_kwargs["test_ratio"],
+                    self.seed,
+                )
+                train_config_types = {
+                    a.info.get("config_type", "") for a in eligible_train
+                }
+                eligible_config_types = {
+                    a.info.get("config_type", "") for a in eligible_test_structures
+                }
+                missing_types = eligible_config_types - train_config_types
+                if missing_types:
+                    for config_type in missing_types:
+                        idx = next(
+                            i
+                            for i, a in enumerate(test_xyzs)
+                            if a.info.get("config_type", "") == config_type
+                        )
+                        eligible_train.append(test_xyzs.pop(idx))
+                    logger.warning(
+                        "Reserved one structure from each of %s for training to "
+                        "avoid entirely excluding these config_types from "
+                        "train_atoms_list.",
+                        sorted(missing_types),
+                    )
+                train_xyzs = always_train_structures + eligible_train
+
+        write(work_dir / self.initial_train_file_path.name, train_xyzs, format="extxyz")
+        write(work_dir / self.initial_test_file_path.name, test_xyzs, format="extxyz")
+
+        config_types_in_train = {
+            atoms.info["config_type"]
+            for atoms in train_xyzs
+            if "config_type" in atoms.info
+        }
+        logger.info("Config types in training set: %s", config_types_in_train)
+        return train_xyzs, test_xyzs
+
+    # -- Committee training (decisions 2, 3, 6, 7) --
+
+    def _train_mlip(self, base_name: str) -> pd.DataFrame:
+        training_config = self.jobs_dict["training"]
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
+        name = _TRAINING_NAME
+        committee_size = committee_kwargs["number_models_in_committee"]
+        hpc = training_config["hpc"]
+        max_time = training_config["max_time"]
+        trainer_name = training_config.get("trainer", "mace")
+
+        workdir = Path("results", base_name)
+
+        if self._phase_done(base_name, "train_mlip"):
+            logger.info("train_mlip already done for %s, reloading metrics.", base_name)
+            return self._cross_loop_metrics_dataframe(name)
+
+        trainer_entry = resolve("mlip_trainer", trainer_name)
+
+        all_training = list(read(workdir / "train_set.xyz", ":", format="extxyz"))
+        test_path = workdir / "test_set.xyz"
+
+        valid_config_types = committee_kwargs.get(
+            "valid_config_types", committee_kwargs.get("target_config_types", [])
+        )
+        acceptable_configs = [*valid_config_types, "high_sd"]
+        valid_fraction = committee_kwargs["valid_fraction"]
+        rng = np.random.default_rng(self.seed)
+        if committee_kwargs["grouped_validation"]:
+            new_train_set, valid_set = grouped_split(
+                all_training, valid_fraction, self.seed
+            )
+        else:
+            new_train_set, valid_set = _select_validation_split(
+                all_training, acceptable_configs, valid_fraction, rng
+            )
+
+        train_path = workdir / "split_train.xyz"
+        write(train_path, new_train_set, format="extxyz")
+        valid_path_str: str | None = None
+        if valid_set:
+            valid_path = workdir / "split_valid.xyz"
+            write(valid_path, valid_set, format="extxyz")
+            valid_path_str = str(valid_path)
+
+        results: dict[int, tuple] = {}
+        missing: list[int] = []
+        for fit_idx in range(committee_size):
+            paths = trainer_entry.output_paths(
+                training_config, base_name=base_name, name=name, fit_idx=fit_idx
+            )
+            if all(p.exists() for p in paths):
+                try:
+                    results[fit_idx] = trainer_entry.read_existing_result(
+                        training_config,
+                        base_name=base_name,
+                        name=name,
+                        fit_idx=fit_idx,
+                    )
+                    continue
+                except ValueError:
+                    logger.warning(
+                        "fit_%d's cached result failed validation; retraining.", fit_idx
+                    )
+            missing.append(fit_idx)
+
+        if missing:
+            logger.info(
+                "train_mlip for %s: %d/%d fit(s) already cached; submitting %s.",
+                base_name,
+                committee_size - len(missing),
+                committee_size,
+                missing,
+            )
+            input_files = [str(train_path), str(test_path)]
+            if valid_path_str:
+                input_files.append(valid_path_str)
+            remote_info = get_remote_info(
+                {"hpc": hpc, "name": name, "max_time": max_time},
+                input_files=input_files,
+            )
+            # Computed once, locally, and passed down as a plain dict
+            # (not a live GlobalDatabase, which must never cross the ExPyRe
+            # boundary) so trainer.train() can default mace_kwargs.E0s
+            # to isolated-atom reference energies when the config doesn't
+            # set E0s explicitly.
+            isolated_atom_e0s = self.db.get_isolated_atom_energies()
+            job_configs = [
+                {
+                    "function_kwargs": {
+                        "train_atoms_path": str(train_path),
+                        "valid_atoms_path": valid_path_str,
+                        "test_atoms_path": str(test_path),
+                        "config": training_config,
+                        "fit_seed": self.seed + fit_idx,
+                        "base_name": base_name,
+                        "name": name,
+                        "fit_idx": fit_idx,
+                        "hpc": hpc,
+                        "max_time": max_time,
+                        "elements": general_config.get("elements"),
+                        "isolated_atom_e0s": isolated_atom_e0s,
+                    },
+                    "output_files": [str(workdir / name / f"fit_{fit_idx}")],
+                }
+                for fit_idx in missing
+            ]
+            submitted = submit_n(trainer_entry.train, job_configs, remote_info)
+            for position, fit_idx in enumerate(missing):
+                if submitted[position] is not None:
+                    results[fit_idx] = submitted[position]
+
+        if len(results) < 3:
+            raise RuntimeError(
+                f"train_mlip for {base_name}: only {len(results)} trained model(s) "
+                f"succeeded (out of {committee_size} requested) — need at least 3 "
+                "for a usable committee std-dev. Check remote job logs for failures."
+            )
+        if len(results) < committee_size:
+            logger.warning(
+                "train_mlip for %s: only %d/%d committee member(s) succeeded; "
+                "proceeding with %d.",
+                base_name,
+                len(results),
+                committee_size,
+                len(results),
+            )
+
+        self._store_predictions_and_cleanup(base_name, name, results)
+
+        if training_config.get("quality_gate"):
+            # check_quality_gate (mlip/evaluation.py, unchanged/untouched)
+            # reads committee["size_of_committee"] and committee["name"]
+            # from whatever dict it's given -- size_of_committee now lives
+            # in workflow (not training) and name is hardcoded (not config)
+            # for this skeleton, so both are merged in here rather than
+            # changing that function.
+            check_quality_gate(
+                workdir,
+                {**training_config, "size_of_committee": committee_size, "name": name},
+            )
+
+        self._mark_phase_done(base_name, "train_mlip")
+        return self._cross_loop_metrics_dataframe(name)
+
+    def _cross_loop_metrics_dataframe(self, name: str) -> pd.DataFrame:
+        """Skeleton-level replacement for mlip.mace.get_mace_eval_info's
+        cross-loop DataFrame aggregation, generalized to read the
+        trainer-agnostic evaluation_metrics.json schema directly (via
+        read_evaluation) rather than through a MACE-specific function.
+        One row per AL loop (in loop order), aggregating each loop's "test"
+        split across committee members -- matches what mae_al_loop_plot/
+        plot_training_curves already expect (decision 19: those stay
+        unchanged, out of scope for this refactor).
+        """
+        al_loop_dirs = sorted(
+            Path("results").glob("al_loop_*"),
+            key=lambda p: int(p.name.rsplit("_", 1)[1]),
+        )
+        rows = []
+        for al_loop_dir in al_loop_dirs:
+            metric_files = sorted(
+                (al_loop_dir / name).glob("fit_*/evaluation_metrics.json")
+            )
+            if not metric_files:
+                continue
+            records = []
+            for metric_file in metric_files:
+                try:
+                    record, _ = read_evaluation(metric_file.parent, "test")
+                    records.append(record)
+                except (FileNotFoundError, KeyError, ValueError):
+                    continue
+            if not records:
+                continue
+            row = {
+                key: float(np.mean([r[key] for r in records]))
+                for key in ("mae_f", "mae_e_per_atom")
+            }
+            row.update(
+                {
+                    f"{key}_std_dev": float(np.std([r[key] for r in records]))
+                    for key in ("mae_f", "mae_e_per_atom")
+                }
+            )
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    def _store_predictions_and_cleanup(
+        self, base_name: str, name: str, results: dict[int, tuple]
+    ) -> None:
+        """Store per-fit predictions in the GlobalDatabase and clean up
+        local checkpoints/ directories -- local, post-sync, committee-shaped
+        operations needing db/loop_idx/base_name, so skeleton-level rather
+        than trainer-internal (decision 2/15)."""
+        loop_idx = int(base_name.rsplit("_", 1)[-1]) if "al_loop_" in base_name else 0
+        for fit_idx, (_model_path, compiled_model_path, _metrics) in results.items():
+            fit_dir = Path("results", base_name, name, f"fit_{fit_idx}")
+            preds = read_mace_eval_predictions(fit_dir)
+            if preds:
+                self.db.store_model_predictions(loop_idx, fit_idx, preds)
+            if compiled_model_path is not None:
+                checkpoints_dir = fit_dir / "checkpoints"
+                if checkpoints_dir.exists():
+                    shutil.rmtree(checkpoints_dir, ignore_errors=True)
+                    logger.info(
+                        "Removed local %s after successful fit.", checkpoints_dir
+                    )
+
+    def store_mlip_predictions(
+        self, loop_idx: int, base_name: str, job_dict: dict
+    ) -> None:
+        """No-op: prediction storage now happens inside _train_mlip (via
+        _store_predictions_and_cleanup), since the trainer's returned
+        results are only available there. Kept as a method (matching
+        BaseActiveLearningWorkflow's call site in run()) for interface
+        parity; run() below does not call it separately."""
+
+    # -- Structure generation: eligibility filtering, generate, committee scoring --
+
+    def _score_committee(
+        self,
+        structure_list: list[Atoms],
+        base_name: str,
+        best_fit_idx: int,
+        fits_to_use: list[int],
+        trainer_name: str,
+        training_config: dict,
+        name: str,
+        sg_hpc: dict,
+        sg_max_time: str,
+    ) -> dict:
+        trainer_entry = resolve("mlip_trainer", trainer_name)
+        order = [best_fit_idx, *fits_to_use]
+        member_paths: dict[int, str] = {}
+        for fit_idx in order:
+            model_path, _, _ = trainer_entry.read_existing_result(
+                training_config, base_name=base_name, name=name, fit_idx=fit_idx
+            )
+            member_paths[fit_idx] = model_path
+
+        remote_info = get_remote_info(
+            {"hpc": sg_hpc, "name": f"score_{name}", "max_time": sg_max_time},
+            input_files=list(member_paths.values()),
+        )
+        job_configs = [
+            {
+                "function_kwargs": {
+                    "structure_list": structure_list,
+                    "model_path": member_paths[fit_idx],
+                    "trainer": trainer_name,
+                    "trainer_config": training_config,
+                }
+            }
+            for fit_idx in order
+        ]
+        results = submit_n(_score_structures_with_member, job_configs, remote_info)
+
+        structure_forces_dict: dict = {}
+        for position, fit_idx in enumerate(order):
+            result = results[position]
+            if result is None:
+                raise RuntimeError(
+                    f"Committee scoring failed for fit_{fit_idx} on {base_name}."
+                )
+            label = "base_mlip" if fit_idx == best_fit_idx else f"fit_{fit_idx}"
+            structure_forces_dict[label] = {
+                f"structure_{i}": {
+                    "forces": result["forces"][i],
+                    "energy": result["energies"][i],
+                }
+                for i in range(len(structure_list))
+            }
+        return structure_forces_dict
+
+    def _generate_structures(
+        self, base_name: str, train_atoms_list: list[Atoms]
+    ) -> list[Atoms]:
+        sg_config = self.jobs_dict["structure_generation"]
+        sg_config.setdefault(
+            "desired_number_of_structures", _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES
+        )
+        name = _STRUCTURE_GENERATION_NAME
+        generator = sg_config.get("generator", "md")
+        hpc = sg_config["hpc"]
+        max_time = sg_config["max_time"]
+
+        operating_dir = Path("results", base_name, name)
+
+        high_sd_path = operating_dir / "high_sd_structures.xyz"
+        if high_sd_path.exists():
+            high_sd_structures = list(read(high_sd_path, ":", format="extxyz"))
+            for structure in high_sd_structures:
+                structure.info["needs_relaxation"] = (
+                    self.high_force_threshold is not None
+                )
+            logger.info(
+                "%d High SD structures loaded from file: %s",
+                len(high_sd_structures),
+                high_sd_path,
+            )
+            self._mark_phase_done(base_name, "generate_structures")
+            return high_sd_structures
+
+        selection_kwargs = sg_config.get("structure_selection_kwargs", {})
+        eligible = filter_eligible_structures(
+            train_atoms_list,
+            chem_formula_list=selection_kwargs.get("chem_formula_list"),
+            selectable_configs=selection_kwargs.get("selectable_configs"),
+            atom_number_range=tuple(selection_kwargs.get("atom_number_range", (0, 0))),
+        )
+
+        training_config = self.jobs_dict["training"]
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
+        committee_size = committee_kwargs["number_models_in_committee"]
+        best_fit_idx, best_model_path = select_best_committee_model(
+            base_name,
+            # select_best_committee_model (mlip/mace/get_mace_eval_info.py,
+            # unchanged/untouched) reads committee["size_of_committee"] and
+            # committee["name"] -- that setting now lives in general.
+            # committee_uncertainty_kwargs.number_models_in_committee (not
+            # training) and name is hardcoded (not config) for this
+            # skeleton, so both are merged in here under the legacy key
+            # name that function still expects.
+            {
+                **training_config,
+                "size_of_committee": committee_size,
+                "name": _TRAINING_NAME,
+            },
+            seed=self.seed,
+        )
+        fits_to_use = [i for i in range(committee_size) if i != best_fit_idx]
+        trainer_name = training_config.get("trainer", "mace")
+
+        generator_entry = resolve("structure_generator", generator)
+        structure_list = generator_entry.generate(
+            eligible,
+            str(best_model_path),
+            sg_config,
+            base_name=base_name,
+            name=name,
+            hpc=hpc,
+            max_time=max_time,
+        )
+
+        structure_list = filter_structures_by_min_bond_distance(structure_list)
+
+        logger.info(
+            "Structure generation: evaluating %d candidate structure(s) against "
+            "the full %d-member committee to select the most uncertain ones.",
+            len(structure_list),
+            committee_size,
+        )
+        structure_forces_dict = self._score_committee(
+            structure_list,
+            base_name,
+            best_fit_idx,
+            fits_to_use,
+            trainer_name,
+            training_config,
+            _TRAINING_NAME,
+            hpc,
+            max_time,
+        )
+
+        # find_high_sd_structures (unchanged, shared with the old production
+        # path) still reads structure_generation["name"] out of the job_dict
+        # it's given rather than an explicit kwarg -- sg_config no longer
+        # carries "name" (hardcoded above, not user config), so it's merged
+        # into a shallow copy here rather than changing that function.
+        find_high_sd_job_dict = {
+            **self.jobs_dict,
+            "structure_generation": {**sg_config, "name": name},
+        }
+        high_sd_structures = find_high_sd_structures(
+            structure_list=structure_list,
+            base_name=base_name,
+            job_dict=find_high_sd_job_dict,
+            structure_forces_dict=structure_forces_dict,
+        )
+
+        for i, structure in enumerate(high_sd_structures):
+            structure.info["job_id"] = i
+            structure.info["needs_relaxation"] = self.high_force_threshold is not None
+
+        self._mark_phase_done(base_name, "generate_structures")
+        return high_sd_structures
+
+    # -- run() --
+
+    def run(self) -> None:
+        if self.jobs_dict.get("dataset_curation"):
+            policy_path = Path("results/curation_policy.json")
+            policy = json.dumps(
+                self.jobs_dict["dataset_curation"], sort_keys=True, indent=2
+            )
+            if policy_path.exists() and policy_path.read_text() != policy:
+                raise ValueError(
+                    "Curation policy changed: use a new results directory to avoid stale checkpoints"
+                )
+            policy_path.parent.mkdir(parents=True, exist_ok=True)
+            policy_path.write_text(policy)
+        self.pre_run_checks()
+
+        last_complete = self._last_complete_loop()
+        general_config = self.jobs_dict.get("general", {})
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **general_config.get("committee_uncertainty_kwargs", {}),
+        }
+
+        if last_complete >= 0:
+            train_xyzs = self.db.get_train_atoms()
+            test_xyzs = self.db.get_test_atoms()
+            effective_start = max(self.start_loop, last_complete + 1)
+            logger.info(
+                "Resuming from loop %d (%d train / %d test from DB).",
+                effective_start,
+                len(train_xyzs),
+                len(test_xyzs),
+            )
+        elif self.skip_initialization:
+            train_xyzs = self.db.get_train_atoms()
+            test_xyzs = self.db.get_test_atoms()
+            effective_start = self.start_loop
+            logger.info(
+                "skip_initialization=True: loading %d train / %d test from DB, "
+                "starting at loop %d.",
+                len(train_xyzs),
+                len(test_xyzs),
+                effective_start,
+            )
+        else:
+            train_xyzs, test_xyzs = self._initialize_training_set("initialization")
+            n_tagged = self.db.update_splits_post_hoc(train_xyzs, test_xyzs)
+            logger.info(
+                "Initialized training set with %d structures; tagged %d in DB.",
+                len(train_xyzs),
+                n_tagged,
+            )
+            effective_start = self.start_loop
+
+        if self.remove_redundancy:
+            remove_redundancy_from_partition(
+                self.db,
+                config_list=committee_kwargs["target_config_types"] + ["high_sd"],
+            )
+        if self.high_force_threshold is not None:
+            remove_high_force_structures_from_partition(
+                self.db, force_threshold=self.high_force_threshold
+            )
+        if self.jobs_dict.get("dataset_curation"):
+            curate_database(self.db, self.jobs_dict["dataset_curation"])
+
+        for loop in range(effective_start, self.number_of_al_loops):
+            base_name = f"al_loop_{loop}"
+            train_xyzs = self.db.get_train_atoms()
+            test_xyzs = self.db.get_test_atoms()
+
+            loop_plots_dir = Path("results", "current_plots", base_name)
+            if self.plots:
+                loop_plots_dir.mkdir(exist_ok=True, parents=True)
+                from alomancy.analysis.bond_distance_plots import (
+                    plot_training_bond_distances,
+                )
+
+                plot_training_bond_distances(base_name, self.db, loop_plots_dir)
+
+            workdir = Path(f"results/{base_name}")
+            try:
+                workdir.mkdir(exist_ok=True, parents=True)
+            except OSError as exc:
+                logger.warning("Could not create directory %s: %s", workdir, exc)
+
+            train_file = workdir / "train_set.xyz"
+            test_file = workdir / "test_set.xyz"
+            try:
+                write(train_file, train_xyzs, format="extxyz")
+                write(test_file, test_xyzs, format="extxyz")
+            except OSError as exc:
+                if "test" not in str(exc).lower():
+                    raise
+                logger.warning("Could not write files (test environment): %s", exc)
+
+            logger.debug("Starting AL loop %d", loop)
+            logger.debug("  Training set size: %d", len(train_xyzs))
+            logger.debug("  Test set size: %d", len(test_xyzs))
+
+            evaluation_results = self._train_mlip(base_name)
+            logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
+
+            if self.plots:
+                # mae_al_loop_plot/plot_training_curves/plot_dft_vs_model
+                # (analysis/plotting.py, analysis/mlip_plots.py -- unchanged,
+                # shared with the old production path) all read
+                # mlip_committee_job_dict["name"], which is hardcoded (not
+                # config) for this skeleton, so it's merged in here.
+                training_config_with_name = {
+                    **self.jobs_dict["training"],
+                    "name": _TRAINING_NAME,
+                }
+                mae_al_loop_plot(
+                    evaluation_results,
+                    training_config_with_name,
+                    directory=loop_plots_dir,
+                )
+                from alomancy.analysis.mlip_plots import (
+                    plot_dft_vs_model,
+                    plot_training_curves,
+                )
+
+                plot_training_curves(
+                    base_name,
+                    training_config_with_name,
+                    self.seed,
+                    loop_plots_dir,
+                )
+                plot_dft_vs_model(
+                    base_name,
+                    training_config_with_name,
+                    self.seed,
+                    loop_plots_dir,
+                    db=self.db,
+                    loop_idx=loop,
+                )
+
+            if committee_kwargs["train_only"]:
+                logger.info(
+                    "Initial committee training complete; train_only stops before generation."
+                )
+                return
+
+            generated_structures = self._generate_structures(base_name, train_xyzs)
+
+            high_accuracy_eval_config = self.jobs_dict["high_accuracy_evaluation"]
+            if self.high_force_threshold is not None:
+                high_accuracy_eval_config = {
+                    **high_accuracy_eval_config,
+                    "fmax": self.high_force_threshold,
+                }
+
+            new_training_data = _evaluator_orchestrate(
+                generated_structures,
+                high_accuracy_eval_config,
+                base_name=base_name,
+                name=_HIGH_ACCURACY_EVALUATION_NAME,
+                hpc=high_accuracy_eval_config["hpc"],
+                max_time=high_accuracy_eval_config["max_time"],
+                allow_relaxation=True,
+                start_index=0,
+            )
+            logger.info(
+                "High-accuracy evaluation completed for %d structures.",
+                len(new_training_data),
+            )
+
+            new_training_data = clean_structures(
+                new_training_data,
+                config_type="high_sd",
+                override_config_type=True,
+                already_computed=True,
+                extra_metadata={"al_loop": loop},
+            )
+
+            if committee_kwargs["fixed_test"]:
+                archive = self.db.get_all_as_atoms()
+                known = {geometry_digest(a) for a in archive}
+                held_groups = {
+                    a.info.get("split_group")
+                    for a in archive
+                    if a.info.get("split") == "test" and a.info.get("split_group")
+                }
+                new_train_data = []
+                diagnostic = []
+                for atoms in new_training_data:
+                    key = geometry_digest(atoms)
+                    if key in known or atoms.info.get("split_group") in held_groups:
+                        diagnostic.append(atoms)
+                    else:
+                        new_train_data.append(atoms)
+                        known.add(key)
+                self.db.add_structures(
+                    diagnostic, split="diagnostic", skip_duplicates=False
+                )
+                new_test_data = []
+            else:
+                new_train_data, new_test_data = split_atoms_list_into_test_and_train(
+                    new_training_data,
+                    test_fraction=committee_kwargs["test_ratio"],
+                    seed=self.seed,
+                )
+
+            self.db.add_structures(new_train_data, split="train", skip_duplicates=False)
+            self.db.add_structures(new_test_data, split="test", skip_duplicates=False)
+
+            if self.remove_redundancy:
+                remove_redundancy_from_partition(
+                    self.db,
+                    config_list=committee_kwargs["target_config_types"] + ["high_sd"],
+                )
+            if self.high_force_threshold is not None:
+                remove_high_force_structures_from_partition(
+                    self.db, force_threshold=self.high_force_threshold
+                )
+            if self.jobs_dict.get("dataset_curation"):
+                curate_database(self.db, self.jobs_dict["dataset_curation"])
+
+            self._mark_phase_done(base_name, "loop")
+            logger.debug(
+                "Completed AL loop %d, retraining with %d structures.",
+                loop,
+                len(train_xyzs),
+            )
+
+            if self.plots and self.log_file is not None:
+                from alomancy.analysis.timing_plots import timing_plots
+
+                timing_plots(self.log_file, Path("results", "current_plots"))
+
+
+def build_workflow(jobs_dict: dict) -> CommitteeUncertaintyWorkflow:
+    """Factory dispatching on general.al_workflow. Currently the only
+    registered al_workflow is "committee_uncertainty"; a future
+    FurthestPointSamplingWorkflow would add its own name here.
+
+    Takes only jobs_dict -- every setting a workflow needs, including ones
+    that used to be Python constructor kwargs (initial_train_file_path,
+    number_of_al_loops, verbose, ...), lives under jobs_dict["general"]
+    now (see CommitteeUncertaintyWorkflow.__init__ and _GENERAL_KWARGS_
+    DEFAULTS). The one exception is db: a live GlobalDatabase instance
+    can't be a config value, so a caller that needs to inject a pre-built
+    one (mainly tests) sets `wf.db = ...` after construction instead --
+    the db property is lazy, so this never pays for the default
+    GlobalDatabase(general.db_path) construction it replaces.
+    """
+    al_workflow = jobs_dict.get("general", {}).get(
+        "al_workflow", "committee_uncertainty"
+    )
+    if al_workflow != "committee_uncertainty":
+        raise ValueError(
+            f"Unknown general.al_workflow {al_workflow!r}. "
+            "Available: ['committee_uncertainty']"
+        )
+    return CommitteeUncertaintyWorkflow(jobs_dict=jobs_dict)

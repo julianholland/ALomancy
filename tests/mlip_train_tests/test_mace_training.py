@@ -468,10 +468,10 @@ class TestSelectBestCommitteeModel:
         f_error = e_error if f_error is None else f_error
         a = Atoms("Pd2", positions=[[0, 0, 0], [2.5, 0, 0]])
         a.info.update(
-            REF_energy=-8.0, mace_energy=-8.0 + 2 * e_error, config_type="init_dimer"
+            REF_energy=-8.0, model_energy=-8.0 + 2 * e_error, config_type="init_dimer"
         )
         a.set_array("REF_forces", np.zeros((2, 3)))
-        a.set_array("mace_forces", np.ones((2, 3)) * f_error)
+        a.set_array("model_forces", np.ones((2, 3)) * f_error)
         return a
 
     def _fit_dir(self, base: Path, fit_idx: int) -> Path:
@@ -646,7 +646,8 @@ class TestSaveMaceEvalPredictions:
         """setup_logging sets propagate=False on the root "alomancy" logger
         elsewhere in the process, so pytest's caplog can't reliably see
         these records -- attach a handler directly, matching the pattern in
-        test_base_active_learning.py's test_seed_logs_message."""
+        test_committee_uncertainty_workflow.py's TestDisplayWorkflowSummary.
+        _capture helper."""
         al_logger = logging.getLogger("alomancy")
         al_logger.setLevel(logging.DEBUG)
         records: list[logging.LogRecord] = []

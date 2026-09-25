@@ -13,10 +13,10 @@ from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 def predicted(error):
     a = Atoms("Pd2", positions=[[0, 0, 0], [2.5, 0, 0]])
     a.info.update(
-        REF_energy=-8.0, mace_energy=-8.0 + 2 * error, config_type="init_dimer"
+        REF_energy=-8.0, model_energy=-8.0 + 2 * error, config_type="init_dimer"
     )
     a.set_array("REF_forces", np.zeros((2, 3)))
-    a.set_array("mace_forces", np.ones((2, 3)) * error)
+    a.set_array("model_forces", np.ones((2, 3)) * error)
     return a
 
 
@@ -95,7 +95,7 @@ def test_refuses_when_fits_disagree_on_having_a_validation_split(tmp_path, monke
 @pytest.mark.unit
 def test_invalid_prediction_is_not_silently_omitted():
     a = predicted(0.1)
-    del a.info["mace_energy"]
+    del a.info["model_energy"]
     with pytest.raises(ValueError, match="Missing or invalid"):
         prediction_metrics([predicted(0.1), a])
 
@@ -162,31 +162,8 @@ def test_quality_gate_rejects_different_validation_sets(tmp_path):
         check_quality_gate(tmp_path, committee)
 
 
-@pytest.mark.unit
-def test_train_only_recognizes_evaluated_stage_one_checkpoint(tmp_path, monkeypatch):
-    from unittest.mock import patch
-
-    from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
-
-    monkeypatch.chdir(tmp_path)
-    committee = {
-        "name": "c",
-        "size_of_committee": 3,
-        "require_checkpoint_metrics": True,
-    }
-    for i in range(3):
-        fit = tmp_path / "results/al_loop_0/c" / f"fit_{i}"
-        fit.mkdir(parents=True)
-        model = fit / "c.model"
-        model.write_bytes(b"stage one checkpoint")
-        metrics = prediction_metrics([predicted(0.01)])
-        save_evaluation(fit, model, {"valid": metrics, "test": metrics})
-    workflow = ActiveLearningStandardMACE(
-        "train.xyz", "test.xyz", {"mlip_committee": committee}, plots=False
-    )
-    with patch(
-        "alomancy.core.standard_active_learning.committee_remote_submitter"
-    ) as submit:
-        metrics = workflow.train_mlip("al_loop_0", workflow.jobs_dict)
-    submit.assert_not_called()
-    assert metrics.iloc[0]["metric_source"] == "checkpoint_test"
+# Restart-recognizes-evaluated-checkpoint coverage for the current skeleton
+# now lives in test_committee_uncertainty_workflow.py's TestTrainMlip.
+# test_recognizes_real_checkpoint_evaluation_on_restart (ported from the
+# now-removed standard_active_learning.py/ActiveLearningStandardMACE.
+# train_mlip, which this module previously tested directly).

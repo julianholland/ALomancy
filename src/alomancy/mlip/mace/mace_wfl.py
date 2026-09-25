@@ -44,9 +44,10 @@ def _save_mace_eval_predictions(
     """Evaluate the trained stagetwo model on train and test sets; write predictions.
 
     Called from inside mace_fit while os.chdir'd into mlip_dir. Writes
-    train_pred.xyz and test_pred.xyz in the current directory with mace_energy
-    and mace_forces keys so store_mlip_predictions can read them locally without
-    re-running inference.
+    train_pred.xyz and test_pred.xyz in the current directory with model_energy
+    and model_forces keys (generalized, not MACE-specific -- see
+    mlip.evaluation.prediction_metrics) so store_mlip_predictions can read
+    them locally without re-running inference.
     """
     # Deliberately load the UNCOMPILED model (plain torch.save'd nn.Module)
     # rather than the TorchScript-compiled one used for production
@@ -116,12 +117,12 @@ def _save_mace_eval_predictions(
         n_failed = 0
         for atoms in atoms_list:
             a = atoms.copy()
-            a.info.pop("mace_energy", None)
-            a.arrays.pop("mace_forces", None)
+            a.info.pop("model_energy", None)
+            a.arrays.pop("model_forces", None)
             a.calc = calc
             try:
-                a.info["mace_energy"] = float(a.get_potential_energy())
-                a.arrays["mace_forces"] = a.get_forces()
+                a.info["model_energy"] = float(a.get_potential_energy())
+                a.arrays["model_forces"] = a.get_forces()
                 n_ok += 1
             except Exception as exc:
                 n_failed += 1
@@ -157,7 +158,7 @@ def _save_mace_eval_predictions(
                         exc,
                     )
             finally:
-                # Keep only the explicit mace_energy/mace_forces fields above.
+                # Keep only the explicit model_energy/model_forces fields above.
                 # Otherwise ASE also tries to serialize MACECalculator.results;
                 # some model-internal arrays are not per-atom and make EXTXYZ
                 # writing fail with a shape-broadcasting error.
@@ -187,6 +188,41 @@ def _save_mace_eval_predictions(
                 "n_structures": len(out),
             }
     save_evaluation(Path.cwd(), model_path, split_results)
+
+
+def read_mace_eval_predictions(fit_dir: Path) -> dict[int, dict]:
+    """Read per-structure trainer predictions from train_pred.xyz / test_pred.xyz.
+
+    These files are written by _save_mace_eval_predictions above on the
+    remote GPU node immediately after training, so predictions are
+    available locally without re-running inference. Returns
+    {global_db_id: {"energy": float, "forces": list}} or empty dict.
+
+    Relocated from the now-removed standard_active_learning.py (originally
+    private, _read_mace_eval_predictions) -- committee_uncertainty_workflow.
+    py is its only remaining caller; living next to the function that
+    writes these files is the natural home.
+    """
+    preds: dict[int, dict] = {}
+    for tag in ("train", "test"):
+        xyz = fit_dir / f"{tag}_pred.xyz"
+        if not xyz.exists():
+            continue
+        try:
+            atoms_list = list(read(xyz, ":", format="extxyz"))
+        except Exception as exc:
+            logger.warning("Failed to read %s: %s", xyz, exc)
+            continue
+        for atoms in atoms_list:
+            gid = atoms.info.get("global_db_id")
+            if gid is None or "model_energy" not in atoms.info:
+                continue
+            forces = atoms.arrays.get("model_forces")
+            preds[int(gid)] = {
+                "energy": float(atoms.info["model_energy"]),
+                "forces": forces.tolist() if forces is not None else [],
+            }
+    return preds
 
 
 def _remove_checkpoints_dir_if_model_exists(

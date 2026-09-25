@@ -21,6 +21,7 @@ def _all_patches(
     trimer_return=None,
     amorphous_return=None,
     sc_return=None,
+    rattle_return=None,
 ):
     """Return a list of (target, kwargs) pairs for patching all sub-generators."""
     return [
@@ -63,6 +64,10 @@ def _all_patches(
         (
             "alomancy.initialize.initialization_structure_list.create_stretch_compress_atoms_list",
             {"return_value": sc_return if sc_return is not None else []},
+        ),
+        (
+            "alomancy.initialize.initialization_structure_list.create_rattle_atoms_list",
+            {"return_value": rattle_return if rattle_return is not None else []},
         ),
     ]
 
@@ -427,13 +432,15 @@ class TestCreateInitializationAtomsList:
 
         assert (tmp_path / "initialization_structures_generated.xyz").exists()
 
-    def test_stretch_compress_called_per_mp_structure(self, tmp_path):
+    def test_stretch_compress_called_per_target_structure(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
         )
 
         mp1 = _make_atoms("NaCl")
+        mp1.info["config_type"] = "init_MP"
         mp2 = _make_atoms("MgO")
+        mp2.info["config_type"] = "init_MP"
 
         with ExitStack() as stack:
             mocks = _enter_patches(
@@ -456,7 +463,8 @@ class TestCreateInitializationAtomsList:
                 num_dimers_per_combo=0,
                 num_trimers_per_combo=0,
                 num_amorphous=0,
-                num_stretch_compress_per_mp=3,
+                num_stretch_compress_per_target=3,
+                target_config_types=["init_MP"],
             )
 
         assert mock_sc.call_count == 2
@@ -486,9 +494,192 @@ class TestCreateInitializationAtomsList:
                 num_dimers_per_combo=0,
                 num_trimers_per_combo=0,
                 num_amorphous=0,
+                target_config_types=["init_MP"],
             )
 
         mock_sc.assert_not_called()
+
+    def test_stretch_compress_skipped_when_config_type_not_a_target(self, tmp_path):
+        """Generalization guard: a structure whose config_type isn't listed
+        in target_config_types is never stretch/compressed, even if it was
+        freshly generated (e.g. MP structures when only dimers are marked
+        as targets)."""
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        mp1 = _make_atoms("NaCl")
+        mp1.info["config_type"] = "init_MP"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(
+                    mp_return=[mp1],
+                    single_return=[],
+                    dimer_return=[],
+                    trimer_return=[],
+                    amorphous_return=[],
+                ),
+            )
+            mock_sc = mocks[5]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["Na", "Cl"],
+                mp_structures=True,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=0,
+                num_stretch_compress_per_target=3,
+                target_config_types=["init_dimer"],  # not "init_MP"
+            )
+
+        mock_sc.assert_not_called()
+
+    def test_stretch_compress_applies_to_non_mp_target_config_type(self, tmp_path):
+        """Generalization: any config_type listed in target_config_types is
+        subject to stretch/compress, not just init_MP."""
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        dimer = _make_atoms("H2")
+        dimer.info["config_type"] = "init_dimer"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(
+                    single_return=[],
+                    dimer_return=[dimer],
+                    trimer_return=[],
+                    amorphous_return=[],
+                ),
+            )
+            mock_sc = mocks[5]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["H"],
+                mp_structures=False,
+                single_atoms=False,
+                num_dimers_per_combo=1,
+                num_trimers_per_combo=0,
+                num_amorphous=0,
+                num_stretch_compress_per_target=2,
+                target_config_types=["init_dimer"],
+            )
+
+        mock_sc.assert_called_once()
+        assert mock_sc.call_args.kwargs["num_structures"] == 2
+        assert mock_sc.call_args.kwargs["atoms"] is dimer
+
+    def test_rattle_called_per_target_structure(self, tmp_path):
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        mp1 = _make_atoms("NaCl")
+        mp1.info["config_type"] = "init_MP"
+        mp2 = _make_atoms("MgO")
+        mp2.info["config_type"] = "init_MP"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(
+                    mp_return=[mp1, mp2],
+                    single_return=[],
+                    dimer_return=[],
+                    trimer_return=[],
+                    amorphous_return=[],
+                    rattle_return=[_make_atoms()],
+                ),
+            )
+            mock_rattle = mocks[6]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["Na", "Cl"],
+                mp_structures=True,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=0,
+                num_rattled_per_target=4,
+                rattle_standard_deviation=0.02,
+                target_config_types=["init_MP"],
+            )
+
+        assert mock_rattle.call_count == 2
+        assert mock_rattle.call_args_list[0].kwargs["num_structures"] == 4
+        assert mock_rattle.call_args_list[0].kwargs["rattle_standard_deviation"] == 0.02
+
+    def test_rattle_num_structures_zero_when_not_configured(self, tmp_path):
+        """num_rattled_per_target defaults to 0 -- create_rattle_atoms_list
+        is still called per target (matching create_stretch_compress_atoms_
+        list's own pattern) but with num_structures=0, which it no-ops on
+        internally."""
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        mp1 = _make_atoms("NaCl")
+        mp1.info["config_type"] = "init_MP"
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(
+                    mp_return=[mp1],
+                    single_return=[],
+                    dimer_return=[],
+                    trimer_return=[],
+                    amorphous_return=[],
+                ),
+            )
+            mock_rattle = mocks[6]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["Na", "Cl"],
+                mp_structures=True,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=0,
+                target_config_types=["init_MP"],
+            )
+
+        mock_rattle.assert_called_once()
+        assert mock_rattle.call_args.kwargs["num_structures"] == 0
+
+    def test_rattle_skipped_when_no_target_structures(self, tmp_path):
+        from alomancy.initialize.initialization_structure_list import (
+            create_initialization_atoms_list,
+        )
+
+        with ExitStack() as stack:
+            mocks = _enter_patches(
+                stack,
+                _all_patches(
+                    single_return=[],
+                    dimer_return=[],
+                    trimer_return=[],
+                    amorphous_return=[],
+                ),
+            )
+            mock_rattle = mocks[6]
+            create_initialization_atoms_list(
+                work_dir=str(tmp_path),
+                elements=["H"],
+                mp_structures=False,
+                single_atoms=False,
+                num_dimers_per_combo=0,
+                num_trimers_per_combo=0,
+                num_amorphous=0,
+                target_config_types=["init_MP"],
+            )
+
+        mock_rattle.assert_not_called()
 
     def test_result_includes_all_enabled_components(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
