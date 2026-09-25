@@ -14,6 +14,11 @@
 - [ ] rattle option for initialisatoin
 - [ ] save a copy of the best model per loop to a directory called best_model once copied delete the older model in that directory
 - [ ] add hpc list cli
+- [ ] come up with suggestions for a cleaner start routine. I forsee four major avenues: 1) warm start with a test and train xyz files a) properly formatted (copied directly from a formater alomancy run)  or b) with poorly assigned meta data, 2)  warm start with one xyz file (requireing splitting and metadata curatoin), 3) warm start with a former ALomancy db, and 4)  a cold start so no files at all. I want to be able to handle those avenues elegantly.
+
+  For scenarios 1b and 2 enquire if there is not a config type already set then if there is an equivalent metadata key then convert the metadata accordingly.
+
+  for the rest they should just resume as if they were external dbs loaded in
 
 ### Refactor 
 

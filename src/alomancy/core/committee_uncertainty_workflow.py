@@ -55,7 +55,28 @@ AL workflow would need it too, not just this one): passed as an explicit
 creation_kwargs.elements`) and to the trainer (used there for an
 E0s-coverage safety-net check, since MACE itself auto-detects the element
 set from the training data but cannot infer E0s, a physical reference
-value).
+value). `general.seed` is similarly universal, defaulting to 803 --
+threaded down to the initialiser's `rattle_target_structures` step, and
+used for every other random-selection point in the workflow (`self.seed`)
+too.
+
+`CommitteeUncertaintyWorkflow.__init__` takes only `jobs_dict` -- every
+setting that used to be a separate Python constructor kwarg
+(`initial_train_file_path`, `initial_test_file_path`,
+`number_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
+`seed`, `db_path`, `remove_redundancy`, `high_force_threshold`,
+`skip_initialization`) now lives as a direct child of `general` (see
+`_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
+`elements`, since none of these are specific to the committee-uncertainty
+skeleton either -- any future AL workflow would need them too.
+`initial_train_file_path`/`initial_test_file_path` have no default (the
+one thing only the user can know); every other key falls back to its old
+constructor default. The sole exception is `db`: a live `GlobalDatabase`
+instance can't be a config value, so it's no longer constructor-settable
+at all -- `self.db` is a lazily-constructed property (built from
+`general.db_path` on first access), and a caller needing to inject an
+already-built instance (mainly tests, to skip GlobalDatabase's real
+construction cost) sets `wf.db = ...` after construction instead.
 
 `structure_generation.method` is renamed `generator`, and
 `high_accuracy_evaluation.calculator` is renamed `evaluator` -- matching
@@ -134,19 +155,20 @@ else in this section needed the extra nesting level, unlike
 training/structure_generation/high_accuracy_evaluation, which each hold
 more than one kind of setting): `isolated_atom_kwargs`, `dimer_kwargs`,
 `trimer_kwargs`, `amorphous_kwargs`, `mp_kwargs`,
-`stretch_compress_targets_kwargs` -- each with its own `enabled` flag
-(default `True`), so a sub-task can be toggled off without zeroing out
-its count field. `stretch_compress_targets_kwargs` (`deform_xyz`,
-`max_deformation`, `num_stretch_compress_per_mp`) is a sibling of
-`mp_kwargs`, not nested inside it, despite `create_initialization_atoms_
-list` (old, shared) only ever deriving those
-variants from MP-fetched structures -- its own `enabled=True` still
-produces nothing whenever `mp_kwargs.enabled` is `False`, a hard
-constraint of that shared function this module doesn't hide or override.
-Designed to extend cleanly as new sub-tasks are added (surfaces, rattled
-structures, interfaces): each gets its own sibling `*_kwargs` namespace
-here and a matching branch in `create_initialization_atoms_list`, without
-touching the others.
+`stretch_compress_targets_kwargs`, `rattle_target_structures` -- each
+with its own `enabled` flag (default `True`, except `rattle_target_
+structures` which defaults `False` as a new capability with no prior
+behavior to preserve), so a sub-task can be toggled off without zeroing
+out its count field. `stretch_compress_targets_kwargs`
+(`max_lattice_deformation`, `num_stretch_compress_per_target`) and
+`rattle_target_structures` (`rattle_standard_deviation`,
+`num_rattled_per_target`) are each a sibling of `mp_kwargs`, not nested
+inside it -- both apply to every structure this call generates whose
+config_type is listed in `general.committee_uncertainty_kwargs.
+target_config_types`, not just Materials Project ones. Designed to
+extend cleanly as new sub-tasks are added (surfaces, interfaces): each
+gets its own sibling `*_kwargs` namespace here and a matching branch in
+`create_initialization_atoms_list`, without touching the others.
 """
 
 import hashlib
@@ -255,6 +277,27 @@ _COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS: dict[str, Any] = {
     "fixed_test": False,
 }
 
+# general's own direct-child defaults, for every setting that used to be a
+# CommitteeUncertaintyWorkflow constructor kwarg -- these apply regardless
+# of which AL workflow is chosen (matching elements/seed's precedent), so
+# they're not nested inside committee_uncertainty_kwargs. The constructor
+# now takes only jobs_dict; everything it used to accept as a Python kwarg
+# is read from here instead. initial_train_file_path/initial_test_file_path
+# have no entry -- they're genuinely required, matching this module's
+# no-invented-defaults convention for things only the user can know.
+_GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
+    "number_of_al_loops": 5,
+    "verbose": 0,
+    "log_file": "results/alomancy.log",
+    "start_loop": 0,
+    "plots": True,
+    "seed": 803,
+    "db_path": "results/global_database",
+    "remove_redundancy": True,
+    "high_force_threshold": 100.0,
+    "skip_initialization": False,
+}
+
 
 def _needs_anything(needs: dict) -> bool:
     return bool(
@@ -340,6 +383,7 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
     """
     effective = dict(phase_dict)
     if phase == "general":
+        effective = {**_GENERAL_KWARGS_DEFAULTS, **effective}
         al_workflow = effective.get("al_workflow", "committee_uncertainty")
         if al_workflow == "committee_uncertainty":
             kwargs_key = f"{al_workflow}_kwargs"
@@ -495,39 +539,49 @@ class CommitteeUncertaintyWorkflow:
     trainer/structure-generator/DFT-evaluator/initialiser from config via
     the shared registry."""
 
-    def __init__(
-        self,
-        initial_train_file_path: str,
-        initial_test_file_path: str,
-        jobs_dict: dict,
-        number_of_al_loops: int = 5,
-        verbose: int = 0,
-        log_file: str | None = "results/alomancy.log",
-        start_loop: int = 0,
-        plots: bool = True,
-        seed: int = 803,
-        db_path: str = "results/global_database",
-        remove_redundancy: bool = True,
-        high_force_threshold: float | None = 100.0,
-        skip_initialization: bool = False,
-        db: GlobalDatabase | None = None,
-    ):
-        self.initial_train_file_path = Path(initial_train_file_path)
-        self.initial_test_file_path = Path(initial_test_file_path)
+    def __init__(self, jobs_dict: dict):
         self.jobs_dict = jobs_dict
         if jobs_dict.get("dataset_curation"):
             validate_policy(jobs_dict["dataset_curation"])
-        self.number_of_al_loops = number_of_al_loops
-        self.verbose = verbose
-        self.start_loop = start_loop
-        self.plots = plots
-        self.seed = seed
-        self.db = db if db is not None else GlobalDatabase(db_path)
-        self.remove_redundancy = remove_redundancy
-        self.high_force_threshold = high_force_threshold
-        self.skip_initialization = skip_initialization
-        self.log_file = log_file
-        setup_logging(verbose=verbose, log_file=log_file)
+
+        general_config = jobs_dict.get("general", {})
+        general_kwargs = {**_GENERAL_KWARGS_DEFAULTS, **general_config}
+
+        for key in ("initial_train_file_path", "initial_test_file_path"):
+            if key not in general_config:
+                raise ValueError(
+                    f"general.{key} is required (a path to an xyz file -- it "
+                    "need not exist yet, the workflow falls through to the "
+                    "DB-driven bootstrap path when it doesn't)."
+                )
+        self.initial_train_file_path = Path(general_kwargs["initial_train_file_path"])
+        self.initial_test_file_path = Path(general_kwargs["initial_test_file_path"])
+        self.number_of_al_loops = general_kwargs["number_of_al_loops"]
+        self.verbose = general_kwargs["verbose"]
+        self.start_loop = general_kwargs["start_loop"]
+        self.plots = general_kwargs["plots"]
+        self.seed = general_kwargs["seed"]
+        self._db: GlobalDatabase | None = None
+        self._db_path = general_kwargs["db_path"]
+        self.remove_redundancy = general_kwargs["remove_redundancy"]
+        self.high_force_threshold = general_kwargs["high_force_threshold"]
+        self.skip_initialization = general_kwargs["skip_initialization"]
+        self.log_file = general_kwargs["log_file"]
+        setup_logging(verbose=self.verbose, log_file=self.log_file)
+
+    @property
+    def db(self) -> GlobalDatabase:
+        """Lazily constructed from general.db_path on first access -- never
+        pays GlobalDatabase's real construction cost (observed ~1-3s) when
+        a caller (mainly tests) overrides this with an already-built
+        instance via the setter before ever reading it."""
+        if self._db is None:
+            self._db = GlobalDatabase(self._db_path)
+        return self._db
+
+    @db.setter
+    def db(self, value: GlobalDatabase) -> None:
+        self._db = value
 
     # -- Phase/loop bookkeeping (unchanged from BaseActiveLearningWorkflow) --
 
@@ -814,6 +868,8 @@ class CommitteeUncertaintyWorkflow:
                     hpc=init_config.get("hpc"),
                     max_time=init_config.get("max_time"),
                     needs=needs,
+                    target_config_types=committee_kwargs["target_config_types"],
+                    seed=self.seed,
                 )
 
             if not generated_atoms_list:
@@ -1554,10 +1610,21 @@ class CommitteeUncertaintyWorkflow:
                 timing_plots(self.log_file, Path("results", "current_plots"))
 
 
-def build_workflow(jobs_dict: dict, **init_kwargs: Any) -> CommitteeUncertaintyWorkflow:
+def build_workflow(jobs_dict: dict) -> CommitteeUncertaintyWorkflow:
     """Factory dispatching on general.al_workflow. Currently the only
     registered al_workflow is "committee_uncertainty"; a future
-    FurthestPointSamplingWorkflow would add its own name here."""
+    FurthestPointSamplingWorkflow would add its own name here.
+
+    Takes only jobs_dict -- every setting a workflow needs, including ones
+    that used to be Python constructor kwargs (initial_train_file_path,
+    number_of_al_loops, verbose, ...), lives under jobs_dict["general"]
+    now (see CommitteeUncertaintyWorkflow.__init__ and _GENERAL_KWARGS_
+    DEFAULTS). The one exception is db: a live GlobalDatabase instance
+    can't be a config value, so a caller that needs to inject a pre-built
+    one (mainly tests) sets `wf.db = ...` after construction instead --
+    the db property is lazy, so this never pays for the default
+    GlobalDatabase(general.db_path) construction it replaces.
+    """
     al_workflow = jobs_dict.get("general", {}).get(
         "al_workflow", "committee_uncertainty"
     )
@@ -1566,4 +1633,4 @@ def build_workflow(jobs_dict: dict, **init_kwargs: Any) -> CommitteeUncertaintyW
             f"Unknown general.al_workflow {al_workflow!r}. "
             "Available: ['committee_uncertainty']"
         )
-    return CommitteeUncertaintyWorkflow(jobs_dict=jobs_dict, **init_kwargs)
+    return CommitteeUncertaintyWorkflow(jobs_dict=jobs_dict)

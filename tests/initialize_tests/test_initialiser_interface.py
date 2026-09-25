@@ -193,9 +193,8 @@ class TestGenerate:
         config = self._config(
             mp_kwargs={"max_atom_number": 30},
             stretch_compress_targets_kwargs={
-                "num_stretch_compress_per_mp": 7,
-                "deform_xyz": True,
-                "max_deformation": 0.5,
+                "num_stretch_compress_per_target": 7,
+                "max_lattice_deformation": 0.5,
             },
         )
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
@@ -211,9 +210,8 @@ class TestGenerate:
 
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs["max_atom_number"] == 30
-        assert call_kwargs["num_stretch_compress_per_mp"] == 7
-        assert call_kwargs["deform_xyz"] is True
-        assert call_kwargs["max_deformation"] == 0.5
+        assert call_kwargs["num_stretch_compress_per_target"] == 7
+        assert call_kwargs["max_lattice_deformation"] == 0.5
 
     def test_stretch_compress_targets_disabled_forces_count_to_zero(
         self, tmp_path, monkeypatch
@@ -222,7 +220,7 @@ class TestGenerate:
         config = self._config(
             stretch_compress_targets_kwargs={
                 "enabled": False,
-                "num_stretch_compress_per_mp": 7,
+                "num_stretch_compress_per_target": 7,
             },
         )
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
@@ -236,7 +234,89 @@ class TestGenerate:
                 max_time="1H",
             )
 
-        assert mock_create.call_args.kwargs["num_stretch_compress_per_mp"] == 0
+        assert mock_create.call_args.kwargs["num_stretch_compress_per_target"] == 0
+
+    def test_target_config_types_and_seed_passed_through(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
+            mock_create.return_value = []
+            generate(
+                self._config(),
+                base_name="al_loop_0",
+                name="initialization",
+                elements=["H"],
+                hpc={},
+                max_time="1H",
+                target_config_types=["init_MP", "init_amorphous"],
+                seed=42,
+            )
+
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs["target_config_types"] == ["init_MP", "init_amorphous"]
+        assert call_kwargs["rattle_seed"] == 42
+
+    def test_rattle_disabled_by_default(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
+            mock_create.return_value = []
+            generate(
+                self._config(),
+                base_name="al_loop_0",
+                name="initialization",
+                elements=["H"],
+                hpc={},
+                max_time="1H",
+            )
+
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs["num_rattled_per_target"] == 0
+        assert call_kwargs["rattle_standard_deviation"] is None
+
+    def test_rattle_enabled_reads_its_own_namespace(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        config = self._config(
+            rattle_target_structures={
+                "enabled": True,
+                "num_rattled_per_target": 9,
+                "rattle_standard_deviation": 0.03,
+            },
+        )
+        with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
+            mock_create.return_value = []
+            generate(
+                config,
+                base_name="al_loop_0",
+                name="initialization",
+                elements=["H"],
+                hpc={},
+                max_time="1H",
+            )
+
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs["num_rattled_per_target"] == 9
+        assert call_kwargs["rattle_standard_deviation"] == 0.03
+
+    def test_rattle_enabled_without_standard_deviation_raises(
+        self, tmp_path, monkeypatch
+    ):
+        """rattle_standard_deviation has no default -- turning rattle on
+        without setting it must raise a clear error, not silently guess."""
+        monkeypatch.chdir(tmp_path)
+        config = self._config(
+            rattle_target_structures={"enabled": True},
+        )
+        with (
+            patch(f"{_MODULE}.create_initialization_atoms_list"),
+            pytest.raises(KeyError, match="rattle_standard_deviation"),
+        ):
+            generate(
+                config,
+                base_name="al_loop_0",
+                name="initialization",
+                elements=["H"],
+                hpc={},
+                max_time="1H",
+            )
 
     def test_partial_generation_when_needs_given(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

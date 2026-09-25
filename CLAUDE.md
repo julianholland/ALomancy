@@ -65,7 +65,7 @@ ALomancy implements active learning (AL) workflows for training machine-learned 
 
 ### Core layer (`src/alomancy/core/`)
 
-`CommitteeUncertaintyWorkflow` (`committee_uncertainty_workflow.py`, built via `build_workflow(jobs_dict, **init_kwargs)`) owns the AL loop in its `run()` method: **train MLIP committee → structure generation (MD or EZGA) → uncertainty-based selection → DFT evaluation → extend training set → repeat**. There is no subclassing and no abstract base class — it's one concrete class that resolves its trainer/structure-generator/DFT-evaluator/initialiser from config via the shared module registry (`registry.py`'s `register`/`resolve`), instead of a different Python subclass per backend combination:
+`CommitteeUncertaintyWorkflow` (`committee_uncertainty_workflow.py`, built via `build_workflow(jobs_dict)`) owns the AL loop in its `run()` method: **train MLIP committee → structure generation (MD or EZGA) → uncertainty-based selection → DFT evaluation → extend training set → repeat**. There is no subclassing and no abstract base class — it's one concrete class that resolves its trainer/structure-generator/DFT-evaluator/initialiser from config via the shared module registry (`registry.py`'s `register`/`resolve`), instead of a different Python subclass per backend combination:
 
 - `_initialize_training_set(base_name)` — produce initial `(train_xyzs, test_xyzs)` atom lists, via the registered `initialiser`
 - `_train_mlip(base_name)` → `pd.DataFrame` of evaluation metrics, via the registered `mlip_trainer` (`training.trainer`)

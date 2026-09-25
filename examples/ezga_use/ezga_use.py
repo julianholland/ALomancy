@@ -2,8 +2,6 @@
 # alternative to the MD-based candidate generation shown in
 # examples/basic_use/basic_use.py. See input_files/standard_config.yaml's
 # structure_generation section for the ezga_kwargs this exercises.
-from pathlib import Path
-
 from yaml import safe_load
 
 from alomancy.core.committee_uncertainty_workflow import build_workflow
@@ -31,13 +29,6 @@ config["high_accuracy_evaluation"]["hpc"] = hpc_config[
 
 print("Using config:")
 print(config)
-al_workflow = build_workflow(
-    jobs_dict=config,
-    initial_train_file_path=Path("input_files/C_Na_amorphous_5255_train.xyz"),
-    initial_test_file_path=Path("input_files/C_Na_amorphous_583_test.xyz"),
-    number_of_al_loops=25,
-    verbose=1,
-    start_loop=0,
-)
+al_workflow = build_workflow(jobs_dict=config)
 
 al_workflow.run()

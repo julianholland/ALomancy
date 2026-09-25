@@ -10,13 +10,20 @@ config schema in this codebase (examples/basic_use/ and examples/ezga_use/
 use the same build_workflow() entry point, just with more elaborate
 configs).
 
-initial_train_file_path/initial_test_file_path below point at files that
-don't exist yet -- that's expected for a first run: the skeleton falls
-through to the DB-driven path (initialization's own structure-type
-settings, e.g. dimer_kwargs/amorphous_kwargs/mp_kwargs, plus
-general.elements) and generates + DFT-evaluates a bootstrap dataset
-itself. Point them at existing xyz files instead to skip that and start
-straight from a pre-built training set.
+general.initial_train_file_path/general.initial_test_file_path in
+config.yaml point at files that don't exist yet -- that's expected for a
+first run: the skeleton falls through to the DB-driven path
+(initialization's own structure-type settings, e.g. dimer_kwargs/
+amorphous_kwargs/mp_kwargs, plus general.elements) and generates +
+DFT-evaluates a bootstrap dataset itself. Point them at existing xyz
+files instead to skip that and start straight from a pre-built training
+set.
+
+build_workflow() takes only jobs_dict now -- every setting that used to
+be a separate Python kwarg here (initial_train_file_path,
+number_of_al_loops, verbose, start_loop, ...) lives in config.yaml's
+general section instead (see committee_uncertainty_workflow.py's module
+docstring for the full list).
 """
 
 from pathlib import Path
@@ -26,13 +33,6 @@ from alomancy.core.committee_uncertainty_workflow import build_workflow
 
 config = load_dictionaries(Path("config.yaml"))
 
-al_workflow = build_workflow(
-    jobs_dict=config,
-    initial_train_file_path="input_files/carbon_train.xyz",
-    initial_test_file_path="input_files/carbon_test.xyz",
-    number_of_al_loops=5,
-    verbose=1,
-    start_loop=0,
-)
+al_workflow = build_workflow(jobs_dict=config)
 
 al_workflow.run()

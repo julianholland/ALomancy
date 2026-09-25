@@ -203,6 +203,15 @@ def test_curation_keeps_small_periodic_bulk_in_bulk_domain():
 
 
 @pytest.mark.unit
+def test_init_rattle_classified_as_bulk_domain():
+    from alomancy.utils.dataset_curation import structure_domain
+
+    a = labelled()
+    a.info["config_type"] = "init_rattle"
+    assert structure_domain(a) == "bulk"
+
+
+@pytest.mark.unit
 def test_explicit_source_domain_recovers_unknown_annotation():
     from alomancy.utils.dataset_curation import structure_domain
 

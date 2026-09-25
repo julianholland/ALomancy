@@ -1,6 +1,11 @@
 general:
   al_workflow: "committee_uncertainty"
   elements: ["C", "S"]
+  initial_train_file_path: "input_files/carbon_train.xyz"
+  initial_test_file_path: "input_files/carbon_test.xyz"
+  number_of_al_loops: 5
+  verbose: 1
+  start_loop: 0
   committee_uncertainty_kwargs:
     target_config_types:
       - "init_MP"

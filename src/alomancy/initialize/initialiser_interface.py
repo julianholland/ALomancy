@@ -14,12 +14,18 @@ _initialize_training_set (committee_uncertainty_workflow.py), not here.
 Self-contained config surface: reads only initialiser-specific settings
 directly off the `initialization` section (plus `extra_datasets`/
 `read_generated_file`, read directly by the skeleton, not by this
-module), never reaching into another module's section. The one exception
-is `elements` (workflow.elements, a list of atomic symbols e.g.
-["C", "O"]), passed as an explicit keyword argument by the skeleton --
-shared element identity, not initialiser-specific config, so it lives in
-`workflow` rather than here (matching how `name`/`hpc`/`max_time` are
-already explicit kwargs rather than config-dict reads).
+module), never reaching into another module's section. Three exceptions,
+all passed as explicit keyword arguments by the skeleton rather than read
+from `config` (matching how `name`/`hpc`/`max_time` already are):
+`elements` (general.elements, a list of atomic symbols e.g. ["C", "O"]);
+`target_config_types` (general.committee_uncertainty_kwargs.
+target_config_types -- which of this call's freshly-generated structures
+count as "target" structures for stretch_compress_targets_kwargs/
+rattle_target_structures below, reusing the same list already used
+elsewhere to pick out the scientifically-significant structures from
+purely-auxiliary ones like dimers/trimers); and `seed` (general.seed,
+defaulting to 803 when absent -- currently only used to seed
+rattle_target_structures).
 
 Bootstrap generation is structurally a different problem from the AL-loop
 structure_generator abstraction (no trained model, no uncertainty-based
@@ -44,15 +50,20 @@ interfaces) adds its own `surface_kwargs`/`rattle_kwargs`/
 `interface_kwargs` sibling here and a matching branch in
 create_initialization_atoms_list, without touching any other namespace.
 
-`stretch_compress_targets_kwargs` (`deform_xyz`, `max_deformation`,
-`num_stretch_compress_per_mp`) is a sibling of `mp_kwargs`, not nested
-inside it -- but create_initialization_atoms_list (old, shared,
-unchanged) only ever generates stretch/compress structures *from*
-MP-fetched ones, so its own `enabled=True` still produces nothing
-whenever `mp_kwargs.enabled` is `False` or the MP fetch itself returns no
-structures. That coupling is a hard constraint of the shared function,
-not something enforced or hidden here -- `stretch_compress_targets_kwargs
-.enabled` only ever narrows what `mp_kwargs.enabled` already allows.
+`stretch_compress_targets_kwargs` (`max_lattice_deformation`,
+`num_stretch_compress_per_target`) and `rattle_target_structures`
+(`rattle_standard_deviation`, `num_rattled_per_target`) are each a
+sibling of `mp_kwargs`, not nested inside it -- both apply to *every*
+freshly-generated structure this call produces whose config_type is
+listed in `target_config_types` (see above), not just Materials Project
+ones, so e.g. setting `target_config_types: ["init_MP", "init_amorphous"]`
+makes amorphous structures subject to both too. `rattle_target_structures
+.enabled` defaults to `False` (unlike every other namespace here) since
+it's a new capability with no prior default behavior to preserve, and
+`rattle_standard_deviation` has no default at all -- a silently guessed
+perturbation magnitude is worse than a clear KeyError once rattle is
+turned on, matching how `test_ratio`/`target_config_types` are handled
+committee-workflow-side.
 """
 
 import logging
@@ -97,9 +108,12 @@ _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "stretch_compress_targets_kwargs": {
         "enabled": True,
-        "num_stretch_compress_per_mp": 5,
-        "deform_xyz": False,
-        "max_deformation": 0.2,
+        "num_stretch_compress_per_target": 5,
+        "max_lattice_deformation": 0.2,
+    },
+    "rattle_target_structures": {
+        "enabled": False,
+        "num_rattled_per_target": 5,
     },
 }
 
@@ -168,10 +182,12 @@ def generate(
     hpc: dict | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     max_time: str | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     needs: dict | None = None,
+    target_config_types: list[str] | None = None,
+    seed: int = 803,
 ) -> list[Atoms]:
     """Generate bootstrap structures (dimers/trimers/amorphous/MP/isolated
     atoms), reading targets from config's structure-type namespaces plus
-    the shared workflow.elements list.
+    the shared general.elements list.
 
     When `needs` is given (from compute_needs), only the missing subset
     (relative to what's already in the DB) is generated -- enabling
@@ -191,6 +207,7 @@ def generate(
     stretch_compress_targets_kwargs = _resolve_kwargs(
         config, "stretch_compress_targets_kwargs"
     )
+    rattle_kwargs = _resolve_kwargs(config, "rattle_target_structures")
 
     return create_initialization_atoms_list(
         work_dir=str(work_dir),
@@ -212,25 +229,30 @@ def generate(
         num_amorphous=(
             amorphous_kwargs["num_amorphous"] if amorphous_kwargs["enabled"] else 0
         ),
-        # Note: create_initialization_atoms_list (old, shared) only ever
-        # generates stretch/compress structures from MP-fetched ones -- so
-        # this is 0 whenever mp_kwargs.enabled is False too, regardless of
-        # stretch_compress_targets_kwargs.enabled; that dependency is a
-        # hard constraint of the shared function, not something this
-        # module can decouple.
-        num_stretch_compress_per_mp=(
-            stretch_compress_targets_kwargs["num_stretch_compress_per_mp"]
+        num_stretch_compress_per_target=(
+            stretch_compress_targets_kwargs["num_stretch_compress_per_target"]
             if stretch_compress_targets_kwargs["enabled"]
             else 0
         ),
         densities_list=amorphous_kwargs["densities_list"],
-        deform_xyz=stretch_compress_targets_kwargs["deform_xyz"],
-        max_deformation=stretch_compress_targets_kwargs["max_deformation"],
+        max_lattice_deformation=stretch_compress_targets_kwargs[
+            "max_lattice_deformation"
+        ],
         max_atom_number=mp_kwargs["max_atom_number"],
         amorphous_atom_number=amorphous_kwargs["amorphous_atom_number"],
         mp_max_energy_above_hull=mp_kwargs["mp_max_energy_above_hull"],
         composition_list=amorphous_kwargs["composition_list"],
         seed=amorphous_kwargs["seed"],
+        target_config_types=target_config_types,
+        num_rattled_per_target=(
+            rattle_kwargs["num_rattled_per_target"] if rattle_kwargs["enabled"] else 0
+        ),
+        rattle_standard_deviation=(
+            rattle_kwargs["rattle_standard_deviation"]
+            if rattle_kwargs["enabled"]
+            else None
+        ),
+        rattle_seed=seed,
         isolated_atoms_override=(
             (needs["isolated_atoms"] or None) if needs is not None else None
         ),

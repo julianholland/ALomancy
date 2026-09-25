@@ -171,19 +171,14 @@ Here's a simple example of running an active learning workflow:
 from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
-# Load configuration from YAML file
+# Load configuration from YAML file -- every workflow-level setting
+# (initial_train_file_path, number_of_al_loops, verbose, log_file,
+# db_path, ...) lives under the YAML's `general:` section; build_workflow()
+# takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
 
 # Create and run the workflow
-workflow = build_workflow(
-    jobs_dict=jobs_dict,
-    initial_train_file_path="results/initialization/train_set.xyz",
-    initial_test_file_path="results/initialization/test_set.xyz",
-    number_of_al_loops=5,
-    verbose=1,  # 0=silent, 1=INFO progress, 2=DEBUG
-    log_file="results/alomancy.log",  # file always captures DEBUG
-    db_path="results/global_database",
-)
+workflow = build_workflow(jobs_dict=jobs_dict)
 
 workflow.run()
 ```

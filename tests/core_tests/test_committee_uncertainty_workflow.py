@@ -62,17 +62,26 @@ def workflow_jobs_dict(minimal_jobs_dict):
     return minimal_jobs_dict
 
 
-def _make_workflow(tmp_path, jobs_dict, shared_db, **overrides):
-    kwargs = {
-        "initial_train_file_path": str(tmp_path / "train.xyz"),
-        "initial_test_file_path": str(tmp_path / "test.xyz"),
-        "jobs_dict": jobs_dict,
-        "number_of_al_loops": 2,
-        "db": shared_db,
-        "plots": False,
-    }
-    kwargs.update(overrides)
-    return CommitteeUncertaintyWorkflow(**kwargs)
+def _make_workflow(tmp_path, jobs_dict, shared_db, **general_overrides):
+    """CommitteeUncertaintyWorkflow now takes only jobs_dict -- every
+    former constructor kwarg lives under jobs_dict["general"] instead
+    (see the class's own module docstring). db is the one exception (a
+    live object can't be a config value): set post-construction via the
+    lazy `db` property/setter, which never pays for the real
+    GlobalDatabase(db_path) construction this replaces."""
+    general = jobs_dict.setdefault("general", {})
+    general.update(
+        {
+            "initial_train_file_path": str(tmp_path / "train.xyz"),
+            "initial_test_file_path": str(tmp_path / "test.xyz"),
+            "number_of_al_loops": 2,
+            "plots": False,
+            **general_overrides,
+        }
+    )
+    wf = CommitteeUncertaintyWorkflow(jobs_dict=jobs_dict)
+    wf.db = shared_db
+    return wf
 
 
 def _atoms(symbol="H", config_type="init_dimer"):
@@ -93,36 +102,31 @@ class TestBuildWorkflow:
     def test_dispatches_to_committee_uncertainty(
         self, tmp_path, workflow_jobs_dict, shared_db
     ):
-        wf = build_workflow(
-            jobs_dict=workflow_jobs_dict,
-            initial_train_file_path=str(tmp_path / "train.xyz"),
-            initial_test_file_path=str(tmp_path / "test.xyz"),
-            db=shared_db,
+        workflow_jobs_dict["general"].update(
+            {
+                "initial_train_file_path": str(tmp_path / "train.xyz"),
+                "initial_test_file_path": str(tmp_path / "test.xyz"),
+            }
         )
+        wf = build_workflow(jobs_dict=workflow_jobs_dict)
+        wf.db = shared_db
         assert isinstance(wf, CommitteeUncertaintyWorkflow)
 
     def test_defaults_to_committee_uncertainty_when_absent(
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
-        wf = build_workflow(
-            jobs_dict=minimal_jobs_dict,
-            initial_train_file_path=str(tmp_path / "train.xyz"),
-            initial_test_file_path=str(tmp_path / "test.xyz"),
-            db=shared_db,
-        )
+        minimal_jobs_dict["general"] = {
+            "initial_train_file_path": str(tmp_path / "train.xyz"),
+            "initial_test_file_path": str(tmp_path / "test.xyz"),
+        }
+        wf = build_workflow(jobs_dict=minimal_jobs_dict)
+        wf.db = shared_db
         assert isinstance(wf, CommitteeUncertaintyWorkflow)
 
-    def test_raises_on_unknown_al_workflow(
-        self, tmp_path, minimal_jobs_dict, shared_db
-    ):
+    def test_raises_on_unknown_al_workflow(self, minimal_jobs_dict):
         minimal_jobs_dict["general"] = {"al_workflow": "furthest_point_sampling"}
         with pytest.raises(ValueError, match=r"Unknown general\.al_workflow"):
-            build_workflow(
-                jobs_dict=minimal_jobs_dict,
-                initial_train_file_path=str(tmp_path / "train.xyz"),
-                initial_test_file_path=str(tmp_path / "test.xyz"),
-                db=shared_db,
-            )
+            build_workflow(jobs_dict=minimal_jobs_dict)
 
 
 # ---------------------------------------------------------------------------

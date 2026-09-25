@@ -6,22 +6,32 @@
 from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
-# Load configuration from YAML file
+# Load configuration from YAML file -- every workflow-level setting
+# (initial_train_file_path, number_of_al_loops, verbose, log_file,
+# db_path, ...) lives under the YAML's `general:` section; build_workflow()
+# takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
 
-# Initialize the active learning workflow
-workflow = build_workflow(
-    jobs_dict=jobs_dict,
-    initial_train_file_path="results/initialization/train_set.xyz",
-    initial_test_file_path="results/initialization/test_set.xyz",
-    number_of_al_loops=5,
-    verbose=1,  # 0=silent, 1=INFO, 2=DEBUG
-    log_file="results/alomancy.log",  # debug logs always written here
-    db_path="results/global_database",
-)
+workflow = build_workflow(jobs_dict=jobs_dict)
 
 # Run the active learning workflow
 workflow.run()
+```
+
+```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "O"]
+  initial_train_file_path: "results/initialization/train_set.xyz"
+  initial_test_file_path: "results/initialization/test_set.xyz"
+  number_of_al_loops: 5
+  verbose: 1  # 0=silent, 1=INFO, 2=DEBUG
+  log_file: "results/alomancy.log"  # debug logs always written here
+  db_path: "results/global_database"
+  committee_uncertainty_kwargs:
+    number_models_in_committee: 5
+    target_config_types: ["IsolatedAtom"]
+    test_ratio: 0.1
 ```
 
 ## HPC Setup
