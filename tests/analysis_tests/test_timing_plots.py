@@ -274,3 +274,76 @@ def test_timing_plots_fixed_width_regardless_of_loop_count(tmp_path):
         widths[n_loops] = captured["size"][0]
 
     assert widths[2] == widths[5]
+
+
+@pytest.mark.unit
+def test_timing_plots_x_ticks_are_plain_loop_numbers(tmp_path):
+    """Tick labels are bare integers (no "Loop N"), thinned out on long runs."""
+    from datetime import datetime, timedelta
+
+    import matplotlib.pyplot as plt
+
+    from alomancy.analysis.timing_plots import timing_plots
+
+    lines: list[str] = []
+    t0 = datetime(2026, 7, 1)
+    for i in range(30):
+        day = t0 + timedelta(days=i)
+        for hours, msg in (
+            (0, f"alomancy.core.x: Starting AL loop {i}"),
+            (0, f"alomancy.core.x:   Training set size: {1000 + i}"),
+            (
+                1,
+                "alomancy.core.x: 20 structures selected for structure generation step.",
+            ),
+            (
+                2,
+                "alomancy.x: Selected 200 structures for DFT calculations based on force std dev.",
+            ),
+            (
+                3,
+                "alomancy.core.x: High-accuracy evaluation completed for 195 structures.",
+            ),
+            (
+                4,
+                f"alomancy.core.x: Completed AL loop {i}, retraining with {1000 + i} structures.",
+            ),
+        ):
+            ts = (day + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+            lines.append(f"{ts} [INFO    ] {msg}")
+    log = _write_log(tmp_path, lines)
+    captured = {}
+    real_close = plt.close
+
+    def fake_close(fig):
+        ax = fig.axes[0]
+        fig.canvas.draw()
+        lo, hi = ax.get_xlim()
+        captured["ticks"] = [t for t in ax.get_xticks() if lo <= t <= hi]
+        captured["labels"] = [t.get_text() for t in ax.get_xticklabels()]
+        real_close(fig)
+
+    with mock.patch("matplotlib.pyplot.close", side_effect=fake_close):
+        timing_plots(log, tmp_path / "plots")
+
+    assert all(float(t).is_integer() for t in captured["ticks"])
+    assert len(captured["ticks"]) <= 13
+    assert not any("Loop" in label for label in captured["labels"])
+
+
+@pytest.mark.unit
+def test_timing_plots_removes_superseded_timing_files(tmp_path):
+    from alomancy.analysis.timing_plots import timing_plots
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    for stale in ("timing_total.png", "timing_phases.png"):
+        (plots_dir / stale).write_bytes(b"old")
+    (plots_dir / "unrelated.png").write_bytes(b"keep")
+
+    timing_plots(_write_log(tmp_path, _loop0_lines()), plots_dir)
+
+    assert sorted(p.name for p in plots_dir.glob("*.png")) == [
+        "timing_combined.png",
+        "unrelated.png",
+    ]

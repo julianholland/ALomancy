@@ -5,15 +5,15 @@ Produces unlabeled structures only -- no DFT evaluation, no DB writes, no
 train/test split. It does not depend on the evaluator category (see the
 architecture plan's initialiser decision): the skeleton is what calls the
 DFT evaluator on this module's output afterward, exactly as it already
-does for AL-loop-generated structures. This also means the on-disk
-fast-path check (pre-existing initial_train/test files), the DB-first/
-extra-datasets-second needs computation, clean_structures, db.add_structures,
+does for AL-loop-generated structures. This also means importing
+general.start_from's data, the needs computation against the DB,
+clean_structures, db.add_structures,
 and the initial train/test split all live in the skeleton's own
 _initialize_training_set (committee_uncertainty_workflow.py), not here.
 
 Self-contained config surface: reads only initialiser-specific settings
-directly off the `initialization` section (plus `extra_datasets`/
-`read_generated_file`, read directly by the skeleton, not by this
+directly off the `initialization` section (plus `read_generated_file`,
+read directly by the skeleton, not by this
 module), never reaching into another module's section. Three exceptions,
 all passed as explicit keyword arguments by the skeleton rather than read
 from `config` (matching how `name`/`hpc`/`max_time` already are):

@@ -9,6 +9,7 @@ split, the partial-aware per-fit restart mechanism, generalized committee
 scoring, and cross-loop metrics aggregation.
 """
 
+import json
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -77,8 +78,6 @@ def _make_workflow(tmp_path, jobs_dict, shared_db, **general_overrides):
     )
     general.update(
         {
-            "initial_train_file_path": str(tmp_path / "train.xyz"),
-            "initial_test_file_path": str(tmp_path / "test.xyz"),
             "num_of_al_loops": 2,
             "plots": False,
             **general_overrides,
@@ -107,12 +106,6 @@ class TestBuildWorkflow:
     def test_dispatches_to_committee_uncertainty(
         self, tmp_path, workflow_jobs_dict, shared_db
     ):
-        workflow_jobs_dict["general"].update(
-            {
-                "initial_train_file_path": str(tmp_path / "train.xyz"),
-                "initial_test_file_path": str(tmp_path / "test.xyz"),
-            }
-        )
         wf = build_workflow(jobs_dict=workflow_jobs_dict)
         wf.db = shared_db
         assert isinstance(wf, CommitteeUncertaintyWorkflow)
@@ -121,8 +114,6 @@ class TestBuildWorkflow:
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
         minimal_jobs_dict["general"] = {
-            "initial_train_file_path": str(tmp_path / "train.xyz"),
-            "initial_test_file_path": str(tmp_path / "test.xyz"),
             "committee_uncertainty_kwargs": {
                 "test_ratio": 0.1,
                 "target_config_types": ["IsolatedAtom"],
@@ -141,8 +132,6 @@ class TestBuildWorkflow:
         committee = {"test_ratio": 0.1, "target_config_types": ["IsolatedAtom"]}
         del committee[missing]
         minimal_jobs_dict["general"] = {
-            "initial_train_file_path": str(tmp_path / "train.xyz"),
-            "initial_test_file_path": str(tmp_path / "test.xyz"),
             "committee_uncertainty_kwargs": committee,
         }
         with pytest.raises(ValueError, match=missing):
@@ -330,20 +319,29 @@ class TestScoreStructuresWithMember:
 
 @pytest.mark.unit
 class TestCrossLoopMetricsDataframe:
-    def _write_fit(self, fit_dir: Path, error: float) -> None:
-        fit_dir.mkdir(parents=True)
-        model = fit_dir / "committee_stagetwo.model"
-        model.write_bytes(b"checkpoint")
+    @staticmethod
+    def _split(error: float) -> dict:
         a = Atoms("Pd2", positions=[[0, 0, 0], [2.5, 0, 0]])
         a.info.update(REF_energy=-8.0, model_energy=-8.0 + 2 * error, config_type="d")
         a.set_array("REF_forces", np.zeros((2, 3)))
         a.set_array("model_forces", np.ones((2, 3)) * error)
-        save_evaluation(fit_dir, model, {"test": prediction_metrics([a])})
+        return prediction_metrics([a])
 
-    def test_aggregates_across_loops_and_fits(self, tmp_path, monkeypatch, shared_db):
+    def _write_fit(
+        self, fit_dir: Path, error: float, valid_error: float | None = None
+    ) -> None:
+        fit_dir.mkdir(parents=True)
+        model = fit_dir / "committee_stagetwo.model"
+        model.write_bytes(b"checkpoint")
+        splits = {"test": self._split(error)}
+        if valid_error is not None:
+            splits["valid"] = self._split(valid_error)
+        save_evaluation(fit_dir, model, splits)
+
+    def test_one_best_model_row_per_loop(self, tmp_path, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
         for loop in range(2):
-            for fit_idx, error in enumerate([0.1, 0.2, 0.3]):
+            for fit_idx, error in enumerate([0.3, 0.1, 0.2]):
                 self._write_fit(
                     Path(f"results/al_loop_{loop}/committee/fit_{fit_idx}"), error
                 )
@@ -351,9 +349,40 @@ class TestCrossLoopMetricsDataframe:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         df = wf._cross_loop_metrics_dataframe("committee")
 
-        assert len(df) == 2
-        assert "mae_f" in df.columns
-        assert "mae_f_std_dev" in df.columns
+        assert list(df.index) == [0, 1]
+        assert list(df["best_fit_idx"]) == [1, 1]
+        assert df["mae_f"].tolist() == pytest.approx([0.1, 0.1])
+        assert "mae_f_std_dev" not in df.columns
+
+    def test_best_chosen_on_valid_but_reports_test(
+        self, tmp_path, monkeypatch, shared_db
+    ):
+        """The plotted model is the one MD uses (valid-best), not whichever
+        happens to score best on test."""
+        monkeypatch.chdir(tmp_path)
+        committee = Path("results/al_loop_0/committee")
+        self._write_fit(committee / "fit_0", error=0.05, valid_error=0.4)
+        self._write_fit(committee / "fit_1", error=0.2, valid_error=0.1)
+
+        wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
+        df = wf._cross_loop_metrics_dataframe("committee")
+
+        assert df.loc[0, "best_fit_idx"] == 1
+        assert df.loc[0, "mae_f"] == pytest.approx(0.2)
+        assert df.loc[0, "selection_split"] == "valid"
+
+    def test_skips_loop_with_inconsistent_evaluations(
+        self, tmp_path, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        self._write_fit(Path("results/al_loop_0/committee/fit_0"), 0.1, valid_error=0.1)
+        self._write_fit(Path("results/al_loop_0/committee/fit_1"), 0.1)
+        self._write_fit(Path("results/al_loop_1/committee/fit_0"), 0.2)
+
+        wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
+        df = wf._cross_loop_metrics_dataframe("committee")
+
+        assert list(df.index) == [1]
 
     def test_empty_when_no_loops(self, tmp_path, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
@@ -369,6 +398,124 @@ class TestCrossLoopMetricsDataframe:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         df = wf._cross_loop_metrics_dataframe("committee")
         assert len(df) == 1
+
+
+# ---------------------------------------------------------------------------
+# _update_best_model
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdateBestModel:
+    @staticmethod
+    def _write_fit(
+        loop: int, fit_idx: int, valid_error: float, compiled: bool = True
+    ) -> Path:
+        fit_dir = Path(f"results/al_loop_{loop}/training/fit_{fit_idx}")
+        fit_dir.mkdir(parents=True)
+        model = fit_dir / "training_stagetwo.model"
+        model.write_bytes(f"model {loop}-{fit_idx}".encode())
+        if compiled:
+            (fit_dir / "training_stagetwo_compiled.model").write_bytes(
+                f"compiled {loop}-{fit_idx}".encode()
+            )
+
+        def structure(error, config_type):
+            a = Atoms("Pd2", positions=[[0, 0, 0], [2.0, 0, 0]], cell=[4] * 3, pbc=True)
+            a.info.update(
+                REF_energy=-8.0,
+                model_energy=-8.0 + 2 * error,
+                config_type=config_type,
+                REF_stresses=np.zeros(6),
+                model_stress=np.full(6, error / 10),
+            )
+            a.set_array("REF_forces", np.zeros((2, 3)))
+            a.set_array("model_forces", np.ones((2, 3)) * error)
+            return a
+
+        save_evaluation(
+            fit_dir,
+            model,
+            {
+                "valid": prediction_metrics([structure(valid_error, "init_MP")]),
+                "test": prediction_metrics(
+                    [structure(0.2, "init_MP"), structure(0.4, "high_sd")]
+                ),
+            },
+        )
+        return fit_dir
+
+    def test_copies_valid_best_compiled_model_with_metadata(
+        self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        workflow_jobs_dict["general"]["committee_uncertainty_kwargs"][
+            "num_of_models_in_committee"
+        ] = 3
+        for fit_idx, error in enumerate([0.3, 0.1, 0.2]):
+            self._write_fit(0, fit_idx, error)
+
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        wf._update_best_model("al_loop_0")
+
+        best_dir = Path("results/best_model")
+        assert (best_dir / "ALomancy_best_model.model").read_bytes() == b"compiled 0-1"
+        metadata = json.loads((best_dir / "model_metadata.json").read_text())
+        assert metadata["al_loop"] == 0
+        assert metadata["fit_idx"] == 1
+        assert metadata["selected_on_split"] == "valid"
+        test_errors = metadata["errors"]["test"]
+        assert set(test_errors["config_types"]) == {"init_MP", "high_sd"}
+        assert test_errors["config_types"]["high_sd"]["mae_f"] == pytest.approx(0.4)
+        assert test_errors["config_types"]["high_sd"]["mae_stress"] == pytest.approx(
+            0.04
+        )
+        assert "mae_e_per_atom" in test_errors
+
+    def test_later_loop_replaces_previous_best_model(
+        self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        workflow_jobs_dict["general"]["committee_uncertainty_kwargs"][
+            "num_of_models_in_committee"
+        ] = 2
+        for loop in range(2):
+            self._write_fit(loop, 0, 0.1)
+            self._write_fit(loop, 1, 0.2)
+        Path("results/best_model").mkdir(parents=True)
+        Path("results/best_model/old_name.model").write_bytes(b"stale")
+
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        wf._update_best_model("al_loop_0")
+        wf._update_best_model("al_loop_1")
+
+        best_dir = Path("results/best_model")
+        assert sorted(p.name for p in best_dir.glob("*.model")) == [
+            "ALomancy_best_model.model"
+        ]
+        assert (best_dir / "ALomancy_best_model.model").read_bytes() == b"compiled 1-0"
+        metadata = json.loads((best_dir / "model_metadata.json").read_text())
+        assert metadata["al_loop"] == 1
+
+    def test_missing_compiled_model_keeps_previous(
+        self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        workflow_jobs_dict["general"]["committee_uncertainty_kwargs"][
+            "num_of_models_in_committee"
+        ] = 1
+        self._write_fit(0, 0, 0.1)
+        self._write_fit(1, 0, 0.1, compiled=False)
+
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        wf._update_best_model("al_loop_0")
+        wf._update_best_model("al_loop_1")
+
+        best_dir = Path("results/best_model")
+        assert (best_dir / "ALomancy_best_model.model").read_bytes() == b"compiled 0-0"
+        assert (
+            json.loads((best_dir / "model_metadata.json").read_text())["al_loop"] == 0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -777,23 +924,6 @@ class TestGenerateStructures:
 
 @pytest.mark.unit
 class TestInitializeTrainingSet:
-    def test_fast_path_loads_existing_files(
-        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
-    ):
-        monkeypatch.chdir(tmp_path)
-        train_path = tmp_path / "train.xyz"
-        test_path = tmp_path / "test.xyz"
-        write(str(train_path), [_atoms(), _atoms()], format="extxyz")
-        write(str(test_path), [_atoms()], format="extxyz")
-
-        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
-        with patch(f"{_MODULE}.resolve") as mock_resolve:
-            train_xyzs, test_xyzs = wf._initialize_training_set("initialization")
-
-        mock_resolve.assert_not_called()
-        assert len(train_xyzs) == 2
-        assert len(test_xyzs) == 1
-
     def test_db_path_calls_initialiser_and_evaluator(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -825,6 +955,317 @@ class TestInitializeTrainingSet:
 
         fake_initialiser.generate.assert_called_once()
         assert len(train_xyzs) + len(test_xyzs) >= 1
+
+
+# ---------------------------------------------------------------------------
+# general.start_from -- warm/cold start modes (docs/starting_a_run.md)
+# ---------------------------------------------------------------------------
+
+
+def _labelled(i: int, config_type: str | None = "init_amorphous") -> Atoms:
+    """A distinct 2-atom structure with ALomancy's canonical DFT labels."""
+    a = Atoms(
+        "H2", positions=[[0, 0, 0], [0.7 + 0.05 * i, 0, 0]], cell=[6] * 3, pbc=True
+    )
+    a.info["REF_energy"] = -1.0 - 0.01 * i
+    a.arrays["REF_forces"] = np.zeros((2, 3))
+    if config_type is not None:
+        a.info["config_type"] = config_type
+    return a
+
+
+def _no_needs_initialiser() -> MagicMock:
+    initialiser = MagicMock()
+    initialiser.compute_needs.return_value = {
+        "isolated_atoms": [],
+        "dimer_override": {},
+        "trimer_override": {},
+        "amorphous_override": 0,
+        "mp_structures": False,
+    }
+    return initialiser
+
+
+@pytest.mark.unit
+class TestParseStartFrom:
+    @pytest.mark.parametrize(
+        ("start_from", "mode"),
+        [
+            (None, "cold"),
+            ({}, "cold"),
+            ({"train_xyz": "a.xyz", "test_xyz": "b.xyz"}, "split_files"),
+            ({"xyz": "a.xyz"}, "single_xyz"),
+            ({"xyz": ["a.xyz", "b.xyz"]}, "single_xyz"),
+            ({"database": "old/global_database"}, "database"),
+        ],
+    )
+    def test_mode_detected_from_keys(self, start_from, mode):
+        from alomancy.core.committee_uncertainty_workflow import _parse_start_from
+
+        assert _parse_start_from(start_from)[0] == mode
+
+    @pytest.mark.parametrize(
+        ("start_from", "match"),
+        [
+            ({"train_xyz": "a.xyz"}, "must be given together"),
+            ({"xyz": "a.xyz", "database": "db"}, "more than one data source"),
+            ({"train_xyz": "a", "test_xyz": "b", "xyz": "c"}, "more than one"),
+            ({"databse": "db"}, "Unknown general.start_from"),
+            ({"database": "db", "metadata_map": {"energy": "e"}}, "only applies"),
+            ({"xyz": []}, "path or a list"),
+        ],
+    )
+    def test_invalid_start_from_raises(self, start_from, match):
+        from alomancy.core.committee_uncertainty_workflow import _parse_start_from
+
+        with pytest.raises(ValueError, match=match):
+            _parse_start_from(start_from)
+
+    @pytest.mark.parametrize(
+        ("section", "key", "replacement"),
+        [
+            ("general", "initial_train_file_path", "start_from.train_xyz"),
+            ("general", "initial_test_file_path", "start_from.test_xyz"),
+            ("general", "skip_initialization", "start_from"),
+            ("initialization", "extra_datasets", "start_from.xyz"),
+            ("initialization", "reset_extra_splits", "nothing"),
+        ],
+    )
+    def test_removed_keys_raise_with_replacement(
+        self, tmp_path, workflow_jobs_dict, shared_db, section, key, replacement
+    ):
+        workflow_jobs_dict.setdefault(section, {})[key] = "x"
+        with pytest.raises(ValueError, match=rf"{key} -> .*{replacement}"):
+            _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+
+def _starting_a_run_examples() -> list[dict]:
+    import re
+
+    import yaml
+
+    page = Path(__file__).parents[2] / "docs" / "starting_a_run.md"
+    blocks = re.findall(r"```yaml\n(.*?)```", page.read_text(), flags=re.S)
+    return [yaml.safe_load(block) for block in blocks]
+
+
+@pytest.mark.unit
+def test_docs_start_examples_build_workflows(tmp_path, minimal_jobs_dict, shared_db):
+    """Every YAML example in docs/starting_a_run.md is a valid config, and
+    together they cover all four start modes."""
+    from alomancy.core.committee_uncertainty_workflow import build_workflow
+
+    examples = _starting_a_run_examples()
+    assert examples
+    modes = set()
+    for example in examples:
+        jobs_dict = {**minimal_jobs_dict, "general": example["general"]}
+        jobs_dict["general"]["log_file"] = str(tmp_path / "docs.log")
+        wf = build_workflow(jobs_dict=jobs_dict)
+        wf.db = shared_db
+        modes.add(wf.start_mode)
+    assert modes == {"split_files", "single_xyz", "database", "cold"}
+
+
+@pytest.mark.unit
+class TestStartModes:
+    def _init(self, wf, initialiser=None, evaluated=None):
+        initialiser = initialiser or _no_needs_initialiser()
+        with (
+            patch(f"{_MODULE}.resolve", return_value=initialiser),
+            patch(f"{_MODULE}._evaluator_orchestrate", return_value=evaluated or []),
+            patch(
+                f"{_MODULE}.clean_structures",
+                side_effect=lambda structs, *a, **kw: structs,
+            ),
+        ):
+            return wf._initialize_training_set("initialization")
+
+    @staticmethod
+    def _targets(jobs_dict, *types):
+        jobs_dict["general"]["committee_uncertainty_kwargs"]["target_config_types"] = (
+            list(types)
+        )
+
+    def test_split_files_keep_their_split(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("train.xyz", [_labelled(i) for i in range(3)], format="extxyz")
+        write("test.xyz", [_labelled(i) for i in range(3, 5)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={"train_xyz": "train.xyz", "test_xyz": "test.xyz"},
+        )
+
+        train, test = self._init(wf)
+
+        assert (len(train), len(test)) == (3, 2)
+        splits = sorted(a.info["split"] for a in shared_db.get_all_as_atoms())
+        assert splits == ["test"] * 2 + ["train"] * 3
+        assert Path("results/initialization/train_set.xyz").exists()
+
+    def test_foreign_split_files_get_normalized_labels(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        foreign = []
+        for i in range(2):
+            a = _labelled(i, config_type=None)
+            a.info["dft_energy"] = a.info.pop("REF_energy")
+            a.arrays["dft_forces"] = a.arrays.pop("REF_forces")
+            a.info["label"] = "bulk"
+            foreign.append(a)
+        write("train.xyz", foreign[:1], format="extxyz")
+        write("test.xyz", foreign[1:], format="extxyz")
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={"train_xyz": "train.xyz", "test_xyz": "test.xyz"},
+        )
+
+        train, test = self._init(wf)
+
+        for atoms in train + test:
+            assert atoms.info["config_type"] == "bulk"
+            assert atoms.info["REF_energy"] < 0
+            assert atoms.arrays["REF_forces"].shape == (2, 3)
+
+    def test_single_xyz_split_by_test_ratio_over_targets(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        structures = [_labelled(i, "init_amorphous") for i in range(10)]
+        structures += [_labelled(i, "init_dimer") for i in range(10, 13)]
+        write("data.xyz", structures, format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        workflow_jobs_dict["general"]["committee_uncertainty_kwargs"]["test_ratio"] = (
+            0.2
+        )
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+
+        train, test = self._init(wf)
+
+        assert len(train) + len(test) == 13
+        assert test and all(a.info["config_type"] == "init_amorphous" for a in test)
+
+    def test_single_xyz_of_external_structures_raises(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("data.xyz", [_labelled(i, None) for i in range(5)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+
+        with pytest.raises(ValueError, match=r"'external'.*target_config_types"):
+            self._init(wf)
+
+    def test_single_xyz_external_allowed_when_targeted(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("data.xyz", [_labelled(i, None) for i in range(10)], format="extxyz")
+        self._targets(workflow_jobs_dict, "external")
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+
+        train, test = self._init(wf)
+
+        assert test
+        assert {a.info["config_type"] for a in train + test} == {"external"}
+
+    def test_reimport_is_idempotent(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("data.xyz", [_labelled(i) for i in range(6)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+
+        self._init(wf)
+        size = shared_db.size
+        self._init(wf)
+
+        assert shared_db.size == size == 6
+
+    def test_database_copy_keeps_splits_and_leaves_source_alone(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        from alomancy.database.global_database import GlobalDatabase
+
+        monkeypatch.chdir(tmp_path)
+        old = GlobalDatabase(str(tmp_path / "old_run" / "global_database"))
+        with_prediction = _labelled(0)
+        with_prediction.info["model_energy_loop_0_fit_0"] = -1.0
+        old.add_structures([with_prediction, _labelled(1)], split="train")
+        old.add_structures([_labelled(2)], split="test")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={"database": "old_run/global_database"},
+        )
+
+        train, test = self._init(wf)
+        self._init(wf)  # re-import is a no-op
+
+        assert (len(train), len(test)) == (2, 1)
+        assert shared_db.size == 3
+        copied = shared_db.get_all_as_atoms()
+        assert sorted(a.info["source_global_db_id"] for a in copied) == [0, 1, 2]
+        assert not any(k.startswith("model_") for a in copied for k in a.info)
+        assert GlobalDatabase(str(tmp_path / "old_run" / "global_database")).size == 3
+
+    def test_warm_start_generates_only_missing_targets(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("data.xyz", [_labelled(i) for i in range(6)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+        initialiser = _no_needs_initialiser()
+        initialiser.compute_needs.return_value = {
+            **initialiser.compute_needs.return_value,
+            "isolated_atoms": ["H"],
+        }
+        isolated = _atoms(config_type="IsolatedAtom")
+        initialiser.generate.return_value = [isolated]
+
+        train, test = self._init(wf, initialiser=initialiser, evaluated=[isolated])
+
+        initialiser.compute_needs.assert_called_once()
+        initialiser.generate.assert_called_once()
+        assert shared_db.size == 7
+        assert len(train) + len(test) == 7
+
+    def test_warm_start_with_nothing_missing_skips_generation(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("data.xyz", [_labelled(i) for i in range(6)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+        initialiser = _no_needs_initialiser()
+
+        self._init(wf, initialiser=initialiser)
+
+        initialiser.generate.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

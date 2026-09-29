@@ -32,6 +32,7 @@ _MD_KWARGS_DEFAULTS: dict[str, Any] = {
     "steps": 20000,
     "temperature": 300,
     "timestep_fs": 0.5,
+    "traj_interval": None,
     "trainer": "mace",
     "trainer_config": {},
     "structure_selection_kwargs": {
@@ -57,6 +58,7 @@ def run_md(
     equilibration_steps: int = 0,
     equilibration_temperature: float = 300.0,
     calculator=None,
+    traj_interval: int | None = None,
 ):
     """
     ensemble : {"nvt", "npt"}
@@ -80,9 +82,23 @@ def run_md(
         get_calculator(model_path, config) -- see the architecture plan's
         generator/calculator-coupling decision. None (the default) preserves
         this function's original behavior exactly for every existing caller.
+    traj_interval : int, optional
+        When set, every ``traj_interval``-th production MD step is appended
+        to ``out_dir/md_trajectory.xyz`` (extxyz), a full-resolution record
+        alongside the subsampled candidate snapshots. ``None`` (default)
+        writes no trajectory file. Equilibration steps are never written.
     """
     if ensemble.lower() not in ("nvt", "npt"):
         raise ValueError(f"Unknown ensemble {ensemble!r}; must be 'nvt' or 'npt'.")
+    if traj_interval is not None and (
+        isinstance(traj_interval, bool)
+        or not isinstance(traj_interval, int)
+        or traj_interval <= 0
+    ):
+        raise ValueError(
+            f"md_kwargs.traj_interval must be a positive integer or null, got "
+            f"{traj_interval!r}."
+        )
 
     assert structure_generation_job_dict["desired_num_of_structures"] > 0, (
         "Number of structures must be greater than 0"
@@ -181,6 +197,21 @@ def run_md(
             rng=rng,
             logfile=logfile,
         )
+    if traj_interval is not None:
+        traj_path = Path(out_dir, "md_trajectory.xyz")
+        last_written: dict[str, int | None] = {"step": None}
+
+        def _write_traj_frame() -> None:
+            # ASE calls observers again at the start of every dyn.run(), so
+            # the step closing one snapshot segment would otherwise be
+            # written twice.
+            if dyn.nsteps == last_written["step"]:
+                return
+            last_written["step"] = dyn.nsteps
+            write(str(traj_path), dyn.atoms, format="extxyz", append=True)
+
+        dyn.attach(_write_traj_frame, interval=traj_interval)
+
     snapshot_interval = (
         steps
         * total_md_runs

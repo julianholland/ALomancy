@@ -167,3 +167,63 @@ def test_quality_gate_rejects_different_validation_sets(tmp_path):
 # test_recognizes_real_checkpoint_evaluation_on_restart (ported from the
 # now-removed standard_active_learning.py/ActiveLearningStandardMACE.
 # train_mlip, which this module previously tested directly).
+
+
+def predicted_bulk(error, stress_error=None, config_type="init_MP"):
+    a = Atoms("Pd2", positions=[[0, 0, 0], [2.0, 0, 0]], cell=[4, 4, 4], pbc=True)
+    a.info.update(
+        REF_energy=-8.0, model_energy=-8.0 + 2 * error, config_type=config_type
+    )
+    a.set_array("REF_forces", np.zeros((2, 3)))
+    a.set_array("model_forces", np.ones((2, 3)) * error)
+    if stress_error is not None:
+        a.info["REF_stresses"] = np.zeros(6)
+        a.info["model_stress"] = np.full(6, stress_error)
+    return a
+
+
+@pytest.mark.unit
+def test_metrics_broken_down_by_config_type():
+    metrics = prediction_metrics(
+        [
+            predicted_bulk(0.1, config_type="init_MP"),
+            predicted_bulk(0.3, config_type="high_sd"),
+            predicted_bulk(0.5, config_type="high_sd"),
+        ]
+    )
+    assert set(metrics["config_types"]) == {"init_MP", "high_sd"}
+    assert metrics["config_types"]["init_MP"]["mae_f"] == pytest.approx(0.1)
+    assert metrics["config_types"]["high_sd"]["mae_f"] == pytest.approx(0.4)
+    assert metrics["config_types"]["high_sd"]["n_structures"] == 2
+
+
+@pytest.mark.unit
+def test_stress_errors_use_only_structures_with_both_stresses():
+    metrics = prediction_metrics(
+        [
+            predicted_bulk(0.1, stress_error=0.02),
+            predicted_bulk(0.1, stress_error=-0.04),
+            predicted_bulk(0.1),  # no stress: excluded, not an error
+        ]
+    )
+    assert metrics["n_structures"] == 3
+    assert metrics["n_structures_with_stress"] == 2
+    assert metrics["mae_stress"] == pytest.approx(0.03)
+    assert metrics["rmse_stress"] == pytest.approx(np.sqrt((0.02**2 + 0.04**2) / 2))
+
+
+@pytest.mark.unit
+def test_full_3x3_model_stress_accepted():
+    a = predicted_bulk(0.1)
+    a.info["REF_stresses"] = np.zeros(6)
+    a.info["model_stress"] = np.eye(3) * 0.01
+    metrics = prediction_metrics([a])
+    # Voigt: three diagonal components of 0.01, three shear of 0.
+    assert metrics["mae_stress"] == pytest.approx(0.005)
+
+
+@pytest.mark.unit
+def test_no_stress_keys_without_stress_data():
+    metrics = prediction_metrics([predicted_bulk(0.1)])
+    assert "mae_stress" not in metrics
+    assert "mae_stress" not in metrics["config_types"]["init_MP"]

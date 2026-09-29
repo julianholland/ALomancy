@@ -172,7 +172,7 @@ from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
 # Load configuration from YAML file -- every workflow-level setting
-# (initial_train_file_path, num_of_al_loops, verbose, log_file,
+# (start_from, num_of_al_loops, verbose, log_file,
 # db_path, ...) lives under the YAML's `general:` section; build_workflow()
 # takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
@@ -310,32 +310,28 @@ There's no subclassing to extend ALomancy — `CommitteeUncertaintyWorkflow` (bu
 
 Adding a new backend means writing a new module that implements the category's expected entry points — typically `output_paths(config, *, base_name, name, ...)` and `read_existing_result(config, *, base_name, name, ...)` for the skeleton's restart mechanism, plus the category-specific worker function (`train`, `generate`, or `sp`/`go`) — and registering it in `registry.py`. See any existing module under `mlip/` (e.g. `mlip/mace/trainer.py`), `structure_generation/` (`structure_generation/md/md_wfl.py`, `structure_generation/ezga/generate_structures.py`), or `high_accuracy_evaluation/dft/` (`run_qe.py`, `run_vasp.py`) for the pattern to follow.
 
-## Extra Datasets
+## Starting From Existing Data
 
-The initialization configuration can include external datasets via an `extra_datasets` parameter. These structures are seeded into the GlobalDatabase before initialization runs. This is useful for incorporating reference data (e.g., from literature or previous computations) without regenerating isolated atoms.
-
-Example configuration:
+External or earlier datasets are imported with `general.start_from`
+instead of being generated from scratch. For example, a single xyz file:
 
 ```yaml
 general:
   al_workflow: "committee_uncertainty"
   elements: ["H", "O"]
+  start_from:
+    xyz:
+      - "path/to/external_structures.xyz"
+      - "path/to/another_dataset.xyz"
   committee_uncertainty_kwargs:
     test_ratio: 0.1
-    # ... other options ...
-
-initialization:
-  name: "initialization"
-  max_time: "2H"
-  extra_datasets:
-    - "path/to/external_structures.xyz"
-    - "path/to/another_dataset.xyz"
+    target_config_types: ["liquid"]
 ```
 
-Structures in extra datasets should have:
-- `atoms.info["REF_energy"]` (float) — DFT energy
-- `atoms.arrays["REF_forces"]` (array, shape N×3) — DFT forces
-- `atoms.info["config_type"]` (str) — origin label (e.g. `"IsolatedAtom"`, `"external_data"`)
+Structures don't need ALomancy's own keys: `config_type`, `REF_energy`
+and `REF_forces` are mapped from common equivalents (or named explicitly
+with `start_from.metadata_map`). See [Starting a run](starting_a_run.md)
+for all start modes and the full rules.
 
 ## MACE Committee Predictions in the GlobalDatabase
 

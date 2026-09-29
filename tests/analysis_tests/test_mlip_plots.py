@@ -710,6 +710,95 @@ def test_draw_parity_figure_formation_energy_label(tmp_path, monkeypatch):
     assert captured["xlabel"] == "DFT formation energy (eV/atom)"
 
 
+def _parity_result(energy_error: float, force_error: float) -> tuple:
+    e_dft = np.linspace(-5.0, -4.0, 5)
+    f_dft = np.linspace(-1.0, 1.0, 15)
+    return (e_dft, e_dft + energy_error, f_dft, f_dft + force_error)
+
+
+def _capture_starred_axes(monkeypatch) -> dict:
+    """After the figure closes, captured["starred"] holds the (row, column)
+    of every axes carrying the best-model star."""
+    from alomancy.analysis import mlip_plots
+
+    captured: dict = {}
+    real_close = mlip_plots.plt.close
+
+    def fake_close(fig):
+        grid = [ax for ax in fig.axes if ax.get_label() != "_alomancy_watermark"]
+        captured["starred"] = [
+            (idx // 2, idx % 2)
+            for idx, ax in enumerate(grid)
+            if any(t.get_gid() == "best_star" for t in ax.texts)
+        ]
+        real_close(fig)
+
+    monkeypatch.setattr(mlip_plots.plt, "close", fake_close)
+    return captured
+
+
+@pytest.mark.unit
+def test_parity_star_marks_lowest_mae_per_column(tmp_path, monkeypatch):
+    """Energy winner (fit_2) and force winner (fit_0) differ: each column
+    gets its own star."""
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    results = [
+        _parity_result(energy_error=0.3, force_error=0.01),
+        _parity_result(energy_error=0.2, force_error=0.2),
+        _parity_result(energy_error=0.05, force_error=0.3),
+    ]
+    captured = _capture_starred_axes(monkeypatch)
+    _draw_parity_figure(
+        results_per_fit=results,
+        n_fits=3,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=tmp_path,
+        file_suffix="test",
+    )
+    assert sorted(captured["starred"]) == [(0, 1), (2, 0)]
+
+
+@pytest.mark.unit
+def test_parity_star_skips_missing_fits(tmp_path, monkeypatch):
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    results = [None, _parity_result(energy_error=0.2, force_error=0.2)]
+    captured = _capture_starred_axes(monkeypatch)
+    _draw_parity_figure(
+        results_per_fit=results,
+        n_fits=2,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=tmp_path,
+        file_suffix="test",
+    )
+    assert sorted(captured["starred"]) == [(1, 0), (1, 1)]
+
+
+@pytest.mark.unit
+def test_parity_no_star_when_no_predictions(tmp_path, monkeypatch):
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    captured = _capture_starred_axes(monkeypatch)
+    _draw_parity_figure(
+        results_per_fit=[None, None],
+        n_fits=2,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=tmp_path,
+        file_suffix="test",
+    )
+    assert captured["starred"] == []
+
+
 # ---------------------------------------------------------------------------
 # plot_dft_vs_model — E0 threading (real GlobalDatabase, no mock-testing)
 # ---------------------------------------------------------------------------

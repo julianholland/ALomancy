@@ -1,8 +1,7 @@
 general:
   al_workflow: "committee_uncertainty"
   elements: ["C", "S"]
-  initial_train_file_path: "input_files/carbon_train.xyz"
-  initial_test_file_path: "input_files/carbon_test.xyz"
+  # No start_from: a cold start (see docs/starting_a_run.md).
   num_of_al_loops: 5
   verbose: 1
   start_loop: 0

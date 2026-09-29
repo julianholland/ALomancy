@@ -303,3 +303,32 @@ def test_cli_entrypoint_replot(tmp_path):
         main()
 
     m_replot.assert_called_once_with(results.resolve(), no_parity=True)
+
+
+@pytest.mark.unit
+def test_replot_orders_loops_numerically(tmp_path):
+    """al_loop_10 is the last loop, not al_loop_9 (name order): per-loop
+    plots run in loop order and the cross-loop MAE plot lands in the last
+    loop's directory."""
+    import pandas as pd
+
+    from alomancy.cli.replot import replot_results
+
+    results = _make_results_tree(tmp_path, n_loops=11)
+
+    with (
+        mock.patch("alomancy.cli.replot.plot_training_curves") as m_train,
+        mock.patch("alomancy.cli.replot.plot_dft_vs_model"),
+        mock.patch(
+            "alomancy.cli.replot.get_mace_eval_info",
+            return_value=pd.DataFrame([{"mae_f": 0.1}]),
+        ),
+        mock.patch("alomancy.cli.replot.mae_al_loop_plot") as m_mae,
+        mock.patch("alomancy.cli.replot.timing_plots"),
+        mock.patch("os.chdir"),
+    ):
+        replot_results(results)
+
+    plotted = [c.args[0] for c in m_train.call_args_list]
+    assert plotted == [f"al_loop_{i}" for i in range(11)]
+    assert m_mae.call_args.kwargs["directory"].name == "al_loop_10"

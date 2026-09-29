@@ -89,9 +89,10 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
             next((loop_dir / name / "fit_0" / "results").glob("*_train.txt"), None)
         )
 
+    # Numeric order: sorting by name would put al_loop_9 after al_loop_14.
     loops = sorted(
         (d for d in results_dir.glob("al_loop_*") if d.is_dir() and _has_train_txt(d)),
-        key=lambda p: p.name,
+        key=lambda p: int(p.name.rsplit("_", 1)[1]),
     )
 
     if not loops:

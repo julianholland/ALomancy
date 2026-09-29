@@ -10,6 +10,7 @@ Welcome to ALomancy - Modular Active Learning Workflows for Modern Computational
 
 installation
 quickstart
+starting_a_run
 api/index
 examples
 contributing

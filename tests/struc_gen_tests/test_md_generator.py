@@ -150,7 +150,7 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestGenerate:
-    def test_max_number_of_concurrent_jobs_defaults_to_ten(self, tmp_path, monkeypatch):
+    def test_num_of_md_starts_defaults_to_ten(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         seeds = _seed_atoms(15)
 

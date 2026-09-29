@@ -10,18 +10,15 @@ config schema in this codebase (examples/basic_use/ and examples/ezga_use/
 use the same build_workflow() entry point, just with more elaborate
 configs).
 
-general.initial_train_file_path/general.initial_test_file_path in
-config.yaml point at files that don't exist yet -- that's expected for a
-first run: the skeleton falls through to the DB-driven path
-(initialization's own structure-type settings, e.g. dimer_kwargs/
-amorphous_kwargs/mp_kwargs, plus general.elements) and generates +
-DFT-evaluates a bootstrap dataset itself. Point them at existing xyz
-files instead to skip that and start straight from a pre-built training
-set.
+config.yaml has no general.start_from, so this is a cold start: the
+skeleton generates and DFT-evaluates a bootstrap dataset itself from
+initialization's structure-type settings (e.g. dimer_kwargs/
+amorphous_kwargs/mp_kwargs) plus general.elements. Add a start_from block
+to begin from existing data instead (see docs/starting_a_run.md).
 
 build_workflow() takes only jobs_dict now -- every setting that used to
-be a separate Python kwarg here (initial_train_file_path,
-num_of_al_loops, verbose, start_loop, ...) lives in config.yaml's
+be a separate Python kwarg here (num_of_al_loops, verbose, start_loop,
+...) lives in config.yaml's
 general section instead (see committee_uncertainty_workflow.py's module
 docstring for the full list).
 """

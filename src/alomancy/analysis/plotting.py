@@ -3,6 +3,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.ticker import MaxNLocator
 
 from alomancy.analysis.colors import PALETTE, add_logo_watermark, setup_alomancy_style
 
@@ -118,8 +119,8 @@ def mae_al_loop_plot(
     name = mlip_committee_job_dict["name"]
 
     for col, label in (
-        ("mae_e_per_atom", "Energy MAE (eV/atom)"),
-        ("mae_f", "Force MAE (eV/Å)"),
+        ("mae_e_per_atom", "Best model energy MAE (eV/atom)"),
+        ("mae_f", "Best model force MAE (eV/Å)"),
     ):
         if col not in all_avg_results.columns:
             continue
@@ -143,7 +144,8 @@ def mae_al_loop_plot(
 
     ax.set_xlabel("AL Loop Iteration")
     ax.set_ylabel("Mean Absolute Error")
-    ax.set_title(f"{name} AL Loop MAE")
+    ax.set_title(f"{name} AL Loop MAE (best committee member per loop)")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_yscale("log")
     ax.grid(True)
     ax.legend()

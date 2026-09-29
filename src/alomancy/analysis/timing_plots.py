@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import MaxNLocator
 
 from alomancy.analysis.colors import (
     PALETTE,
@@ -14,6 +15,10 @@ from alomancy.analysis.colors import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Written by versions before timing_combined.png replaced them; removed
+# whenever the combined plot is written so results dirs don't keep both.
+_STALE_TIMING_PLOTS = ("timing_total.png", "timing_phases.png")
 
 _TS = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"
 _TS_FMT = "%Y-%m-%d %H:%M:%S"
@@ -213,7 +218,9 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
     setup_alomancy_style()
 
     loops = df["loop"].tolist()
-    x = np.arange(len(loops))
+    # Bars sit at their real loop numbers so the integer tick locator below
+    # labels them directly (and a missing loop shows up as a gap).
+    x = np.asarray(loops, dtype=float)
 
     # --- phase breakdown stacked bar chart (primary content) ---
     phase_cols = [
@@ -264,8 +271,8 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
 
         bottoms = bottoms + phase_no_nan
 
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"Loop {li}" for li in loops])
+    # Plain loop numbers, thinned out automatically on long runs.
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=12))
     ax.set_xlabel("AL loop")
     ax.set_ylabel("Wall-clock time (hours)")
     ax.set_title("Phase breakdown and training-set size per AL loop")
@@ -296,3 +303,9 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
     fig.savefig(combined_path, dpi=150)
     plt.close(fig)
     logger.info("Saved combined timing plot to %s", combined_path)
+
+    for stale_name in _STALE_TIMING_PLOTS:
+        stale = directory / stale_name
+        if stale.exists():
+            stale.unlink()
+            logger.info("Removed superseded timing plot %s", stale)

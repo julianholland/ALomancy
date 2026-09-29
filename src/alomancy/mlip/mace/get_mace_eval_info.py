@@ -3,10 +3,9 @@ import json
 import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-from alomancy.mlip.evaluation import read_evaluation
+from alomancy.mlip.evaluation import best_fit_test_metrics, rank_committee
 
 logger = logging.getLogger(__name__)
 
@@ -14,20 +13,25 @@ logger = logging.getLogger(__name__)
 def get_mace_eval_info(
     mlip_committee_job_dict: dict,
 ) -> pd.DataFrame:
-    """
-    Read final test metrics; explicitly identify legacy validation-only logs.
-    """
+    """One row per AL loop (indexed by loop number) with the best committee
+    member's metrics -- the same member MD uses as its base model.
 
+    Loops with checkpoint evaluations (``evaluation_metrics.json``) report
+    the best fit's final ``"test"`` metrics (``metric_source=
+    "checkpoint_test"``, see ``mlip/evaluation.py``'s
+    ``best_fit_test_metrics``). Older loops with only MACE's ``*train.txt``
+    logs fall back to the fit with the lowest logged ``mae_f``
+    (``metric_source="legacy_training_validation"``, logged as a warning).
+    """
+    name = mlip_committee_job_dict["name"]
     al_loop_dirs = sorted(
         Path("results").glob("al_loop_*"), key=lambda p: int(p.name.rsplit("_", 1)[1])
     )
-    all_avg_results = []
+    rows = []
+    loops = []
     for al_loop_dir in al_loop_dirs:
-        metric_files = sorted(
-            (al_loop_dir / mlip_committee_job_dict["name"]).glob(
-                "fit_*/evaluation_metrics.json"
-            )
-        )
+        committee_dir = al_loop_dir / name
+        metric_files = sorted(committee_dir.glob("fit_*/evaluation_metrics.json"))
         if metric_files:
             expected = mlip_committee_job_dict.get(
                 "num_of_models_in_committee", len(metric_files)
@@ -37,59 +41,37 @@ def get_mace_eval_info(
                 raise RuntimeError(
                     "Missing checkpoint evaluations for committee members"
                 )
-            records = [read_evaluation(p.parent, "test")[0] for p in metric_files]
-            row = {
-                key: float(np.mean([r[key] for r in records]))
-                for key in ("mae_f", "mae_e_per_atom")
-            }
-            row.update(
-                {
-                    f"{key}_std_dev": float(np.std([r[key] for r in records]))
-                    for key in ("mae_f", "mae_e_per_atom")
-                }
-            )
+            row = best_fit_test_metrics(committee_dir)
+            if row is None:
+                continue
             row["metric_source"] = "checkpoint_test"
-            all_avg_results.append(row)
-            continue
-        if mlip_committee_job_dict.get("require_checkpoint_metrics", False):
-            raise RuntimeError(
-                f"{al_loop_dir}: checkpoint evaluations are required; training logs are insufficient"
+        else:
+            if mlip_committee_job_dict.get("require_checkpoint_metrics", False):
+                raise RuntimeError(
+                    f"{al_loop_dir}: checkpoint evaluations are required; training logs are insufficient"
+                )
+            legacy = []
+            for results_file in sorted(committee_dir.glob("fit_*/results/*train.txt")):
+                with open(results_file) as file:
+                    result = dict(ast.literal_eval(file.readlines()[-1]))
+                fit_idx = int(results_file.parent.parent.name.rsplit("_", 1)[1])
+                legacy.append((fit_idx, result))
+            if not legacy:
+                continue
+            best_fit, best = min(legacy, key=lambda item: float(item[1]["mae_f"]))
+            row = {
+                "mae_f": float(best["mae_f"]),
+                "mae_e_per_atom": float(best["mae_e_per_atom"]),
+                "best_fit_idx": best_fit,
+                "metric_source": "legacy_training_validation",
+            }
+            logger.warning(
+                "%s: using legacy training-time validation metrics, not final test metrics",
+                al_loop_dir,
             )
-        results_files = list(
-            Path.glob(
-                Path(al_loop_dir, mlip_committee_job_dict["name"]),
-                "fit_*/results/*train.txt",
-            )
-        )
-        if not results_files:
-            continue
-        results = []
-        for results_file in results_files:
-            with open(results_file) as file:
-                data_line = file.readlines()[-1]
-                result = dict(ast.literal_eval(data_line))
-                results.append(result)
-
-        avg_result = {
-            key: np.mean([np.float32(result[key]) for result in results])
-            for key in results[0]
-            if key in ["mae_f", "mae_e_per_atom"]
-        }
-        std_dev_results = {
-            key: np.std([np.float32(result[key]) for result in results])
-            for key in results[0]
-            if key in ["mae_f", "mae_e_per_atom"]
-        }
-        avg_result.update(
-            {f"{key}_std_dev": std_dev_results[key] for key in std_dev_results}
-        )
-        avg_result["metric_source"] = "legacy_training_validation"
-        logger.warning(
-            "%s: using legacy training-time validation metrics, not final test metrics",
-            al_loop_dir,
-        )
-        all_avg_results.append(avg_result)
-    return pd.DataFrame(all_avg_results)
+        rows.append(row)
+        loops.append(int(al_loop_dir.name.rsplit("_", 1)[1]))
+    return pd.DataFrame(rows, index=pd.Index(loops, name="al_loop"))
 
 
 def _read_last_metric_record(txt_path: Path) -> dict | None:
@@ -152,57 +134,16 @@ def select_best_committee_model(
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
     committee_dir = Path("results", base_name, name)
+    fit_dirs = {i: committee_dir / f"fit_{i}" for i in range(n_fits)}
 
-    def _try_read(fit_dir: Path, split: str) -> tuple[float, Path] | None:
-        try:
-            metrics, model_path = read_evaluation(fit_dir, split)
-        except (FileNotFoundError, KeyError, ValueError):
-            return None
-        return float(metrics[metric]), model_path
-
-    valid_scores: dict[int, tuple[float, Path]] = {}
-    test_scores: dict[int, tuple[float, Path]] = {}
-    for i in range(n_fits):
-        fit_dir = committee_dir / f"fit_{i}"
-        valid_result = _try_read(fit_dir, "valid")
-        if valid_result is not None:
-            valid_scores[i] = valid_result
-        test_result = _try_read(fit_dir, "test")
-        if test_result is not None:
-            test_scores[i] = test_result
-
-    if valid_scores:
-        if len(valid_scores) < n_fits:
-            raise RuntimeError(
-                f"select_best_committee_model for {base_name!r}: "
-                f"{n_fits - len(valid_scores)} of {n_fits} committee fit(s) "
-                "are missing complete checkpoint validation on the 'valid' "
-                "split while others have it. Check remote job logs for "
-                "evaluation failures."
-            )
-        scores, split_used = valid_scores, "valid"
-    else:
+    best_fit, model_path, split_used = rank_committee(
+        fit_dirs, metric=metric, label=f"select_best_committee_model for {base_name!r}"
+    )
+    if split_used == "test":
         logger.info(
             "No committee member has a 'valid' checkpoint evaluation "
             "(expected when the eligible pool is too small for a "
-            "validation split) — falling back to the 'test' split."
+            "validation split) — fell back to the 'test' split."
         )
-        if len(test_scores) < n_fits:
-            raise RuntimeError(
-                f"select_best_committee_model for {base_name!r}: "
-                f"{n_fits - len(test_scores)} of {n_fits} committee fit(s) "
-                "are missing complete checkpoint validation (neither "
-                "'valid' nor 'test' evaluation is available). Check remote "
-                "job logs for evaluation failures."
-            )
-        scores, split_used = test_scores, "test"
-
-    best_fit = min(scores, key=lambda i: scores[i][0])
-    logger.info(
-        "Best committee member: fit_%d (%s %s = %.6f).",
-        best_fit,
-        split_used,
-        metric,
-        scores[best_fit][0],
-    )
-    return best_fit, scores[best_fit][1]
+    logger.info("Best committee member: fit_%d (%s %s).", best_fit, split_used, metric)
+    return best_fit, model_path

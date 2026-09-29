@@ -179,7 +179,7 @@ class TestGetMaceEvalInfo:
         assert "mae_e_per_atom" in df.columns
 
     @pytest.mark.unit
-    def test_averages_multiple_fits(self, tmp_path, monkeypatch):
+    def test_reports_best_fit_not_average(self, tmp_path, monkeypatch):
         from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
 
         monkeypatch.chdir(tmp_path)
@@ -194,7 +194,9 @@ class TestGetMaceEvalInfo:
                 mae_f=0.1 * (i + 1),
             )
         df = get_mace_eval_info({"name": "mlip_committee"})
-        assert df["mae_f"].iloc[0] == pytest.approx(np.mean([0.1, 0.2, 0.3]))
+        assert df["mae_f"].iloc[0] == pytest.approx(0.1)
+        assert df["best_fit_idx"].iloc[0] == 0
+        assert "mae_f_std_dev" not in df.columns
 
     @pytest.mark.unit
     def test_empty_dataframe_when_no_al_loop_dirs(self, tmp_path, monkeypatch):

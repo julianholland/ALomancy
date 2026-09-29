@@ -302,6 +302,25 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
     )
 
 
+_BEST_STAR_COLOR = "#D4AF37"
+
+
+def _add_best_star(ax: Any) -> None:
+    """Gold star just above *ax*'s top-left corner (clear of the MAE label
+    inside the axes), marking the lowest-MAE subplot in its column."""
+    ax.text(
+        0.0,
+        1.02,
+        "★",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=20,
+        color=_BEST_STAR_COLOR,
+        gid="best_star",
+    )
+
+
 def _draw_parity_figure(
     results_per_fit: list,
     n_fits: int,
@@ -315,6 +334,8 @@ def _draw_parity_figure(
 ) -> None:
     fig, axes = plt.subplots(n_fits, 2, figsize=(8, 4 * n_fits), squeeze=False)
     fig.suptitle(f"{name} — {set_label} Set Parity  [{base_name}]", y=1.01)
+    energy_maes: dict[int, float] = {}
+    force_maes: dict[int, float] = {}
 
     for i, result in enumerate(results_per_fit):
         ax_e, ax_f = axes[i, 0], axes[i, 1]
@@ -336,6 +357,7 @@ def _draw_parity_figure(
 
             if len(e_dft_arr):
                 mae_e = np.mean(np.abs(e_dft_arr - e_pred_arr))
+                energy_maes[i] = float(mae_e)
                 lim = (
                     min(e_dft_arr.min(), e_pred_arr.min()),
                     max(e_dft_arr.max(), e_pred_arr.max()),
@@ -355,6 +377,7 @@ def _draw_parity_figure(
 
             if len(f_dft_arr):
                 mae_f = np.mean(np.abs(f_dft_arr - f_pred_arr))
+                force_maes[i] = float(mae_f)
                 lim_f = (
                     min(f_dft_arr.min(), f_pred_arr.min()),
                     max(f_dft_arr.max(), f_pred_arr.max()),
@@ -380,6 +403,12 @@ def _draw_parity_figure(
         ax_f.set_xlabel("DFT forces (eV/Å)")
         ax_f.set_ylabel("Model forces (eV/Å)")
         ax_f.set_title(f"{row_title} — Forces")
+
+    # Per column: the energy and force winners may be different fits.
+    if energy_maes:
+        _add_best_star(axes[min(energy_maes, key=energy_maes.__getitem__), 0])
+    if force_maes:
+        _add_best_star(axes[min(force_maes, key=force_maes.__getitem__), 1])
 
     fig.tight_layout()
     add_logo_watermark(fig)

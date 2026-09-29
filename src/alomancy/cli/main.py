@@ -33,6 +33,16 @@ def main() -> None:
         help="Interactive wizard to add an HPC system to ALomancy",
     )
 
+    list_hpc = sub.add_parser(
+        "list-hpc",
+        help="List configured HPC systems and a summary of their settings",
+    )
+    list_hpc.add_argument(
+        "--check-remote",
+        action="store_true",
+        help="Also ssh to each host to report its installed alomancy version",
+    )
+
     sub.add_parser(
         "upgrade-hpc",
         help="Upgrade the alomancy package on one or more configured HPC systems",
@@ -61,6 +71,10 @@ def main() -> None:
         from alomancy.cli.add_hpc import add_hpc_wizard
 
         add_hpc_wizard()
+    elif args.command == "list-hpc":
+        from alomancy.cli.list_hpc import list_hpc as list_hpc_table
+
+        print(list_hpc_table(check_remote=args.check_remote))
     elif args.command == "upgrade-hpc":
         from alomancy.cli.upgrade_hpc import upgrade_hpc_wizard
 

@@ -87,7 +87,7 @@ from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
 # Load job configuration from YAML -- every workflow-level setting
-# (initial_train_file_path, num_of_al_loops, verbose, ...) lives under
+# (start_from, num_of_al_loops, verbose, ...) lives under
 # the YAML's `general:` section; build_workflow() takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
 
@@ -103,8 +103,10 @@ Create a `standard_config.yaml` file to specify your computational setup:
 general:
   al_workflow: "committee_uncertainty"
   elements: ["C", "O"]   # atomic symbols, not atomic numbers
-  initial_train_file_path: "results/initialization/train_set.xyz"
-  initial_test_file_path: "results/initialization/test_set.xyz"
+  # Optional: start from existing data instead of generating it. See
+  # docs/starting_a_run.md for all four start modes.
+  # start_from:
+  #   xyz: "my_dft_data.xyz"
   num_of_al_loops: 5
   verbose: 1
   committee_uncertainty_kwargs:

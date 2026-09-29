@@ -62,16 +62,17 @@ too.
 
 `CommitteeUncertaintyWorkflow.__init__` takes only `jobs_dict` -- every
 setting that used to be a separate Python constructor kwarg
-(`initial_train_file_path`, `initial_test_file_path`,
-`num_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
-`seed`, `db_path`, `remove_redundancy`, `high_force_threshold`,
-`skip_initialization`) now lives as a direct child of `general` (see
+(`num_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
+`seed`, `db_path`, `remove_redundancy`, `high_force_threshold`) now
+lives as a direct child of `general` (see
 `_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
 `elements`, since none of these are specific to the committee-uncertainty
-skeleton either -- any future AL workflow would need them too.
-`initial_train_file_path`/`initial_test_file_path` have no default (the
-one thing only the user can know); every other key falls back to its old
-constructor default. The sole exception is `db`: a live `GlobalDatabase`
+skeleton either -- any future AL workflow would need them too. Every key
+falls back to its old constructor default. Where the run's first
+structures come from is `general.start_from` (warm start from train/test
+xyz files, a single xyz file, or a former run's database; cold start when
+absent -- see `_parse_start_from` and docs/starting_a_run.md). The sole
+exception is `db`: a live `GlobalDatabase`
 instance can't be a config value, so it's no longer constructor-settable
 at all -- `self.db` is a lazily-constructed property (built from
 `general.db_path` on first access), and a caller needing to inject an
@@ -184,11 +185,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import polars as pl
 from ase import Atoms
 from ase.io import read, write
 
 from alomancy.analysis.plotting import mae_al_loop_plot
+from alomancy.configs.hpc_profiles import format_table, hpc_profile_row
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.database.global_database import (
     _DEFAULT_DEDUP_CONFIG_TYPES,
@@ -197,7 +198,11 @@ from alomancy.database.global_database import (
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     high_accuracy_evaluation as _evaluator_orchestrate,
 )
-from alomancy.mlip.evaluation import check_quality_gate, read_evaluation
+from alomancy.mlip.evaluation import (
+    best_fit_test_metrics,
+    check_quality_gate,
+    rank_committee,
+)
 from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
 from alomancy.mlip.mace.mace_wfl import read_mace_eval_predictions
 from alomancy.registry import resolve
@@ -217,10 +222,15 @@ from alomancy.utils.dataset_curation import (
     validate_policy,
 )
 from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+from alomancy.utils.import_structures import (
+    EXTERNAL_CONFIG_TYPE,
+    file_sha256,
+    normalize_metadata,
+    read_structures,
+)
 from alomancy.utils.logging_config import setup_logging
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
-    get_alomancy_version_for_profile,
 )
 from alomancy.utils.remove_high_force_structures import (
     remove_high_force_structures_from_partition,
@@ -247,6 +257,16 @@ _PHASE_LABELS: dict[str, str] = {
 # CLAUDE.md).
 _INITIALIZATION_NAME = "initialization"
 _TRAINING_NAME = "training"
+_BEST_MODEL_DIR = "best_model"
+_SUMMARY_HPC_COLUMNS = (
+    "hpc_name",
+    "alomancy_version",
+    "gpu",
+    "partitions",
+    "ranks_per_node",
+    "max_mem_per_node",
+)
+_BEST_MODEL_FILENAME = "ALomancy_best_model.model"
 _STRUCTURE_GENERATION_NAME = "structure_generation"
 _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 
@@ -282,9 +302,8 @@ _COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS: dict[str, Any] = {
 # of which AL workflow is chosen (matching elements/seed's precedent), so
 # they're not nested inside committee_uncertainty_kwargs. The constructor
 # now takes only jobs_dict; everything it used to accept as a Python kwarg
-# is read from here instead. initial_train_file_path/initial_test_file_path
-# have no entry -- they're genuinely required, matching this module's
-# no-invented-defaults convention for things only the user can know.
+# is read from here instead. Where a run's starting data comes from is
+# general.start_from (see _parse_start_from and docs/starting_a_run.md).
 _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     "num_of_al_loops": 5,
     "verbose": 0,
@@ -295,7 +314,6 @@ _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     "db_path": "results/global_database",
     "remove_redundancy": True,
     "high_force_threshold": 100.0,
-    "skip_initialization": False,
 }
 
 _COMMITTEE_UNCERTAINTY_REQUIRED = ("test_ratio", "target_config_types")
@@ -375,11 +393,110 @@ def _find_renamed_keys(jobs_dict: dict) -> list[str]:
     return found
 
 
+# Start-up entry points folded into general.start_from. Old keys are a
+# hard error naming the replacement. (section path, old key, replacement)
+_REMOVED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (("general",), "initial_train_file_path", "general.start_from.train_xyz"),
+    (("general",), "initial_test_file_path", "general.start_from.test_xyz"),
+    (
+        ("general",),
+        "skip_initialization",
+        "general.start_from (a warm start only generates the initialization "
+        "structures the imported data doesn't already cover)",
+    ),
+    (("initialization",), "extra_datasets", "general.start_from.xyz"),
+    (
+        ("initialization",),
+        "reset_extra_splits",
+        "nothing (imported files always drop the old run's splits and flags)",
+    ),
+)
+
+
+def _find_removed_keys(jobs_dict: dict) -> list[str]:
+    """One "old -> replacement" entry per _REMOVED_KEYS key present."""
+    found = []
+    for path, old, replacement in _REMOVED_KEYS:
+        node: Any = jobs_dict
+        for part in path:
+            node = node.get(part) if isinstance(node, dict) else None
+        if isinstance(node, dict) and old in node:
+            found.append(f"{'.'.join(path)}.{old} -> {replacement}")
+    return found
+
+
+# general.start_from: where the run's first structures come from. Which
+# source keys are present picks the mode (see docs/starting_a_run.md).
+_START_FROM_KEYS = frozenset(
+    {"train_xyz", "test_xyz", "xyz", "database", "metadata_map"}
+)
+START_MODE_SPLIT_FILES = "split_files"
+START_MODE_SINGLE_XYZ = "single_xyz"
+START_MODE_DATABASE = "database"
+START_MODE_COLD = "cold"
+
+
+def _parse_start_from(start_from: Any) -> tuple[str, dict]:
+    """Validate general.start_from and return ``(mode, start_from)``.
+
+    Modes: train_xyz + test_xyz -> split_files; xyz (a path or list of
+    paths) -> single_xyz; database -> database; none -> cold. More than one
+    source, or half of the train/test pair, raises ValueError.
+    """
+    if start_from is None:
+        start_from = {}
+    if not isinstance(start_from, dict):
+        raise ValueError("general.start_from must be a mapping.")
+    unknown = sorted(set(start_from) - _START_FROM_KEYS)
+    if unknown:
+        raise ValueError(
+            f"Unknown general.start_from key(s) {unknown}; allowed: "
+            f"{sorted(_START_FROM_KEYS)}."
+        )
+    has_train, has_test = "train_xyz" in start_from, "test_xyz" in start_from
+    if has_train != has_test:
+        raise ValueError(
+            "general.start_from.train_xyz and test_xyz must be given together "
+            "(use start_from.xyz for a single file to be split)."
+        )
+    sources = [
+        name
+        for name, present in (
+            ("train_xyz + test_xyz", has_train),
+            ("xyz", "xyz" in start_from),
+            ("database", "database" in start_from),
+        )
+        if present
+    ]
+    if len(sources) > 1:
+        raise ValueError(
+            f"general.start_from has more than one data source ({', '.join(sources)}); "
+            "choose one."
+        )
+    if "metadata_map" in start_from and not (has_train or "xyz" in start_from):
+        raise ValueError(
+            "general.start_from.metadata_map only applies to xyz imports "
+            "(train_xyz/test_xyz or xyz)."
+        )
+    if has_train:
+        return START_MODE_SPLIT_FILES, start_from
+    if "xyz" in start_from:
+        xyz = start_from["xyz"]
+        paths = [xyz] if isinstance(xyz, str) else xyz
+        if not isinstance(paths, list) or not paths:
+            raise ValueError(
+                "general.start_from.xyz must be a path or a list of paths."
+            )
+        return START_MODE_SINGLE_XYZ, {**start_from, "xyz": paths}
+    if "database" in start_from:
+        return START_MODE_DATABASE, start_from
+    return START_MODE_COLD, start_from
+
+
 _GENERAL_KNOWN_KEYS = set(_GENERAL_KWARGS_DEFAULTS) | {
     "al_workflow",
     "elements",
-    "initial_train_file_path",
-    "initial_test_file_path",
+    "start_from",
     "committee_uncertainty_kwargs",
 }
 
@@ -631,19 +748,21 @@ class CommitteeUncertaintyWorkflow:
         general_config = jobs_dict.get("general", {})
         general_kwargs = {**_GENERAL_KWARGS_DEFAULTS, **general_config}
 
-        for key in ("initial_train_file_path", "initial_test_file_path"):
-            if key not in general_config:
-                raise ValueError(
-                    f"general.{key} is required (a path to an xyz file -- it "
-                    "need not exist yet, the workflow falls through to the "
-                    "DB-driven bootstrap path when it doesn't)."
-                )
         renamed = _find_renamed_keys(jobs_dict)
         if renamed:
             raise ValueError(
                 "Config uses renamed key(s); update them to the num_of_* "
                 "names:\n  " + "\n  ".join(renamed)
             )
+        removed = _find_removed_keys(jobs_dict)
+        if removed:
+            raise ValueError(
+                "Config uses removed start-up key(s); see "
+                "docs/starting_a_run.md:\n  " + "\n  ".join(removed)
+            )
+        self.start_mode, self.start_from = _parse_start_from(
+            general_config.get("start_from")
+        )
         # Checked here, not at first use: test_ratio is otherwise only read
         # after an AL loop's DFT has finished, hours into a run.
         committee_config = general_config.get("committee_uncertainty_kwargs", {})
@@ -656,8 +775,6 @@ class CommitteeUncertaintyWorkflow:
                 f"key(s) {missing} (e.g. test_ratio: 0.1, target_config_types: "
                 "['init_MP', 'init_amorphous'])."
             )
-        self.initial_train_file_path = Path(general_kwargs["initial_train_file_path"])
-        self.initial_test_file_path = Path(general_kwargs["initial_test_file_path"])
         self.num_of_al_loops = general_kwargs["num_of_al_loops"]
         self.verbose = general_kwargs["verbose"]
         self.start_loop = general_kwargs["start_loop"]
@@ -667,7 +784,6 @@ class CommitteeUncertaintyWorkflow:
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
         self.high_force_threshold = general_kwargs["high_force_threshold"]
-        self.skip_initialization = general_kwargs["skip_initialization"]
         self.log_file = general_kwargs["log_file"]
         setup_logging(verbose=self.verbose, log_file=self.log_file)
         # After setup_logging so the warning reaches the console/log file.
@@ -783,25 +899,16 @@ class CommitteeUncertaintyWorkflow:
         if hpc_usage:
             rows = []
             for name, entry in hpc_usage.items():
-                profile = entry["profile"]
-                node_info = profile.get("node_info", {})
+                # Same row builder as `alomancy list-hpc`, narrowed to the
+                # columns that matter at run start.
+                full = hpc_profile_row(name, entry["profile"], check_remote=True)
                 rows.append(
                     {
-                        "hpc_name": name,
-                        "alomancy_version": get_alomancy_version_for_profile(profile)
-                        or "?",
-                        "gpu": profile.get("gpu", "?"),
-                        "partitions": ", ".join(profile.get("partitions", []) or [])
-                        or "?",
-                        "ranks_per_node": node_info.get("ranks_per_node", "?"),
-                        "max_mem_per_node": node_info.get("max_mem_per_node", "?"),
+                        **{k: full[k] for k in _SUMMARY_HPC_COLUMNS},
                         "job_types": "\n".join(entry["phases"]),
                     }
                 )
-            with pl.Config(
-                fmt_str_lengths=200, tbl_width_chars=200, tbl_hide_dataframe_shape=True
-            ):
-                lines.append(str(pl.DataFrame(rows)))
+            lines.append(format_table(rows))
         else:
             lines.append("  No HPC profiles configured.")
         lines.append("=" * 70)
@@ -843,50 +950,59 @@ class CommitteeUncertaintyWorkflow:
                 latest_version,
             )
 
-    def _seed_db_from_extra_dataset(self, extra_dataset: str) -> None:
-        all_atoms: list[Atoms] = read(extra_dataset, ":", format="extxyz")
-        if isinstance(all_atoms, Atoms):
-            all_atoms = [all_atoms]
+    def _import_xyz(self, path: str, split: str | None = None) -> int:
+        """Import one extxyz file into the global DB (start_from warm starts).
 
-        digest = hashlib.sha256(Path(extra_dataset).read_bytes()).hexdigest()
-        existing = {
-            a.info.get("source_dataset_sha256") for a in self.db.get_all_as_atoms()
-        }
-        if digest in existing:
-            logger.info(
-                "Extra dataset %s already imported (sha256=%s)", extra_dataset, digest
-            )
-            return
-        reset_splits = self.jobs_dict["initialization"].get("reset_extra_splits", False)
-        for atoms in all_atoms:
+        Labels are normalized first (utils/import_structures.normalize_
+        metadata, honouring start_from.metadata_map), which also drops the
+        writing run's splits/flags. *split* tags every structure (train_xyz/
+        test_xyz); None leaves them for the split rule. Idempotent: the
+        file's sha256 is stored on each structure and a file already
+        imported is skipped.
+        """
+        digest = file_sha256(path)
+        if any(
+            c.AtomPositionManager.metadata.get("source_dataset_sha256") == digest
+            for c in self.db.partition.list_containers()
+        ):
+            logger.info("%s already imported (sha256=%s); skipping.", path, digest)
+            return 0
+        atoms_list = normalize_metadata(
+            read_structures(path),
+            self.start_from.get("metadata_map"),
+            source=str(path),
+        )
+        for atoms in atoms_list:
             atoms.info["source_dataset_sha256"] = digest
             atoms.info.setdefault("domain", structure_domain(atoms))
-            if reset_splits:
-                for key in ("split", "global_db_id", "is_duplicate", "is_high_force"):
-                    atoms.info.pop(key, None)
-                for key in list(atoms.info):
-                    if key.startswith(("model_", "mace_")):
-                        del atoms.info[key]
-        added = self.db.add_structures(all_atoms, skip_duplicates=True)
-        skipped = len(all_atoms) - added
-        msg = f"Seeded DB from {extra_dataset}: {added} structure(s) added"
-        if skipped:
-            msg += f", {skipped} duplicate(s) skipped"
-        logger.info("%s.", msg)
+            if split is not None:
+                atoms.info["split"] = split
+        added = int(self.db.add_structures(atoms_list, skip_duplicates=True))
+        skipped = len(atoms_list) - added
+        logger.info(
+            "Imported %s: %d structure(s) added%s.",
+            path,
+            added,
+            f", {skipped} duplicate(s) skipped" if skipped else "",
+        )
+        return added
 
-    def load_initial_train_test_sets(
-        self, dummy_run: bool = False
-    ) -> tuple[list[Atoms], list[Atoms]]:
-        train_xyzs = read_atoms_file_if_enabled(True, self.initial_train_file_path)
-        test_xyzs = read_atoms_file_if_enabled(True, self.initial_test_file_path)
-        if train_xyzs is None or test_xyzs is None:
-            raise FileNotFoundError(
-                "Initial training or test file not found. Please provide valid file paths."
-            )
-        if dummy_run:
-            train_xyzs = train_xyzs[:500]
-            test_xyzs = test_xyzs[:200]
-        return train_xyzs, test_xyzs
+    def _import_start_data(self) -> None:
+        """Bring general.start_from's data into the global DB. Every mode
+        then continues through the same DB-driven initialization."""
+        if self.start_mode == START_MODE_SPLIT_FILES:
+            self._import_xyz(self.start_from["train_xyz"], split="train")
+            self._import_xyz(self.start_from["test_xyz"], split="test")
+        elif self.start_mode == START_MODE_SINGLE_XYZ:
+            for path in self.start_from["xyz"]:
+                self._import_xyz(path)
+        elif self.start_mode == START_MODE_DATABASE:
+            self.db.import_from_database(self.start_from["database"])
+        logger.info(
+            "Start mode: %s (global DB now holds %d structures).",
+            self.start_mode,
+            self.db.size,
+        )
 
     # -- Initialiser -> evaluator orchestration (decision 10) --
 
@@ -902,28 +1018,7 @@ class CommitteeUncertaintyWorkflow:
             **general_config.get("committee_uncertainty_kwargs", {}),
         }
 
-        if (
-            self.initial_train_file_path.exists()
-            and self.initial_test_file_path.exists()
-        ):
-            train_xyzs, test_xyzs = self.load_initial_train_test_sets()
-            logger.info(
-                "Initial train and test sets loaded from files: %s, %s",
-                self.initial_train_file_path,
-                self.initial_test_file_path,
-            )
-            write(
-                work_dir / self.initial_train_file_path.name,
-                train_xyzs,
-                format="extxyz",
-            )
-            write(
-                work_dir / self.initial_test_file_path.name, test_xyzs, format="extxyz"
-            )
-            if self.db.size == 0:
-                self.db.add_structures(train_xyzs, split="train", skip_duplicates=True)
-                self.db.add_structures(test_xyzs, split="test", skip_duplicates=True)
-            return train_xyzs, test_xyzs
+        self._import_start_data()
 
         initialiser_entry = resolve("initialiser", "default")
         elements = general_config.get("elements")
@@ -940,12 +1035,6 @@ class CommitteeUncertaintyWorkflow:
             )
 
         needs = initialiser_entry.compute_needs(self.db, init_config, elements)
-
-        extra_datasets = init_config.get("extra_datasets") or []
-        if extra_datasets:
-            for extra_dataset in extra_datasets:
-                self._seed_db_from_extra_dataset(extra_dataset)
-            needs = initialiser_entry.compute_needs(self.db, init_config, elements)
 
         if _needs_anything(needs):
             logger.info(
@@ -1030,60 +1119,44 @@ class CommitteeUncertaintyWorkflow:
             )
 
         all_evaluated = self.db.get_all_as_atoms()
-
-        if committee_kwargs["grouped_splits"]:
-            train_xyzs, test_xyzs = grouped_split(
-                all_evaluated, committee_kwargs["test_ratio"], self.seed
+        # Structures that already carry a split (train_xyz/test_xyz imports,
+        # a former run's database) keep it; only untagged ones are split
+        # here. Other tags (e.g. "diagnostic") stay out of both sets.
+        pre_train = [a for a in all_evaluated if a.info.get("split") == "train"]
+        pre_test = [a for a in all_evaluated if a.info.get("split") == "test"]
+        untagged = [a for a in all_evaluated if not a.info.get("split")]
+        if pre_train or pre_test:
+            logger.info(
+                "Keeping existing split tags: %d train / %d test; splitting %d "
+                "untagged structure(s).",
+                len(pre_train),
+                len(pre_test),
+                len(untagged),
             )
-        else:
-            target_config_types = set(committee_kwargs["target_config_types"])
-            eligible_test_structures: list[Atoms] = []
-            always_train_structures: list[Atoms] = []
-            for atoms in all_evaluated:
-                (
-                    eligible_test_structures
-                    if atoms.info.get("config_type") in target_config_types
-                    else always_train_structures
-                ).append(atoms)
+        new_train, new_test = self._split_untagged(untagged, committee_kwargs)
+        train_xyzs = pre_train + new_train
+        test_xyzs = pre_test + new_test
 
-            if not eligible_test_structures:
-                logger.warning(
-                    "No eligible test structures found for the specified "
-                    "target_config_types. All structures will be used for training."
-                )
-                train_xyzs = all_evaluated
-                test_xyzs = []
-            else:
-                eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
-                    eligible_test_structures,
-                    committee_kwargs["test_ratio"],
-                    self.seed,
-                )
-                train_config_types = {
-                    a.info.get("config_type", "") for a in eligible_train
-                }
-                eligible_config_types = {
-                    a.info.get("config_type", "") for a in eligible_test_structures
-                }
-                missing_types = eligible_config_types - train_config_types
-                if missing_types:
-                    for config_type in missing_types:
-                        idx = next(
-                            i
-                            for i, a in enumerate(test_xyzs)
-                            if a.info.get("config_type", "") == config_type
-                        )
-                        eligible_train.append(test_xyzs.pop(idx))
-                    logger.warning(
-                        "Reserved one structure from each of %s for training to "
-                        "avoid entirely excluding these config_types from "
-                        "train_atoms_list.",
-                        sorted(missing_types),
-                    )
-                train_xyzs = always_train_structures + eligible_train
+        target_config_types = set(committee_kwargs["target_config_types"])
+        if (
+            self.start_mode == START_MODE_SINGLE_XYZ
+            and not test_xyzs
+            and EXTERNAL_CONFIG_TYPE not in target_config_types
+            and any(a.info.get("config_type") == EXTERNAL_CONFIG_TYPE for a in untagged)
+        ):
+            raise ValueError(
+                "No test set could be formed from general.start_from.xyz: its "
+                f"structures have no config_type and were labelled "
+                f"{EXTERNAL_CONFIG_TYPE!r}, which is not in "
+                "general.committee_uncertainty_kwargs.target_config_types. "
+                "Either give some structures a config_type (in the file, or map "
+                "an existing key with general.start_from.metadata_map."
+                "config_type) and list it in target_config_types, or add "
+                f"{EXTERNAL_CONFIG_TYPE!r} to target_config_types explicitly."
+            )
 
-        write(work_dir / self.initial_train_file_path.name, train_xyzs, format="extxyz")
-        write(work_dir / self.initial_test_file_path.name, test_xyzs, format="extxyz")
+        write(work_dir / "train_set.xyz", train_xyzs, format="extxyz")
+        write(work_dir / "test_set.xyz", test_xyzs, format="extxyz")
 
         config_types_in_train = {
             atoms.info["config_type"]
@@ -1092,6 +1165,63 @@ class CommitteeUncertaintyWorkflow:
         }
         logger.info("Config types in training set: %s", config_types_in_train)
         return train_xyzs, test_xyzs
+
+    def _split_untagged(
+        self, structures: list[Atoms], committee_kwargs: dict
+    ) -> tuple[list[Atoms], list[Atoms]]:
+        """Split structures with no split tag: test_ratio of the
+        target_config_types pool goes to test, everything else to train
+        (grouped by split_group instead when grouped_splits is set)."""
+        if not structures:
+            return [], []
+        if committee_kwargs["grouped_splits"]:
+            grouped: tuple[list[Atoms], list[Atoms]] = grouped_split(
+                structures, committee_kwargs["test_ratio"], self.seed
+            )
+            return grouped
+
+        target_config_types = set(committee_kwargs["target_config_types"])
+        eligible_test_structures: list[Atoms] = []
+        always_train_structures: list[Atoms] = []
+        for atoms in structures:
+            (
+                eligible_test_structures
+                if atoms.info.get("config_type") in target_config_types
+                else always_train_structures
+            ).append(atoms)
+
+        if not eligible_test_structures:
+            logger.warning(
+                "No eligible test structures found for the specified "
+                "target_config_types. All structures will be used for training."
+            )
+            return structures, []
+
+        eligible_train, test_xyzs = split_atoms_list_into_test_and_train(
+            eligible_test_structures,
+            committee_kwargs["test_ratio"],
+            self.seed,
+        )
+        train_config_types = {a.info.get("config_type", "") for a in eligible_train}
+        eligible_config_types = {
+            a.info.get("config_type", "") for a in eligible_test_structures
+        }
+        missing_types = eligible_config_types - train_config_types
+        if missing_types:
+            for config_type in missing_types:
+                idx = next(
+                    i
+                    for i, a in enumerate(test_xyzs)
+                    if a.info.get("config_type", "") == config_type
+                )
+                eligible_train.append(test_xyzs.pop(idx))
+            logger.warning(
+                "Reserved one structure from each of %s for training to "
+                "avoid entirely excluding these config_types from "
+                "train_atoms_list.",
+                sorted(missing_types),
+            )
+        return always_train_structures + eligible_train, test_xyzs
 
     # -- Committee training (decisions 2, 3, 6, 7) --
 
@@ -1246,48 +1376,135 @@ class CommitteeUncertaintyWorkflow:
         self._mark_phase_done(base_name, "train_mlip")
         return self._cross_loop_metrics_dataframe(name)
 
+    def _update_best_model(self, base_name: str) -> None:
+        """Copy this loop's best committee member (chosen as for MD, see
+        rank_committee) to results/best_model/ALomancy_best_model.model,
+        replacing the previous loop's, with model_metadata.json alongside
+        holding its errors per split and per config_type.
+
+        The compiled model comes from the trainer's own read_existing_result
+        (trainer-agnostic). Anything missing -- no evaluations, no compiled
+        model -- logs a warning and leaves the previous best model in place;
+        it never fails the AL loop.
+        """
+        training_config = self.jobs_dict["training"]
+        committee_kwargs = {
+            **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
+            **self.jobs_dict.get("general", {}).get("committee_uncertainty_kwargs", {}),
+        }
+        committee_dir = Path("results", base_name, _TRAINING_NAME)
+        fit_dirs = {
+            i: committee_dir / f"fit_{i}"
+            for i in range(committee_kwargs["num_of_models_in_committee"])
+            if (committee_dir / f"fit_{i}" / "evaluation_metrics.json").exists()
+        }
+        if not fit_dirs:
+            logger.warning(
+                "No evaluated committee members in %s; best_model not updated.",
+                committee_dir,
+            )
+            return
+        try:
+            best_fit, _, split_used = rank_committee(
+                fit_dirs, label=f"best_model update for {base_name!r}"
+            )
+        except RuntimeError as exc:
+            logger.warning("best_model not updated: %s", exc)
+            return
+
+        trainer_entry = resolve("mlip_trainer", training_config.get("trainer", "mace"))
+        _, compiled_path, _ = trainer_entry.read_existing_result(
+            training_config, base_name=base_name, name=_TRAINING_NAME, fit_idx=best_fit
+        )
+        if compiled_path is None:
+            logger.warning(
+                "fit_%d of %s has no compiled model; best_model not updated.",
+                best_fit,
+                base_name,
+            )
+            return
+
+        best_dir = Path("results", _BEST_MODEL_DIR)
+        best_dir.mkdir(parents=True, exist_ok=True)
+        target = best_dir / _BEST_MODEL_FILENAME
+        tmp = best_dir / f".{_BEST_MODEL_FILENAME}.tmp"
+        shutil.copy2(compiled_path, tmp)
+        os.replace(tmp, target)
+        for stale in best_dir.glob("*.model"):
+            if stale != target:
+                stale.unlink()
+
+        record = json.loads(
+            (fit_dirs[best_fit] / "evaluation_metrics.json").read_text()
+        )
+        metric_keys = (
+            "n_structures",
+            "mae_e_per_atom",
+            "rmse_e_per_atom",
+            "mae_f",
+            "rmse_f",
+            "n_structures_with_stress",
+            "mae_stress",
+            "rmse_stress",
+        )
+        errors = {}
+        for split, result in record.get("splits", {}).items():
+            if not result.get("complete"):
+                continue
+            errors[split] = {k: result[k] for k in metric_keys if k in result}
+            errors[split]["config_types"] = {
+                config_type: {k: v for k, v in metrics.items() if k in metric_keys}
+                for config_type, metrics in result.get("config_types", {}).items()
+            }
+        metadata = {
+            "al_loop": int(base_name.rsplit("_", 1)[-1]),
+            "fit_idx": best_fit,
+            "selected_on_split": split_used,
+            "source_model": str(compiled_path),
+            "model_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            "updated": datetime.now().isoformat(timespec="seconds"),
+            "units": record.get("units", {}),
+            "errors": errors,
+        }
+        metadata_path = best_dir / "model_metadata.json"
+        tmp_metadata = best_dir / ".model_metadata.json.tmp"
+        tmp_metadata.write_text(json.dumps(metadata, indent=2) + "\n")
+        os.replace(tmp_metadata, metadata_path)
+        logger.info(
+            "Best model for %s (fit_%d, chosen on %s) copied to %s.",
+            base_name,
+            best_fit,
+            split_used,
+            target,
+        )
+
     def _cross_loop_metrics_dataframe(self, name: str) -> pd.DataFrame:
-        """Skeleton-level replacement for mlip.mace.get_mace_eval_info's
-        cross-loop DataFrame aggregation, generalized to read the
-        trainer-agnostic evaluation_metrics.json schema directly (via
-        read_evaluation) rather than through a MACE-specific function.
-        One row per AL loop (in loop order), aggregating each loop's "test"
-        split across committee members -- matches what mae_al_loop_plot/
-        plot_training_curves already expect (decision 19: those stay
-        unchanged, out of scope for this refactor).
+        """One row per AL loop (indexed by loop number): the test-split
+        mae_f/mae_e_per_atom of that loop's best committee member, chosen
+        the same way as MD's base model (mlip/evaluation.py's
+        best_fit_test_metrics). A loop whose evaluations are missing or
+        inconsistent is skipped with a warning rather than failing the
+        plot.
         """
         al_loop_dirs = sorted(
             Path("results").glob("al_loop_*"),
             key=lambda p: int(p.name.rsplit("_", 1)[1]),
         )
         rows = []
+        loops = []
         for al_loop_dir in al_loop_dirs:
-            metric_files = sorted(
-                (al_loop_dir / name).glob("fit_*/evaluation_metrics.json")
-            )
-            if not metric_files:
+            try:
+                row = best_fit_test_metrics(al_loop_dir / name)
+            except (RuntimeError, ValueError, KeyError, FileNotFoundError) as exc:
+                logger.warning(
+                    "Skipping %s in the MAE-vs-loop metrics: %s", al_loop_dir.name, exc
+                )
                 continue
-            records = []
-            for metric_file in metric_files:
-                try:
-                    record, _ = read_evaluation(metric_file.parent, "test")
-                    records.append(record)
-                except (FileNotFoundError, KeyError, ValueError):
-                    continue
-            if not records:
+            if row is None:
                 continue
-            row = {
-                key: float(np.mean([r[key] for r in records]))
-                for key in ("mae_f", "mae_e_per_atom")
-            }
-            row.update(
-                {
-                    f"{key}_std_dev": float(np.std([r[key] for r in records]))
-                    for key in ("mae_f", "mae_e_per_atom")
-                }
-            )
             rows.append(row)
-        return pd.DataFrame(rows)
+            loops.append(int(al_loop_dir.name.rsplit("_", 1)[1]))
+        return pd.DataFrame(rows, index=pd.Index(loops, name="al_loop"))
 
     def _store_predictions_and_cleanup(
         self, base_name: str, name: str, results: dict[int, tuple]
@@ -1525,17 +1742,6 @@ class CommitteeUncertaintyWorkflow:
                 len(train_xyzs),
                 len(test_xyzs),
             )
-        elif self.skip_initialization:
-            train_xyzs = self.db.get_train_atoms()
-            test_xyzs = self.db.get_test_atoms()
-            effective_start = self.start_loop
-            logger.info(
-                "skip_initialization=True: loading %d train / %d test from DB, "
-                "starting at loop %d.",
-                len(train_xyzs),
-                len(test_xyzs),
-                effective_start,
-            )
         else:
             train_xyzs, test_xyzs = self._initialize_training_set("initialization")
             n_tagged = self.db.update_splits_post_hoc(train_xyzs, test_xyzs)
@@ -1594,6 +1800,7 @@ class CommitteeUncertaintyWorkflow:
 
             evaluation_results = self._train_mlip(base_name)
             logger.debug("AL Loop %d evaluation results:\n%s", loop, evaluation_results)
+            self._update_best_model(base_name)
 
             if self.plots:
                 # mae_al_loop_plot/plot_training_curves/plot_dft_vs_model
@@ -1733,8 +1940,8 @@ def build_workflow(jobs_dict: dict) -> CommitteeUncertaintyWorkflow:
     FurthestPointSamplingWorkflow would add its own name here.
 
     Takes only jobs_dict -- every setting a workflow needs, including ones
-    that used to be Python constructor kwargs (initial_train_file_path,
-    num_of_al_loops, verbose, ...), lives under jobs_dict["general"]
+    that used to be Python constructor kwargs (num_of_al_loops, verbose,
+    ...), lives under jobs_dict["general"]
     now (see CommitteeUncertaintyWorkflow.__init__ and _GENERAL_KWARGS_
     DEFAULTS). The one exception is db: a live GlobalDatabase instance
     can't be a config value, so a caller that needs to inject a pre-built

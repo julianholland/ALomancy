@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`general.start_from`: one start routine with four auto-detected modes.** `train_xyz` + `test_xyz` imports a pre-split pair, keeping the split; `xyz` (a path or list) imports one dataset and splits it by `test_ratio`; `database` imports a copy of a former ALomancy `global_database`, keeping its splits and flags and never modifying it; no `start_from` is a cold start. Every mode then fills only the missing initialization targets with DFT and builds the split from the database. Foreign xyz files are normalized on import. `config_type`/`REF_energy`/`REF_forces`/`REF_stresses` are mapped from `start_from.metadata_map`, common aliases (`type`, `energy`, `dft_forces`, ...) or the attached calculator. Unlabelled structures become `"external"`; missing energies or forces raise before anything is imported. See the new docs page `docs/starting_a_run.md`.
+- **`alomancy list-hpc [--check-remote]`** lists every configured HPC profile with its ssh host, partitions, ranks, memory, concurrency cap, default max time and executable. `--check-remote` also reports each host's installed alomancy version over ssh.
+- **`results/best_model/ALomancy_best_model.model`** always holds the latest loop's best committee member (compiled), the same model MD uses. `model_metadata.json` sits alongside it with its energy, force and stress errors per split and per `config_type`.
+- **Evaluation metrics per `config_type` and for stress.** `evaluation_metrics.json` (schema version 2) now breaks each split down by `config_type` as well as by domain. It reports `mae_stress`/`rmse_stress` (eV/Å³) wherever DFT stress is available; the remote evaluation records the model's stress for those structures.
+- **`md_kwargs.traj_interval`** (default off) writes a full-resolution MD trajectory, `md_trajectory.xyz`, next to the existing subsampled snapshots.
+
 ### Changed
+- **Breaking: the old start-up keys are removed** and raise a `ValueError` naming their replacement. `general.initial_train_file_path`/`initial_test_file_path` → `general.start_from.train_xyz`/`test_xyz`; `initialization.extra_datasets` → `general.start_from.xyz`; `general.skip_initialization` and `initialization.reset_extra_splits` are no longer needed. Unlike the old fast path, a train/test warm start now also generates any missing initialization structures; disable a structure type with its `enabled: false`.
+- **The MAE-vs-loop plot shows each loop's best committee member** (chosen on the common validation split, as for MD) instead of the committee mean ± std. The live run and `alomancy results --replot` use the same rule.
+- **Parity plots mark the best subplot per column with a gold star**: the lowest energy MAE and the lowest force MAE.
+- **Timing plot x axis shows plain loop numbers**, thinned out automatically on long runs. Writing it now also deletes leftover `timing_total.png`/`timing_phases.png` files from older versions.
+- **Redundancy-removal descriptors are cached in the global database** and computed once per structure, not on every loop and restart.
 - **Breaking: integer-count config keys renamed to a single `num_of_*` convention.** Old names now raise a `ValueError` at workflow construction listing every old key found and its replacement; they are not silently ignored.
 
   | Section | Old | New |
@@ -28,7 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `max_number_of_concurrent_jobs` was renamed to `num_of_md_starts` rather than `max_num_of_concurrent_jobs` because it sets how many MD runs are started, not scheduler concurrency. It would otherwise have collided with the HPC profile key. The HPC profile's old `max_concurrent_jobs` is still read, with a warning, because `alomancy add-hpc` writes that file and every run on the machine shares it. Matching Python parameters and attributes were renamed too (e.g. `RemoteInfo.max_num_of_concurrent_jobs`, `create_initialization_atoms_list(num_of_dimers_per_combo=...)`), and the internal committee-size key `size_of_committee` is now `num_of_models_in_committee` everywhere. `md_wfl`/`dft_utils` read renamed keys on the remote node, so reinstall on every HPC host before the next submission.
 
+- **Remote reinstall needed:** the MD trajectory and model-stress evaluation run on the HPC host, so reinstall there before the next submission.
+
 ### Fixed
+- **`alomancy results --replot` orders loops numerically.** It sorted loop directories by name, so on runs with 10+ loops `al_loop_9` came last. Loops were plotted out of order and the cross-loop MAE plot landed in `al_loop_9/` instead of the latest loop's folder.
 - **`qe_kwargs` now merges into QE's defaults per namelist.** Previously, overriding one key in a namelist (e.g. `control.tstress`) replaced the whole namelist. That dropped `control.tprnfor`/`calculation`, so QE never printed forces and every DFT job failed with `forces not present in this calculation`.
 - **`high_accuracy_evaluation` no longer marks itself done with zero results.** If jobs were submitted but no results exist at all, it raises `RuntimeError` instead of writing an empty result, which would have recorded zero new structures for that loop permanently.
 - **Required `general.committee_uncertainty_kwargs` keys (`test_ratio`, `target_config_types`) are validated at workflow construction.** Before, they were first read after an AL loop's DFT had finished. Unrecognised `general` keys now log a warning.

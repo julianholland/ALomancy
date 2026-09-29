@@ -226,15 +226,24 @@ def _evaluate_and_save_predictions(
         out = []
         n_ok = 0
         n_failed = 0
+        n_no_stress = 0
         for atoms in atoms_list:
             a = atoms.copy()
             a.info.pop("model_energy", None)
+            a.info.pop("model_stress", None)
             a.arrays.pop("model_forces", None)
             a.calc = calc
             try:
                 a.info["model_energy"] = float(a.get_potential_energy())
                 a.arrays["model_forces"] = a.get_forces()
                 n_ok += 1
+                # Stress is compared only where DFT stress exists, and is
+                # never fatal (e.g. non-periodic cells have none).
+                if "REF_stresses" in a.info:
+                    try:
+                        a.info["model_stress"] = a.get_stress()
+                    except Exception:
+                        n_no_stress += 1
             except Exception as exc:
                 n_failed += 1
                 if n_failed == 1:
@@ -257,6 +266,13 @@ def _evaluate_and_save_predictions(
                 a.calc = None
             out.append(a)
 
+        if n_no_stress:
+            logger.info(
+                "%s predictions: model stress unavailable for %d structure(s) "
+                "with DFT stress.",
+                tag,
+                n_no_stress,
+            )
         if n_failed:
             logger.warning(
                 "%s predictions: %d succeeded, %d failed out of %d structures.",

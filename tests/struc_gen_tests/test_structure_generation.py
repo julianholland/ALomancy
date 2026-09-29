@@ -1914,3 +1914,55 @@ class TestStructureGenerationExternal:
     def test_real_ase_md(self, skip_if_no_external):
         """Test with real ASE MD if available."""
         pass
+
+
+class TestMdTrajectoryOutput:
+    """md_kwargs.traj_interval: optional full-resolution trajectory, run
+    through real ASE dynamics with a cheap EMT calculator."""
+
+    @staticmethod
+    def _run(tmp_path, **kwargs):
+        from ase.build import bulk
+        from ase.calculators.emt import EMT
+
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        atoms = bulk("Cu", "fcc", a=3.6, cubic=True)
+        atoms.info["job_id"] = 0
+        atoms.info["md_seed"] = 1
+        run_md(
+            structure_generation_job_dict={
+                "name": "structure_generation",
+                "desired_num_of_structures": 2,
+            },
+            initial_structure=atoms,
+            total_md_runs=1,
+            out_dir=str(tmp_path),
+            model_path=None,
+            steps=40,
+            calculator=EMT(),
+            **kwargs,
+        )
+
+    @pytest.mark.unit
+    def test_no_trajectory_file_by_default(self, tmp_path):
+        self._run(tmp_path)
+        assert not (tmp_path / "md_trajectory.xyz").exists()
+        assert (tmp_path / "structure_generation.xyz").exists()
+
+    @pytest.mark.unit
+    def test_trajectory_written_every_interval_without_duplicates(self, tmp_path):
+        from ase.io import read
+
+        self._run(tmp_path, traj_interval=5)
+
+        frames = read(tmp_path / "md_trajectory.xyz", ":", format="extxyz")
+        # steps 0, 5, ..., 40 -- one frame each, even where a snapshot
+        # segment boundary coincides with the interval.
+        assert len(frames) == 40 // 5 + 1
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [0, -3, 2.5, True, "10"])
+    def test_invalid_traj_interval_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="traj_interval"):
+            self._run(tmp_path, traj_interval=bad)

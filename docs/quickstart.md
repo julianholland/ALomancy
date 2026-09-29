@@ -7,7 +7,7 @@ from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
 # Load configuration from YAML file -- every workflow-level setting
-# (initial_train_file_path, num_of_al_loops, verbose, log_file,
+# (start_from, num_of_al_loops, verbose, log_file,
 # db_path, ...) lives under the YAML's `general:` section; build_workflow()
 # takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
@@ -22,8 +22,10 @@ workflow.run()
 general:
   al_workflow: "committee_uncertainty"
   elements: ["C", "O"]
-  initial_train_file_path: "results/initialization/train_set.xyz"
-  initial_test_file_path: "results/initialization/test_set.xyz"
+  # Optional warm start -- omit for a cold start. See starting_a_run.md.
+  # start_from:
+  #   train_xyz: "my_train.xyz"
+  #   test_xyz: "my_test.xyz"
   num_of_al_loops: 5
   verbose: 1  # 0=silent, 1=INFO, 2=DEBUG
   log_file: "results/alomancy.log"  # debug logs always written here
@@ -94,14 +96,17 @@ See the [examples](examples.md) for more detailed configurations.
 
 ## Initialization Behavior
 
-The workflow handles initialization in two ways:
+`general.start_from` decides where the first structures come from: a
+train/test pair of xyz files, a single xyz file, a former ALomancy
+database, or nothing (a cold start). Every mode then:
 
-- **Fast path**: If `initial_train_file_path` and `initial_test_file_path` already exist, the workflow loads them directly and begins the AL loops.
-- **Full path**: If either file is missing, the workflow automatically:
-  1. Checks the global database for existing structures
-  2. Generates missing structures via ASE MD (dimers, trimers, amorphous, Materials Project)
-  3. Evaluates them with DFT (Quantum Espresso)
-  4. Builds train/test splits from the database
+1. Imports the start data into the global database
+2. Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project)
+3. Evaluates them with DFT
+4. Builds train/test splits from the database
+
+See [Starting a run](starting_a_run.md) for each mode, label handling for
+foreign xyz files, and the split rules.
 
 ## Verbosity Levels
 

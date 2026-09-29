@@ -28,6 +28,7 @@ class GlobalDatabase:
 
     def __init__(self, db_path: str = "results/global_database") -> None:
         Path(db_path).mkdir(parents=True, exist_ok=True)
+        self.db_path = Path(db_path)
         self.partition = Partition(path=db_path, storage="hybrid")
 
     def clear(self) -> None:
@@ -114,6 +115,49 @@ class GlobalDatabase:
             sr.atoms.metadata["global_db_id"] = start_id + i
 
         self.partition.add(sr_list)
+        return added
+
+    def import_from_database(self, source_path: str | Path) -> int:
+        """Copy every structure of a former ALomancy GlobalDatabase into this
+        one, keeping its config_type, split and duplicate/high-force flags.
+
+        The source is only read, never written. Its ``global_db_id`` becomes
+        ``source_global_db_id`` (this DB assigns its own ids), per-loop model
+        predictions are dropped (they describe the old run's models), and
+        every copy is tagged ``source_database`` so importing the same DB
+        again is a no-op. Returns the number of structures added.
+        """
+        source = Path(source_path).resolve()
+        if not source.is_dir():
+            raise FileNotFoundError(f"No ALomancy database at {source}.")
+        if source == self.db_path.resolve():
+            raise ValueError(
+                f"{source} is this run's own database; start_from.database must "
+                "point at a different (former) run's database."
+            )
+        marker = str(source)
+        if any(
+            c.AtomPositionManager.metadata.get("source_database") == marker
+            for c in self.partition.list_containers()
+        ):
+            logger.info("Database %s already imported; skipping.", source)
+            return 0
+
+        atoms_list = GlobalDatabase(marker).get_all_as_atoms()
+        for atoms in atoms_list:
+            old_id = atoms.info.pop("global_db_id", None)
+            if old_id is not None:
+                atoms.info["source_global_db_id"] = old_id
+            atoms.info["source_database"] = marker
+            for key in [k for k in atoms.info if k.startswith(("model_", "mace_"))]:
+                del atoms.info[key]
+        added = self.add_structures(atoms_list, skip_duplicates=True)
+        logger.info(
+            "Imported %d of %d structure(s) from database %s.",
+            added,
+            len(atoms_list),
+            source,
+        )
         return added
 
     # ------------------------------------------------------------------
@@ -378,6 +422,15 @@ class GlobalDatabase:
         id_meta_map = {i: {"is_high_force": True} for i in positional_indices}
         self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
 
+    def store_descriptors(self, descriptors: dict[int, list[float]], key: str) -> None:
+        """Cache structure descriptors (e.g. redundancy removal's char_vec)
+        in container metadata, keyed by positional index, so they are
+        computed once per structure rather than on every loop/restart.
+        Never exposed via atoms.info (see _atoms_from_container)."""
+        self.partition.set_metadata_bulk(
+            {i: {key: vector} for i, vector in descriptors.items()}, use_indices=True
+        )
+
     def assign_global_db_ids(self) -> int:
         """Assign global_db_id to any container that does not already have one.
 
@@ -411,7 +464,7 @@ class GlobalDatabase:
         Leaving them is harmless -- every reader now looks only for the
         model_* names, and the DB-seeding key-strippers
         (committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.
-        _seed_db_from_extra_dataset, utils.recover_dft_labels) strip both
+        _import_xyz via utils.import_structures, utils.recover_dft_labels) strip both
         prefixes.
 
         Idempotent -- safe to call more than once. Already-migrated
@@ -647,6 +700,10 @@ class GlobalDatabase:
         )
         meta = dict(apm.metadata)
         stress = meta.pop("_REF_stresses", None)
+        # Cached descriptors (store_descriptors) are DB-internal: a 128-float
+        # array in atoms.info would be written into every train xyz file.
+        for key in [k for k in meta if k.startswith("char_vec")]:
+            del meta[key]
         energy = apm.energy
         forces = apm.forces
         atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)

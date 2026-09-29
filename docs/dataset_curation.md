@@ -72,8 +72,8 @@ Set `initialization.grouped_splits: true` and
 `mlip_committee.grouped_validation: true`. Identical ordered geometries and
 shared `split_group` ancestry stay together; the splitter is stratified by
 domain and keeps isolated atoms in training. It does not detect arbitrary
-symmetry-equivalent geometries. `reset_extra_splits` removes obsolete operational
-split flags on import. `workflow.fixed_test` prevents later acquisition from
+symmetry-equivalent geometries. Files imported via `general.start_from` always
+drop the writing run's split tags and flags (see starting_a_run.md). `workflow.fixed_test` prevents later acquisition from
 expanding the held-out test, and routes known held-out descendants to diagnostics.
 
 `workflow.train_only: true` stops after the initial committee and validation

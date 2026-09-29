@@ -94,7 +94,7 @@ def extend_test_and_train_sets_with_extra_dataset(
             len(extra_dataset_test),
         )
         logger.warning(
-            "Remove %s from extra_datasets to avoid duplicates upon restart.",
+            "Remove %s from the extra dataset list to avoid duplicates upon restart.",
             extra_dataset,
         )
     else:
