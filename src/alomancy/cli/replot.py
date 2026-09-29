@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def detect_committee_info(results_dir: Path) -> tuple[str, int, int]:
-    """Infer (name, size_of_committee, seed) from the results directory layout.
+    """Infer (name, num_of_models_in_committee, seed) from the results directory layout.
 
     Searches ``results_dir/al_loop_*/`` for the first subdirectory that
     contains a ``fit_0/`` child. The seed is parsed from the filename of the
@@ -66,7 +66,7 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     name, n_fits, seed = detect_committee_info(results_dir)
     logger.info("Detected committee: name=%r, size=%d, seed=%d", name, n_fits, seed)
 
-    job_dict = {"name": name, "size_of_committee": n_fits}
+    job_dict = {"name": name, "num_of_models_in_committee": n_fits}
     plots_dir = results_dir / "current_plots"
     plots_dir.mkdir(exist_ok=True, parents=True)
 

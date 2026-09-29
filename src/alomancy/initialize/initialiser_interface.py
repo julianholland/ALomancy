@@ -51,8 +51,8 @@ interfaces) adds its own `surface_kwargs`/`rattle_kwargs`/
 create_initialization_atoms_list, without touching any other namespace.
 
 `stretch_compress_targets_kwargs` (`max_lattice_deformation`,
-`num_stretch_compress_per_target`) and `rattle_target_structures`
-(`rattle_standard_deviation`, `num_rattled_per_target`) are each a
+`num_of_stretch_compress_per_target`) and `rattle_target_structures`
+(`rattle_standard_deviation`, `num_of_rattled_per_target`) are each a
 sibling of `mp_kwargs`, not nested inside it -- both apply to *every*
 freshly-generated structure this call produces whose config_type is
 listed in `target_config_types` (see above), not just Materials Project
@@ -91,29 +91,29 @@ logger = logging.getLogger(__name__)
 # atoms_list's (old, shared) own parameter defaults.
 _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
     "isolated_atom_kwargs": {"enabled": True},
-    "dimer_kwargs": {"enabled": True, "num_dimers_per_combo": 10},
-    "trimer_kwargs": {"enabled": True, "num_trimers_per_combo": 5},
+    "dimer_kwargs": {"enabled": True, "num_of_dimers_per_combo": 10},
+    "trimer_kwargs": {"enabled": True, "num_of_trimers_per_combo": 5},
     "amorphous_kwargs": {
         "enabled": True,
-        "num_amorphous": 100,
-        "amorphous_atom_number": 20,
+        "num_of_amorphous_structures": 100,
+        "num_of_atoms_per_amorphous": 20,
         "densities_list": None,
         "composition_list": None,
         "seed": 803,
     },
     "mp_kwargs": {
         "enabled": True,
-        "max_atom_number": 20,
+        "max_num_of_atoms": 20,
         "mp_max_energy_above_hull": 0.1,
     },
     "stretch_compress_targets_kwargs": {
         "enabled": True,
-        "num_stretch_compress_per_target": 5,
+        "num_of_stretch_compress_per_target": 5,
         "max_lattice_deformation": 0.2,
     },
     "rattle_target_structures": {
         "enabled": False,
-        "num_rattled_per_target": 5,
+        "num_of_rattled_per_target": 5,
     },
 }
 
@@ -144,14 +144,16 @@ def compute_needs(db: "GlobalDatabase", config: dict, elements: list[str]) -> di
         elements=elements,
         _single_atoms=isolated_atom_kwargs["enabled"],
         mp_structures=mp_kwargs["enabled"],
-        num_dimers_per_combo=(
-            dimer_kwargs["num_dimers_per_combo"] if dimer_kwargs["enabled"] else 0
+        num_of_dimers_per_combo=(
+            dimer_kwargs["num_of_dimers_per_combo"] if dimer_kwargs["enabled"] else 0
         ),
-        num_trimers_per_combo=(
-            trimer_kwargs["num_trimers_per_combo"] if trimer_kwargs["enabled"] else 0
+        num_of_trimers_per_combo=(
+            trimer_kwargs["num_of_trimers_per_combo"] if trimer_kwargs["enabled"] else 0
         ),
-        num_amorphous=(
-            amorphous_kwargs["num_amorphous"] if amorphous_kwargs["enabled"] else 0
+        num_of_amorphous_structures=(
+            amorphous_kwargs["num_of_amorphous_structures"]
+            if amorphous_kwargs["enabled"]
+            else 0
         ),
     )
 
@@ -220,17 +222,19 @@ def generate(
             if needs is not None
             else isolated_atom_kwargs["enabled"]
         ),
-        num_dimers_per_combo=(
-            dimer_kwargs["num_dimers_per_combo"] if dimer_kwargs["enabled"] else 0
+        num_of_dimers_per_combo=(
+            dimer_kwargs["num_of_dimers_per_combo"] if dimer_kwargs["enabled"] else 0
         ),
-        num_trimers_per_combo=(
-            trimer_kwargs["num_trimers_per_combo"] if trimer_kwargs["enabled"] else 0
+        num_of_trimers_per_combo=(
+            trimer_kwargs["num_of_trimers_per_combo"] if trimer_kwargs["enabled"] else 0
         ),
-        num_amorphous=(
-            amorphous_kwargs["num_amorphous"] if amorphous_kwargs["enabled"] else 0
+        num_of_amorphous_structures=(
+            amorphous_kwargs["num_of_amorphous_structures"]
+            if amorphous_kwargs["enabled"]
+            else 0
         ),
-        num_stretch_compress_per_target=(
-            stretch_compress_targets_kwargs["num_stretch_compress_per_target"]
+        num_of_stretch_compress_per_target=(
+            stretch_compress_targets_kwargs["num_of_stretch_compress_per_target"]
             if stretch_compress_targets_kwargs["enabled"]
             else 0
         ),
@@ -238,14 +242,16 @@ def generate(
         max_lattice_deformation=stretch_compress_targets_kwargs[
             "max_lattice_deformation"
         ],
-        max_atom_number=mp_kwargs["max_atom_number"],
-        amorphous_atom_number=amorphous_kwargs["amorphous_atom_number"],
+        max_num_of_atoms=mp_kwargs["max_num_of_atoms"],
+        num_of_atoms_per_amorphous=amorphous_kwargs["num_of_atoms_per_amorphous"],
         mp_max_energy_above_hull=mp_kwargs["mp_max_energy_above_hull"],
         composition_list=amorphous_kwargs["composition_list"],
         seed=amorphous_kwargs["seed"],
         target_config_types=target_config_types,
-        num_rattled_per_target=(
-            rattle_kwargs["num_rattled_per_target"] if rattle_kwargs["enabled"] else 0
+        num_of_rattled_per_target=(
+            rattle_kwargs["num_of_rattled_per_target"]
+            if rattle_kwargs["enabled"]
+            else 0
         ),
         rattle_standard_deviation=(
             rattle_kwargs["rattle_standard_deviation"]

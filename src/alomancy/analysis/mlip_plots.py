@@ -122,7 +122,7 @@ def plot_training_curves(
     plots_dir: Path,
 ) -> None:
     name = mlip_committee_job_dict["name"]
-    n_fits = mlip_committee_job_dict["size_of_committee"]
+    n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
 
     setup_alomancy_style()
     colors = PALETTE
@@ -399,7 +399,7 @@ def plot_dft_vs_model(
 ) -> None:
     setup_alomancy_style()
     name = mlip_committee_job_dict["name"]
-    n_fits = mlip_committee_job_dict["size_of_committee"]
+    n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
 
     e0: dict[str, float] | None = None
     if db is not None:

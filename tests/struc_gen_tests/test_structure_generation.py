@@ -245,7 +245,7 @@ class TestFindHighSdStructures:
         return {
             "structure_generation": {
                 "name": "structure_generation",
-                "desired_number_of_structures": desired,
+                "desired_num_of_structures": desired,
             }
         }
 
@@ -432,7 +432,7 @@ class TestFindHighSdStructures:
 
     @pytest.mark.unit
     def test_desired_structures_zero_raises_value_error(self, tmp_path, monkeypatch):
-        """desired_number_of_structures <= 0 is a config error: ValueError,
+        """desired_num_of_structures <= 0 is a config error: ValueError,
         not AssertionError (asserts are stripped under python -O)."""
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -576,7 +576,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             chem_formula_list=["H2"],
         )
         assert len(result) == 3
@@ -599,7 +599,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             atom_number_range=(2, 2),
         )
         assert len(result) == 4
@@ -620,7 +620,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=["al_loop_0"],
         )
         # The returned atoms should have config_type set to {base_name}_{job_name}
@@ -648,7 +648,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_1",
             structure_generation_job_dict=job_dict,
             train_atoms_list=init_structures + high_sd_structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=["init_amorphous"],
         )
         # high_sd structures are eligible even though selectable_configs only lists init_amorphous
@@ -675,7 +675,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_1",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
             selectable_configs=None,
         )
         assert len(result) == 5
@@ -698,7 +698,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_0",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=caller_list,
         )
         assert caller_list == ["init_amorphous"]
@@ -719,7 +719,7 @@ class TestSelectInitialStructures:
         kwargs = {
             "structure_generation_job_dict": job_dict,
             "train_atoms_list": structures,
-            "max_number_of_concurrent_jobs": 5,
+            "num_of_md_starts": 5,
             "selectable_configs": ["init_amorphous"],
         }
         # Loop 0 selection
@@ -744,7 +744,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=structures,
-                max_number_of_concurrent_jobs=3,
+                num_of_md_starts=3,
                 atom_number_range=(1, 5),
             )
         assert any(issubclass(warning.category, UserWarning) for warning in w)
@@ -765,7 +765,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 4
@@ -791,7 +791,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 3
@@ -813,7 +813,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             chem_formula_list=["H2", "O2"],
             atom_number_range=(2, 2),
         )
@@ -822,7 +822,7 @@ class TestSelectInitialStructures:
         assert all(a.get_chemical_formula() in ["H2", "O2"] for a in result)
 
     def test_reuses_structures_when_concurrency_exceeds_available(self):
-        """When max_number_of_concurrent_jobs exceeds the number of selectable
+        """When num_of_md_starts exceeds the number of selectable
         structures, structures are reused (not an error) and every returned
         atoms object gets a distinct md_seed."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -836,7 +836,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
         )
         assert len(result) == 5
         seeds = [a.info["md_seed"] for a in result]
@@ -868,7 +868,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=structures,
-                max_number_of_concurrent_jobs=5,
+                num_of_md_starts=5,
             )
         finally:
             al_logger.removeHandler(handler)
@@ -889,7 +889,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
         )
         assert len(result) == 3
         seeds = [a.info["md_seed"] for a in result]
@@ -897,7 +897,7 @@ class TestSelectInitialStructures:
 
     def test_reuse_with_enforce_chemical_diversity(self):
         """Reuse also works (no error) when enforce_chemical_diversity=True and
-        fewer structures exist than max_number_of_concurrent_jobs."""
+        fewer structures exist than num_of_md_starts."""
         from alomancy.structure_generation.select_initial_structures import (
             select_initial_structures,
         )
@@ -909,7 +909,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 4
@@ -929,7 +929,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=[],
-                max_number_of_concurrent_jobs=3,
+                num_of_md_starts=3,
             )
 
     def test_seed_param_controls_md_seed_values(self):
@@ -945,7 +945,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             seed=1000,
         )
         seeds = sorted(a.info["md_seed"] for a in result)
@@ -1095,7 +1095,7 @@ class TestMolecularDynamics:
             model_path=["test_model.pt"],
             steps=100,
             temperature=300,
-            desired_number_of_structures=10,
+            desired_num_of_structures=10,
             timestep_fs=0.5,
             verbose=0,
         )
@@ -1108,23 +1108,22 @@ class TestMolecularDynamics:
         valid_params = {
             "steps": 100,
             "temperature": 300,
-            "desired_number_of_structures": 20,
+            "desired_num_of_structures": 20,
             "total_md_runs": 5,
         }
 
         # Check basic constraints
-        assert valid_params["desired_number_of_structures"] > 0
+        assert valid_params["desired_num_of_structures"] > 0
         assert (
             valid_params["steps"]
-            > valid_params["desired_number_of_structures"]
-            / valid_params["total_md_runs"]
+            > valid_params["desired_num_of_structures"] / valid_params["total_md_runs"]
         )
         assert valid_params["temperature"] > 0
 
         # Test invalid parameters that would cause division by zero
         invalid_params = {
             "steps": 10,
-            "desired_number_of_structures": 50,
+            "desired_num_of_structures": 50,
             "total_md_runs": 5,
         }
 
@@ -1132,7 +1131,7 @@ class TestMolecularDynamics:
         snapshot_interval = (
             invalid_params["steps"]
             * invalid_params["total_md_runs"]
-            // invalid_params["desired_number_of_structures"]
+            // invalid_params["desired_num_of_structures"]
         )
         assert snapshot_interval == 1  # This would be problematic for the loop
 
@@ -1184,7 +1183,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1216,7 +1215,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1260,7 +1259,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "desired_num_of_structures": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1303,7 +1302,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "desired_num_of_structures": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1344,7 +1343,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "desired_num_of_structures": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1377,7 +1376,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1407,7 +1406,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1442,7 +1441,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1479,7 +1478,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1507,7 +1506,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1632,7 +1631,7 @@ class TestStructureSelection:
         result = select_initial_structures(
             base_name="test_loop_0",
             structure_generation_job_dict={"name": "test"},
-            max_number_of_concurrent_jobs=2,
+            num_of_md_starts=2,
             chem_formula_list=[],
             atom_number_range=(2, 10),
             enforce_chemical_diversity=True,

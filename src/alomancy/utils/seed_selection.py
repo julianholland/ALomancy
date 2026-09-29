@@ -131,17 +131,17 @@ def select_diverse_seeds(
     base_name: str,
     job_name: str,
     eligible_structures: list[Atoms],
-    max_number_of_concurrent_jobs: int = 5,
+    num_of_md_starts: int = 5,
     enforce_chemical_diversity: bool = False,
     seed: int = 803,
 ) -> list[Atoms]:
-    """Pick ``max_number_of_concurrent_jobs`` seeds from an already-eligible
+    """Pick ``num_of_md_starts`` seeds from an already-eligible
     population (see filter_eligible_structures), maximizing configurational
     diversity when requested. Reuses structures with distinct md_seed
     values when the pool is smaller than the requested concurrency, rather
     than erroring.
     """
-    reuse = len(eligible_structures) < max_number_of_concurrent_jobs
+    reuse = len(eligible_structures) < num_of_md_starts
     if reuse:
         logger.warning(
             "Only %d structures available for %d concurrent structure_generation "
@@ -149,7 +149,7 @@ def select_diverse_seeds(
             "reused structure is assigned a distinct MD seed (atoms.info['md_seed']) "
             "so its duplicate runs diverge into different trajectories.",
             len(eligible_structures),
-            max_number_of_concurrent_jobs,
+            num_of_md_starts,
         )
 
     if not enforce_chemical_diversity:
@@ -157,7 +157,7 @@ def select_diverse_seeds(
             eligible_structures[x].copy()
             for x in np.random.choice(
                 np.array(range(len(eligible_structures))),
-                max_number_of_concurrent_jobs,
+                num_of_md_starts,
                 replace=reuse,
             )
         ]
@@ -166,14 +166,14 @@ def select_diverse_seeds(
         return selected
 
     # Ensure chemical diversity by selecting unique chemical formulas. If
-    # there are fewer unique formulas than max_number_of_concurrent_jobs,
+    # there are fewer unique formulas than num_of_md_starts,
     # select all and pad with random repeats.
     unique_chemical_formulas = {s.get_chemical_formula() for s in eligible_structures}
-    if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
+    if len(unique_chemical_formulas) <= num_of_md_starts:
         list_of_formulas = list(unique_chemical_formulas)
         extra_formulas = [
             np.random.choice(list(unique_chemical_formulas), replace=False)
-            for _ in range(max_number_of_concurrent_jobs - len(list_of_formulas))
+            for _ in range(num_of_md_starts - len(list_of_formulas))
         ]
         list_of_formulas.extend(extra_formulas)
     else:
@@ -190,7 +190,7 @@ def select_diverse_seeds(
         list_of_formulas = list(
             np.random.choice(
                 list(unique_chemical_formulas),
-                max_number_of_concurrent_jobs,
+                num_of_md_starts,
                 replace=False,
                 p=[
                     formula_probabilities[formula] / sum(formula_probabilities.values())

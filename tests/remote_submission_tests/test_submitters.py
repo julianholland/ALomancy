@@ -96,7 +96,7 @@ class TestCommitteeRemoteSubmitter:
             base_name="al_loop_0",
             function=MagicMock(),
             seed=803,
-            size_of_committee=3,
+            num_of_models_in_committee=3,
         )
 
         fit_idxs = [c["function_kwargs"]["fit_idx"] for c in captured["job_configs"]]

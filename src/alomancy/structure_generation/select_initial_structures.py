@@ -11,7 +11,7 @@ def select_initial_structures(
     base_name,
     structure_generation_job_dict: dict,
     train_atoms_list: list[Atoms],
-    max_number_of_concurrent_jobs: int = 5,
+    num_of_md_starts: int = 5,
     chem_formula_list: list[str] | None = None,
     selectable_configs: list[str] | None = None,
     atom_number_range: tuple[int, int] = (0, 0),
@@ -37,11 +37,11 @@ def select_initial_structures(
     # Handle None default for mutable argument
     logger.debug(
         "Selecting initial structures with parameters: base_name=%s, structure_generation_job_dict=%s, "
-        "max_number_of_concurrent_jobs=%d, chem_formula_list=%s, selectable_configs=%s, "
+        "num_of_md_starts=%d, chem_formula_list=%s, selectable_configs=%s, "
         "atom_number_range=%s, enforce_chemical_diversity=%s",
         base_name,
         structure_generation_job_dict,
-        max_number_of_concurrent_jobs,
+        num_of_md_starts,
         chem_formula_list,
         selectable_configs,
         atom_number_range,
@@ -122,7 +122,7 @@ def select_initial_structures(
             f"{selectable_configs}, atom_number_range={atom_number_range})."
         )
 
-    reuse = len(filtered_structures) < max_number_of_concurrent_jobs
+    reuse = len(filtered_structures) < num_of_md_starts
     if reuse:
         logger.warning(
             "Only %d structures available for %d concurrent structure_generation "
@@ -130,7 +130,7 @@ def select_initial_structures(
             "reused structure is assigned a distinct MD seed (atoms.info['md_seed']) "
             "so its duplicate runs diverge into different trajectories.",
             len(filtered_structures),
-            max_number_of_concurrent_jobs,
+            num_of_md_starts,
         )
 
     if not enforce_chemical_diversity:
@@ -138,7 +138,7 @@ def select_initial_structures(
             filtered_structures[x].copy()
             for x in np.random.choice(
                 np.array(range(len(filtered_structures))),
-                max_number_of_concurrent_jobs,
+                num_of_md_starts,
                 replace=reuse,
             )
         ]
@@ -149,14 +149,14 @@ def select_initial_structures(
         return initial_atoms
 
     # Ensure chemical diversity by selecting unique chemical formulas
-    # If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all
+    # If there are fewer unique formulas than `num_of_md_starts`, select all
 
     unique_chemical_formulas = {s.get_chemical_formula() for s in filtered_structures}
-    if len(unique_chemical_formulas) <= max_number_of_concurrent_jobs:
+    if len(unique_chemical_formulas) <= num_of_md_starts:
         list_of_formulas = list(unique_chemical_formulas)
         extra_formulas = [
             np.random.choice(list(unique_chemical_formulas), replace=False)
-            for _ in range(max_number_of_concurrent_jobs - len(list_of_formulas))
+            for _ in range(num_of_md_starts - len(list_of_formulas))
         ]
         list_of_formulas.extend(extra_formulas)
 
@@ -172,7 +172,7 @@ def select_initial_structures(
         }
         list_of_formulas = np.random.choice(
             list(unique_chemical_formulas),
-            max_number_of_concurrent_jobs,
+            num_of_md_starts,
             replace=False,
             p=[
                 formula_probabilities[formula] / sum(formula_probabilities.values())
@@ -207,7 +207,7 @@ def _assign_md_seeds(atoms_list: list[Atoms], seed: int) -> None:
     """Give each selected structure a distinct atoms.info['md_seed'].
 
     Needed because the same source structure can be selected more than once
-    (when max_number_of_concurrent_jobs exceeds the number of selectable
+    (when num_of_md_starts exceeds the number of selectable
     structures) — run_md seeds its stochastic dynamics from this value so
     duplicate starting structures still diverge into different trajectories
     instead of running identical MD.

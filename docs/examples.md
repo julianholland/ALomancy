@@ -121,7 +121,7 @@ raven_gpu:
     ranks_per_node: 18
     threads_per_rank: 1
     max_mem_per_node: 120GB
-  max_concurrent_jobs: 20
+  max_num_of_concurrent_jobs: 20
 ```
 
 And this entry to `~/.expyre/config.json`:
@@ -172,7 +172,7 @@ from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
 # Load configuration from YAML file -- every workflow-level setting
-# (initial_train_file_path, number_of_al_loops, verbose, log_file,
+# (initial_train_file_path, num_of_al_loops, verbose, log_file,
 # db_path, ...) lives under the YAML's `general:` section; build_workflow()
 # takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
@@ -192,7 +192,7 @@ general:
   al_workflow: "committee_uncertainty"
   elements: ["H", "O"]   # atomic symbols, not atomic numbers
   committee_uncertainty_kwargs:
-    number_models_in_committee: 5
+    num_of_models_in_committee: 5
     target_config_types:
       - "IsolatedAtom"
       - "init_dimer"
@@ -202,15 +202,15 @@ initialization:
   name: "initialization"
   max_time: "2H"
   mp_kwargs:
-    max_atom_number: 20
+    max_num_of_atoms: 20
     mp_max_energy_above_hull: 0.1
   dimer_kwargs:
-    num_dimers_per_combo: 10
+    num_of_dimers_per_combo: 10
   trimer_kwargs:
-    num_trimers_per_combo: 5
+    num_of_trimers_per_combo: 5
   amorphous_kwargs:
-    num_amorphous: 300
-    amorphous_atom_number: 20
+    num_of_amorphous_structures: 300
+    num_of_atoms_per_amorphous: 20
   stretch_compress_targets_kwargs:
     num_stretch_compress_per_mp: 5
   hpc: 'my_hpc'
@@ -224,7 +224,7 @@ training:
 structure_generation:
   name: "structure_generation"
   generator: "md"   # "md" (default) or "ezga"
-  desired_number_of_structures: 50
+  desired_num_of_structures: 50
   max_time: "10H"
   hpc: 'my_gpu_hpc'
 
@@ -232,12 +232,12 @@ high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
   evaluator: "qe"   # "qe" (default) or "vasp"
   max_time: "30m"
-  hpc: 'my_cpu_hpc'   # concurrency is set on the HPC profile, see max_concurrent_jobs above
+  hpc: 'my_cpu_hpc'   # concurrency is set on the HPC profile, see max_num_of_concurrent_jobs above
 ```
 
 ### Configuration Key Descriptions
 
-- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `build_workflow()` returns (currently only `"committee_uncertainty"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `number_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
+- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `build_workflow()` returns (currently only `"committee_uncertainty"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
 
 - **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 
@@ -249,7 +249,7 @@ high_accuracy_evaluation:
   structure_generation:
     name: "structure_generation"
     generator: "md"
-    desired_number_of_structures: 50
+    desired_num_of_structures: 50
     max_time: "10H"
     md_kwargs:
       steps: 20000
@@ -263,7 +263,7 @@ high_accuracy_evaluation:
 
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
 
 ## Using VASP as the DFT Backend
 
@@ -289,7 +289,7 @@ high_accuracy_evaluation:
       ranks_per_node: 36
       threads_per_rank: 1
       max_mem_per_node: "90G"
-    max_concurrent_jobs: 20   # jobs started at once on this HPC (default 20)
+    max_num_of_concurrent_jobs: 20   # jobs started at once on this HPC (default 20)
     partitions: ["cpu"]
     pre_cmds: ["module load vasp"]
 ```

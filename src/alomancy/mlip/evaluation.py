@@ -98,7 +98,7 @@ def check_quality_gate(workdir: Path, committee: dict) -> None:
     if not required:
         raise ValueError("quality_gate requires per-domain validation limits")
     identities = set()
-    for fit in range(committee["size_of_committee"]):
+    for fit in range(committee["num_of_models_in_committee"]):
         metrics, _ = read_evaluation(
             workdir / committee["name"] / f"fit_{fit}", "valid"
         )

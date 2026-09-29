@@ -270,7 +270,7 @@ class TestBuildAlomancyProfile:
             venv_cmd="source /u/user/.venvs/alomancy/bin/activate",
             node_info={},
         )
-        assert profile["max_concurrent_jobs"] == 20
+        assert profile["max_num_of_concurrent_jobs"] == 20
 
     @pytest.mark.unit
     def test_max_concurrent_jobs_custom(self):
@@ -282,9 +282,9 @@ class TestBuildAlomancyProfile:
             partitions=["general"],
             venv_cmd="source /u/user/.venvs/alomancy/bin/activate",
             node_info={},
-            max_concurrent_jobs=42,
+            max_num_of_concurrent_jobs=42,
         )
-        assert profile["max_concurrent_jobs"] == 42
+        assert profile["max_num_of_concurrent_jobs"] == 42
 
     @pytest.mark.unit
     def test_gpu_profile_with_triton(self):

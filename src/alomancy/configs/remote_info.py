@@ -56,12 +56,12 @@ class RemoteInfo:
         specifically for a job the scheduler itself killed (OOM, walltime, node failure).
         Off by default because a killed job often needs different resources to succeed on
         retry, not just a second identical attempt.
-    max_concurrent_jobs: int, default 20
+    max_num_of_concurrent_jobs: int, default 20
         cap on how many jobs a RemoteJobExecutor keeps started (occupying a scheduler slot)
         at once; the next queued job starts the instant a running one finishes. This is a
         property of the HPC system/account, sourced from the HPC profile in
         ~/.alomancy/hpc_config.yaml (see get_remote_info) -- unrelated to
-        structure_generation's max_number_of_concurrent_jobs, which controls how many seed
+        structure_generation's num_of_md_starts, which controls how many seed
         structures are selected for MD, not scheduler concurrency.
     lock_timeout: float or None, default None
         max seconds a RemoteJobExecutor worker thread will wait to acquire the
@@ -94,7 +94,7 @@ class RemoteInfo:
         check_interval=30,
         ignore_failed_jobs=False,
         resubmit_killed_jobs=False,
-        max_concurrent_jobs=20,
+        max_num_of_concurrent_jobs=20,
         lock_timeout=None,
         hash_ignore=None,
     ):
@@ -129,7 +129,7 @@ class RemoteInfo:
         self.check_interval = check_interval
         self.ignore_failed_jobs = ignore_failed_jobs
         self.resubmit_killed_jobs = resubmit_killed_jobs
-        self.max_concurrent_jobs = max_concurrent_jobs
+        self.max_num_of_concurrent_jobs = max_num_of_concurrent_jobs
         self.lock_timeout = lock_timeout
         self.hash_ignore = hash_ignore.copy()
 
@@ -140,23 +140,38 @@ class RemoteInfo:
         )
 
 
-_DEFAULT_MAX_CONCURRENT_JOBS = 20
+_DEFAULT_MAX_NUM_OF_CONCURRENT_JOBS = 20
 
 
 def _resolve_max_concurrent_jobs(job_dict: dict) -> int:
     """Resolve the concurrency cap for a job dict.
 
-    ``max_concurrent_jobs`` on the HPC profile (``job_dict["hpc"]``) is the
+    ``max_num_of_concurrent_jobs`` on the HPC profile (``job_dict["hpc"]``) is the
     sole home for this setting -- a property of the HPC system/account, not
     of any one workflow phase. The legacy job-dict-level ``max_batch_size``
     fallback (deprecated since v0.4.8) was removed for the 1.0.0 release --
     see docs/deprecations.md.
+
+    Profiles written by ``alomancy add-hpc`` before the num_of_* rename use
+    ``max_concurrent_jobs``. Unlike run-config keys (a hard error, see
+    committee_uncertainty_workflow's _RENAMED_KEYS), that name is still
+    honoured with a warning: the profile is machine-written and shared by
+    every run on the machine.
     """
     hpc = job_dict["hpc"]
-    explicit_cap = hpc.get("max_concurrent_jobs")
+    explicit_cap = hpc.get("max_num_of_concurrent_jobs")
     if explicit_cap is not None:
         return explicit_cap
-    return _DEFAULT_MAX_CONCURRENT_JOBS
+    legacy_cap = hpc.get("max_concurrent_jobs")
+    if legacy_cap is not None:
+        logger.warning(
+            "HPC profile %r uses the old key max_concurrent_jobs; rename it "
+            "to max_num_of_concurrent_jobs in ~/.alomancy/hpc_config.yaml "
+            "(or re-run 'alomancy add-hpc').",
+            hpc.get("hpc_name"),
+        )
+        return int(legacy_cap)
+    return _DEFAULT_MAX_NUM_OF_CONCURRENT_JOBS
 
 
 def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInfo:
@@ -179,7 +194,7 @@ def get_remote_info(job_dict, input_files: list[str] | None = None) -> RemoteInf
             num_nodes=1,
             partitions=job_dict["hpc"]["partitions"],
         ),
-        max_concurrent_jobs=_resolve_max_concurrent_jobs(job_dict),
+        max_num_of_concurrent_jobs=_resolve_max_concurrent_jobs(job_dict),
         # lock_timeout intentionally left at RemoteInfo's own default (None
         # -- wait indefinitely for the per-host ssh-call lock). This used
         # to be set to time_to_sec(job_dict["max_time"]), so a job queued

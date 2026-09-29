@@ -143,7 +143,7 @@ def acquire_local_expyre_lock() -> None:
 # job.start() (mkdir/stage-input/sbatch submit) and
 # sync_remote_results_status() (squeue status + rsync results, called from
 # inside get_results()'s polling loop). Both shell out over that host's own
-# shared multiplexed control connection; letting max_concurrent_jobs threads
+# shared multiplexed control connection; letting max_num_of_concurrent_jobs threads
 # hit either one simultaneously can exceed whatever session/connection cap
 # the remote sshd enforces, at which point the excess sessions silently fall
 # back to a fresh, separately-authenticated connection that hangs forever if
@@ -240,7 +240,7 @@ def _ensure_expyre_sync_serialized() -> None:
     actually shells out: system.scheduler.status(...) (ssh squeue-equivalent)
     and system.get_remotes(...) (ssh/rsync). Every job being monitored runs
     its own independent get_results() loop in its own thread, so without
-    this, up to max_concurrent_jobs threads can trigger these simultaneously
+    this, up to max_num_of_concurrent_jobs threads can trigger these simultaneously
     -- this was observed in production as a stuck ``squeue`` subprocess
     exactly like the stuck job.start() calls this module already guards
     against.
@@ -703,14 +703,14 @@ class RemoteJobExecutor:
 
     def run_all_jobs_bounded(self) -> list[Any]:
         """Start and wait for all submitted jobs, keeping at most
-        remote_info.max_concurrent_jobs started at once. The instant one
+        remote_info.max_num_of_concurrent_jobs started at once. The instant one
         finishes (success or failure), the next pending job is started to
         fill its slot -- ThreadPoolExecutor provides this rolling-window
         scheduling for free. Returned results stay index-aligned with the
         job_configs passed to submit_multiple_jobs, regardless of the order
         jobs actually complete in. Every individual ssh-invoking call (job
         start, and each job's own status/result sync while being monitored)
-        is serialized per HPC host regardless of max_concurrent_jobs -- see
+        is serialized per HPC host regardless of max_num_of_concurrent_jobs -- see
         _get_ssh_call_lock -- but the surrounding wait/poll cadence keeps
         real concurrency."""
         if not self.jobs:
@@ -719,15 +719,17 @@ class RemoteJobExecutor:
         _ensure_expyre_db_thread_safe()
         _ensure_expyre_sync_serialized()
 
-        max_concurrent_jobs = getattr(self.remote_info, "max_concurrent_jobs", 20)
-        if not max_concurrent_jobs or max_concurrent_jobs < 1:
+        max_num_of_concurrent_jobs = getattr(
+            self.remote_info, "max_num_of_concurrent_jobs", 20
+        )
+        if not max_num_of_concurrent_jobs or max_num_of_concurrent_jobs < 1:
             logger.warning(
-                "max_concurrent_jobs=%s is invalid; falling back to 1 "
+                "max_num_of_concurrent_jobs=%s is invalid; falling back to 1 "
                 "(serial submission).",
-                max_concurrent_jobs,
+                max_num_of_concurrent_jobs,
             )
-            max_concurrent_jobs = 1
-        max_workers = min(max_concurrent_jobs, len(self.jobs))
+            max_num_of_concurrent_jobs = 1
+        max_workers = min(max_num_of_concurrent_jobs, len(self.jobs))
 
         results: list[Any] = [None] * len(self.jobs)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:

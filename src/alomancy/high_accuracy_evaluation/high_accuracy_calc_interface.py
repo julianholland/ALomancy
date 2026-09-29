@@ -126,7 +126,7 @@ def high_accuracy_evaluation(
     prior partial run already completed (globbing existing batch
     directories) rather than an all-or-nothing restart. ``config`` carries
     only evaluator-specific settings (``evaluator``, ``qe_kwargs``/
-    ``vasp_kwargs``, ``fmax``, ``relax_max_steps``, ``max_go_time``);
+    ``vasp_kwargs``, ``fmax``, ``max_num_of_relax_steps``, ``max_go_time``);
     ``name``/``hpc``/``max_time`` are explicit kwargs, reassembled into the
     single config dict the calculator-specific ``sp``/``go`` workers still
     expect (unchanged from today) -- including translating
@@ -258,6 +258,18 @@ def high_accuracy_evaluation(
                     read(completed_file, format="extxyz"), str(completed_file)
                 )
             )
+
+    # Jobs were submitted but the phase has no results at all: a systematic
+    # problem (bad calculator input, broken remote install), not bad luck.
+    # Marking the phase done would permanently record zero new structures.
+    if structures and not high_accuracy_structures:
+        raise RuntimeError(
+            f"All {len(structures)} high-accuracy evaluation jobs in "
+            f"{eval_dir / f'batch_{current_batches}'} failed and no earlier "
+            f"results exist; not marking {_PHASE} done. Check the job errors "
+            "above and the calculator output files in that directory, fix "
+            "the cause, then rerun."
+        )
 
     sentinel_results.parent.mkdir(parents=True, exist_ok=True)
     write(sentinel_results, high_accuracy_structures, format="extxyz")

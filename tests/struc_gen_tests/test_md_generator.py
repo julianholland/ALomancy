@@ -52,7 +52,7 @@ class TestRunMdCalculatorParameter:
             run_md(
                 structure_generation_job_dict={
                     "name": "t",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -78,7 +78,7 @@ class TestRunMdCalculatorParameter:
             run_md(
                 structure_generation_job_dict={
                     "name": "t",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -198,11 +198,7 @@ class TestGenerate:
                 seed_atoms=seeds,
                 model_path="model.pt",
                 config={
-                    "md_kwargs": {
-                        "structure_selection_kwargs": {
-                            "max_number_of_concurrent_jobs": 3
-                        }
-                    }
+                    "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 3}}
                 },
                 base_name="al_loop_0",
                 name="md",
@@ -251,9 +247,7 @@ class TestGenerate:
                     "md_kwargs": {
                         "steps": 2000,
                         "temperature": 1000,
-                        "structure_selection_kwargs": {
-                            "max_number_of_concurrent_jobs": 3
-                        },
+                        "structure_selection_kwargs": {"num_of_md_starts": 3},
                         "trainer": "mace",
                         "trainer_config": {"device": "cpu"},
                     }
@@ -386,11 +380,7 @@ class TestGenerate:
                 seed_atoms=_seed_atoms(10),
                 model_path="model.pt",
                 config={
-                    "md_kwargs": {
-                        "structure_selection_kwargs": {
-                            "max_number_of_concurrent_jobs": 3
-                        }
-                    }
+                    "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 3}}
                 },
                 base_name="al_loop_0",
                 name="md",

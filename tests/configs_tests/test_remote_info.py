@@ -1,4 +1,4 @@
-"""Unit tests for RemoteInfo/get_remote_info max_concurrent_jobs resolution."""
+"""Unit tests for RemoteInfo/get_remote_info max_num_of_concurrent_jobs resolution."""
 
 import pytest
 
@@ -19,7 +19,7 @@ def test_default_when_nothing_set():
     from alomancy.configs.remote_info import get_remote_info
 
     info = get_remote_info(_job_dict())
-    assert info.max_concurrent_jobs == 20
+    assert info.max_num_of_concurrent_jobs == 20
 
 
 @pytest.mark.unit
@@ -45,8 +45,8 @@ def test_lock_timeout_defaults_to_none():
 def test_hpc_profile_value_used():
     from alomancy.configs.remote_info import get_remote_info
 
-    info = get_remote_info(_job_dict(hpc_extra={"max_concurrent_jobs": 7}))
-    assert info.max_concurrent_jobs == 7
+    info = get_remote_info(_job_dict(hpc_extra={"max_num_of_concurrent_jobs": 7}))
+    assert info.max_num_of_concurrent_jobs == 7
 
 
 @pytest.mark.unit
@@ -54,5 +54,44 @@ def test_remote_info_default_constructor_arg():
     from alomancy.configs.remote_info import RemoteInfo
 
     info = RemoteInfo(sys_name="s", job_name="j", resources={})
-    assert info.max_concurrent_jobs == 20
+    assert info.max_num_of_concurrent_jobs == 20
     assert info.lock_timeout is None
+
+
+def _capture_warnings(logger_name):
+    import logging
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    logging.getLogger(logger_name).addHandler(handler)
+    return records, handler
+
+
+@pytest.mark.unit
+def test_legacy_max_concurrent_jobs_honoured_with_warning():
+    """Profiles written by add-hpc before the num_of_* rename still work."""
+    import logging
+
+    from alomancy.configs.remote_info import get_remote_info
+
+    records, handler = _capture_warnings("alomancy.configs.remote_info")
+    try:
+        info = get_remote_info(_job_dict(hpc_extra={"max_concurrent_jobs": 5}))
+    finally:
+        logging.getLogger("alomancy.configs.remote_info").removeHandler(handler)
+    assert info.max_num_of_concurrent_jobs == 5
+    assert any(
+        r.levelno == logging.WARNING and "max_concurrent_jobs" in r.getMessage()
+        for r in records
+    )
+
+
+@pytest.mark.unit
+def test_new_key_wins_over_legacy_key():
+    from alomancy.configs.remote_info import get_remote_info
+
+    info = get_remote_info(
+        _job_dict(hpc_extra={"max_num_of_concurrent_jobs": 7, "max_concurrent_jobs": 5})
+    )
+    assert info.max_num_of_concurrent_jobs == 7

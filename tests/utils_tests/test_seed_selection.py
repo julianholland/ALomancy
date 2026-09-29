@@ -104,7 +104,7 @@ class TestSelectDiverseSeeds:
             base_name="test",
             job_name="md",
             eligible_structures=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
         )
         assert len(result) == 3
 
@@ -114,7 +114,7 @@ class TestSelectDiverseSeeds:
             base_name="test",
             job_name="md",
             eligible_structures=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
         )
         assert len(result) == 5
 
@@ -124,7 +124,7 @@ class TestSelectDiverseSeeds:
             base_name="test",
             job_name="md",
             eligible_structures=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
             seed=803,
         )
         md_seeds = [a.info["md_seed"] for a in result]
@@ -138,7 +138,7 @@ class TestSelectDiverseSeeds:
             base_name="al_loop_1",
             job_name="md",
             eligible_structures=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
         )
         assert all(a.info["config_type"] == "al_loop_1_md" for a in result)
         assert all("job_id" in a.info for a in result)
@@ -151,7 +151,7 @@ class TestSelectDiverseSeeds:
             base_name="al_loop_1",
             job_name="md",
             eligible_structures=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
         )
         assert all(a.info["config_type"] == "al_loop_0" for a in structures)
 
@@ -163,7 +163,7 @@ class TestSelectDiverseSeeds:
             base_name="test",
             job_name="md",
             eligible_structures=structures,
-            max_number_of_concurrent_jobs=2,
+            num_of_md_starts=2,
             enforce_chemical_diversity=True,
         )
         assert {a.get_chemical_formula() for a in result} == {"H2", "O2"}

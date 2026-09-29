@@ -87,7 +87,7 @@ from alomancy.configs.config_dictionaries import load_dictionaries
 from alomancy.core.committee_uncertainty_workflow import build_workflow
 
 # Load job configuration from YAML -- every workflow-level setting
-# (initial_train_file_path, number_of_al_loops, verbose, ...) lives under
+# (initial_train_file_path, num_of_al_loops, verbose, ...) lives under
 # the YAML's `general:` section; build_workflow() takes only jobs_dict.
 jobs_dict = load_dictionaries("standard_config.yaml")
 
@@ -105,10 +105,10 @@ general:
   elements: ["C", "O"]   # atomic symbols, not atomic numbers
   initial_train_file_path: "results/initialization/train_set.xyz"
   initial_test_file_path: "results/initialization/test_set.xyz"
-  number_of_al_loops: 5
+  num_of_al_loops: 5
   verbose: 1
   committee_uncertainty_kwargs:
-    number_models_in_committee: 5
+    num_of_models_in_committee: 5
     target_config_types: ["IsolatedAtom"]
     test_ratio: 0.1
 

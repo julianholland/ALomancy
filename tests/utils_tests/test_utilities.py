@@ -147,7 +147,7 @@ class _FakeExPyReJob:
 
 
 def _fake_executor(
-    max_concurrent_jobs,
+    max_num_of_concurrent_jobs,
     jobs,
     sys_name="test-hpc",
     lock_timeout=None,
@@ -161,7 +161,7 @@ def _fake_executor(
         header_extra=[],
         exact_fit=True,
         partial_node=False,
-        max_concurrent_jobs=max_concurrent_jobs,
+        max_num_of_concurrent_jobs=max_num_of_concurrent_jobs,
         lock_timeout=lock_timeout,
         resubmit_killed_jobs=resubmit_killed_jobs,
     )
@@ -180,7 +180,7 @@ def write_temporary_yaml():
             "name": "mlip_test",
             "max_time": "value",
             "hpc": {"hpc_name": "test-hpc"},
-            "size_of_committee": 5,
+            "num_of_models_in_committee": 5,
         },
         "structure_generation": {
             "name": "struc_gen_test",
@@ -247,7 +247,7 @@ class TestRemoteJobExecutor:
 
     @pytest.mark.unit
     def test_never_exceeds_max_concurrent_jobs(self, tmp_path):
-        """Peak concurrently-started jobs never exceeds max_concurrent_jobs."""
+        """Peak concurrently-started jobs never exceeds max_num_of_concurrent_jobs."""
         tracker = _ConcurrencyTracker()
         jobs = [
             _FakeExPyReJob(
@@ -258,7 +258,7 @@ class TestRemoteJobExecutor:
             )
             for i in range(8)
         ]
-        executor = _fake_executor(max_concurrent_jobs=3, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=3, jobs=jobs)
         results = executor.run_all_jobs_bounded()
 
         assert tracker.peak <= 3
@@ -267,8 +267,8 @@ class TestRemoteJobExecutor:
     @pytest.mark.unit
     def test_job_start_is_serialized_while_monitoring_stays_concurrent(self, tmp_path):
         """job.start() (the ssh-heavy staging/submission call) never overlaps
-        across threads even when max_concurrent_jobs lets many jobs be
-        monitored at once -- otherwise max_concurrent_jobs simultaneous ssh
+        across threads even when max_num_of_concurrent_jobs lets many jobs be
+        monitored at once -- otherwise max_num_of_concurrent_jobs simultaneous ssh
         sessions burst against one shared multiplexed control connection,
         which is what caused jobs to hang indefinitely on an unattended
         interactive-auth prompt in production. Monitoring (get_results) must
@@ -292,7 +292,7 @@ class TestRemoteJobExecutor:
             )
             for i in range(6)
         ]
-        executor = _fake_executor(max_concurrent_jobs=6, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=6, jobs=jobs)
         executor.run_all_jobs_bounded()
 
         assert start_tracker.peak == 1
@@ -304,7 +304,7 @@ class TestRemoteJobExecutor:
         on its own independent per-job schedule to check remote status and
         pull back files -- shelling out over ssh (squeue-equivalent + rsync)
         exactly like job.start() does. Without serializing this too,
-        max_concurrent_jobs monitoring threads can trigger it simultaneously
+        max_num_of_concurrent_jobs monitoring threads can trigger it simultaneously
         and reproduce the same ssh-session-burst hang job.start()'s lock
         alone doesn't cover -- observed in production as a stuck ``squeue``
         subprocess. Two calls for the same host must never run at once, even
@@ -433,7 +433,7 @@ class TestRemoteJobExecutor:
         try:
             jobs = [_FakeExPyReJob("job0", tmp_path / "job0")]
             executor = _fake_executor(
-                max_concurrent_jobs=1,
+                max_num_of_concurrent_jobs=1,
                 jobs=jobs,
                 sys_name=sys_name,
                 lock_timeout=0.05,
@@ -468,7 +468,7 @@ class TestRemoteJobExecutor:
                 "job3", tmp_path / "job3", duration=0.02, event_tracker=events
             ),
         ]
-        executor = _fake_executor(max_concurrent_jobs=2, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=2, jobs=jobs)
         executor.run_all_jobs_bounded()
 
         job0_finish = events.events["job0"]["finish"]
@@ -489,7 +489,7 @@ class TestRemoteJobExecutor:
             _FakeExPyReJob("job1", tmp_path / "job1", duration=0.01, should_fail=True),
             _FakeExPyReJob("job2", tmp_path / "job2", duration=0.01),
         ]
-        executor = _fake_executor(max_concurrent_jobs=3, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=3, jobs=jobs)
         results = executor.run_all_jobs_bounded()
 
         assert results == ["job0", None, "job2"]
@@ -503,7 +503,7 @@ class TestRemoteJobExecutor:
             _FakeExPyReJob("job1", tmp_path / "job1", result=1, duration=0.01),
             _FakeExPyReJob("job2", tmp_path / "job2", result=2, duration=0.08),
         ]
-        executor = _fake_executor(max_concurrent_jobs=3, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=3, jobs=jobs)
         results = executor.run_all_jobs_bounded()
 
         assert results == [0, 1, 2]
@@ -531,7 +531,7 @@ class TestRemoteJobExecutor:
         al_logger.addHandler(handler)
         try:
             jobs = [_FakeExPyReJob("job0", tmp_path / "job0", duration=0.0)]
-            executor = _fake_executor(max_concurrent_jobs=1, jobs=jobs)
+            executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=jobs)
             executor.run_all_jobs_bounded()
         finally:
             al_logger.removeHandler(handler)
@@ -557,7 +557,7 @@ class TestRemoteJobExecutor:
             result="the real result",
             get_results_side_effects=[RuntimeError, RuntimeError, None],
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
         with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
             results = executor.run_all_jobs_bounded()
@@ -580,7 +580,7 @@ class TestRemoteJobExecutor:
             duration=0.0,
             get_results_side_effects=[RuntimeError] * 10,
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
         with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
             results = executor.run_all_jobs_bounded()
@@ -603,7 +603,7 @@ class TestRemoteJobExecutor:
             duration=0.0,
             get_results_side_effects=[ExPyReTimeoutError, ExPyReTimeoutError],
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
         with patch.object(executor_module, "_TRANSPORT_RETRY_BACKOFF_SECONDS", 0.001):
             results = executor.run_all_jobs_bounded()
@@ -627,7 +627,7 @@ class TestRemoteJobExecutor:
                 (RuntimeError("remote function raised"), "failed")
             ],
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
         results = executor.run_all_jobs_bounded()
 
@@ -649,7 +649,7 @@ class TestRemoteJobExecutor:
             get_results_side_effects=[(ExPyReJobDiedError("gone"), "died")],
         )
         executor = _fake_executor(
-            max_concurrent_jobs=1, jobs=[job], resubmit_killed_jobs=True
+            max_num_of_concurrent_jobs=1, jobs=[job], resubmit_killed_jobs=True
         )
 
         results = executor.run_all_jobs_bounded()
@@ -669,7 +669,7 @@ class TestRemoteJobExecutor:
             duration=0.0,
             get_results_side_effects=[(ExPyReJobDiedError("gone"), "died")],
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
         results = executor.run_all_jobs_bounded()
 
@@ -685,7 +685,7 @@ class TestRemoteJobExecutor:
         (for mlip_committee jobs: every checkpoint synced during training)
         is pure leftover storage cost from then on."""
         jobs = [_FakeExPyReJob("job0", tmp_path / "job0", duration=0.0)]
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=jobs)
         executor.run_all_jobs_bounded()
 
         executor.cleanup_jobs()
@@ -701,7 +701,7 @@ class TestRemoteJobExecutor:
         jobs = [
             _FakeExPyReJob("job0", tmp_path / "job0", duration=0.0, should_fail=True)
         ]
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=jobs)
         executor.run_all_jobs_bounded()
 
         executor.cleanup_jobs()
@@ -718,7 +718,7 @@ class TestRemoteJobExecutor:
             _FakeExPyReJob("job0", tmp_path / "job0", duration=0.0),
             _FakeExPyReJob("job1", tmp_path / "job1", duration=0.0, should_fail=True),
         ]
-        executor = _fake_executor(max_concurrent_jobs=2, jobs=jobs)
+        executor = _fake_executor(max_num_of_concurrent_jobs=2, jobs=jobs)
         executor.run_all_jobs_bounded()
 
         executor.cleanup_jobs()
@@ -741,7 +741,7 @@ class TestRemoteJobExecutor:
             duration=0.0,
             get_results_side_effects=[RuntimeError] * 10,
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
         executor.remote_info.check_interval = 0.001
         import alomancy.remote_submission.executor as executor_module
 
@@ -837,7 +837,7 @@ class TestSubmitN:
             header_extra=[],
             exact_fit=True,
             partial_node=False,
-            max_concurrent_jobs=3,
+            max_num_of_concurrent_jobs=3,
             lock_timeout=None,
             resubmit_killed_jobs=False,
         )
@@ -939,7 +939,7 @@ class TestSalvagePartialOutput:
         job = _FakeExPyReJob(
             "job0", tmp_path / "stage" / "job0", duration=0.0, should_fail=True
         )
-        executor = _fake_executor(max_concurrent_jobs=1, jobs=[job])
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
         # job.start() (called inside _run_single_job) creates stage_dir;
         # populate the salvageable output only after that so it mimics data
@@ -1192,9 +1192,9 @@ class TestConfigurationUtils:
 
         # Test mlip_committee specific fields
         mlip_config = config["mlip_committee"]
-        assert "size_of_committee" in mlip_config
-        assert isinstance(mlip_config["size_of_committee"], int)
-        assert mlip_config["size_of_committee"] > 0
+        assert "num_of_models_in_committee" in mlip_config
+        assert isinstance(mlip_config["num_of_models_in_committee"], int)
+        assert mlip_config["num_of_models_in_committee"] > 0
 
         # Test structure_generation specific fields
         struct_gen_config = config["structure_generation"]
@@ -1221,7 +1221,7 @@ class TestConfigurationUtils:
         custom_config = {
             "mlip_committee": {
                 "name": "custom_mlip",
-                "size_of_committee": 10,
+                "num_of_models_in_committee": 10,
                 "max_time": "8H",
                 "hpc": {"hpc_name": "custom-hpc"},
             },
@@ -1242,7 +1242,7 @@ class TestConfigurationUtils:
 
         config = mock_load_dict()
 
-        assert config["mlip_committee"]["size_of_committee"] == 10
+        assert config["mlip_committee"]["num_of_models_in_committee"] == 10
         assert config["structure_generation"]["number_of_concurrent_jobs"] == 8
 
 

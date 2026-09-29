@@ -3,11 +3,11 @@ general:
   elements: ["C", "Na"]  # atomic symbols, not atomic numbers -- match your system
   initial_train_file_path: "input_files/C_Na_amorphous_5255_train.xyz"
   initial_test_file_path: "input_files/C_Na_amorphous_583_test.xyz"
-  number_of_al_loops: 25
+  num_of_al_loops: 25
   verbose: 1
   start_loop: 0
   committee_uncertainty_kwargs:
-    number_models_in_committee: 5
+    num_of_models_in_committee: 5
     target_config_types:
       - "IsolatedAtom"
       - "init_dimer"
@@ -17,18 +17,18 @@ initialization:
   name: "initialization"
   max_time: "2H"
   mp_kwargs:
-    max_atom_number: 20
+    max_num_of_atoms: 20
     mp_max_energy_above_hull: 0.1
   dimer_kwargs:
-    num_dimers_per_combo: 10
+    num_of_dimers_per_combo: 10
   trimer_kwargs:
-    num_trimers_per_combo: 5
+    num_of_trimers_per_combo: 5
   amorphous_kwargs:
-    num_amorphous: 300
-    amorphous_atom_number: 20
+    num_of_amorphous_structures: 300
+    num_of_atoms_per_amorphous: 20
     densities_list: [1.0, 2.0, 3.0]
   stretch_compress_targets_kwargs:
-    num_stretch_compress_per_target: 5
+    num_of_stretch_compress_per_target: 5
     max_lattice_deformation: 0.2
   hpc: 'raven'
 
@@ -56,7 +56,7 @@ training:
 structure_generation:
   name: "structure_generation"
   generator: "ezga"
-  desired_number_of_structures: 50
+  desired_num_of_structures: 50
   max_time: "10H"
   structure_selection_kwargs:
     chem_formula_list: null

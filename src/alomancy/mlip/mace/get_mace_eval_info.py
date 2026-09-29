@@ -30,7 +30,7 @@ def get_mace_eval_info(
         )
         if metric_files:
             expected = mlip_committee_job_dict.get(
-                "size_of_committee", len(metric_files)
+                "num_of_models_in_committee", len(metric_files)
             )
             expected_dirs = {f"fit_{i}" for i in range(expected)}
             if {p.parent.name for p in metric_files} != expected_dirs:
@@ -150,7 +150,7 @@ def select_best_committee_model(
     py``, the checkpoint-evaluation test suite) don't need to change.
     """
     name = mlip_committee_job_dict["name"]
-    n_fits = mlip_committee_job_dict["size_of_committee"]
+    n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
     committee_dir = Path("results", base_name, name)
 
     def _try_read(fit_dir: Path, split: str) -> tuple[float, Path] | None:

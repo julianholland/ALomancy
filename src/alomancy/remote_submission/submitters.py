@@ -28,7 +28,7 @@ def ase_remote_submitter(
     function_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Submit one job per structure in input_atoms_list to a shared
-    RemoteJobExecutor pool (bounded by remote_info.max_concurrent_jobs).
+    RemoteJobExecutor pool (bounded by remote_info.max_num_of_concurrent_jobs).
 
     per_structure_function, when given, must be the same length as
     input_atoms_list and picks which function each structure's job runs
@@ -191,16 +191,16 @@ def committee_remote_submitter(
     base_name: str,
     function: Callable,
     seed: int = 803,
-    size_of_committee: int = 5,
+    num_of_models_in_committee: int = 5,
     function_kwargs: dict[str, Any] | None = None,
     fit_indices: list[int] | None = None,
 ) -> None:
-    """Submit `size_of_committee` committee training jobs, one per fit index.
+    """Submit `num_of_models_in_committee` committee training jobs, one per fit index.
 
     fit_indices
         Explicit committee-member indices to (re)train, e.g. to backfill only
         the specific fits missing from a prior partial run. Defaults to
-        ``range(size_of_committee)`` (every member, indices 0..N-1).
+        ``range(num_of_models_in_committee)`` (every member, indices 0..N-1).
         Each job's output directory is keyed off its own index (not its
         position in this list) so it matches the `fit_{fit_idx}` directory
         `mace_fit` itself writes to (`mlip/mace/mace_wfl.py`) — using the
@@ -213,7 +213,11 @@ def committee_remote_submitter(
 
     executor = RemoteJobExecutor(remote_info)
 
-    indices = fit_indices if fit_indices is not None else list(range(size_of_committee))
+    indices = (
+        fit_indices
+        if fit_indices is not None
+        else list(range(num_of_models_in_committee))
+    )
 
     job_configs = [
         {

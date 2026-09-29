@@ -21,7 +21,7 @@ set.
 
 build_workflow() takes only jobs_dict now -- every setting that used to
 be a separate Python kwarg here (initial_train_file_path,
-number_of_al_loops, verbose, start_loop, ...) lives in config.yaml's
+num_of_al_loops, verbose, start_loop, ...) lives in config.yaml's
 general section instead (see committee_uncertainty_workflow.py's module
 docstring for the full list).
 """

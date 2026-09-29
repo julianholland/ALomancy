@@ -134,13 +134,13 @@ def minimal_jobs_dict():
         },
         "mlip_committee": {
             "name": "mlip_committee",
-            "size_of_committee": 3,
+            "num_of_models_in_committee": 3,
             "max_time": "1H",
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
         "structure_generation": {
             "name": "structure_generation",
-            "desired_number_of_structures": 5,
+            "desired_num_of_structures": 5,
             "max_time": "30m",
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },

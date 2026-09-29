@@ -485,7 +485,7 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": 10,
         "mace_fit_kwargs": {},
     }
@@ -514,7 +514,7 @@ def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": "dynamic",
         "mace_fit_kwargs": {},
     }
@@ -541,7 +541,7 @@ def test_plot_training_curves_dynamic_epochs_uses_sidecar(tmp_path, monkeypatch)
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": "dynamic",
         "mace_fit_kwargs": {},
     }
@@ -565,7 +565,7 @@ def test_plot_training_curves_metrics_csv_has_expected_columns(tmp_path, monkeyp
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": 5,
         "mace_fit_kwargs": {},
     }
@@ -589,7 +589,7 @@ def test_plot_training_curves_no_data_no_output(tmp_path, monkeypatch):
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 2,
+        "num_of_models_in_committee": 2,
         "max_num_epochs": 80,
         "mace_fit_kwargs": {},
     }
@@ -757,7 +757,7 @@ def test_plot_dft_vs_model_uses_formation_energy_when_isolated_atoms_present(
 
     mlip_plots.plot_dft_vs_model(
         "al_loop_0",
-        {"name": "mlip_committee", "size_of_committee": 1},
+        {"name": "mlip_committee", "num_of_models_in_committee": 1},
         seed=803,
         plots_dir=tmp_path / "plots",
         db=db,
@@ -820,7 +820,7 @@ def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
     try:
         mlip_plots.plot_dft_vs_model(
             "al_loop_0",
-            {"name": "mlip_committee", "size_of_committee": 1},
+            {"name": "mlip_committee", "num_of_models_in_committee": 1},
             seed=803,
             plots_dir=tmp_path / "plots",
             db=db,
@@ -872,7 +872,7 @@ def test_plot_dft_vs_model_e0_exception_logs_only_one_warning(
     try:
         mlip_plots.plot_dft_vs_model(
             "al_loop_0",
-            {"name": "mlip_committee", "size_of_committee": 1},
+            {"name": "mlip_committee", "num_of_models_in_committee": 1},
             seed=803,
             plots_dir=tmp_path / "plots",
             db=db,
@@ -906,7 +906,7 @@ def test_plot_dft_vs_model_e0_computed_once_per_call(tmp_path, monkeypatch, h_at
 
     mlip_plots.plot_dft_vs_model(
         "al_loop_0",
-        {"name": "mlip_committee", "size_of_committee": 3},
+        {"name": "mlip_committee", "num_of_models_in_committee": 3},
         seed=803,
         plots_dir=tmp_path / "plots",
         db=db,

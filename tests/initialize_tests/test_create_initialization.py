@@ -99,9 +99,9 @@ class TestCreateInitializationAtomsList:
                 work_dir=str(tmp_path),
                 elements=["H"],
                 mp_structures=False,
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         mock_mp.assert_not_called()
@@ -122,9 +122,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         mock_mp.assert_called_once()
@@ -142,9 +142,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         mock_single.assert_not_called()
@@ -165,9 +165,9 @@ class TestCreateInitializationAtomsList:
                 mp_structures=False,
                 single_atoms=True,
                 isolated_atoms_override=["O"],
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         elements_called = [c.kwargs["element"] for c in mock_single.call_args_list]
@@ -187,9 +187,9 @@ class TestCreateInitializationAtomsList:
                 mp_structures=False,
                 single_atoms=True,
                 isolated_atoms_override=[],
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         mock_single.assert_not_called()
@@ -208,9 +208,9 @@ class TestCreateInitializationAtomsList:
                 mp_structures=False,
                 single_atoms=False,
                 dimer_override={"H2": 0},
-                num_dimers_per_combo=5,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=5,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         mock_dimer.assert_not_called()
@@ -231,9 +231,9 @@ class TestCreateInitializationAtomsList:
                 mp_structures=False,
                 single_atoms=False,
                 dimer_override={"H2": 3},
-                num_dimers_per_combo=10,
-                num_trimers_per_combo=1,
-                num_amorphous=1,
+                num_of_dimers_per_combo=10,
+                num_of_trimers_per_combo=1,
+                num_of_amorphous_structures=1,
             )
 
         assert mock_dimer.call_count == 1
@@ -252,10 +252,10 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=0,
+                num_of_dimers_per_combo=0,
                 trimer_override={"H3": 0},
-                num_trimers_per_combo=5,
-                num_amorphous=1,
+                num_of_trimers_per_combo=5,
+                num_of_amorphous_structures=1,
             )
 
         mock_trimer.assert_not_called()
@@ -276,9 +276,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
             )
 
         mock_amorphous.assert_not_called()
@@ -299,9 +299,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=100,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=100,
                 amorphous_override=20,
             )
 
@@ -309,7 +309,7 @@ class TestCreateInitializationAtomsList:
         assert mock_amorphous.call_args.kwargs["num_structures"] == 20
 
     def test_max_atom_number_and_amorphous_atom_number_are_independent(self, tmp_path):
-        """max_atom_number (MP fetch cap) and amorphous_atom_number (amorphous
+        """max_num_of_atoms (MP fetch cap) and num_of_atoms_per_amorphous (amorphous
         cell size) are separate knobs -- changing one must not affect the
         other's call, and each generator must receive its own value."""
         from alomancy.initialize.initialization_structure_list import (
@@ -331,11 +331,11 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=1,
-                max_atom_number=50,
-                amorphous_atom_number=8,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=1,
+                max_num_of_atoms=50,
+                num_of_atoms_per_amorphous=8,
                 mp_max_energy_above_hull=0.05,
             )
 
@@ -367,9 +367,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=1,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=1,
             )
 
         assert mock_mp.call_args.kwargs["max_num_atoms"] == 20
@@ -397,9 +397,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=1,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=1,
                 mp_max_energy_above_hull=0.3,
             )
 
@@ -425,9 +425,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=0,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=1,
             )
 
         assert (tmp_path / "initialization_structures_generated.xyz").exists()
@@ -460,10 +460,10 @@ class TestCreateInitializationAtomsList:
                 elements=["Na", "Cl"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
-                num_stretch_compress_per_target=3,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
+                num_of_stretch_compress_per_target=3,
                 target_config_types=["init_MP"],
             )
 
@@ -491,9 +491,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
                 target_config_types=["init_MP"],
             )
 
@@ -528,10 +528,10 @@ class TestCreateInitializationAtomsList:
                 elements=["Na", "Cl"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
-                num_stretch_compress_per_target=3,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
+                num_of_stretch_compress_per_target=3,
                 target_config_types=["init_dimer"],  # not "init_MP"
             )
 
@@ -563,10 +563,10 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
-                num_stretch_compress_per_target=2,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
+                num_of_stretch_compress_per_target=2,
                 target_config_types=["init_dimer"],
             )
 
@@ -602,10 +602,10 @@ class TestCreateInitializationAtomsList:
                 elements=["Na", "Cl"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
-                num_rattled_per_target=4,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
+                num_of_rattled_per_target=4,
                 rattle_standard_deviation=0.02,
                 target_config_types=["init_MP"],
             )
@@ -615,7 +615,7 @@ class TestCreateInitializationAtomsList:
         assert mock_rattle.call_args_list[0].kwargs["rattle_standard_deviation"] == 0.02
 
     def test_rattle_num_structures_zero_when_not_configured(self, tmp_path):
-        """num_rattled_per_target defaults to 0 -- create_rattle_atoms_list
+        """num_of_rattled_per_target defaults to 0 -- create_rattle_atoms_list
         is still called per target (matching create_stretch_compress_atoms_
         list's own pattern) but with num_structures=0, which it no-ops on
         internally."""
@@ -643,9 +643,9 @@ class TestCreateInitializationAtomsList:
                 elements=["Na", "Cl"],
                 mp_structures=True,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
                 target_config_types=["init_MP"],
             )
 
@@ -673,9 +673,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=0,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=0,
                 target_config_types=["init_MP"],
             )
 
@@ -705,9 +705,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=True,
-                num_dimers_per_combo=1,
-                num_trimers_per_combo=0,
-                num_amorphous=1,
+                num_of_dimers_per_combo=1,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=1,
             )
 
         # single + dimer + amorphous = 3
@@ -734,9 +734,9 @@ class TestCreateInitializationAtomsList:
                 elements=["H"],
                 mp_structures=False,
                 single_atoms=False,
-                num_dimers_per_combo=0,
-                num_trimers_per_combo=0,
-                num_amorphous=10,
+                num_of_dimers_per_combo=0,
+                num_of_trimers_per_combo=0,
+                num_of_amorphous_structures=10,
                 densities_list=[0.8, 1.2],
             )
 

@@ -40,7 +40,7 @@ def test_committee_uses_common_split_seed_and_distinct_fit_indices(
         base_name="al_loop_0",
         function=lambda: None,
         seed=803,
-        size_of_committee=3,
+        num_of_models_in_committee=3,
     )
 
     configs = captured["job_configs"]
@@ -460,7 +460,10 @@ class TestSelectBestCommitteeModel:
     """Tests for select_best_committee_model — picks the fit with the lowest
     checkpoint-evaluation error, read from each fit's evaluation_metrics.json."""
 
-    JOB_DICT: typing.ClassVar[dict] = {"name": "mlip_committee", "size_of_committee": 3}
+    JOB_DICT: typing.ClassVar[dict] = {
+        "name": "mlip_committee",
+        "num_of_models_in_committee": 3,
+    }
 
     @staticmethod
     def _predicted(e_error: float, f_error: float | None = None) -> Atoms:

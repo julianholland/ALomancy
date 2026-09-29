@@ -102,7 +102,7 @@ def _run_go(
         trajectory=str(Path(out_dir, f"{opt_prefix}.traj")),
     )
     fmax = job_dict.get("fmax", 0.05)
-    steps = job_dict.get("relax_max_steps", 200)
+    steps = job_dict.get("max_num_of_relax_steps", 200)
     converged = opt.run(fmax=fmax, steps=steps)
     if not converged:
         logger.warning(

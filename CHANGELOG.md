@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Breaking: integer-count config keys renamed to a single `num_of_*` convention.** Old names now raise a `ValueError` at workflow construction listing every old key found and its replacement; they are not silently ignored.
+
+  | Section | Old | New |
+  |---|---|---|
+  | `general` | `number_of_al_loops` | `num_of_al_loops` |
+  | `general.committee_uncertainty_kwargs` | `number_models_in_committee` | `num_of_models_in_committee` |
+  | `structure_generation` | `desired_number_of_structures` | `desired_num_of_structures` |
+  | `structure_generation.structure_selection_kwargs` | `max_number_of_concurrent_jobs` | `num_of_md_starts` |
+  | `high_accuracy_evaluation` | `relax_max_steps` | `max_num_of_relax_steps` |
+  | `initialization.dimer_kwargs` | `num_dimers_per_combo` | `num_of_dimers_per_combo` |
+  | `initialization.trimer_kwargs` | `num_trimers_per_combo` | `num_of_trimers_per_combo` |
+  | `initialization.amorphous_kwargs` | `num_amorphous` | `num_of_amorphous_structures` |
+  | `initialization.amorphous_kwargs` | `amorphous_atom_number` | `num_of_atoms_per_amorphous` |
+  | `initialization.mp_kwargs` | `max_atom_number` | `max_num_of_atoms` |
+  | `initialization.stretch_compress_targets_kwargs` | `num_stretch_compress_per_target` | `num_of_stretch_compress_per_target` |
+  | `initialization.rattle_target_structures` | `num_rattled_per_target` | `num_of_rattled_per_target` |
+  | HPC profile (`~/.alomancy/hpc_config.yaml`) | `max_concurrent_jobs` | `max_num_of_concurrent_jobs` |
+
+  `max_number_of_concurrent_jobs` was renamed to `num_of_md_starts` rather than `max_num_of_concurrent_jobs` because it sets how many MD runs are started, not scheduler concurrency. It would otherwise have collided with the HPC profile key. The HPC profile's old `max_concurrent_jobs` is still read, with a warning, because `alomancy add-hpc` writes that file and every run on the machine shares it. Matching Python parameters and attributes were renamed too (e.g. `RemoteInfo.max_num_of_concurrent_jobs`, `create_initialization_atoms_list(num_of_dimers_per_combo=...)`), and the internal committee-size key `size_of_committee` is now `num_of_models_in_committee` everywhere. `md_wfl`/`dft_utils` read renamed keys on the remote node, so reinstall on every HPC host before the next submission.
+
+### Fixed
+- **`qe_kwargs` now merges into QE's defaults per namelist.** Previously, overriding one key in a namelist (e.g. `control.tstress`) replaced the whole namelist. That dropped `control.tprnfor`/`calculation`, so QE never printed forces and every DFT job failed with `forces not present in this calculation`.
+- **`high_accuracy_evaluation` no longer marks itself done with zero results.** If jobs were submitted but no results exist at all, it raises `RuntimeError` instead of writing an empty result, which would have recorded zero new structures for that loop permanently.
+- **Required `general.committee_uncertainty_kwargs` keys (`test_ratio`, `target_config_types`) are validated at workflow construction.** Before, they were first read after an AL loop's DFT had finished. Unrecognised `general` keys now log a warning.
+
 ## [0.9.0] - 2026-09-23
 
 ### Added

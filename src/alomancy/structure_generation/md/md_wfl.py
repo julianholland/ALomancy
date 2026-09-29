@@ -19,7 +19,7 @@ from alomancy.utils.seed_selection import select_diverse_seeds
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS = 10
+_DEFAULT_NUM_OF_MD_STARTS = 10
 
 # ALomancy's own defaults for the modular structure_generator entry point
 # (generate(), below) -- deliberately different from run_md's own built-in
@@ -35,7 +35,7 @@ _MD_KWARGS_DEFAULTS: dict[str, Any] = {
     "trainer": "mace",
     "trainer_config": {},
     "structure_selection_kwargs": {
-        "max_number_of_concurrent_jobs": _DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS,
+        "num_of_md_starts": _DEFAULT_NUM_OF_MD_STARTS,
         "enforce_chemical_diversity": False,
         "seed": 803,
     },
@@ -84,12 +84,12 @@ def run_md(
     if ensemble.lower() not in ("nvt", "npt"):
         raise ValueError(f"Unknown ensemble {ensemble!r}; must be 'nvt' or 'npt'.")
 
-    assert structure_generation_job_dict["desired_number_of_structures"] > 0, (
+    assert structure_generation_job_dict["desired_num_of_structures"] > 0, (
         "Number of structures must be greater than 0"
     )
     assert (
         steps
-        > structure_generation_job_dict["desired_number_of_structures"] / total_md_runs
+        > structure_generation_job_dict["desired_num_of_structures"] / total_md_runs
     ), (
         "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
     )
@@ -184,7 +184,7 @@ def run_md(
     snapshot_interval = (
         steps
         * total_md_runs
-        // (structure_generation_job_dict["desired_number_of_structures"] * 10)
+        // (structure_generation_job_dict["desired_num_of_structures"] * 10)
     )
 
     for _ in range(steps // snapshot_interval):
@@ -491,7 +491,7 @@ def generate(
     to _MD_KWARGS_DEFAULTS (steps=20000, temperature=300, timestep_fs=0.5)
     rather than run_md's own far-shorter defaults, merged with whatever the
     config overrides -- plus two nested keys: structure_selection_kwargs
-    (select_diverse_seeds' own params -- max_number_of_concurrent_jobs,
+    (select_diverse_seeds' own params -- num_of_md_starts,
     defaulting here to 10, enforce_chemical_diversity, seed) and
     trainer/trainer_config (which trainer registry entry built the model
     this MD run's calculator should use). Both live under md_kwargs rather
@@ -535,8 +535,8 @@ def generate(
         base_name=base_name,
         job_name=name,
         eligible_structures=seed_atoms,
-        max_number_of_concurrent_jobs=selection_kwargs.get(
-            "max_number_of_concurrent_jobs", _DEFAULT_MAX_NUMBER_OF_CONCURRENT_JOBS
+        num_of_md_starts=selection_kwargs.get(
+            "num_of_md_starts", _DEFAULT_NUM_OF_MD_STARTS
         ),
         enforce_chemical_diversity=selection_kwargs.get(
             "enforce_chemical_diversity", False

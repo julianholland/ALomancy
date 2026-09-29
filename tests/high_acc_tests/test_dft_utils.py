@@ -173,7 +173,7 @@ class TestRunGo:
     def test_fmax_and_steps_default_when_absent_from_job_dict(
         self, tmp_path, monkeypatch
     ):
-        """fmax/relax_max_steps default to today's hardcoded values (0.05,
+        """fmax/max_num_of_relax_steps default to today's hardcoded values (0.05,
         200) when the job dict doesn't set them -- preserves existing
         behavior for every caller that doesn't opt into a custom target."""
         captured = {}
@@ -197,7 +197,7 @@ class TestRunGo:
     def test_fmax_and_steps_read_from_job_dict_when_present(
         self, tmp_path, monkeypatch
     ):
-        """fmax/relax_max_steps are read from the job dict when present --
+        """fmax/max_num_of_relax_steps are read from the job dict when present --
         the channel high_force_threshold uses to drive relaxation targets."""
         captured = {}
 
@@ -215,7 +215,7 @@ class TestRunGo:
         _run_go(
             _cu_dimer(),
             out,
-            {"name": "x", "fmax": 5.0, "relax_max_steps": 500},
+            {"name": "x", "fmax": 5.0, "max_num_of_relax_steps": 500},
             lambda a, j, d: EMT(),
         )
 

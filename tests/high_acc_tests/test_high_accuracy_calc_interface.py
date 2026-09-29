@@ -38,6 +38,18 @@ def _atoms(symbol="H"):
     return a
 
 
+def _fake_submit(*, base_name, input_atoms_list, batch, **_kwargs):
+    """Stand-in for ase_remote_submitter that writes one completed result
+    per submitted structure, where the real submitter's jobs would."""
+    for i, atoms in enumerate(input_atoms_list):
+        d = Path(
+            f"results/{base_name}/high_accuracy_evaluation/batch_{batch}",
+            f"{ASE_OUTPUT_PREFIX}_{i}",
+        )
+        d.mkdir(parents=True, exist_ok=True)
+        ase_write(str(d / "high_accuracy_evaluation.xyz"), atoms, format="extxyz")
+
+
 def _call(structures, tmp_path, **overrides):
     # name must equal "high_accuracy_evaluation" -- ase_remote_submitter/
     # this module both hardcode that literal as the results subdirectory
@@ -94,7 +106,9 @@ class TestHighAccuracyEvaluation:
                 str(d / "high_accuracy_evaluation.xyz"), _atoms(), format="extxyz"
             )
 
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             result = _call([_atoms(), _atoms()], tmp_path)
 
         mock_sub.assert_not_called()
@@ -107,7 +121,9 @@ class TestHighAccuracyEvaluation:
         path) still read "qe_input_kwargs" directly -- new-style config
         uses the standardized "qe_kwargs" name, translated here."""
         monkeypatch.chdir(tmp_path)
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call(
                 [_atoms()],
                 tmp_path,
@@ -127,7 +143,9 @@ class TestHighAccuracyEvaluation:
         self, tmp_path, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call(
                 [_atoms()],
                 tmp_path,
@@ -149,7 +167,9 @@ class TestHighAccuracyEvaluation:
         d.mkdir(parents=True)
         ase_write(str(d / "high_accuracy_evaluation.xyz"), _atoms(), format="extxyz")
 
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call([_atoms() for _ in range(3)], tmp_path)
 
         mock_sub.assert_called_once()
@@ -162,7 +182,9 @@ class TestHighAccuracyEvaluation:
         go_atom.info["needs_relaxation"] = True
         sp_atom = _atoms("O")
 
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call([go_atom, sp_atom], tmp_path, allow_relaxation=True)
 
         assert mock_sub.call_count == 1
@@ -179,7 +201,9 @@ class TestHighAccuracyEvaluation:
         monkeypatch.chdir(tmp_path)
         sp_atoms = [_atoms() for _ in range(2)]
 
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call(sp_atoms, tmp_path, allow_relaxation=True)
 
         assert mock_sub.call_count == 1
@@ -188,7 +212,9 @@ class TestHighAccuracyEvaluation:
 
     def test_single_call_regardless_of_structure_count(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call([_atoms() for _ in range(20)], tmp_path)
 
         assert mock_sub.call_count == 1
@@ -206,10 +232,26 @@ class TestHighAccuracyEvaluation:
                 str(d / "high_accuracy_evaluation.xyz"), _atoms(), format="extxyz"
             )
 
+        # The one newly submitted job produces no output (failed); the two
+        # earlier results are still collected and the phase completes.
         with patch(f"{_MODULE}.ase_remote_submitter"):
             result = _call([_atoms() for _ in range(3)], tmp_path)
 
         assert len(result) == 2
+        assert Path("results/test_loop/high_accuracy_eval.done").exists()
+
+    def test_all_jobs_failing_raises_without_marking_done(self, tmp_path, monkeypatch):
+        """Regression: every DFT job failing (e.g. QE never printing forces)
+        used to mark the phase done with zero structures, permanently."""
+        monkeypatch.chdir(tmp_path)
+        with (
+            patch(f"{_MODULE}.ase_remote_submitter"),
+            pytest.raises(RuntimeError, match="All 2 high-accuracy"),
+        ):
+            _call([_atoms(), _atoms()], tmp_path)
+
+        assert not Path("results/test_loop/high_accuracy_eval.done").exists()
+        assert not Path("results/test_loop/high_accuracy_eval_results.xyz").exists()
 
     def test_phase_done_sentinel_skips_reentirely(self, tmp_path, monkeypatch):
         """Once high_accuracy_eval.done exists, the whole call short-circuits
@@ -221,7 +263,9 @@ class TestHighAccuracyEvaluation:
         ase_write(str(sentinel_results), [_atoms()], format="extxyz")
         Path("results/test_loop/high_accuracy_eval.done").write_text("done\n")
 
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             result = _call([_atoms(), _atoms()], tmp_path)
 
         mock_sub.assert_not_called()
@@ -235,7 +279,7 @@ class TestHighAccuracyEvaluation:
         go_atom.info["needs_relaxation"] = True
 
         with (
-            patch(f"{_MODULE}.ase_remote_submitter"),
+            patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit),
             patch(f"{_MODULE}.get_remote_info") as mock_get_remote_info,
         ):
             _call(
@@ -257,7 +301,9 @@ class TestHighAccuracyEvaluation:
         bad.info["REF_energy"] = -1.0
         good = _atoms()
 
-        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
             _call([bad, good], tmp_path)
 
         submitted = mock_sub.call_args.kwargs["input_atoms_list"]

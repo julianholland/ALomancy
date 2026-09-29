@@ -37,7 +37,7 @@ def test_selection_uses_common_validation_not_test(tmp_path, monkeypatch):
             },
         )
     best, _ = select_best_committee_model(
-        "al_loop_0", {"name": "committee", "size_of_committee": 3}, 803
+        "al_loop_0", {"name": "committee", "num_of_models_in_committee": 3}, 803
     )
     assert best == 1
 
@@ -47,7 +47,7 @@ def test_refuses_missing_validation_instead_of_fit_zero(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(RuntimeError, match="complete checkpoint validation"):
         select_best_committee_model(
-            "al_loop_0", {"name": "c", "size_of_committee": 3}, 803
+            "al_loop_0", {"name": "c", "num_of_models_in_committee": 3}, 803
         )
 
 
@@ -66,7 +66,7 @@ def test_falls_back_to_test_when_no_fit_has_a_validation_split(tmp_path, monkeyp
         model.write_bytes(b"checkpoint")
         save_evaluation(fit, model, {"test": prediction_metrics([predicted(error)])})
     best, _ = select_best_committee_model(
-        "al_loop_0", {"name": "committee", "size_of_committee": 3}, 803
+        "al_loop_0", {"name": "committee", "num_of_models_in_committee": 3}, 803
     )
     assert best == 1
 
@@ -88,7 +88,7 @@ def test_refuses_when_fits_disagree_on_having_a_validation_split(tmp_path, monke
         save_evaluation(fit, model, splits)
     with pytest.raises(RuntimeError, match="complete checkpoint validation"):
         select_best_committee_model(
-            "al_loop_0", {"name": "committee", "size_of_committee": 3}, 803
+            "al_loop_0", {"name": "committee", "num_of_models_in_committee": 3}, 803
         )
 
 
@@ -125,7 +125,7 @@ def test_quality_gate_enforces_domain_limits(tmp_path, error, passes):
 
     committee = {
         "name": "c",
-        "size_of_committee": 2,
+        "num_of_models_in_committee": 2,
         "quality_gate": {"domains": {"dimer": {"mae_f": 0.1}}},
     }
     for i in range(2):
@@ -147,7 +147,7 @@ def test_quality_gate_rejects_different_validation_sets(tmp_path):
 
     committee = {
         "name": "c",
-        "size_of_committee": 2,
+        "num_of_models_in_committee": 2,
         "quality_gate": {"domains": {"dimer": {"mae_f": 0.1}}},
     }
     for i in range(2):

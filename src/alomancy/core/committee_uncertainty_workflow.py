@@ -32,7 +32,7 @@ holds `al_workflow` (the dispatch key selecting which skeleton class
 build_workflow() returns -- currently only "committee_uncertainty" is
 registered) and `elements` (see below) directly, plus a nested
 `committee_uncertainty_kwargs` dict for everything specific to *this*
-skeleton (`number_models_in_committee` -- renamed from `size_of_
+skeleton (`num_of_models_in_committee` -- renamed from `size_of_
 committee`, since committee-ness is a skeleton concept, not something a
 single-model skeleton would have -- `target_config_types`, `test_ratio`,
 `grouped_splits`, `valid_fraction`, `valid_config_types`,
@@ -63,7 +63,7 @@ too.
 `CommitteeUncertaintyWorkflow.__init__` takes only `jobs_dict` -- every
 setting that used to be a separate Python constructor kwarg
 (`initial_train_file_path`, `initial_test_file_path`,
-`number_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
+`num_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
 `seed`, `db_path`, `remove_redundancy`, `high_force_threshold`,
 `skip_initialization`) now lives as a direct child of `general` (see
 `_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
@@ -116,13 +116,13 @@ generator`, `high_accuracy_evaluation.evaluator`). `qe_kwargs`/
 `vasp_input_kwargs` names at the evaluator orchestrator boundary (see
 `high_accuracy_calc_interface.py`), since the shared, unchanged `run_sp`/
 `run_go` workers still read those directly. Settings genuinely
-generator-agnostic (`structure_generation.desired_number_of_structures`,
+generator-agnostic (`structure_generation.desired_num_of_structures`,
 `structure_generation.structure_selection_kwargs` for the skeleton's own
 `filter_eligible_structures` pre-filter, called once before any generator
 dispatch) stay at the top `structure_generation` level rather than being
 duplicated per-generator; MD-specific settings that would make no sense
 for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
-`max_number_of_concurrent_jobs`/`enforce_chemical_diversity`/`seed`) live
+`num_of_md_starts`/`enforce_chemical_diversity`/`seed`) live
 nested inside `md_kwargs` instead. `structure_generation.trainer`/
 `trainer_config` (which trainer registry entry built the model MD's own
 dynamics calculator should use) are the same story -- MD-only, since EZGA
@@ -136,11 +136,11 @@ dynamically (not a fixed number, and not MACE's own native default of
 2048) -- the same as explicitly setting it to `"dynamic"`.
 
 Other per-module defaults introduced alongside this: `structure_generation
-.desired_number_of_structures` defaults to 50 when omitted (applied once
+.desired_num_of_structures` defaults to 50 when omitted (applied once
 by the skeleton, so it's consistent regardless of which generator runs);
 `md_kwargs` defaults to `steps=20000`/`temperature=300`/`timestep_fs=0.5`
 (not `run_md`'s own far-shorter built-in defaults) and `md_kwargs.
-structure_selection_kwargs.max_number_of_concurrent_jobs` defaults to 10;
+structure_selection_kwargs.num_of_md_starts` defaults to 10;
 `qe_kwargs`/`vasp_kwargs` need no explicit functional setting at all --
 both `get_qe_input_data` and `get_vasp_input_kwargs` (old, shared,
 unchanged) already default to PBE.
@@ -160,9 +160,9 @@ with its own `enabled` flag (default `True`, except `rattle_target_
 structures` which defaults `False` as a new capability with no prior
 behavior to preserve), so a sub-task can be toggled off without zeroing
 out its count field. `stretch_compress_targets_kwargs`
-(`max_lattice_deformation`, `num_stretch_compress_per_target`) and
+(`max_lattice_deformation`, `num_of_stretch_compress_per_target`) and
 `rattle_target_structures` (`rattle_standard_deviation`,
-`num_rattled_per_target`) are each a sibling of `mp_kwargs`, not nested
+`num_of_rattled_per_target`) are each a sibling of `mp_kwargs`, not nested
 inside it -- both apply to every structure this call generates whose
 config_type is listed in `general.committee_uncertainty_kwargs.
 target_config_types`, not just Materials Project ones. Designed to
@@ -250,14 +250,14 @@ _TRAINING_NAME = "training"
 _STRUCTURE_GENERATION_NAME = "structure_generation"
 _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 
-# structure_generation.desired_number_of_structures is generator-agnostic
+# structure_generation.desired_num_of_structures is generator-agnostic
 # (find_high_sd_structures' post-generation selection cap, and run_md's own
 # trajectory-sampling stride -- both old/shared, both require this key with
 # no default of their own). Defaulted once here, before generator dispatch,
 # so the same value applies regardless of which generator module runs
 # (EZGA doesn't read it today, but would get the same default too if a
 # future version started to).
-_DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 50
+_DEFAULT_DESIRED_NUM_OF_STRUCTURES = 50
 
 # general.committee_uncertainty_kwargs' own defaults -- matching the
 # <dispatch_value>_kwargs convention used elsewhere (mace_kwargs, md_kwargs,
@@ -265,11 +265,11 @@ _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES = 50
 # (general.al_workflow). Keys with no entry here (test_ratio,
 # target_config_types, valid_config_types) stay required -- a silently
 # guessed test/validation split policy is worse than a clear KeyError.
-# number_models_in_committee defaults to 3 (the minimum for a usable force
+# num_of_models_in_committee defaults to 3 (the minimum for a usable force
 # std-dev); the other four already had these exact fallback values before
 # they lived in a dedicated defaults dict.
 _COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS: dict[str, Any] = {
-    "number_models_in_committee": 3,
+    "num_of_models_in_committee": 3,
     "valid_fraction": 0.05,
     "grouped_splits": False,
     "grouped_validation": False,
@@ -286,7 +286,7 @@ _COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS: dict[str, Any] = {
 # have no entry -- they're genuinely required, matching this module's
 # no-invented-defaults convention for things only the user can know.
 _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
-    "number_of_al_loops": 5,
+    "num_of_al_loops": 5,
     "verbose": 0,
     "log_file": "results/alomancy.log",
     "start_loop": 0,
@@ -296,6 +296,91 @@ _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     "remove_redundancy": True,
     "high_force_threshold": 100.0,
     "skip_initialization": False,
+}
+
+_COMMITTEE_UNCERTAINTY_REQUIRED = ("test_ratio", "target_config_types")
+
+# Count-type keys renamed to the num_of_* convention. Old names are a hard
+# error (checked in __init__), not silently ignored: a count quietly
+# falling back to its default is exactly the kind of mistake that only
+# shows up hours into a run. (section path, old key, new key)
+_RENAMED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (("general",), "number_of_al_loops", "num_of_al_loops"),
+    (
+        ("general", "committee_uncertainty_kwargs"),
+        "number_models_in_committee",
+        "num_of_models_in_committee",
+    ),
+    (
+        ("structure_generation",),
+        "desired_number_of_structures",
+        "desired_num_of_structures",
+    ),
+    (
+        ("structure_generation", "structure_selection_kwargs"),
+        "max_number_of_concurrent_jobs",
+        "num_of_md_starts",
+    ),
+    (
+        ("structure_generation", "md_kwargs", "structure_selection_kwargs"),
+        "max_number_of_concurrent_jobs",
+        "num_of_md_starts",
+    ),
+    (("high_accuracy_evaluation",), "relax_max_steps", "max_num_of_relax_steps"),
+    (
+        ("initialization", "dimer_kwargs"),
+        "num_dimers_per_combo",
+        "num_of_dimers_per_combo",
+    ),
+    (
+        ("initialization", "trimer_kwargs"),
+        "num_trimers_per_combo",
+        "num_of_trimers_per_combo",
+    ),
+    (
+        ("initialization", "amorphous_kwargs"),
+        "num_amorphous",
+        "num_of_amorphous_structures",
+    ),
+    (
+        ("initialization", "amorphous_kwargs"),
+        "amorphous_atom_number",
+        "num_of_atoms_per_amorphous",
+    ),
+    (("initialization", "mp_kwargs"), "max_atom_number", "max_num_of_atoms"),
+    (
+        ("initialization", "stretch_compress_targets_kwargs"),
+        "num_stretch_compress_per_target",
+        "num_of_stretch_compress_per_target",
+    ),
+    (
+        ("initialization", "rattle_target_structures"),
+        "num_rattled_per_target",
+        "num_of_rattled_per_target",
+    ),
+)
+
+
+def _find_renamed_keys(jobs_dict: dict) -> list[str]:
+    """One "old -> new" entry per _RENAMED_KEYS old name present in
+    jobs_dict."""
+    found = []
+    for path, old, new in _RENAMED_KEYS:
+        node: Any = jobs_dict
+        for part in path:
+            node = node.get(part) if isinstance(node, dict) else None
+        if isinstance(node, dict) and old in node:
+            prefix = ".".join(path)
+            found.append(f"{prefix}.{old} -> {prefix}.{new}")
+    return found
+
+
+_GENERAL_KNOWN_KEYS = set(_GENERAL_KWARGS_DEFAULTS) | {
+    "al_workflow",
+    "elements",
+    "initial_train_file_path",
+    "initial_test_file_path",
+    "committee_uncertainty_kwargs",
 }
 
 
@@ -330,23 +415,22 @@ def _is_user_specified(raw_phase_dict: dict, dotted_key: str) -> bool:
     """Whether dotted_key (e.g. "mace_kwargs.max_num_epochs", as produced
     by _flatten_settings) was present verbatim in raw_phase_dict -- the
     config exactly as the user wrote it, before _resolve_effective_phase_
-    dict merged in any per-module defaults for display. A dict-valued
-    override (e.g. setting qe_kwargs.system at all) makes every key
-    currently under it count as user-specified too, since that's exactly
-    what a shallow merge like get_qe_input_data's actually does at
-    runtime: replace the whole sub-dict, not merge individual keys within
-    it -- there's no "which of these particular keys did the user type"
-    once that's happened.
+    dict merged in any per-module defaults for display. Nested dicts are
+    walked key by key, matching get_qe_input_data's per-namelist merge:
+    writing only qe_kwargs.system.input_dft leaves every other
+    qe_kwargs.system.* key reported as a default. If the walk reaches a
+    non-dict value before the key path ends, the user supplied that whole
+    value, so every key beneath it counts as user-specified.
     """
     node: Any = raw_phase_dict
     for part in dotted_key.split("."):
         if isinstance(node, dict) and part in node:
             node = node[part]
         else:
-            # Not a dict any more -> already inside a dict the user
-            # supplied wholesale (see docstring), so every key beneath it
-            # counts as user-specified. Still a dict but missing this key
-            # -> genuinely not user-specified.
+            # Not a dict any more -> inside a value the user supplied
+            # wholesale (see docstring), so every key beneath it counts as
+            # user-specified. Still a dict but missing this key ->
+            # genuinely not user-specified.
             return not isinstance(node, dict)
     return True
 
@@ -409,7 +493,7 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
         defaults = resolve("structure_generator", generator).kwargs_defaults
         effective[kwargs_key] = {**defaults, **effective.get(kwargs_key, {})}
         effective.setdefault(
-            "desired_number_of_structures", _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES
+            "desired_num_of_structures", _DEFAULT_DESIRED_NUM_OF_STRUCTURES
         )
     elif phase == "high_accuracy_evaluation":
         evaluator = effective.get("evaluator", "qe")
@@ -554,9 +638,27 @@ class CommitteeUncertaintyWorkflow:
                     "need not exist yet, the workflow falls through to the "
                     "DB-driven bootstrap path when it doesn't)."
                 )
+        renamed = _find_renamed_keys(jobs_dict)
+        if renamed:
+            raise ValueError(
+                "Config uses renamed key(s); update them to the num_of_* "
+                "names:\n  " + "\n  ".join(renamed)
+            )
+        # Checked here, not at first use: test_ratio is otherwise only read
+        # after an AL loop's DFT has finished, hours into a run.
+        committee_config = general_config.get("committee_uncertainty_kwargs", {})
+        missing = [
+            k for k in _COMMITTEE_UNCERTAINTY_REQUIRED if k not in committee_config
+        ]
+        if missing:
+            raise ValueError(
+                "general.committee_uncertainty_kwargs is missing required "
+                f"key(s) {missing} (e.g. test_ratio: 0.1, target_config_types: "
+                "['init_MP', 'init_amorphous'])."
+            )
         self.initial_train_file_path = Path(general_kwargs["initial_train_file_path"])
         self.initial_test_file_path = Path(general_kwargs["initial_test_file_path"])
-        self.number_of_al_loops = general_kwargs["number_of_al_loops"]
+        self.num_of_al_loops = general_kwargs["num_of_al_loops"]
         self.verbose = general_kwargs["verbose"]
         self.start_loop = general_kwargs["start_loop"]
         self.plots = general_kwargs["plots"]
@@ -568,6 +670,15 @@ class CommitteeUncertaintyWorkflow:
         self.skip_initialization = general_kwargs["skip_initialization"]
         self.log_file = general_kwargs["log_file"]
         setup_logging(verbose=self.verbose, log_file=self.log_file)
+        # After setup_logging so the warning reaches the console/log file.
+        unknown = sorted(set(general_config) - _GENERAL_KNOWN_KEYS)
+        if unknown:
+            logger.warning(
+                "Ignoring unrecognised general key(s) %s -- check for typos. "
+                "Known keys: %s",
+                unknown,
+                sorted(_GENERAL_KNOWN_KEYS),
+            )
 
     @property
     def db(self) -> GlobalDatabase:
@@ -596,7 +707,7 @@ class CommitteeUncertaintyWorkflow:
 
     def _last_complete_loop(self) -> int:
         last = -1
-        for loop in range(self.number_of_al_loops):
+        for loop in range(self.num_of_al_loops):
             if (Path("results", f"al_loop_{loop}") / "loop.done").exists():
                 last = loop
             else:
@@ -992,7 +1103,7 @@ class CommitteeUncertaintyWorkflow:
             **general_config.get("committee_uncertainty_kwargs", {}),
         }
         name = _TRAINING_NAME
-        committee_size = committee_kwargs["number_models_in_committee"]
+        committee_size = committee_kwargs["num_of_models_in_committee"]
         hpc = training_config["hpc"]
         max_time = training_config["max_time"]
         trainer_name = training_config.get("trainer", "mace")
@@ -1117,15 +1228,19 @@ class CommitteeUncertaintyWorkflow:
         self._store_predictions_and_cleanup(base_name, name, results)
 
         if training_config.get("quality_gate"):
-            # check_quality_gate (mlip/evaluation.py, unchanged/untouched)
-            # reads committee["size_of_committee"] and committee["name"]
-            # from whatever dict it's given -- size_of_committee now lives
-            # in workflow (not training) and name is hardcoded (not config)
-            # for this skeleton, so both are merged in here rather than
-            # changing that function.
+            # check_quality_gate (mlip/evaluation.py) reads
+            # committee["num_of_models_in_committee"] and committee["name"]
+            # from whatever dict it's given -- the committee size lives in
+            # general.committee_uncertainty_kwargs (not training) and name
+            # is hardcoded (not config) for this skeleton, so both are
+            # merged in here.
             check_quality_gate(
                 workdir,
-                {**training_config, "size_of_committee": committee_size, "name": name},
+                {
+                    **training_config,
+                    "num_of_models_in_committee": committee_size,
+                    "name": name,
+                },
             )
 
         self._mark_phase_done(base_name, "train_mlip")
@@ -1266,7 +1381,7 @@ class CommitteeUncertaintyWorkflow:
     ) -> list[Atoms]:
         sg_config = self.jobs_dict["structure_generation"]
         sg_config.setdefault(
-            "desired_number_of_structures", _DEFAULT_DESIRED_NUMBER_OF_STRUCTURES
+            "desired_num_of_structures", _DEFAULT_DESIRED_NUM_OF_STRUCTURES
         )
         name = _STRUCTURE_GENERATION_NAME
         generator = sg_config.get("generator", "md")
@@ -1304,19 +1419,18 @@ class CommitteeUncertaintyWorkflow:
             **_COMMITTEE_UNCERTAINTY_KWARGS_DEFAULTS,
             **general_config.get("committee_uncertainty_kwargs", {}),
         }
-        committee_size = committee_kwargs["number_models_in_committee"]
+        committee_size = committee_kwargs["num_of_models_in_committee"]
         best_fit_idx, best_model_path = select_best_committee_model(
             base_name,
-            # select_best_committee_model (mlip/mace/get_mace_eval_info.py,
-            # unchanged/untouched) reads committee["size_of_committee"] and
-            # committee["name"] -- that setting now lives in general.
-            # committee_uncertainty_kwargs.number_models_in_committee (not
-            # training) and name is hardcoded (not config) for this
-            # skeleton, so both are merged in here under the legacy key
-            # name that function still expects.
+            # select_best_committee_model (mlip/mace/get_mace_eval_info.py)
+            # reads committee["num_of_models_in_committee"] and
+            # committee["name"] -- the committee size lives in general.
+            # committee_uncertainty_kwargs (not training) and name is
+            # hardcoded (not config) for this skeleton, so both are merged
+            # in here.
             {
                 **training_config,
-                "size_of_committee": committee_size,
+                "num_of_models_in_committee": committee_size,
                 "name": _TRAINING_NAME,
             },
             seed=self.seed,
@@ -1444,7 +1558,7 @@ class CommitteeUncertaintyWorkflow:
         if self.jobs_dict.get("dataset_curation"):
             curate_database(self.db, self.jobs_dict["dataset_curation"])
 
-        for loop in range(effective_start, self.number_of_al_loops):
+        for loop in range(effective_start, self.num_of_al_loops):
             base_name = f"al_loop_{loop}"
             train_xyzs = self.db.get_train_atoms()
             test_xyzs = self.db.get_test_atoms()
@@ -1488,9 +1602,12 @@ class CommitteeUncertaintyWorkflow:
                 # mlip_committee_job_dict["name"], which is hardcoded (not
                 # config) for this skeleton, so it's merged in here.
                 training_config_with_name = {
+                    **self.jobs_dict["general"]["committee_uncertainty_kwargs"],
                     **self.jobs_dict["training"],
                     "name": _TRAINING_NAME,
                 }
+                print(training_config_with_name)
+                print(self.jobs_dict["general"])
                 mae_al_loop_plot(
                     evaluation_results,
                     training_config_with_name,
@@ -1617,7 +1734,7 @@ def build_workflow(jobs_dict: dict) -> CommitteeUncertaintyWorkflow:
 
     Takes only jobs_dict -- every setting a workflow needs, including ones
     that used to be Python constructor kwargs (initial_train_file_path,
-    number_of_al_loops, verbose, ...), lives under jobs_dict["general"]
+    num_of_al_loops, verbose, ...), lives under jobs_dict["general"]
     now (see CommitteeUncertaintyWorkflow.__init__ and _GENERAL_KWARGS_
     DEFAULTS). The one exception is db: a live GlobalDatabase instance
     can't be a config value, so a caller that needs to inject a pre-built

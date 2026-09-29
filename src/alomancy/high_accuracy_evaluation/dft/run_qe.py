@@ -77,7 +77,16 @@ def create_espresso_profile(
 
 
 def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
-    return {
+    """Default pw.x namelists with user overrides merged in per namelist.
+
+    Each namelist (``control``, ``system``, ...) is merged key-by-key, so
+    overriding one key (e.g. ``control.tstress``) keeps every other default
+    in that namelist. A shallow merge used to replace the whole namelist,
+    silently dropping ``control.tprnfor``/``calculation`` so QE never
+    printed forces and every job failed with "forces not present".
+    Non-dict values (e.g. a top-level scalar) replace the default outright.
+    """
+    input_data: dict = {
         "control": {
             "calculation": calculation_type,
             "verbosity": "high",
@@ -111,8 +120,13 @@ def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
         },
         "ions": {"ion_dynamics": "bfgs", "upscale": 1e8, "bfgs_ndim": 6},
         "cell": {"press_conv_thr": 0.1, "cell_dofree": "all"},
-        **qe_input_kwargs,
     }
+    for section, overrides in qe_input_kwargs.items():
+        if isinstance(overrides, dict) and isinstance(input_data.get(section), dict):
+            input_data[section] = {**input_data[section], **overrides}
+        else:
+            input_data[section] = overrides
+    return input_data
 
 
 def resolve_effective_kwargs(qe_kwargs: dict) -> dict:
@@ -120,13 +134,10 @@ def resolve_effective_kwargs(qe_kwargs: dict) -> dict:
     (see registry.py) -- used only by the skeleton's pre-run config summary
     (committee_uncertainty_workflow.py's display_workflow_summary) to show
     the fully-resolved effective qe_kwargs, not just what the user wrote.
-    get_qe_input_data (above, unchanged) already merges its own defaults
-    with whatever's passed to it, including its section-shallow merge
-    behavior (overriding e.g. "system" replaces that whole sub-dict rather
-    than merging individual keys within it) -- calling it directly here,
+    get_qe_input_data (above) already merges its own defaults with
+    whatever's passed to it, per namelist -- calling it directly here,
     rather than re-deriving the same defaults separately, means this
-    display can never drift out of sync with the real merge, quirks
-    included. "scf" is passed as calculation_type since it doesn't affect
+    display can never drift out of sync with the real merge. "scf" is passed as calculation_type since it doesn't affect
     the input_data defaults shown (control.calculation itself does vary by
     scf/relax, but that distinction isn't relevant to a settings summary).
     """
