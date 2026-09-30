@@ -11,7 +11,7 @@ which keys you give.
 |---|---|---|
 | `train_xyz` + `test_xyz` | Pre-split files | Both files are imported. Every structure in `train_xyz` is training data and every structure in `test_xyz` is test data, exactly as given. |
 | `xyz` (one path or a list) | Single file | The file(s) are imported, then split into train/test by `test_ratio` (see [Train/test split](#train-test-split)). |
-| `database` | Former ALomancy database | A **copy** of a previous run's `global_database` is imported, keeping its `config_type`, train/test split and duplicate/high-force flags. The old database is never modified. |
+| `database` | Former ALomancy database | A **copy** of a previous run's `global_database` is imported, keeping its `config_type`, train/test split and duplicate flags. The old database is never modified. |
 | *(no `start_from`)* | Cold start | Nothing is imported. ALomancy generates and DFT-evaluates the whole initial dataset itself. |
 
 When to use each:
@@ -102,14 +102,14 @@ ALomancy stores DFT labels as `atoms.info["REF_energy"]`, `atoms.arrays["REF_for
 
 Labels are checked **before** anything is imported or sent to DFT. One summary line in the log says which key each label came from and how many structures became `"external"`.
 
-Metadata that belongs to the run that wrote the file is dropped on import: train/test `split` tags, `global_db_id`, `is_duplicate`/`is_high_force` flags, and per-loop model predictions (`model_*`, `mace_*`). This run recomputes all of these. Provenance keys such as `al_loop` are kept. Pre-split files then get their split from which file they came from.
+Metadata that belongs to the run that wrote the file is dropped on import: train/test `split` tags, `global_db_id`, duplicate and quality-filter flags, and per-loop model predictions (`model_*`, `mace_*`). This run recomputes all of these. Provenance keys such as `al_loop` are kept. Pre-split files then get their split from which file they came from.
 
 ## Train/test split
 
 | Mode | Split |
 |---|---|
 | Pre-split files | As given: `train_xyz` → train, `test_xyz` → test. |
-| Former database | The imported database's own `split` tags are kept. |
+| Former database | The imported database's own `split` tags are kept (its quality-filter flags are recomputed by this run's `train_filter`/`test_filter`). |
 | Single file | `test_ratio` of the structures whose `config_type` is in `target_config_types` go to test; everything else trains. At least one structure of each targeted type stays in training. |
 | Cold start | Same rule as a single file. |
 
@@ -146,4 +146,4 @@ Two behaviors differ from the old fast path. `initial_train_file_path`/`initial_
 | `No test set could be formed from general.start_from.xyz` | Single file, all structures `"external"` | See [Train/test split](#train-test-split). |
 | `No ALomancy database at ...` | `database` path wrong | Point at the `global_database` directory itself, e.g. `../run/results/global_database`. |
 | `... is this run's own database` | `database` is the current run's `db_path` | Point at the *former* run's database, or just restart the current run. |
-| `Config uses removed start-up key(s)` | Old keys | See [Migrating from the removed keys](#migrating-from-the-removed-keys). |
+| `Config uses removed key(s)` | Old keys | See [Migrating from the removed keys](#migrating-from-the-removed-keys). |

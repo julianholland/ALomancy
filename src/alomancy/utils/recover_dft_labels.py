@@ -108,6 +108,8 @@ def recover_dataset(source: Path, raw_root: Path, output_dir: Path) -> dict:
                 "split",
                 "is_duplicate",
                 "is_high_force",
+                "is_quality_filtered",
+                "quality_filter_reasons",
                 "is_training_eligible",
                 "filter_reasons",
             }:

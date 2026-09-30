@@ -333,6 +333,29 @@ and `REF_forces` are mapped from common equivalents (or named explicitly
 with `start_from.metadata_map`). See [Starting a run](starting_a_run.md)
 for all start modes and the full rules.
 
+## Filtering the Training and Test Sets
+
+Poor-quality DFT structures, such as near-collision MD frames with huge
+forces, can be kept out of either split without deleting them from the
+database. `general.train_filter` and `general.test_filter` take the same keys:
+
+```yaml
+general:
+  train_filter:
+    max_force: 100.0                  # eV/Å; the default. null disables it
+    formation_energy_per_atom: null   # off by default
+  test_filter:                        # off by default
+    max_force: 20.0
+    formation_energy_per_atom: [null, 1.0]   # eV/atom; null bound = open
+```
+
+- `max_force` excludes structures whose largest per-atom force is at or above the value.
+- `formation_energy_per_atom` keeps only structures inside `[min, max]` (inclusive), measured against the database's `IsolatedAtom` energies: `(E − Σ E_isolated) / n_atoms`, the same definition as the parity plots. Structures containing an element without an `IsolatedAtom` energy are not energy-filtered, and a warning says so.
+
+Excluded structures are flagged (`is_quality_filtered`, with the reason in `quality_filter_reasons`) and left out of `train_set.xyz`/`test_set.xyz`, training and test metrics. The flags are recomputed every loop, so loosening or removing a filter brings them back.
+
+Separately, `high_accuracy_evaluation.force_ceiling` (default `100.0` eV/Å) controls how far AL-generated structures are relaxed before their DFT labels are kept: each is relaxed until its largest force is at most the ceiling. `null` means a single-point calculation with no relaxation. Initialization structures are not affected.
+
 ## MACE Committee Predictions in the GlobalDatabase
 
 After each AL loop's MACE committee training finishes on the remote GPU node, ALomancy evaluates every committee model on the training and test sets **before returning from the remote job** and saves the per-structure predictions to `train_pred.xyz` / `test_pred.xyz` inside each fit directory. These files are synced back to your local machine by ExPyRe alongside the model files.

@@ -857,6 +857,22 @@ class TestGenerateStructures:
         assert len(result) == 2
         assert all(a.info.get("needs_relaxation") is True for a in result)
 
+    def test_null_force_ceiling_means_single_point(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        sg_dir = Path("results/al_loop_0/structure_generation")
+        sg_dir.mkdir(parents=True)
+        stale = _atoms()
+        stale.info["needs_relaxation"] = True  # inherited flag is overwritten
+        write(str(sg_dir / "high_sd_structures.xyz"), [stale], format="extxyz")
+        minimal_jobs_dict["high_accuracy_evaluation"]["force_ceiling"] = None
+
+        wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+        result = wf._generate_structures("al_loop_0", [])
+
+        assert all(a.info.get("needs_relaxation") is False for a in result)
+
     def test_defaults_desired_number_of_structures_when_absent(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1029,6 +1045,7 @@ class TestParseStartFrom:
             ("general", "skip_initialization", "start_from"),
             ("initialization", "extra_datasets", "start_from.xyz"),
             ("initialization", "reset_extra_splits", "nothing"),
+            ("general", "high_force_threshold", "force_ceiling.*train_filter"),
         ],
     )
     def test_removed_keys_raise_with_replacement(
@@ -1273,6 +1290,91 @@ class TestStartModes:
 # BaseActiveLearningWorkflow; these confirm the copy wires correctly to
 # this skeleton's own internal method names.
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestQualityFilterAndForceCeilingConfig:
+    @pytest.mark.parametrize(
+        ("force_ceiling", "expected_fmax"),
+        [("default", 100.0), (5.0, 5.0), (None, None)],
+    )
+    def test_force_ceiling_sets_dft_relaxation_target(
+        self,
+        tmp_path,
+        workflow_jobs_dict,
+        monkeypatch,
+        shared_db,
+        force_ceiling,
+        expected_fmax,
+    ):
+        monkeypatch.chdir(tmp_path)
+        if force_ceiling != "default":
+            workflow_jobs_dict["high_accuracy_evaluation"]["force_ceiling"] = (
+                force_ceiling
+            )
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db, num_of_al_loops=1)
+        configs = []
+
+        def fake_evaluate(structures, config, **kwargs):
+            configs.append(config)
+            return []
+
+        with (
+            patch.object(wf, "_initialize_training_set", return_value=([], [])),
+            patch.object(wf, "_train_mlip", return_value=pd.DataFrame()),
+            patch.object(wf, "_generate_structures", return_value=[_atoms()]),
+            patch(f"{_MODULE}._evaluator_orchestrate", side_effect=fake_evaluate),
+            patch(f"{_MODULE}.write"),
+        ):
+            wf.run()
+
+        assert configs[0].get("fmax") == expected_fmax
+
+    @pytest.mark.parametrize("bad", [0, -1.0, float("nan"), "100", True])
+    def test_invalid_force_ceiling_raises(
+        self, tmp_path, workflow_jobs_dict, shared_db, bad
+    ):
+        workflow_jobs_dict["high_accuracy_evaluation"]["force_ceiling"] = bad
+        with pytest.raises(ValueError, match="force_ceiling"):
+            _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+    @pytest.mark.parametrize("name", ["train_filter", "test_filter"])
+    def test_invalid_split_filter_raises(
+        self, tmp_path, workflow_jobs_dict, shared_db, name
+    ):
+        workflow_jobs_dict["general"][name] = {"max_force": -1}
+        with pytest.raises(ValueError, match=f"general.{name}.max_force"):
+            _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+    def test_filters_resolved_with_defaults_and_not_unknown_keys(
+        self, tmp_path, workflow_jobs_dict, shared_db
+    ):
+        records: list[logging.LogRecord] = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        module_logger = logging.getLogger(
+            "alomancy.core.committee_uncertainty_workflow"
+        )
+        module_logger.addHandler(handler)
+        try:
+            wf = _make_workflow(
+                tmp_path,
+                workflow_jobs_dict,
+                shared_db,
+                test_filter={"formation_energy_per_atom": [None, 1.0]},
+            )
+        finally:
+            module_logger.removeHandler(handler)
+
+        assert wf.train_filter == {
+            "max_force": 100.0,
+            "formation_energy_per_atom": None,
+        }
+        assert wf.test_filter == {
+            "max_force": None,
+            "formation_energy_per_atom": [None, 1.0],
+        }
+        assert not any("unrecognised" in r.getMessage() for r in records)
 
 
 @pytest.mark.unit

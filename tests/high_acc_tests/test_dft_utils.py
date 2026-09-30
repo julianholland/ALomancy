@@ -198,7 +198,8 @@ class TestRunGo:
         self, tmp_path, monkeypatch
     ):
         """fmax/max_num_of_relax_steps are read from the job dict when present --
-        the channel high_force_threshold uses to drive relaxation targets."""
+        the channel high_accuracy_evaluation.force_ceiling uses to drive
+        relaxation targets."""
         captured = {}
 
         class _Capturing:

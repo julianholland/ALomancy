@@ -119,9 +119,10 @@ class GlobalDatabase:
 
     def import_from_database(self, source_path: str | Path) -> int:
         """Copy every structure of a former ALomancy GlobalDatabase into this
-        one, keeping its config_type, split and duplicate/high-force flags.
+        one, keeping its config_type, split and duplicate flags.
 
-        The source is only read, never written. Its ``global_db_id`` becomes
+        The source is only read, never written. Quality-filter flags are
+        recomputed by this run's own train/test filters. Its ``global_db_id`` becomes
         ``source_global_db_id`` (this DB assigns its own ids), per-loop model
         predictions are dropped (they describe the old run's models), and
         every copy is tagged ``source_database`` so importing the same DB
@@ -216,10 +217,13 @@ class GlobalDatabase:
     def get_train_atoms(
         self,
         exclude_duplicates: bool = True,
-        exclude_high_force: bool = True,
+        exclude_quality_filtered: bool = True,
         exclude_ineligible: bool = True,
     ) -> list[Atoms]:
-        """Return all train-split structures, optionally excluding flagged containers."""
+        """Return all train-split structures, optionally excluding flagged
+        containers. ``is_quality_filtered`` is set by utils/split_filter.py
+        (general.train_filter). The legacy ``is_high_force`` flag written by
+        older versions is ignored."""
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
@@ -233,13 +237,16 @@ class GlobalDatabase:
                 and c.AtomPositionManager.metadata.get("is_duplicate", False)
             )
             and not (
-                exclude_high_force
-                and c.AtomPositionManager.metadata.get("is_high_force", False)
+                exclude_quality_filtered
+                and c.AtomPositionManager.metadata.get("is_quality_filtered", False)
             )
         ]
 
-    def get_test_atoms(self, exclude_ineligible: bool = True) -> list[Atoms]:
-        """Return all test-split structures."""
+    def get_test_atoms(
+        self, exclude_ineligible: bool = True, exclude_quality_filtered: bool = True
+    ) -> list[Atoms]:
+        """Return all test-split structures, excluding those flagged by
+        general.test_filter (utils/split_filter.py) unless asked not to."""
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
@@ -247,6 +254,10 @@ class GlobalDatabase:
             and (
                 not exclude_ineligible
                 or c.AtomPositionManager.metadata.get("is_training_eligible", True)
+            )
+            and not (
+                exclude_quality_filtered
+                and c.AtomPositionManager.metadata.get("is_quality_filtered", False)
             )
         ]
 
@@ -411,15 +422,6 @@ class GlobalDatabase:
         get_train_atoms(exclude_duplicates=True) to omit them from XYZ outputs.
         """
         id_meta_map = {i: {"is_duplicate": True} for i in positional_indices}
-        self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
-
-    def flag_as_high_force(self, positional_indices: list[int]) -> None:
-        """Set is_high_force=True on containers at the given positional indices.
-
-        High-force structures are never deleted from the archive; this flag causes
-        get_train_atoms(exclude_high_force=True) to omit them from XYZ outputs.
-        """
-        id_meta_map = {i: {"is_high_force": True} for i in positional_indices}
         self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
 
     def store_descriptors(self, descriptors: dict[int, list[float]], key: str) -> None:

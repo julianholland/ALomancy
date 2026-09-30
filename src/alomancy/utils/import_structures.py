@@ -34,7 +34,14 @@ METADATA_MAP_KEYS = frozenset({"config_type", "energy", "forces", "stress"})
 # Operational metadata that belongs to the run that wrote a file, never to
 # the run importing it: splits and flags are recomputed here, DB ids are
 # reassigned, and per-loop model predictions refer to someone else's models.
-_OPERATIONAL_INFO_KEYS = ("split", "global_db_id", "is_duplicate", "is_high_force")
+_OPERATIONAL_INFO_KEYS = (
+    "split",
+    "global_db_id",
+    "is_duplicate",
+    "is_high_force",
+    "is_quality_filtered",
+    "quality_filter_reasons",
+)
 _OPERATIONAL_INFO_PREFIXES = ("model_", "mace_")
 
 

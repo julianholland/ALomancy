@@ -63,7 +63,7 @@ too.
 `CommitteeUncertaintyWorkflow.__init__` takes only `jobs_dict` -- every
 setting that used to be a separate Python constructor kwarg
 (`num_of_al_loops`, `verbose`, `log_file`, `start_loop`, `plots`,
-`seed`, `db_path`, `remove_redundancy`, `high_force_threshold`) now
+`seed`, `db_path`, `remove_redundancy`) now
 lives as a direct child of `general` (see
 `_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
 `elements`, since none of these are specific to the committee-uncertainty
@@ -71,8 +71,13 @@ skeleton either -- any future AL workflow would need them too. Every key
 falls back to its old constructor default. Where the run's first
 structures come from is `general.start_from` (warm start from train/test
 xyz files, a single xyz file, or a former run's database; cold start when
-absent -- see `_parse_start_from` and docs/starting_a_run.md). The sole
-exception is `db`: a live `GlobalDatabase`
+absent -- see `_parse_start_from` and docs/starting_a_run.md).
+`general.train_filter`/`general.test_filter` exclude poor-quality DFT
+structures from each split (utils/split_filter.py; the train filter's
+`max_force` defaults to 100 eV/Angstrom, everything else is off), and
+`high_accuracy_evaluation.force_ceiling` (default 100 eV/Angstrom, null =
+single point) is how far AL-generated structures are relaxed before their
+DFT labels are kept. The sole exception is `db`: a live `GlobalDatabase`
 instance can't be a config value, so it's no longer constructor-settable
 at all -- `self.db` is a lazily-constructed property (built from
 `general.db_path` on first access), and a caller needing to inject an
@@ -232,11 +237,13 @@ from alomancy.utils.logging_config import setup_logging
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
 )
-from alomancy.utils.remove_high_force_structures import (
-    remove_high_force_structures_from_partition,
-)
 from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
 from alomancy.utils.seed_selection import filter_eligible_structures
+from alomancy.utils.split_filter import (
+    apply_split_filter,
+    resolve_split_filter,
+    validate_split_filter,
+)
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 from alomancy.version import __version__, __version_tuple__
 
@@ -313,8 +320,12 @@ _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     "seed": 803,
     "db_path": "results/global_database",
     "remove_redundancy": True,
-    "high_force_threshold": 100.0,
 }
+
+# high_accuracy_evaluation.force_ceiling default (eV/Angstrom): AL-generated
+# structures are relaxed until their max force is at most this; null means
+# single point. Formerly general.high_force_threshold.
+_DEFAULT_FORCE_CEILING = 100.0
 
 _COMMITTEE_UNCERTAINTY_REQUIRED = ("test_ratio", "target_config_types")
 
@@ -405,6 +416,13 @@ _REMOVED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
         "structures the imported data doesn't already cover)",
     ),
     (("initialization",), "extra_datasets", "general.start_from.xyz"),
+    (
+        ("general",),
+        "high_force_threshold",
+        "high_accuracy_evaluation.force_ceiling (relaxing AL-generated "
+        "structures before DFT) and general.train_filter.max_force (excluding "
+        "high-force training structures)",
+    ),
     (
         ("initialization",),
         "reset_extra_splits",
@@ -497,6 +515,8 @@ _GENERAL_KNOWN_KEYS = set(_GENERAL_KWARGS_DEFAULTS) | {
     "al_workflow",
     "elements",
     "start_from",
+    "train_filter",
+    "test_filter",
     "committee_uncertainty_kwargs",
 }
 
@@ -756,10 +776,7 @@ class CommitteeUncertaintyWorkflow:
             )
         removed = _find_removed_keys(jobs_dict)
         if removed:
-            raise ValueError(
-                "Config uses removed start-up key(s); see "
-                "docs/starting_a_run.md:\n  " + "\n  ".join(removed)
-            )
+            raise ValueError("Config uses removed key(s):\n  " + "\n  ".join(removed))
         self.start_mode, self.start_from = _parse_start_from(
             general_config.get("start_from")
         )
@@ -783,7 +800,27 @@ class CommitteeUncertaintyWorkflow:
         self._db: GlobalDatabase | None = None
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
-        self.high_force_threshold = general_kwargs["high_force_threshold"]
+        for filter_name in ("train_filter", "test_filter"):
+            validate_split_filter(general_config.get(filter_name), filter_name)
+        self.train_filter = resolve_split_filter(
+            general_config.get("train_filter"), "train"
+        )
+        self.test_filter = resolve_split_filter(
+            general_config.get("test_filter"), "test"
+        )
+        self.force_ceiling = jobs_dict.get("high_accuracy_evaluation", {}).get(
+            "force_ceiling", _DEFAULT_FORCE_CEILING
+        )
+        if self.force_ceiling is not None and (
+            isinstance(self.force_ceiling, bool)
+            or not isinstance(self.force_ceiling, int | float)
+            or not np.isfinite(self.force_ceiling)
+            or self.force_ceiling <= 0
+        ):
+            raise ValueError(
+                "high_accuracy_evaluation.force_ceiling must be a positive number "
+                f"(eV/Angstrom) or null, got {self.force_ceiling!r}."
+            )
         self.log_file = general_kwargs["log_file"]
         setup_logging(verbose=self.verbose, log_file=self.log_file)
         # After setup_logging so the warning reaches the console/log file.
@@ -1376,6 +1413,14 @@ class CommitteeUncertaintyWorkflow:
         self._mark_phase_done(base_name, "train_mlip")
         return self._cross_loop_metrics_dataframe(name)
 
+    def _apply_split_filters(self) -> None:
+        """Re-flag train/test structures against general.train_filter /
+        general.test_filter. Always runs (a disabled filter clears old
+        flags), after redundancy removal and before the next loop reads the
+        splits."""
+        apply_split_filter(self.db, "train", self.train_filter)
+        apply_split_filter(self.db, "test", self.test_filter)
+
     def _update_best_model(self, base_name: str) -> None:
         """Copy this loop's best committee member (chosen as for MD, see
         rank_committee) to results/best_model/ALomancy_best_model.model,
@@ -1611,9 +1656,7 @@ class CommitteeUncertaintyWorkflow:
         if high_sd_path.exists():
             high_sd_structures = list(read(high_sd_path, ":", format="extxyz"))
             for structure in high_sd_structures:
-                structure.info["needs_relaxation"] = (
-                    self.high_force_threshold is not None
-                )
+                structure.info["needs_relaxation"] = self.force_ceiling is not None
             logger.info(
                 "%d High SD structures loaded from file: %s",
                 len(high_sd_structures),
@@ -1704,7 +1747,7 @@ class CommitteeUncertaintyWorkflow:
 
         for i, structure in enumerate(high_sd_structures):
             structure.info["job_id"] = i
-            structure.info["needs_relaxation"] = self.high_force_threshold is not None
+            structure.info["needs_relaxation"] = self.force_ceiling is not None
 
         self._mark_phase_done(base_name, "generate_structures")
         return high_sd_structures
@@ -1757,10 +1800,7 @@ class CommitteeUncertaintyWorkflow:
                 self.db,
                 config_list=committee_kwargs["target_config_types"] + ["high_sd"],
             )
-        if self.high_force_threshold is not None:
-            remove_high_force_structures_from_partition(
-                self.db, force_threshold=self.high_force_threshold
-            )
+        self._apply_split_filters()
         if self.jobs_dict.get("dataset_curation"):
             curate_database(self.db, self.jobs_dict["dataset_curation"])
 
@@ -1849,10 +1889,10 @@ class CommitteeUncertaintyWorkflow:
             generated_structures = self._generate_structures(base_name, train_xyzs)
 
             high_accuracy_eval_config = self.jobs_dict["high_accuracy_evaluation"]
-            if self.high_force_threshold is not None:
+            if self.force_ceiling is not None:
                 high_accuracy_eval_config = {
                     **high_accuracy_eval_config,
-                    "fmax": self.high_force_threshold,
+                    "fmax": self.force_ceiling,
                 }
 
             new_training_data = _evaluator_orchestrate(
@@ -1914,10 +1954,7 @@ class CommitteeUncertaintyWorkflow:
                     self.db,
                     config_list=committee_kwargs["target_config_types"] + ["high_sd"],
                 )
-            if self.high_force_threshold is not None:
-                remove_high_force_structures_from_partition(
-                    self.db, force_threshold=self.high_force_threshold
-                )
+            self._apply_split_filters()
             if self.jobs_dict.get("dataset_curation"):
                 curate_database(self.db, self.jobs_dict["dataset_curation"])
 
