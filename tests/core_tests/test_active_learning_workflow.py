@@ -583,6 +583,46 @@ class TestStorePredictionsAndCleanup:
 # ---------------------------------------------------------------------------
 
 
+class _FakeTrainer:
+    """Stand-in trainer registry entry whose "outputs" are marker files, so
+    train_models' success rule (outputs exist and read back) can be
+    exercised: `submit_n` below writes a fit's marker when that job
+    succeeds, the way a real remote job syncs back its model and
+    evaluation."""
+
+    train = staticmethod(lambda **kwargs: None)
+
+    @staticmethod
+    def marker(fit_idx: int) -> Path:
+        return Path(f"fit_{fit_idx}.outputs")
+
+    def output_paths(self, config, *, base_name, name, fit_idx):
+        return [self.marker(fit_idx)]
+
+    def read_existing_result(self, config, *, base_name, name, fit_idx):
+        return (f"fit_{fit_idx}.pt", None, {})
+
+    def submit_n(self, outcome):
+        """A fake submit_n. `outcome(fit_idx, attempt)` is "ok" (job
+        returns and writes outputs), "fail" (job returns None) or
+        "unevaluated" (job returns a result but writes no outputs)."""
+        calls: list[list[int]] = []
+
+        def fake(function, job_configs, remote_info, **kwargs):
+            fit_indices = [jc["function_kwargs"]["fit_idx"] for jc in job_configs]
+            attempt = len(calls)
+            calls.append(fit_indices)
+            results = []
+            for fit_idx in fit_indices:
+                result = outcome(fit_idx, attempt)
+                if result == "ok":
+                    self.marker(fit_idx).write_text("done")
+                results.append(None if result == "fail" else ("x.pt", None, {}))
+            return results
+
+        return fake, calls
+
+
 @pytest.mark.unit
 class TestTrainMlip:
     def _prepare_loop_dir(self, base_name: str, n_train: int = 5) -> None:
@@ -601,39 +641,22 @@ class TestTrainMlip:
         monkeypatch.chdir(tmp_path)
         self._prepare_loop_dir("al_loop_0")
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
-
-        fake_entry = MagicMock()
-        fake_entry.output_paths.return_value = [Path("does_not_exist.model")]
-        fake_result = (
-            "model.pt",
-            None,
-            {"test": prediction_metrics([_atoms_scored()])},
-        )
-
-        def fake_submit_n(function, job_configs, remote_info, **kwargs):
-            return [fake_result] * len(job_configs)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=fake_entry),
-            patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n) as mock_submit_n,
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit) as mock_submit_n,
             patch(f"{_MODULE}.get_remote_info"),
             patch.object(wf, "_store_predictions_and_cleanup"),
-            patch.object(
-                wf, "_cross_loop_metrics_dataframe", return_value=pd.DataFrame()
-            ),
         ):
-            wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+            models = wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
 
-        job_configs = mock_submit_n.call_args.args[1]
-        assert (
-            len(job_configs)
-            == workflow_jobs_dict["general"]["committee_uncertainty_kwargs"][
-                "num_of_models_in_committee"
-            ]
-        )
+        assert calls == [[0, 1, 2]]
+        assert [m.model_path for m in models] == ["fit_0.pt", "fit_1.pt", "fit_2.pt"]
         # isolated_atom_e0s is computed once locally from the DB and passed
-        # to every fit so trainer.train() can default mace_fit_kwargs.E0s
-        # when the config doesn't set it explicitly.
+        # to every fit so the trainer can default its reference energies.
+        job_configs = mock_submit_n.call_args.args[1]
         assert (
             job_configs[0]["function_kwargs"]["isolated_atom_e0s"]
             == wf.db.get_isolated_atom_energies()
@@ -645,46 +668,88 @@ class TestTrainMlip:
         monkeypatch.chdir(tmp_path)
         self._prepare_loop_dir("al_loop_0")
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
-
-        cached_result = (
-            "cached.pt",
-            None,
-            {"test": prediction_metrics([_atoms_scored()])},
-        )
-        fresh_result = (
-            "fresh.pt",
-            None,
-            {"test": prediction_metrics([_atoms_scored()])},
-        )
-
-        fake_entry = MagicMock()
-
-        def fake_output_paths(config, *, base_name, name, fit_idx):
-            # fit_0 is "cached" (path exists), fit_1/fit_2 are missing.
-            return [Path("cached.marker")] if fit_idx == 0 else [Path("missing.marker")]
-
-        fake_entry.output_paths.side_effect = fake_output_paths
-        fake_entry.read_existing_result.return_value = cached_result
+        trainer = _FakeTrainer()
+        trainer.marker(0).write_text("cached")
+        fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
 
         with (
-            patch("pathlib.Path.exists", lambda self: self.name == "cached.marker"),
-            patch(f"{_MODULE}.resolve", return_value=fake_entry),
-            patch(
-                f"{_MODULE}.submit_n",
-                return_value=[fresh_result, fresh_result],
-            ) as mock_submit_n,
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
             patch.object(wf, "_store_predictions_and_cleanup"),
-            patch.object(
-                wf, "_cross_loop_metrics_dataframe", return_value=pd.DataFrame()
-            ),
         ):
             wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
 
-        job_configs = mock_submit_n.call_args.args[1]
-        assert len(job_configs) == 2  # only fit_1 and fit_2 submitted
-        fit_indices_submitted = {jc["function_kwargs"]["fit_idx"] for jc in job_configs}
-        assert fit_indices_submitted == {1, 2}
+        assert calls == [[1, 2]]  # fit_0 was cached
+
+    def test_failed_fit_retried_once_and_recovers(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(
+            lambda fit_idx, attempt: "fail" if (fit_idx, attempt) == (1, 0) else "ok"
+        )
+
+        with (
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            patch.object(wf, "_store_predictions_and_cleanup"),
+        ):
+            models = wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == [[0, 1, 2], [1]]
+        assert [m.fit_idx for m in models] == [0, 1, 2]
+
+    def test_unevaluated_fit_counts_as_failed_and_is_retried(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """A job that returns but leaves no evaluation (e.g. the trainer's
+        evaluation step bailed out) is retried, not treated as trained."""
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(
+            lambda fit_idx, attempt: (
+                "unevaluated" if (fit_idx, attempt) == (2, 0) else "ok"
+            )
+        )
+
+        with (
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            patch.object(wf, "_store_predictions_and_cleanup"),
+        ):
+            models = wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == [[0, 1, 2], [2]]
+        assert len(models) == 3
+
+    def test_raises_when_retry_still_leaves_too_few(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(
+            lambda fit_idx, attempt: "fail" if fit_idx == 0 else "ok"
+        )
+
+        with (
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            pytest.raises(RuntimeError, match="only 2 trained model"),
+        ):
+            wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == [[0, 1, 2], [0]]
 
     def test_recognizes_real_checkpoint_evaluation_on_restart(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
@@ -1845,18 +1910,18 @@ class TestTrainModelsEdgeCases:
         monkeypatch.chdir(tmp_path)
         self._prepare()
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
-        fake_entry = MagicMock()
-        fake_entry.output_paths.return_value = [Path("missing.model")]
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=fake_entry),
-            patch(f"{_MODULE}.submit_n", return_value=[("m.pt", None, {})]) as submit_n,
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit) as submit_n,
             patch(f"{_MODULE}.get_remote_info"),
         ):
             (model,) = wf.train_models(_ctx(0), [42])
 
         job_configs = submit_n.call_args.args[1]
-        assert len(job_configs) == 1
+        assert calls == [[0]]
         assert job_configs[0]["function_kwargs"]["fit_seed"] == 42
         assert model.seed == 42 and model.fit_idx == 0
         recorded = Path("results/al_loop_0/training/fit_0/fit_seed.json")
@@ -1868,16 +1933,19 @@ class TestTrainModelsEdgeCases:
         monkeypatch.chdir(tmp_path)
         self._prepare()
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
-        fake_entry = MagicMock()
-        fake_entry.output_paths.return_value = [Path("missing.model")]
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(
+            lambda fit_idx, attempt: "fail" if fit_idx == 0 else "ok"
+        )
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=fake_entry),
-            patch(f"{_MODULE}.submit_n", return_value=[None, ("m.pt", None, {})]),
+            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
         ):
             models = wf.train_models(_ctx(0), wf.seeds(2))
 
+        assert calls == [[0, 1], [0]]
         assert [m.fit_idx for m in models] == [1]
 
     def test_cached_fit_with_other_seed_is_reused_with_warning(

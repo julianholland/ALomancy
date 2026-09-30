@@ -378,6 +378,32 @@ def get_calculator(model_path: str, config: dict) -> Any:
     )
 
 
+def _mace_e0s_arg(e0s: dict) -> str:
+    """{element symbol or atomic number: energy (eV)} -> the string form
+    MACE's E0s argument expects: a dict literal keyed by atomic number,
+    e.g. ``"{1: -13.6, 8: -432.1}"``."""
+    from ase.data import atomic_numbers
+
+    converted: dict[int, float] = {}
+    for key, energy in e0s.items():
+        if isinstance(key, str) and key in atomic_numbers:
+            z = atomic_numbers[key]
+        elif isinstance(key, int) and not isinstance(key, bool) and key > 0:
+            z = key
+        elif isinstance(key, str) and key.isdigit() and int(key) > 0:
+            z = int(key)
+        else:
+            raise ValueError(
+                f"mace_kwargs.E0s key {key!r} is not an element symbol or "
+                "atomic number."
+            )
+        value = float(energy)
+        if not np.isfinite(value):
+            raise ValueError(f"mace_kwargs.E0s[{key!r}] is not finite: {energy!r}.")
+        converted[z] = value
+    return str(converted)
+
+
 def train(
     train_atoms_path: str,
     valid_atoms_path: str | None,
@@ -463,6 +489,13 @@ def train(
                 "sure an IsolatedAtom structure for that element has been "
                 "DFT-evaluated into the GlobalDatabase."
             )
+
+    # MACE's own parser (mace.tools.scripts_utils.get_atomic_energies) only
+    # accepts a string -- "average", a .json path, or a dict literal keyed
+    # by atomic number -- so a dict (the DB-derived default, or one written
+    # in the YAML) is converted here, the one place that knows MACE's format.
+    if isinstance(e0s, dict):
+        mace_kwargs["E0s"] = _mace_e0s_arg(e0s)
 
     fit_dir = _fit_dir(base_name, name, fit_idx)
     logger.info("Creating MLIP directory: %s", fit_dir)

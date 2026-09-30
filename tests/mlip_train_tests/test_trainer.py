@@ -373,7 +373,7 @@ class TestTrain:
             isolated_atom_e0s={"H": -13.6},
         )
         args = mock_run.call_args.args[0]
-        assert args.E0s == {"H": -13.6}
+        assert args.E0s == "{1: -13.6}"
 
     def test_explicit_e0s_wins_over_isolated_atom_default(self, tmp_path, monkeypatch):
         _, mock_run, _ = self._run_train(
@@ -390,7 +390,7 @@ class TestTrain:
             },
         )
         args = mock_run.call_args.args[0]
-        assert args.E0s == {"H": -1.0}
+        assert args.E0s == "{1: -1.0}"
 
     def test_raises_when_no_e0s_and_no_isolated_atom_energies(
         self, tmp_path, monkeypatch
@@ -529,3 +529,50 @@ class TestTrain:
             )
 
         assert captured_args["max_num_epochs"] == 160
+
+
+class TestMaceE0sArg:
+    """E0s reach MACE as the string its own parser accepts: a dict literal
+    keyed by atomic number (mace.tools.scripts_utils.get_atomic_energies
+    calls E0s.lower() and ast.literal_eval(E0s))."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "e0s",
+        [
+            {"C": -155.1, "H": -13.6},
+            {6: -155.1, 1: -13.6},
+            {"6": -155.1, "1": -13.6},
+        ],
+    )
+    def test_accepted_by_mace_parser(self, e0s):
+        from mace.tools.scripts_utils import get_atomic_energies
+
+        from alomancy.mlip.mace.trainer import _mace_e0s_arg
+
+        parsed = get_atomic_energies(_mace_e0s_arg(e0s), None, None)
+        assert parsed == {6: -155.1, 1: -13.6}
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [{"Xx": -1.0}, {0: -1.0}, {"C": float("nan")}])
+    def test_rejects_bad_entries(self, bad):
+        from alomancy.mlip.mace.trainer import _mace_e0s_arg
+
+        with pytest.raises(ValueError, match="E0s"):
+            _mace_e0s_arg(bad)
+
+    @pytest.mark.unit
+    def test_string_e0s_passed_through(self, tmp_path, monkeypatch):
+        _, mock_run, _ = TestTrain()._run_train(
+            tmp_path,
+            monkeypatch,
+            elements=["H"],
+            config_overrides={
+                "mace_kwargs": {
+                    "energy_key": "REF_energy",
+                    "forces_key": "REF_forces",
+                    "E0s": "average",
+                }
+            },
+        )
+        assert mock_run.call_args.args[0].E0s == "average"

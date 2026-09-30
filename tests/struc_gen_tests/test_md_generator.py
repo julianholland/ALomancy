@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from ase import Atoms
-from ase.io import write
+from ase.io import read, write
 
 from alomancy.structure_generation.md.md_wfl import (
     _run_md_via_trainer,
@@ -158,7 +158,7 @@ class TestGenerate:
             for jc in job_configs:
                 out_dir = Path(jc["function_kwargs"]["out_dir"])
                 out_dir.mkdir(parents=True)
-                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+                write(str(out_dir / "md.xyz"), _seed_atoms(2), format="extxyz")
             return [None] * len(job_configs)
 
         with (
@@ -187,7 +187,7 @@ class TestGenerate:
             for jc in job_configs:
                 out_dir = Path(jc["function_kwargs"]["out_dir"])
                 out_dir.mkdir(parents=True)
-                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+                write(str(out_dir / "md.xyz"), _seed_atoms(2), format="extxyz")
             return [None] * len(job_configs)
 
         with (
@@ -209,7 +209,7 @@ class TestGenerate:
         assert mock_submit_n.call_count == 1
         job_configs = mock_submit_n.call_args.args[1]
         assert len(job_configs) == 3
-        assert len(result) == 3
+        assert len(result) == 6  # 3 runs x 2 frames
         assert mock_get_remote_info.call_args.args[0] == {
             "hpc": {"hpc_name": "test"},
             "name": "md",
@@ -233,7 +233,7 @@ class TestGenerate:
             for jc in job_configs:
                 out_dir = Path(jc["function_kwargs"]["out_dir"])
                 out_dir.mkdir(parents=True)
-                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+                write(str(out_dir / "md.xyz"), _seed_atoms(2), format="extxyz")
             return [None] * len(job_configs)
 
         with (
@@ -280,7 +280,7 @@ class TestGenerate:
             for jc in job_configs:
                 out_dir = Path(jc["function_kwargs"]["out_dir"])
                 out_dir.mkdir(parents=True)
-                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+                write(str(out_dir / "md.xyz"), _seed_atoms(2), format="extxyz")
             return [None] * len(job_configs)
 
         with (
@@ -313,7 +313,7 @@ class TestGenerate:
             for jc in job_configs:
                 out_dir = Path(jc["function_kwargs"]["out_dir"])
                 out_dir.mkdir(parents=True)
-                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+                write(str(out_dir / "md.xyz"), _seed_atoms(2), format="extxyz")
             return [None] * len(job_configs)
 
         with (
@@ -363,13 +363,13 @@ class TestGenerate:
         md_dir = Path("results/al_loop_0/structure_generation")
         existing = md_dir / "md_output_0"
         existing.mkdir(parents=True)
-        write(str(existing / "md.xyz"), _seed_atoms(1), format="extxyz")
+        write(str(existing / "md.xyz"), _seed_atoms(2), format="extxyz")
 
         def fake_submit_n(function, job_configs, remote_info, **kwargs):
             for jc in job_configs:
                 out_dir = Path(jc["function_kwargs"]["out_dir"])
                 out_dir.mkdir(parents=True)
-                write(str(out_dir / "md.xyz"), _seed_atoms(1), format="extxyz")
+                write(str(out_dir / "md.xyz"), _seed_atoms(2), format="extxyz")
             return [None] * len(job_configs)
 
         with (
@@ -394,3 +394,125 @@ class TestGenerate:
         out_dirs = {jc["function_kwargs"]["out_dir"] for jc in job_configs}
         assert str(md_dir / "md_output_1") in out_dirs
         assert str(md_dir / "md_output_2") in out_dirs
+
+
+def _distinct_seeds(n: int) -> list[Atoms]:
+    """Eligible structures with different geometries (so "not used yet"
+    can tell them apart)."""
+    out = []
+    for i in range(n):
+        a = Atoms(
+            "H2", positions=[[0, 0, 0], [0, 0, 0.7 + 0.05 * i]], cell=[10] * 3, pbc=True
+        )
+        a.info["config_type"] = "init_amorphous"
+        a.info["source"] = i
+        out.append(a)
+    return out
+
+
+def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None):
+    """Run generate() with a fake submit_n. `outcome(run_index, seed_atoms)`
+    returns the number of frames that run writes (0 = no output at all).
+    Returns (result, submitted run indices per submit_n call)."""
+    calls: list[list[int]] = []
+
+    def fake_submit_n(function, job_configs, remote_info, **kwargs):
+        indices = []
+        for jc in job_configs:
+            out_dir = Path(jc["function_kwargs"]["out_dir"])
+            index = int(out_dir.name.rsplit("_", 1)[1])
+            indices.append(index)
+            frames = outcome(index, jc["function_kwargs"]["initial_structure"])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            if frames:
+                write(str(out_dir / "md.xyz"), _seed_atoms(frames), format="extxyz")
+        calls.append(indices)
+        return [None] * len(job_configs)
+
+    with (
+        patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n),
+        patch(f"{_MODULE}.get_remote_info"),
+    ):
+        result = generate(
+            seed_atoms=eligible if eligible is not None else _distinct_seeds(10),
+            model_path="model.pt",
+            config={
+                "md_kwargs": {
+                    "structure_selection_kwargs": {"num_of_md_starts": n_seeds}
+                }
+            },
+            base_name="al_loop_0",
+            name="md",
+            hpc={},
+            max_time="1H",
+        )
+    return result, calls
+
+
+_MD_DIR = Path("results/al_loop_0/structure_generation")
+
+
+@pytest.mark.unit
+class TestGenerateFailedRuns:
+    def test_partial_runs_kept_and_not_replaced(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result, calls = _md_generate(tmp_path, lambda i, a: 3 if i == 0 else 2)
+
+        assert calls == [[0, 1, 2]]  # nothing replaced
+        assert len(result) == 3 + 2 + 2
+
+    def test_runs_that_never_stepped_are_replaced_once_with_unused_seeds(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        # run 1 records only its starting structure; run 2 writes nothing.
+        result, calls = _md_generate(
+            tmp_path, lambda i, a: {0: 2, 1: 1, 2: 0}.get(i, 2)
+        )
+
+        assert calls == [[0, 1, 2], [3, 4]]
+        seeds = read(_MD_DIR / "md_seeds.xyz", ":")
+        assert [a.info.get("replaces") for a in seeds[3:]] == [1, 2]
+        original_sources = {a.info["source"] for a in seeds[:3]}
+        assert not original_sources & {a.info["source"] for a in seeds[3:]}
+        assert len({a.info["md_seed"] for a in seeds}) == 5
+        assert len(result) == 2 + 2 + 2  # runs 0, 3 and 4
+
+    def test_replacement_that_also_fails_is_not_replaced_again(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        monkeypatch.chdir(tmp_path)
+        result, calls = _md_generate(tmp_path, lambda i, a: 0 if i in (1, 3) else 2)
+
+        assert calls == [[0, 1, 2], [3]]  # one replacement round only
+        assert len(result) == 2 + 2  # runs 0 and 2
+
+    def test_all_runs_failing_raises_and_caches_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(RuntimeError, match="completed a single MD step"):
+            _md_generate(tmp_path, lambda i, a: 1)
+
+        assert not (_MD_DIR / "md_generated_candidates.xyz").exists()
+
+    def test_restart_reuses_saved_seeds_and_submits_only_missing_runs(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        # A previous attempt chose seeds and finished run 0 before stopping.
+        seeds = _distinct_seeds(3)
+        for i, a in enumerate(seeds):
+            a.info["md_seed"] = 803 + i
+        _MD_DIR.mkdir(parents=True)
+        write(_MD_DIR / "md_seeds.xyz", seeds, format="extxyz")
+        (_MD_DIR / "md_output_0").mkdir()
+        write(_MD_DIR / "md_output_0/md.xyz", _seed_atoms(2), format="extxyz")
+        submitted_sources = []
+
+        def outcome(i, seed_atoms):
+            submitted_sources.append(seed_atoms.info["source"])
+            return 2
+
+        _, calls = _md_generate(tmp_path, outcome)
+
+        assert calls == [[1, 2]]
+        assert submitted_sources == [1, 2]  # the saved seeds, not new ones

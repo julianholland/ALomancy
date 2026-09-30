@@ -1763,27 +1763,22 @@ class ActiveLearningWorkflow(ABC):
             valid_path_str = str(valid_path)
 
         results: dict[int, tuple] = {}
-        missing: list[int] = []
         for fit_idx in range(num_of_models):
             paths = trainer_entry.output_paths(
                 training_config, base_name=base_name, name=name, fit_idx=fit_idx
             )
-            if all(p.exists() for p in paths):
-                try:
-                    results[fit_idx] = trainer_entry.read_existing_result(
-                        training_config,
-                        base_name=base_name,
-                        name=name,
-                        fit_idx=fit_idx,
-                    )
-                    self._check_recorded_seed(ctx, fit_idx, seeds[fit_idx])
-                    continue
-                except ValueError:
-                    logger.warning(
-                        "fit_%d's cached result failed validation; retraining.", fit_idx
-                    )
-            missing.append(fit_idx)
+            if not all(p.exists() for p in paths):
+                continue
+            cached = self._collect_fit(trainer_entry, ctx, fit_idx)
+            if cached is None:
+                logger.warning(
+                    "fit_%d's cached result failed validation; retraining.", fit_idx
+                )
+                continue
+            results[fit_idx] = cached
+            self._check_recorded_seed(ctx, fit_idx, seeds[fit_idx])
 
+        missing = [i for i in range(num_of_models) if i not in results]
         if missing:
             logger.info(
                 "train_mlip for %s: %d/%d fit(s) already cached; submitting %s.",
@@ -1801,35 +1796,61 @@ class ActiveLearningWorkflow(ABC):
             )
             # Computed once, locally, and passed down as a plain dict
             # (not a live GlobalDatabase, which must never cross the ExPyRe
-            # boundary) so trainer.train() can default mace_kwargs.E0s
-            # to isolated-atom reference energies when the config doesn't
-            # set E0s explicitly.
+            # boundary) so the trainer can default its reference energies
+            # (e.g. MACE's E0s) when the config doesn't set them.
             isolated_atom_e0s = self.db.get_isolated_atom_energies()
-            job_configs = [
-                {
-                    "function_kwargs": {
-                        "train_atoms_path": str(train_path),
-                        "valid_atoms_path": valid_path_str,
-                        "test_atoms_path": str(test_path),
-                        "config": training_config,
-                        "fit_seed": seeds[fit_idx],
-                        "base_name": base_name,
-                        "name": name,
-                        "fit_idx": fit_idx,
-                        "hpc": hpc,
-                        "max_time": max_time,
-                        "elements": general_config.get("elements"),
-                        "isolated_atom_e0s": isolated_atom_e0s,
-                    },
-                    "output_files": [str(workdir / name / f"fit_{fit_idx}")],
-                }
-                for fit_idx in missing
-            ]
-            submitted = submit_n(trainer_entry.train, job_configs, remote_info)
-            for position, fit_idx in enumerate(missing):
-                if submitted[position] is not None:
-                    results[fit_idx] = submitted[position]
+
+            def submit(fit_indices: list[int]) -> None:
+                job_configs = [
+                    {
+                        "function_kwargs": {
+                            "train_atoms_path": str(train_path),
+                            "valid_atoms_path": valid_path_str,
+                            "test_atoms_path": str(test_path),
+                            "config": training_config,
+                            "fit_seed": seeds[fit_idx],
+                            "base_name": base_name,
+                            "name": name,
+                            "fit_idx": fit_idx,
+                            "hpc": hpc,
+                            "max_time": max_time,
+                            "elements": general_config.get("elements"),
+                            "isolated_atom_e0s": isolated_atom_e0s,
+                        },
+                        "output_files": [str(workdir / name / f"fit_{fit_idx}")],
+                    }
+                    for fit_idx in fit_indices
+                ]
+                submitted = submit_n(trainer_entry.train, job_configs, remote_info)
+                for position, fit_idx in enumerate(fit_indices):
+                    if submitted[position] is None:
+                        continue
+                    # A job that returned is only a success once its outputs
+                    # (for MACE: the model and evaluation_metrics.json) are
+                    # present and valid -- the same test a restart applies.
+                    collected = self._collect_fit(trainer_entry, ctx, fit_idx)
+                    if collected is None:
+                        logger.warning(
+                            "fit_%d of %s finished but was not evaluated "
+                            "(outputs missing or invalid); counting it as failed.",
+                            fit_idx,
+                            base_name,
+                        )
+                        continue
+                    results[fit_idx] = collected
                     self._record_seed(ctx, fit_idx, seeds[fit_idx])
+
+            submit(missing)
+            # One retry pass for every fit still missing: a single transient
+            # failure (node crash, sync error) must not end the run.
+            failed = [i for i in missing if i not in results]
+            if failed:
+                logger.warning(
+                    "train_mlip for %s: fit(s) %s failed; retrying them once.",
+                    base_name,
+                    failed,
+                )
+                submit(failed)
 
         if len(results) < min_successful:
             raise RuntimeError(
@@ -1867,6 +1888,31 @@ class ActiveLearningWorkflow(ABC):
             self._trained_model(ctx, fit_idx, seeds[fit_idx], results[fit_idx])
             for fit_idx in sorted(results)
         ]
+
+    def _collect_fit(
+        self, trainer_entry: Any, ctx: LoopContext, fit_idx: int
+    ) -> tuple | None:
+        """A fit's (model_path, compiled_model_path, metrics) if all its
+        outputs exist and read back cleanly (for MACE: the model plus a
+        checksum-verified evaluation_metrics.json), else None."""
+        paths = trainer_entry.output_paths(
+            self.training_config,
+            base_name=ctx.base_name,
+            name=_TRAINING_NAME,
+            fit_idx=fit_idx,
+        )
+        if not all(p.exists() for p in paths):
+            return None
+        try:
+            result: tuple = trainer_entry.read_existing_result(
+                self.training_config,
+                base_name=ctx.base_name,
+                name=_TRAINING_NAME,
+                fit_idx=fit_idx,
+            )
+        except (FileNotFoundError, ValueError):
+            return None
+        return result
 
     def _record_seed(self, ctx: LoopContext, fit_idx: int, seed: int) -> None:
         fit_dir = Path("results", ctx.base_name, _TRAINING_NAME, f"fit_{fit_idx}")

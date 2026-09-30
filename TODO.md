@@ -21,5 +21,7 @@
   report should contain statistics like average dft time (avg. number of geom steps to reach
   ceiling if available) also it should contain a breakdown of the make up of the training set, the
   number of structures removed by redundancy. There should also be some module specific plotting. Finally there should be a counter of warnings, e.g. failed to converged, and some automatic suggestions for what to do to mitigate these in the future.
+- [ ] everything is defined in the config so to should the architecture the user should just call an ALomancy object and add the jobconfig to it and the correct skeleton is loaded as is the correct modules
+
 
 

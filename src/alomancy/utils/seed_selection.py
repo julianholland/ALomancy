@@ -139,8 +139,10 @@ def select_diverse_seeds(
     population (see filter_eligible_structures), maximizing configurational
     diversity when requested. Reuses structures with distinct md_seed
     values when the pool is smaller than the requested concurrency, rather
-    than erroring.
+    than erroring. The choice is drawn from ``np.random.default_rng(seed)``,
+    so the same inputs always give the same seeds.
     """
+    rng = np.random.default_rng(seed)
     reuse = len(eligible_structures) < num_of_md_starts
     if reuse:
         logger.warning(
@@ -155,7 +157,7 @@ def select_diverse_seeds(
     if not enforce_chemical_diversity:
         selected = [
             eligible_structures[x].copy()
-            for x in np.random.choice(
+            for x in rng.choice(
                 np.array(range(len(eligible_structures))),
                 num_of_md_starts,
                 replace=reuse,
@@ -168,11 +170,15 @@ def select_diverse_seeds(
     # Ensure chemical diversity by selecting unique chemical formulas. If
     # there are fewer unique formulas than num_of_md_starts,
     # select all and pad with random repeats.
-    unique_chemical_formulas = {s.get_chemical_formula() for s in eligible_structures}
+    # Sorted: set order varies between processes (string hash
+    # randomisation), which would make a seeded choice irreproducible.
+    unique_chemical_formulas = sorted(
+        {s.get_chemical_formula() for s in eligible_structures}
+    )
     if len(unique_chemical_formulas) <= num_of_md_starts:
         list_of_formulas = list(unique_chemical_formulas)
         extra_formulas = [
-            np.random.choice(list(unique_chemical_formulas), replace=False)
+            rng.choice(list(unique_chemical_formulas), replace=False)
             for _ in range(num_of_md_starts - len(list_of_formulas))
         ]
         list_of_formulas.extend(extra_formulas)
@@ -188,7 +194,7 @@ def select_diverse_seeds(
             formula: 1 / count for formula, count in formula_counts.items()
         }
         list_of_formulas = list(
-            np.random.choice(
+            rng.choice(
                 list(unique_chemical_formulas),
                 num_of_md_starts,
                 replace=False,
@@ -206,7 +212,7 @@ def select_diverse_seeds(
             for s in eligible_structures
             if s.get_chemical_formula() == chemical_formula
         ]
-        chosen_idx = np.random.choice(np.array(range(len(formula_structures))))
+        chosen_idx = rng.choice(np.array(range(len(formula_structures))))
         selected.append(formula_structures[chosen_idx].copy())
 
     _assign_md_seeds(selected, seed)

@@ -176,3 +176,37 @@ class TestMarkStructuresForDft:
         mark_structures_for_dft(structures, "al_loop_0", "md")
         assert all(a.info["config_type"] == "al_loop_0_md" for a in structures)
         assert all("job_id" in a.info for a in structures)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("diverse", [False, True])
+def test_select_diverse_seeds_reproducible_for_a_seed(diverse):
+    """Same inputs and seed -> same choice, so a restart re-derives the
+    same MD seeds (and a different seed gives a different draw)."""
+    from ase import Atoms
+
+    from alomancy.utils.seed_selection import select_diverse_seeds
+
+    pool = []
+    for i in range(30):
+        symbols = ["H2", "O2", "HO", "H3", "O3", "H2O"][i % 6]
+        a = Atoms(
+            symbols,
+            positions=[[0, 0, 0.8 * k + 0.01 * i] for k in range(len(Atoms(symbols)))],
+        )
+        a.info["source"] = i
+        pool.append(a)
+
+    def pick(seed):
+        chosen = select_diverse_seeds(
+            "al_loop_0",
+            "md",
+            pool,
+            num_of_md_starts=4,
+            enforce_chemical_diversity=diverse,
+            seed=seed,
+        )
+        return [a.info["source"] for a in chosen]
+
+    assert pick(803) == pick(803)
+    assert any(pick(803) != pick(s) for s in (804, 805, 806))

@@ -15,11 +15,19 @@ from tqdm import tqdm
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.registry import resolve
 from alomancy.remote_submission.executor import submit_n
-from alomancy.utils.seed_selection import select_diverse_seeds
+from alomancy.utils.dataset_curation import geometry_digest
+from alomancy.utils.seed_selection import mark_structures_for_dft, select_diverse_seeds
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_NUM_OF_MD_STARTS = 10
+
+# Every run records its starting structure before any MD step, so a run
+# with fewer frames than this completed no MD step at all.
+_MIN_FRAMES = 2
+# The chosen MD seeds (plus any replacements, tagged info["replaces"]) for
+# a loop, so restarts resume the same runs.
+_SEEDS_FILENAME = "md_seeds.xyz"
 
 # ALomancy's own defaults for the modular structure_generator entry point
 # (generate(), below) -- deliberately different from run_md's own built-in
@@ -562,71 +570,170 @@ def generate(
         if k not in ("structure_selection_kwargs", "trainer", "trainer_config")
     }
     md_kwargs = {**_run_md_kwargs_defaults, **md_kwargs}
-    selected = select_diverse_seeds(
-        base_name=base_name,
-        job_name=name,
-        eligible_structures=seed_atoms,
-        num_of_md_starts=selection_kwargs.get(
-            "num_of_md_starts", _DEFAULT_NUM_OF_MD_STARTS
-        ),
-        enforce_chemical_diversity=selection_kwargs.get(
-            "enforce_chemical_diversity", False
-        ),
-        seed=selection_kwargs.get("seed", 803),
-    )
-
     md_dir = Path("results", base_name, "structure_generation")
+    seeds_path = md_dir / _SEEDS_FILENAME
     target_file = f"{name}.xyz"
+    selection_seed = selection_kwargs.get("seed", 803)
 
-    def find_target_files() -> list[Path]:
-        return list(md_dir.glob(f"md_output_*/{target_file}"))
-
-    target_file_list = find_target_files()
-    n_existing = len(target_file_list)
-
-    if n_existing < len(selected):
-        remaining = selected[n_existing:]
-
-        remote_info = get_remote_info(
-            {"hpc": hpc, "name": name, "max_time": max_time},
-            input_files=[str(model_path)],
+    # The chosen seeds are saved so a restart resumes the same MD runs
+    # (run i always lives in md_output_i) instead of drawing new ones.
+    if seeds_path.exists():
+        seeds = list(read(seeds_path, ":", format="extxyz"))
+    else:
+        seeds = select_diverse_seeds(
+            base_name=base_name,
+            job_name=name,
+            eligible_structures=seed_atoms,
+            num_of_md_starts=selection_kwargs.get(
+                "num_of_md_starts", _DEFAULT_NUM_OF_MD_STARTS
+            ),
+            enforce_chemical_diversity=selection_kwargs.get(
+                "enforce_chemical_diversity", False
+            ),
+            seed=selection_seed,
         )
+        md_dir.mkdir(parents=True, exist_ok=True)
+        write(seeds_path, seeds, format="extxyz")
+    # Replacement seeds don't change the sampling stride: run_md spaces its
+    # snapshots by the number of MD runs originally planned.
+    total_md_runs = sum(1 for a in seeds if "replaces" not in a.info)
 
+    def out_dir(i: int) -> Path:
+        return md_dir / f"md_output_{i}"
+
+    def n_frames(i: int) -> int:
+        path = out_dir(i) / target_file
+        if not path.exists():
+            return 0
+        try:
+            return len(read(path, ":", format="extxyz"))
+        except Exception:
+            return 0
+
+    remote_info = None
+
+    def submit(indices: list[int]) -> None:
+        nonlocal remote_info
+        if remote_info is None:
+            remote_info = get_remote_info(
+                {"hpc": hpc, "name": name, "max_time": max_time},
+                input_files=[str(model_path)],
+            )
         # run_md (unchanged, shared with the old production path) still
         # reads its own "name" out of structure_generation_job_dict rather
         # than taking it as an explicit kwarg -- config itself no longer
         # carries "name" (it's hardcoded by the skeleton, not user config),
         # so it's merged in here rather than changing run_md.
         structure_generation_job_dict = {**config, "name": name}
-
-        # output_files is set explicitly per job (keyed by the real
-        # n_existing + i directory name), matching md_remote_submitter's
-        # own reasoning: submit_n/submit_multiple_jobs derives its
-        # positional job_id from index within job_configs (0..len-1), which
-        # only matches n_existing + i when n_existing == 0.
+        # output_files is set explicitly per job (keyed by the run's own
+        # index), since submit_n derives its positional job_id from the
+        # position within job_configs, not from the run index.
         job_configs = [
             {
                 "function_kwargs": {
                     "structure_generation_job_dict": structure_generation_job_dict,
-                    "initial_structure": atoms,
-                    "total_md_runs": len(selected),
-                    "out_dir": str(md_dir / f"md_output_{n_existing + i}"),
+                    "initial_structure": seeds[i],
+                    "total_md_runs": total_md_runs,
+                    "out_dir": str(out_dir(i)),
                     "model_path": model_path,
                     "trainer": trainer,
                     "trainer_config": trainer_config,
                     **md_kwargs,
                 },
-                "output_files": [str(md_dir / f"md_output_{n_existing + i}")],
+                "output_files": [str(out_dir(i))],
             }
-            for i, atoms in enumerate(remaining)
+            for i in indices
         ]
         submit_n(_run_md_via_trainer, job_configs, remote_info)
-        target_file_list = find_target_files()
+
+    # First pass: every run with no output directory yet (a fresh start, or
+    # runs never submitted before an interruption).
+    unsubmitted = [i for i in range(len(seeds)) if not out_dir(i).exists()]
+    if unsubmitted:
+        submit(unsubmitted)
+
+    # One replacement round: a run that recorded only its starting
+    # structure (or nothing) never completed an MD step, so its seed is
+    # replaced once by a structure not used yet. Runs that did step are
+    # kept, however short -- their frames are real candidates.
+    replaced = {a.info["replaces"] for a in seeds if "replaces" in a.info}
+    not_started = [
+        i
+        for i in range(len(seeds))
+        if n_frames(i) < _MIN_FRAMES
+        and "replaces" not in seeds[i].info
+        and i not in replaced
+    ]
+    if not_started:
+        logger.warning(
+            "MD run(s) %s for %s completed no MD step; replacing their seeds once.",
+            not_started,
+            base_name,
+        )
+        replacements = _replacement_seeds(
+            seed_atoms, seeds, len(not_started), seed=selection_seed + len(seeds)
+        )
+        new_indices = []
+        for failed_index, replacement in zip(not_started, replacements, strict=True):
+            replacement.info["replaces"] = failed_index
+            seeds.append(replacement)
+            new_indices.append(len(seeds) - 1)
+        mark_structures_for_dft(replacements, base_name, name)
+        write(seeds_path, seeds, format="extxyz")
+        submit(new_indices)
+
+    completed = [i for i in range(len(seeds)) if n_frames(i) >= _MIN_FRAMES]
+    unfinished = [
+        i
+        for i in range(len(seeds))
+        if i not in completed and not any(a.info.get("replaces") == i for a in seeds)
+    ]
+    if unfinished:
+        logger.warning(
+            "MD run(s) %s for %s still completed no MD step after replacement; "
+            "continuing with the %d run(s) that did.",
+            unfinished,
+            base_name,
+            len(completed),
+        )
+    if not completed:
+        raise RuntimeError(
+            f"No MD run for {base_name} completed a single MD step (seeds and "
+            f"replacements all failed). Check the MD logs in {md_dir}/md_output_*. "
+            "Nothing was cached, so a restart will retry."
+        )
 
     structure_list: list[Atoms] = []
-    for path in target_file_list:
-        structure_list.extend(read(path, ":", format="extxyz"))
+    for i in completed:
+        structure_list.extend(read(out_dir(i) / target_file, ":", format="extxyz"))
 
     candidates_path.parent.mkdir(parents=True, exist_ok=True)
     write(candidates_path, structure_list, format="extxyz")
     return structure_list
+
+
+def _replacement_seeds(
+    eligible: list[Atoms], used: list[Atoms], n: int, *, seed: int
+) -> list[Atoms]:
+    """*n* new MD seeds, preferring eligible structures not used yet (by
+    geometry). If too few are unused, fills up by reusing structures; every
+    replacement gets a fresh md_seed so repeats still diverge."""
+    used_digests = {geometry_digest(a) for a in used}
+    unused = [a for a in eligible if geometry_digest(a) not in used_digests]
+    rng = np.random.default_rng(seed)
+    if len(unused) >= n:
+        picks = [unused[i] for i in rng.choice(len(unused), size=n, replace=False)]
+    else:
+        pool = unused or eligible
+        picks = unused + [
+            pool[i] for i in rng.choice(len(pool), size=n - len(unused), replace=True)
+        ]
+    next_md_seed = (
+        max((int(a.info.get("md_seed", seed)) for a in used), default=seed) + 1
+    )
+    replacements = []
+    for k, atoms in enumerate(picks):
+        copy = atoms.copy()
+        copy.info["md_seed"] = next_md_seed + k
+        replacements.append(copy)
+    return replacements
