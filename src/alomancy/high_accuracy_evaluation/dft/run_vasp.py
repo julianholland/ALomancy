@@ -53,7 +53,7 @@ def get_vasp_input_kwargs(vasp_input_kwargs: dict) -> dict:
 def resolve_effective_kwargs(vasp_kwargs: dict) -> dict:
     """The dft_evaluator registry's uniform defaults-resolution entry point
     (see registry.py) -- used only by the skeleton's pre-run config summary
-    (committee_uncertainty_workflow.py's display_workflow_summary) to show
+    (active_learning_workflow.py's display_workflow_summary) to show
     the fully-resolved effective vasp_kwargs, not just what the user wrote.
     Thin alias for get_vasp_input_kwargs (above, unchanged) so this display
     can never drift out of sync with the real merge.

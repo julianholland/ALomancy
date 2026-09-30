@@ -128,8 +128,9 @@ def select_best_committee_model(
 
     ``seed`` is no longer used by this function (the old *_test.txt-based
     legacy path derived a per-fit seed from it) -- kept as a required
-    parameter only so existing call sites (``committee_uncertainty_workflow.
-    py``, the checkpoint-evaluation test suite) don't need to change.
+    parameter only so existing call sites (the checkpoint-evaluation test
+    suite) don't need to change. The workflows themselves now pick their
+    best model with ``mlip/evaluation.rank_committee`` directly.
     """
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["num_of_models_in_committee"]

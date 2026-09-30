@@ -27,7 +27,7 @@ _DEFAULT_NUM_OF_MD_STARTS = 10
 # Mirrors md_kwargs' actual runtime shape (including the two nested keys
 # generate() pops out before spreading the rest onto run_md's own kwargs)
 # so it can also be used, as-is, to display the fully-resolved effective
-# config (see committee_uncertainty_workflow.py's display_workflow_summary).
+# config (see active_learning_workflow.py's display_workflow_summary).
 _MD_KWARGS_DEFAULTS: dict[str, Any] = {
     "steps": 20000,
     "temperature": 300,

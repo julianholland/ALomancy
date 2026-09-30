@@ -154,7 +154,7 @@ def _resolve_max_concurrent_jobs(job_dict: dict) -> int:
 
     Profiles written by ``alomancy add-hpc`` before the num_of_* rename use
     ``max_concurrent_jobs``. Unlike run-config keys (a hard error, see
-    committee_uncertainty_workflow's _RENAMED_KEYS), that name is still
+    active_learning_workflow's _RENAMED_KEYS), that name is still
     honoured with a warning: the profile is machine-written and shared by
     every run on the machine.
     """

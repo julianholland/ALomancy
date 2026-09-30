@@ -49,7 +49,7 @@ _DYNAMIC_EPOCHS_FLOOR = 20
 
 # Named, reusable defaults for mace_kwargs -- merged with user overrides
 # below, and also used by the skeleton's pre-run config summary
-# (committee_uncertainty_workflow.py's display_workflow_summary) to show
+# (active_learning_workflow.py's display_workflow_summary) to show
 # the fully-resolved effective config, not just what the user wrote.
 # max_num_epochs: "dynamic" is the *behavioral* default (see train()'s own
 # dynamic-epoch resolution below), not a fixed number -- MACE's own native

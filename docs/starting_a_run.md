@@ -33,7 +33,7 @@ general:
   start_from:
     train_xyz: "data/train.xyz"
     test_xyz: "data/test.xyz"
-  committee_uncertainty_kwargs:
+  dataset_kwargs:
     test_ratio: 0.1
     target_config_types: ["init_MP", "init_amorphous"]
 ```
@@ -49,7 +49,7 @@ general:
       config_type: "phase"            # info key holding the structure label
       energy: "energy_pbe"            # info key holding the DFT energy (eV)
       forces: "forces_pbe"            # per-atom array holding DFT forces (eV/Å)
-  committee_uncertainty_kwargs:
+  dataset_kwargs:
     test_ratio: 0.1
     target_config_types: ["liquid", "amorphous"]   # values of the "phase" key
 ```
@@ -61,7 +61,7 @@ general:
   elements: ["C"]
   start_from:
     database: "../previous_run/results/global_database"
-  committee_uncertainty_kwargs:
+  dataset_kwargs:
     test_ratio: 0.1
     target_config_types: ["init_MP", "init_amorphous"]
 ```
@@ -71,7 +71,7 @@ Cold start: leave `start_from` out.
 ```yaml
 general:
   elements: ["C"]
-  committee_uncertainty_kwargs:
+  dataset_kwargs:
     test_ratio: 0.1
     target_config_types: ["init_MP", "init_amorphous"]
 ```

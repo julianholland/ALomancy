@@ -109,10 +109,11 @@ general:
   #   xyz: "my_dft_data.xyz"
   num_of_al_loops: 5
   verbose: 1
-  committee_uncertainty_kwargs:
-    num_of_models_in_committee: 5
+  dataset_kwargs:
     target_config_types: ["IsolatedAtom"]
     test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
 
 initialization:
   name: "init"

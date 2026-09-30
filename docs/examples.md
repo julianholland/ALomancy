@@ -191,12 +191,13 @@ The configuration YAML file defines all the stages of the active learning workfl
 general:
   al_workflow: "committee_uncertainty"
   elements: ["H", "O"]   # atomic symbols, not atomic numbers
-  committee_uncertainty_kwargs:
-    num_of_models_in_committee: 5
+  dataset_kwargs:
     target_config_types:
       - "IsolatedAtom"
       - "init_dimer"
     test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
 
 initialization:
   name: "initialization"
@@ -323,7 +324,7 @@ general:
     xyz:
       - "path/to/external_structures.xyz"
       - "path/to/another_dataset.xyz"
-  committee_uncertainty_kwargs:
+  dataset_kwargs:
     test_ratio: 0.1
     target_config_types: ["liquid"]
 ```

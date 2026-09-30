@@ -143,3 +143,18 @@ register(
     read_existing_result="read_existing_result",
     kwargs_defaults="_CREATION_KWARGS_DEFAULTS",
 )
+
+# AL workflows (general.al_workflow): each entry's workflow_class is an
+# ActiveLearningWorkflow subclass (core/active_learning_workflow.py).
+register(
+    "al_workflow",
+    "committee_uncertainty",
+    "alomancy.core.committee_uncertainty_workflow",
+    workflow_class="CommitteeUncertaintyWorkflow",
+)
+register(
+    "al_workflow",
+    "random_selection",
+    "alomancy.core.random_selection_workflow",
+    workflow_class="RandomSelectionWorkflow",
+)

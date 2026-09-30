@@ -30,10 +30,11 @@ general:
   verbose: 1  # 0=silent, 1=INFO, 2=DEBUG
   log_file: "results/alomancy.log"  # debug logs always written here
   db_path: "results/global_database"
-  committee_uncertainty_kwargs:
-    num_of_models_in_committee: 5
+  dataset_kwargs:
     target_config_types: ["IsolatedAtom"]
     test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
 ```
 
 ## HPC Setup
@@ -60,10 +61,11 @@ The `hpc:` value is the profile name written by `alomancy add-hpc`:
 general:
   al_workflow: "committee_uncertainty"
   elements: ["C", "O"]   # atomic symbols, not atomic numbers
-  committee_uncertainty_kwargs:
-    num_of_models_in_committee: 5
+  dataset_kwargs:
     target_config_types: ["IsolatedAtom"]
     test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
 
 initialization:
   name: "initialization"

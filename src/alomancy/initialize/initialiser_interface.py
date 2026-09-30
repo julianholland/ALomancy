@@ -9,7 +9,7 @@ does for AL-loop-generated structures. This also means importing
 general.start_from's data, the needs computation against the DB,
 clean_structures, db.add_structures,
 and the initial train/test split all live in the skeleton's own
-_initialize_training_set (committee_uncertainty_workflow.py), not here.
+_initialize_training_set (active_learning_workflow.py), not here.
 
 Self-contained config surface: reads only initialiser-specific settings
 directly off the `initialization` section (plus `read_generated_file`,
@@ -85,7 +85,7 @@ logger = logging.getLogger(__name__)
 
 # Named, reusable defaults, one entry per structure-type namespace --
 # merged with user overrides in _resolve_kwargs below, and also used by
-# the skeleton's pre-run config summary (committee_uncertainty_workflow.
+# the skeleton's pre-run config summary (active_learning_workflow.
 # py's display_workflow_summary) to show the fully-resolved effective
 # config, not just what the user wrote. Mirrors create_initialization_
 # atoms_list's (old, shared) own parameter defaults.

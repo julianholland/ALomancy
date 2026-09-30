@@ -132,7 +132,7 @@ def get_qe_input_data(calculation_type: str, qe_input_kwargs: dict) -> dict:
 def resolve_effective_kwargs(qe_kwargs: dict) -> dict:
     """The dft_evaluator registry's uniform defaults-resolution entry point
     (see registry.py) -- used only by the skeleton's pre-run config summary
-    (committee_uncertainty_workflow.py's display_workflow_summary) to show
+    (active_learning_workflow.py's display_workflow_summary) to show
     the fully-resolved effective qe_kwargs, not just what the user wrote.
     get_qe_input_data (above) already merges its own defaults with
     whatever's passed to it, per namelist -- calling it directly here,

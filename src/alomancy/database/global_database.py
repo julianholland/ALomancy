@@ -465,7 +465,7 @@ class GlobalDatabase:
         for any container that happens to carry a legacy prediction key.
         Leaving them is harmless -- every reader now looks only for the
         model_* names, and the DB-seeding key-strippers
-        (committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.
+        (active_learning_workflow.ActiveLearningWorkflow.
         _import_xyz via utils.import_structures, utils.recover_dft_labels) strip both
         prefixes.
 

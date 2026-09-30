@@ -5,7 +5,7 @@ general:
   num_of_al_loops: 5
   verbose: 1
   start_loop: 0
-  committee_uncertainty_kwargs:
+  dataset_kwargs:
     target_config_types:
       - "init_MP"
     test_ratio: 0.1

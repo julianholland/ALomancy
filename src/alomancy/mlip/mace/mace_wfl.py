@@ -199,8 +199,8 @@ def read_mace_eval_predictions(fit_dir: Path) -> dict[int, dict]:
     {global_db_id: {"energy": float, "forces": list}} or empty dict.
 
     Relocated from the now-removed standard_active_learning.py (originally
-    private, _read_mace_eval_predictions) -- committee_uncertainty_workflow.
-    py is its only remaining caller; living next to the function that
+    private, _read_mace_eval_predictions) -- active_learning_workflow.py
+    is its only remaining caller; living next to the function that
     writes these files is the natural home.
     """
     preds: dict[int, dict] = {}
