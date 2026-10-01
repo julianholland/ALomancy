@@ -4,7 +4,7 @@
 # structure_generation section for the ezga_kwargs this exercises.
 from yaml import safe_load
 
-from alomancy.core.committee_uncertainty_workflow import build_workflow
+from alomancy import ALomancy
 
 # load jobs_dict from a YAML files
 with open("input_files/standard_config.yaml") as f:
@@ -29,6 +29,6 @@ config["high_accuracy_evaluation"]["hpc"] = hpc_config[
 
 print("Using config:")
 print(config)
-al_workflow = build_workflow(jobs_dict=config)
+al_workflow = ALomancy(config)
 
 al_workflow.run()

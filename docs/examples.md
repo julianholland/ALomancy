@@ -168,19 +168,13 @@ Existing entries in both files are preserved.
 Here's a simple example of running an active learning workflow:
 
 ```python
-from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.committee_uncertainty_workflow import build_workflow
+from alomancy import ALomancy
 
-# Load configuration from YAML file -- every workflow-level setting
-# (start_from, num_of_al_loops, verbose, log_file,
-# db_path, ...) lives under the YAML's `general:` section; build_workflow()
-# takes only jobs_dict.
-jobs_dict = load_dictionaries("standard_config.yaml")
-
-# Create and run the workflow
-workflow = build_workflow(jobs_dict=jobs_dict)
-
-workflow.run()
+# The config picks everything: the AL skeleton (general.al_workflow) and
+# every module (training.trainer, structure_generation.generator,
+# high_accuracy_evaluation.evaluator). Every run setting (start_from,
+# num_of_al_loops, verbose, ...) lives under the YAML's `general:` section.
+ALomancy("standard_config.yaml").run()
 ```
 
 ## Configuration File
@@ -238,7 +232,7 @@ high_accuracy_evaluation:
 
 ### Configuration Key Descriptions
 
-- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `build_workflow()` returns (currently only `"committee_uncertainty"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
+- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, or `"random_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
 
 - **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 
@@ -307,7 +301,7 @@ QE configs work unchanged — `evaluator: "qe"` is the default and can be omitte
 
 ## Adding a New Backend
 
-There's no subclassing to extend ALomancy — `CommitteeUncertaintyWorkflow` (built via `build_workflow()`) is the only workflow implementation, and each pluggable category (`mlip_trainer`, `structure_generator`, `dft_evaluator`, `initialiser`) is a module registered against a name in `src/alomancy/registry.py`, resolved lazily from config at runtime (`training.trainer`, `structure_generation.generator`, `high_accuracy_evaluation.evaluator`).
+Users never pick a workflow class in Python — `ALomancy(config)` builds the skeleton named by `general.al_workflow` (new skeletons: see `writing_a_workflow.md`), and each pluggable category (`mlip_trainer`, `structure_generator`, `dft_evaluator`, `initialiser`) is a module registered against a name in `src/alomancy/registry.py`, resolved lazily from config at runtime (`training.trainer`, `structure_generation.generator`, `high_accuracy_evaluation.evaluator`).
 
 Adding a new backend means writing a new module that implements the category's expected entry points — typically `output_paths(config, *, base_name, name, ...)` and `read_existing_result(config, *, base_name, name, ...)` for the skeleton's restart mechanism, plus the category-specific worker function (`train`, `generate`, or `sp`/`go`) — and registering it in `registry.py`. See any existing module under `mlip/` (e.g. `mlip/mace/trainer.py`), `structure_generation/` (`structure_generation/md/md_wfl.py`, `structure_generation/ezga/generate_structures.py`), or `high_accuracy_evaluation/dft/` (`run_qe.py`, `run_vasp.py`) for the pattern to follow.
 

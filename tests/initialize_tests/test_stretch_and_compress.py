@@ -106,3 +106,55 @@ class TestCreateStretchCompressAtomsList:
         atoms = _make_h2o()
         result = create_stretch_compress_atoms_list(atoms, 0.2, 1)
         assert len(result) == 1
+
+
+def _non_orthogonal_cells():
+    from ase.build import bulk
+    from ase.geometry import cellpar_to_cell
+
+    # Diamond primitive (fcc) cell: every diagonal element is zero, so an
+    # element-wise diagonal scaling collapses it completely.
+    diamond = bulk("C", "diamond", a=3.57)
+    # Graphite-like hexagonal cell (gamma = 120 degrees).
+    hexagonal = Atoms(
+        "C4",
+        scaled_positions=[
+            [0, 0, 0.25],
+            [0, 0, 0.75],
+            [1 / 3, 2 / 3, 0.25],
+            [2 / 3, 1 / 3, 0.75],
+        ],
+        cell=cellpar_to_cell([2.46, 2.46, 6.71, 90, 90, 120]),
+        pbc=True,
+    )
+    return {"diamond_primitive": diamond, "hexagonal": hexagonal}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("name", ["diamond_primitive", "hexagonal"])
+def test_non_orthogonal_cell_keeps_its_shape(name):
+    """Regression: the deformation used to zero every off-diagonal cell
+    element, turning non-orthogonal cells (most Materials Project
+    structures) rectangular or collapsing a lattice vector to zero --
+    which crashed Atoms.wrap() before DFT."""
+    from alomancy.initialize.stretch_and_compress import (
+        create_stretch_compress_atoms_list,
+    )
+
+    atoms = _non_orthogonal_cells()[name]
+    result = create_stretch_compress_atoms_list(atoms, 0.2, 5)
+
+    for deformed in result:
+        factor = float(deformed.info["deformation"])
+        assert deformed.cell.rank == 3
+        np.testing.assert_allclose(deformed.cell.angles(), atoms.cell.angles())
+        np.testing.assert_allclose(
+            deformed.cell.lengths(), atoms.cell.lengths() * factor, rtol=1e-3
+        )
+        np.testing.assert_allclose(
+            deformed.get_volume(), atoms.get_volume() * factor**3, rtol=1e-2
+        )
+        np.testing.assert_allclose(
+            deformed.get_scaled_positions(), atoms.get_scaled_positions(), atol=1e-8
+        )
+        deformed.wrap()  # the step that crashed on collapsed cells

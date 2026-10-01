@@ -35,8 +35,11 @@ def create_stretch_compress_atoms_list(
             1 - max_lattice_deformation, 1 + max_lattice_deformation, num_structures
         ):
             deformed_atoms = atoms.copy()
-            cell_multiplier = np.eye(3) * i
-            new_cell = deformed_atoms.cell * cell_multiplier
+            # Scalar scaling keeps the cell's shape (angles) for any lattice.
+            # An element-wise product with np.eye(3) * i used to zero every
+            # off-diagonal cell element, turning non-orthogonal (e.g.
+            # hexagonal) cells rectangular or collapsing a lattice vector.
+            new_cell = deformed_atoms.cell.array * i
             deformed_atoms.set_cell(new_cell, scale_atoms=True)
             deformed_atoms.info["config_type"] = "init_stretch_compress"
             deformed_atoms.info["deformation"] = f"{i:.3f}"

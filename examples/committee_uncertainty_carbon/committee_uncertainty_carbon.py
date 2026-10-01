@@ -1,13 +1,13 @@
 """Minimal single-element (Carbon) run using the CommitteeUncertaintyWorkflow
-skeleton, dispatched via build_workflow() + the shared module registry --
+skeleton, built by ALomancy(config) + the shared module registry --
 see src/alomancy/core/committee_uncertainty_workflow.py.
 
-build_workflow() reads config["general"]["al_workflow"] to pick the
+ALomancy reads config["general"]["al_workflow"] to pick the
 workflow class, and that class in turn resolves its trainer/structure-
 generator/DFT-evaluator/initialiser from config via registry.resolve(...)
 rather than Python subclassing -- there is no other workflow class or
 config schema in this codebase (examples/basic_use/ and examples/ezga_use/
-use the same build_workflow() entry point, just with more elaborate
+use the same ALomancy entry point, just with more elaborate
 configs).
 
 config.yaml has no general.start_from, so this is a cold start: the
@@ -16,7 +16,7 @@ initialization's structure-type settings (e.g. dimer_kwargs/
 amorphous_kwargs/mp_kwargs) plus general.elements. Add a start_from block
 to begin from existing data instead (see docs/starting_a_run.md).
 
-build_workflow() takes only jobs_dict now -- every setting that used to
+ALomancy takes only the config now -- every setting that used to
 be a separate Python kwarg here (num_of_al_loops, verbose, start_loop,
 ...) lives in config.yaml's
 general section instead (see committee_uncertainty_workflow.py's module
@@ -25,11 +25,8 @@ docstring for the full list).
 
 from pathlib import Path
 
-from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.committee_uncertainty_workflow import build_workflow
+from alomancy import ALomancy
 
-config = load_dictionaries(Path("config.yaml"))
-
-al_workflow = build_workflow(jobs_dict=config)
+al_workflow = ALomancy(Path("config.yaml"))
 
 al_workflow.run()

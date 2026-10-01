@@ -9,6 +9,12 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    run = sub.add_parser(
+        "run",
+        help="Run the AL workflow described by a YAML config",
+    )
+    run.add_argument("config", type=Path, help="Path to the run's YAML config")
+
     res = sub.add_parser("results", help="Inspect and post-process workflow results")
     res.add_argument(
         "--replot",
@@ -67,7 +73,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "add-hpc":
+    if args.command == "run":
+        from alomancy import ALomancy
+
+        ALomancy(args.config).run()
+    elif args.command == "add-hpc":
         from alomancy.cli.add_hpc import add_hpc_wizard
 
         add_hpc_wizard()

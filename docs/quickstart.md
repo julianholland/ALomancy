@@ -3,19 +3,13 @@
 ## Basic Active Learning Workflow
 
 ```python
-from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.committee_uncertainty_workflow import build_workflow
+from alomancy import ALomancy
 
-# Load configuration from YAML file -- every workflow-level setting
-# (start_from, num_of_al_loops, verbose, log_file,
-# db_path, ...) lives under the YAML's `general:` section; build_workflow()
-# takes only jobs_dict.
-jobs_dict = load_dictionaries("standard_config.yaml")
-
-workflow = build_workflow(jobs_dict=jobs_dict)
-
-# Run the active learning workflow
-workflow.run()
+# The config picks everything: the AL skeleton (general.al_workflow) and
+# every module (training.trainer, structure_generation.generator,
+# high_accuracy_evaluation.evaluator). Every run setting (start_from,
+# num_of_al_loops, verbose, ...) lives under the YAML's `general:` section.
+ALomancy("standard_config.yaml").run()
 ```
 
 ```yaml

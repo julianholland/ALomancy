@@ -83,16 +83,13 @@ pip install -e ".[dev]"
 ### 1. Basic Active Learning Workflow
 
 ```python
-from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.committee_uncertainty_workflow import build_workflow
+from alomancy import ALomancy
 
-# Load job configuration from YAML -- every workflow-level setting
-# (start_from, num_of_al_loops, verbose, ...) lives under
-# the YAML's `general:` section; build_workflow() takes only jobs_dict.
-jobs_dict = load_dictionaries("standard_config.yaml")
-
-workflow = build_workflow(jobs_dict=jobs_dict)
-workflow.run()
+# The config picks everything: the AL skeleton (general.al_workflow) and
+# every module (training.trainer, structure_generation.generator,
+# high_accuracy_evaluation.evaluator). Every run setting (start_from,
+# num_of_al_loops, verbose, ...) lives under the YAML's `general:` section.
+ALomancy("standard_config.yaml").run()
 ```
 
 ### 2. Configuration File
@@ -188,7 +185,8 @@ alomancy/
 ## 🔧 Key Components
 
 ### Core Framework
-- **CommitteeUncertaintyWorkflow**: The AL workflow implementation, built via `build_workflow()`; resolves its trainer/structure-generator/DFT-evaluator/initialiser from config via the shared module registry rather than subclassing
+- **ALomancy**: The single entry point (`from alomancy import ALomancy; ALomancy("config.yaml").run()`, or `alomancy run config.yaml`); builds whichever AL skeleton `general.al_workflow` names
+- **CommitteeUncertaintyWorkflow**: The default AL skeleton (`al_workflow: committee_uncertainty`); resolves its trainer/structure-generator/DFT-evaluator/initialiser from config via the shared module registry rather than subclassing
 - **GlobalDatabase**: Persistent HDF5+SQLite store for all DFT-evaluated structures; deduplication by (config_type, formula)
 - **Structured Logging**: All output routed through Python logging; verbose=0/1/2 controls console level; file always captures DEBUG
 

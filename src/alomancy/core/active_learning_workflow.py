@@ -909,6 +909,18 @@ class ActiveLearningWorkflow(ABC):
         general_config = jobs_dict.get("general", {})
         general_kwargs = {**_GENERAL_KWARGS_DEFAULTS, **general_config}
 
+        # The config, not the class a caller happened to import, picks the
+        # skeleton: constructing one class with a config naming another
+        # would silently run the wrong algorithm.
+        configured = general_config.get("al_workflow")
+        if configured is not None and self.NAME and configured != self.NAME:
+            raise ValueError(
+                f"Config selects general.al_workflow={configured!r} but "
+                f"{type(self).__name__} is {self.NAME!r}. Build the workflow "
+                "from the config instead: `from alomancy import ALomancy; "
+                "ALomancy(config).run()`."
+            )
+
         # Every outdated key is reported in one error, so fixing a config
         # takes one pass rather than one restart per key.
         renamed = _find_renamed_keys(jobs_dict)

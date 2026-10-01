@@ -141,3 +141,16 @@ _register_rsync_retry_warning_filter()
 # in-flight remote job along with it. Agg never creates GUI/Tk state, so
 # it has no thread affinity to violate.
 matplotlib.use("Agg")
+
+__all__ = ["ALomancy"]
+
+
+def __getattr__(name: str) -> type:
+    # Lazy: importing alomancy.core here would pull in expyre, matplotlib
+    # and the MLIP stack at package import, before the setup above is
+    # guaranteed to have run for every import path.
+    if name == "ALomancy":
+        from alomancy.core.entry import ALomancy
+
+        return ALomancy
+    raise AttributeError(f"module 'alomancy' has no attribute {name!r}")

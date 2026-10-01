@@ -84,6 +84,12 @@ register(
 )
 ```
 
+Users then select it from the config alone, with `al_workflow: my_workflow`
+under `general`, and run it with `ALomancy("config.yaml").run()` (or
+`alomancy run config.yaml`). They never import `MyWorkflow`. Constructing
+`MyWorkflow` directly with a config that names a different `al_workflow`
+raises `ValueError`.
+
 `RandomSelectionWorkflow` (`src/alomancy/core/random_selection_workflow.py`)
 is a complete example in under 100 lines.
 
