@@ -86,16 +86,14 @@ def registered(category: str | None = None) -> dict:
 # registration calls across the codebase (see module docstring).
 # ---------------------------------------------------------------------------
 
+# MLIP trainers (training.trainer): each entry's trainer_class is an
+# ALomancyTrainer subclass (mlip/base.py); build one with
+# mlip.base.get_trainer(name, config).
 register(
     "mlip_trainer",
     "mace",
     "alomancy.mlip.mace.trainer",
-    train="train",
-    get_calculator="get_calculator",
-    output_paths="output_paths",
-    read_existing_result="read_existing_result",
-    kwargs_defaults="_MACE_KWARGS_DEFAULTS",
-    report_section="report_section",
+    trainer_class="MaceTrainer",
 )
 
 register(

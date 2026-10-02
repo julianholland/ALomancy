@@ -9,7 +9,7 @@ moving or renaming it needs a reinstall on every HPC host.
 import numpy as np
 from ase import Atoms
 
-from alomancy.registry import resolve
+from alomancy.mlip.base import get_trainer
 
 
 def _flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
@@ -26,8 +26,7 @@ def predict_with_model(
     the trainer registry (never a hardcoded MACECalculator). Returns
     ``{"forces": [...], "energies": [...]}``, index-aligned with
     structure_list; forces are flattened to shape (1, 3 * n_atoms)."""
-    entry = resolve("mlip_trainer", trainer)
-    calc = entry.get_calculator(model_path, trainer_config)
+    calc = get_trainer(trainer, trainer_config).get_calculator(model_path)
     forces = []
     energies = []
     for atoms in structure_list:

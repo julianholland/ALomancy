@@ -80,9 +80,9 @@ expanding the held-out test, and routes known held-out descendants to diagnostic
 gate, before structure generation. Exported checkpoints are evaluated on fit,
 common validation, and held-out test. `evaluation_metrics.json` records per-domain
 metrics, units, dataset identity and checkpoint SHA256. Committee selection uses
-validation force MAE and refuses missing or inconsistent validation. With
-`require_checkpoint_metrics: true`, historical training-log metrics cannot be
-silently presented as final-checkpoint test results. Optional `quality_gate`
+validation force MAE and refuses missing or inconsistent validation. Only these
+checkpoint evaluations are reported; MACE's own training-log metrics are never
+presented as final test results. Optional `quality_gate`
 limits must pass for every member and required domain before exploration.
 
 Energy MAE is in eV/atom; force MAE is over Cartesian components in eV/Angstrom.

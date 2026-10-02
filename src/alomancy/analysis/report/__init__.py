@@ -35,8 +35,10 @@ logger = logging.getLogger(__name__)
 
 REPORTS_DIR = Path("results", "reports")
 
+# Generator/evaluator modules expose report_section as a registry entry
+# point; the trainer is a class (mlip/base.ALomancyTrainer) and has it as a
+# method.
 _MODULE_CATEGORIES = (
-    ("mlip_trainer", "trainer"),
     ("structure_generator", "generator"),
     ("dft_evaluator", "evaluator"),
 )
@@ -124,9 +126,23 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
 
 
 def _sections(workflow: Any, stats: dict, plots_dir: Path | None) -> list[Section]:
+    from alomancy.mlip.base import get_trainer
     from alomancy.registry import resolve
 
     sections: list[Section] = []
+    trainer_section = _attempt(
+        f"{stats['modules']['trainer']} report section",
+        lambda: get_trainer(
+            stats["modules"]["trainer"], workflow.jobs_dict.get("training", {})
+        ).report_section(
+            stats,
+            base_name=stats["base_name"],
+            plots_dir=plots_dir,
+            config=workflow.jobs_dict,
+        ),
+    )
+    if trainer_section is not None:
+        sections.append(trainer_section)
     for category, key in _MODULE_CATEGORIES:
         name = stats["modules"][key]
         entry = _attempt(

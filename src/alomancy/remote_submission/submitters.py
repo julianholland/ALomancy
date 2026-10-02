@@ -203,7 +203,7 @@ def committee_remote_submitter(
         ``range(num_of_models_in_committee)`` (every member, indices 0..N-1).
         Each job's output directory is keyed off its own index (not its
         position in this list) so it matches the `fit_{fit_idx}` directory
-        `mace_fit` itself writes to (`mlip/mace/mace_wfl.py`) — using the
+        the trainer writes to — using the
         shared `common_output_pattern`/positional `job_id` mechanism here
         would stage/sync the wrong directory whenever fit_indices is a
         non-contiguous subset (e.g. backfilling just fit_2 and fit_4).
@@ -222,9 +222,8 @@ def committee_remote_submitter(
     job_configs = [
         {
             "function_kwargs": {
-                # The validation split uses this common base seed. mace_fit
-                # applies fit_idx only to the MACE initialization seed, so the
-                # models remain independent while validation stays identical.
+                # A common base seed for the submitted function, plus each
+                # member's own fit_idx.
                 "seed": seed,
                 "fit_idx": i,
                 **(function_kwargs or {}),

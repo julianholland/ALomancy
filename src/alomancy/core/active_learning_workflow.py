@@ -87,7 +87,7 @@ there is exactly one of each section per run, so a user-supplied name added
 nothing but another place to typo (and `high_accuracy_evaluation`'s already
 had to equal this literal anyway). Old shared functions that still read
 `config["name"]` internally (`find_high_sd_structures`, `run_md`,
-`check_quality_gate`, `select_best_committee_model`, the plotting
+`check_quality_gate`, the plotting
 functions) get it merged into a shallow config copy at each call site
 instead of being changed themselves.
 
@@ -200,13 +200,17 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     read_existing_result as _read_evaluated_structures,
 )
+from alomancy.mlip.base import (
+    ALomancyTrainer,
+    get_trainer,
+    read_predictions,
+    run_training,
+)
 from alomancy.mlip.evaluation import (
-    best_fit_test_metrics,
     check_quality_gate,
-    loop_metrics_frame,
+    metrics_by_loop,
     rank_committee,
 )
-from alomancy.mlip.mace.mace_wfl import read_mace_eval_predictions
 from alomancy.mlip.predict import predict_with_model
 from alomancy.registry import registered, resolve
 from alomancy.remote_submission.executor import acquire_local_expyre_lock, submit_n
@@ -658,13 +662,8 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
         for namespace, defaults in namespace_defaults.items():
             effective[namespace] = {**defaults, **effective.get(namespace, {})}
     elif phase == "training":
-        trainer_name = effective.get("trainer", "mace")
-        kwargs_key = f"{trainer_name}_kwargs"
-        defaults = resolve("mlip_trainer", trainer_name).kwargs_defaults
-        merged = {**defaults, **effective.get(kwargs_key, {})}
-        if trainer_name == "mace" and "E0s" not in merged:
-            merged["E0s"] = "<resolved at train time from IsolatedAtom structures>"
-        effective[kwargs_key] = merged
+        trainer = get_trainer(effective.get("trainer", "mace"), effective)
+        effective[trainer.KWARGS_KEY] = trainer.effective_kwargs()
     elif phase == "structure_generation":
         generator = effective.get("generator", "md")
         kwargs_key = f"{generator}_kwargs"
@@ -868,6 +867,11 @@ def _load_high_accuracy_results(
     return self._label_new_structures(ctx, labelled)
 
 
+def _fit_dir(base_name: str, fit_idx: int) -> Path:
+    """results/<loop>/training/fit_<i>: where fit *fit_idx* of a loop lives."""
+    return Path("results", base_name, _TRAINING_NAME, f"fit_{fit_idx}")
+
+
 def _load_trained_models(
     self: "ActiveLearningWorkflow",
     ctx: LoopContext,
@@ -876,16 +880,11 @@ def _load_trained_models(
 ) -> list[TrainedModel]:
     """train_mlip.done loader: re-read every fit that has a valid cached
     result (a fit lost after the sentinel was written is skipped)."""
-    trainer_entry = resolve("mlip_trainer", self.training_config.get("trainer", "mace"))
+    trainer = self.trainer()
     models = []
     for fit_idx, seed in enumerate(seeds):
         try:
-            result = trainer_entry.read_existing_result(
-                self.training_config,
-                base_name=ctx.base_name,
-                name=_TRAINING_NAME,
-                fit_idx=fit_idx,
-            )
+            result = trainer.read_existing_result(_fit_dir(ctx.base_name, fit_idx))
         except (FileNotFoundError, ValueError):
             continue
         models.append(self._trained_model(ctx, fit_idx, seed, result))
@@ -1465,7 +1464,6 @@ class ActiveLearningWorkflow(ABC):
         model -- logs a warning and leaves the previous best model in place;
         it never fails the AL loop.
         """
-        training_config = self.jobs_dict["training"]
         committee_dir = Path("results", base_name, _TRAINING_NAME)
         fit_dirs = {
             i: committee_dir / f"fit_{i}"
@@ -1486,13 +1484,11 @@ class ActiveLearningWorkflow(ABC):
             logger.warning("best_model not updated: %s", exc)
             return
 
-        trainer_entry = resolve("mlip_trainer", training_config.get("trainer", "mace"))
-        _, compiled_path, _ = trainer_entry.read_existing_result(
-            training_config, base_name=base_name, name=_TRAINING_NAME, fit_idx=best_fit
-        )
+        compiled_path = self.trainer().deployable_model_path(fit_dirs[best_fit])
         if compiled_path is None:
             logger.warning(
-                "fit_%d of %s has no compiled model; best_model not updated.",
+                "fit_%d of %s has no deployable (e.g. compiled) model; "
+                "best_model not updated.",
                 best_fit,
                 base_name,
             )
@@ -1556,29 +1552,11 @@ class ActiveLearningWorkflow(ABC):
         """One row per AL loop (loop number in the "al_loop" column): the test-split
         mae_f/mae_e_per_atom of that loop's best committee member, chosen
         the same way as MD's base model (mlip/evaluation.py's
-        best_fit_test_metrics). A loop whose evaluations are missing or
+        metrics_by_loop). A loop whose evaluations are missing or
         inconsistent is skipped with a warning rather than failing the
         plot.
         """
-        al_loop_dirs = sorted(
-            Path("results").glob("al_loop_*"),
-            key=lambda p: int(p.name.rsplit("_", 1)[1]),
-        )
-        rows = []
-        loops = []
-        for al_loop_dir in al_loop_dirs:
-            try:
-                row = best_fit_test_metrics(al_loop_dir / name)
-            except (RuntimeError, ValueError, KeyError, FileNotFoundError) as exc:
-                logger.warning(
-                    "Skipping %s in the MAE-vs-loop metrics: %s", al_loop_dir.name, exc
-                )
-                continue
-            if row is None:
-                continue
-            rows.append(row)
-            loops.append(int(al_loop_dir.name.rsplit("_", 1)[1]))
-        return loop_metrics_frame(loops, rows)
+        return metrics_by_loop(name, strict=False)
 
     def _store_predictions_and_cleanup(
         self, base_name: str, name: str, results: dict[int, tuple]
@@ -1588,18 +1566,16 @@ class ActiveLearningWorkflow(ABC):
         operations needing db/loop_idx/base_name, so skeleton-level rather
         than trainer-internal (decision 2/15)."""
         loop_idx = int(base_name.rsplit("_", 1)[-1]) if "al_loop_" in base_name else 0
-        for fit_idx, (_model_path, compiled_model_path, _metrics) in results.items():
+        trainer = self.trainer()
+        for fit_idx in results:
             fit_dir = Path("results", base_name, name, f"fit_{fit_idx}")
-            preds = read_mace_eval_predictions(fit_dir)
+            preds = read_predictions(fit_dir)
             if preds:
                 self.db.store_model_predictions(loop_idx, fit_idx, preds)
-            if compiled_model_path is not None:
-                checkpoints_dir = fit_dir / "checkpoints"
-                if checkpoints_dir.exists():
-                    shutil.rmtree(checkpoints_dir, ignore_errors=True)
-                    logger.info(
-                        "Removed local %s after successful fit.", checkpoints_dir
-                    )
+            # The local copy too: ExPyRe's mid-run syncs only ever add files
+            # locally, so e.g. MACE's per-epoch checkpoints pile up here even
+            # after the remote job deleted its own.
+            trainer.cleanup(fit_dir)
 
     # -- Helpers a workflow's run() calls --------------------------------------
 
@@ -1768,7 +1744,7 @@ class ActiveLearningWorkflow(ABC):
 
         workdir = Path("results", base_name)
 
-        trainer_entry = resolve("mlip_trainer", trainer_name)
+        trainer = self.trainer()
 
         all_training = list(read(workdir / "train_set.xyz", ":", format="extxyz"))
         test_path = workdir / "test_set.xyz"
@@ -1798,12 +1774,10 @@ class ActiveLearningWorkflow(ABC):
 
         results: dict[int, tuple] = {}
         for fit_idx in range(num_of_models):
-            paths = trainer_entry.output_paths(
-                training_config, base_name=base_name, name=name, fit_idx=fit_idx
-            )
+            paths = trainer.output_paths(_fit_dir(base_name, fit_idx))
             if not all(p.exists() for p in paths):
                 continue
-            cached = self._collect_fit(trainer_entry, ctx, fit_idx)
+            cached = self._collect_fit(trainer, ctx, fit_idx)
             if cached is None:
                 logger.warning(
                     "fit_%d's cached result failed validation; retraining.", fit_idx
@@ -1832,37 +1806,35 @@ class ActiveLearningWorkflow(ABC):
             # (not a live GlobalDatabase, which must never cross the ExPyRe
             # boundary) so the trainer can default its reference energies
             # (e.g. MACE's E0s) when the config doesn't set them.
-            isolated_atom_e0s = self.db.get_isolated_atom_energies()
+            isolated_atom_energies = self.db.get_isolated_atom_energies()
 
             def submit(fit_indices: list[int]) -> None:
                 job_configs = [
                     {
                         "function_kwargs": {
+                            "trainer": trainer_name,
+                            "config": training_config,
                             "train_atoms_path": str(train_path),
                             "valid_atoms_path": valid_path_str,
                             "test_atoms_path": str(test_path),
-                            "config": training_config,
-                            "fit_seed": seeds[fit_idx],
-                            "base_name": base_name,
-                            "name": name,
-                            "fit_idx": fit_idx,
-                            "hpc": hpc,
-                            "max_time": max_time,
+                            "seed": seeds[fit_idx],
+                            "fit_dir": str(_fit_dir(base_name, fit_idx)),
+                            "fit_name": name,
                             "elements": general_config.get("elements"),
-                            "isolated_atom_e0s": isolated_atom_e0s,
+                            "isolated_atom_energies": isolated_atom_energies,
                         },
                         "output_files": [str(workdir / name / f"fit_{fit_idx}")],
                     }
                     for fit_idx in fit_indices
                 ]
-                submitted = submit_n(trainer_entry.train, job_configs, remote_info)
+                submitted = submit_n(run_training, job_configs, remote_info)
                 for position, fit_idx in enumerate(fit_indices):
                     if submitted[position] is None:
                         continue
                     # A job that returned is only a success once its outputs
                     # (for MACE: the model and evaluation_metrics.json) are
                     # present and valid -- the same test a restart applies.
-                    collected = self._collect_fit(trainer_entry, ctx, fit_idx)
+                    collected = self._collect_fit(trainer, ctx, fit_idx)
                     if collected is None:
                         logger.warning(
                             "fit_%d of %s finished but was not evaluated "
@@ -1935,29 +1907,26 @@ class ActiveLearningWorkflow(ABC):
         ]
 
     def _collect_fit(
-        self, trainer_entry: Any, ctx: LoopContext, fit_idx: int
+        self, trainer: ALomancyTrainer, ctx: LoopContext, fit_idx: int
     ) -> tuple | None:
-        """A fit's (model_path, compiled_model_path, metrics) if all its
-        outputs exist and read back cleanly (for MACE: the model plus a
+        """A fit's (model_path, deployable_model_path, metrics) if all its
+        outputs exist and read back cleanly (the model plus a
         checksum-verified evaluation_metrics.json), else None."""
-        paths = trainer_entry.output_paths(
-            self.training_config,
-            base_name=ctx.base_name,
-            name=_TRAINING_NAME,
-            fit_idx=fit_idx,
-        )
-        if not all(p.exists() for p in paths):
+        fit_dir = _fit_dir(ctx.base_name, fit_idx)
+        if not all(p.exists() for p in trainer.output_paths(fit_dir)):
             return None
         try:
-            result: tuple = trainer_entry.read_existing_result(
-                self.training_config,
-                base_name=ctx.base_name,
-                name=_TRAINING_NAME,
-                fit_idx=fit_idx,
-            )
+            return trainer.read_existing_result(fit_dir)
         except (FileNotFoundError, ValueError):
             return None
-        return result
+
+    def trainer(self) -> ALomancyTrainer:
+        """This run's MLIP trainer (training.trainer, default "mace")."""
+        return get_trainer(
+            self.training_config.get("trainer", "mace"),
+            self.training_config,
+            _TRAINING_NAME,
+        )
 
     def _record_seed(self, ctx: LoopContext, fit_idx: int, seed: int) -> None:
         fit_dir = Path("results", ctx.base_name, _TRAINING_NAME, f"fit_{fit_idx}")

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,8 @@ import polars as pl
 from ase.stress import full_3x3_to_voigt_6_stress
 
 from alomancy.utils.dataset_curation import geometry_digest, structure_domain
+
+logger = logging.getLogger(__name__)
 
 
 def _voigt_stress(stress: object) -> np.ndarray | None:
@@ -233,6 +236,58 @@ def loop_metrics_frame(loops: list[int], rows: list[dict]) -> pl.DataFrame:
         [{"al_loop": loop, **row} for loop, row in zip(loops, rows, strict=True)],
         infer_schema_length=None,
     )
+
+
+def metrics_by_loop(
+    name: str,
+    *,
+    strict: bool,
+    expected_fits: int | None = None,
+    results_dir: Path = Path("results"),
+) -> pl.DataFrame:
+    """One row per AL loop with its best model's test-split metrics
+    (best_fit_test_metrics), the loop number in the "al_loop" column.
+
+    Reads each loop's ``results/al_loop_N/<name>/fit_*/evaluation_metrics.json``;
+    loops with none are left out. With ``strict=False`` (the live run's
+    MAE-vs-loop plot) a loop whose evaluations are inconsistent is skipped
+    with a warning; with ``strict=True`` (``alomancy results --replot``) it
+    raises, and so does a loop where fewer than *expected_fits* fits have
+    an evaluation.
+    """
+    rows = []
+    loops = []
+    loop_dirs = sorted(
+        results_dir.glob("al_loop_*"), key=lambda p: int(p.name.rsplit("_", 1)[1])
+    )
+    for loop_dir in loop_dirs:
+        committee_dir = loop_dir / name
+        try:
+            if strict and expected_fits is not None:
+                evaluated = {
+                    p.parent.name
+                    for p in committee_dir.glob("fit_*/evaluation_metrics.json")
+                }
+                if evaluated and evaluated != {
+                    f"fit_{i}" for i in range(expected_fits)
+                }:
+                    raise RuntimeError(
+                        f"{committee_dir}: evaluations found for {sorted(evaluated)}, "
+                        f"expected fit_0..fit_{expected_fits - 1}."
+                    )
+            row = best_fit_test_metrics(committee_dir)
+        except (RuntimeError, ValueError, KeyError, FileNotFoundError) as exc:
+            if strict:
+                raise
+            logger.warning(
+                "Skipping %s in the MAE-vs-loop metrics: %s", loop_dir.name, exc
+            )
+            continue
+        if row is None:
+            continue
+        rows.append(row)
+        loops.append(int(loop_dir.name.rsplit("_", 1)[1]))
+    return loop_metrics_frame(loops, rows)
 
 
 def check_quality_gate(workdir: Path, committee: dict) -> None:

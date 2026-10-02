@@ -7,7 +7,7 @@ from alomancy.analysis.mlip_plots import plot_dft_vs_model, plot_training_curves
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.analysis.timing_plots import timing_plots
 from alomancy.database.global_database import GlobalDatabase
-from alomancy.mlip.mace.get_mace_eval_info import get_mace_eval_info
+from alomancy.mlip.evaluation import metrics_by_loop
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +120,14 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     # mirrors the live run's last-loop mae_al_loop_plot call (which always
     # shows the fullest cumulative history at that point), so it lands in the
     # last plotted loop's subdirectory rather than flat in plots_dir.
-    df = get_mace_eval_info(job_dict)
+    df = metrics_by_loop(name, strict=True, expected_fits=n_fits)
     if not df.is_empty():
         last_loop_plots_dir = plots_dir / loops[-1].name
         last_loop_plots_dir.mkdir(exist_ok=True, parents=True)
         mae_al_loop_plot(df, job_dict, directory=last_loop_plots_dir)
     else:
         logger.warning(
-            "get_mace_eval_info returned empty DataFrame — MAE loop plot skipped."
+            "No evaluation_metrics.json found for any loop — MAE loop plot skipped."
         )
 
     # Timing plots (purely log-based, no MACE needed)

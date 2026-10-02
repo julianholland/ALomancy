@@ -105,7 +105,7 @@ def _mock_targets():
     return [
         "alomancy.cli.replot.plot_training_curves",
         "alomancy.cli.replot.plot_dft_vs_model",
-        "alomancy.cli.replot.get_mace_eval_info",
+        "alomancy.cli.replot.metrics_by_loop",
         "alomancy.cli.replot.mae_al_loop_plot",
         "alomancy.cli.replot.timing_plots",
     ]
@@ -123,7 +123,7 @@ def test_replot_calls_plot_functions(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves") as m_train,
         mock.patch("alomancy.cli.replot.plot_dft_vs_model") as m_parity,
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot") as m_mae,
@@ -151,7 +151,7 @@ def test_replot_passes_db_and_loop_idx_when_global_database_exists(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves"),
         mock.patch("alomancy.cli.replot.plot_dft_vs_model") as m_parity,
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
@@ -183,7 +183,7 @@ def test_replot_no_global_database_dir_falls_back(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves"),
         mock.patch("alomancy.cli.replot.plot_dft_vs_model") as m_parity,
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
@@ -211,7 +211,7 @@ def test_replot_no_parity(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves"),
         mock.patch("alomancy.cli.replot.plot_dft_vs_model") as m_parity,
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
@@ -238,7 +238,7 @@ def test_replot_skips_loop_without_train_txt(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves") as m_train,
         mock.patch("alomancy.cli.replot.plot_dft_vs_model"),
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
@@ -263,7 +263,7 @@ def test_replot_skips_timing_when_no_log(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves"),
         mock.patch("alomancy.cli.replot.plot_dft_vs_model"),
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot"),
@@ -320,7 +320,7 @@ def test_replot_orders_loops_numerically(tmp_path):
         mock.patch("alomancy.cli.replot.plot_training_curves") as m_train,
         mock.patch("alomancy.cli.replot.plot_dft_vs_model"),
         mock.patch(
-            "alomancy.cli.replot.get_mace_eval_info",
+            "alomancy.cli.replot.metrics_by_loop",
             return_value=pl.DataFrame([{"al_loop": 0, "mae_f": 0.1}]),
         ),
         mock.patch("alomancy.cli.replot.mae_al_loop_plot") as m_mae,

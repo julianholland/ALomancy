@@ -4,10 +4,18 @@ from ase import Atoms
 
 from alomancy.mlip.evaluation import (
     prediction_metrics,
+    rank_committee,
     read_evaluation,
     save_evaluation,
 )
-from alomancy.mlip.mace.get_mace_eval_info import select_best_committee_model
+
+
+def _rank(base, name="committee", n_fits=3):
+    """The committee's best fit index (rank_committee, as for MD)."""
+    fit_dirs = {
+        i: base / "results/al_loop_0" / name / f"fit_{i}" for i in range(n_fits)
+    }
+    return rank_committee(fit_dirs)[0]
 
 
 def predicted(error):
@@ -36,9 +44,7 @@ def test_selection_uses_common_validation_not_test(tmp_path, monkeypatch):
                 "test": prediction_metrics([predicted(1 - error)]),
             },
         )
-    best, _ = select_best_committee_model(
-        "al_loop_0", {"name": "committee", "num_of_models_in_committee": 3}, 803
-    )
+    best = _rank(tmp_path)
     assert best == 1
 
 
@@ -46,18 +52,16 @@ def test_selection_uses_common_validation_not_test(tmp_path, monkeypatch):
 def test_refuses_missing_validation_instead_of_fit_zero(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(RuntimeError, match="complete checkpoint validation"):
-        select_best_committee_model(
-            "al_loop_0", {"name": "c", "num_of_models_in_committee": 3}, 803
-        )
+        _rank(tmp_path, name="c")
 
 
 @pytest.mark.unit
 def test_falls_back_to_test_when_no_fit_has_a_validation_split(tmp_path, monkeypatch):
-    """mace_fit's own _select_validation_split legitimately skips carving a
-    validation split (logs a warning, doesn't fail) whenever the eligible
-    pool is too small -- every fit is then uniformly missing 'valid'. This
-    must not be treated as an evaluation failure: fall back to the 'test'
-    split, which mace_fit always attempts regardless of pool size."""
+    """_select_validation_split legitimately skips carving a validation
+    split (logs a warning, doesn't fail) whenever the eligible pool is too
+    small -- every fit is then uniformly missing 'valid'. This must not be
+    treated as an evaluation failure: fall back to the 'test' split, which
+    is always evaluated regardless of pool size."""
     monkeypatch.chdir(tmp_path)
     for i, error in enumerate([0.3, 0.1, 0.2]):
         fit = tmp_path / "results/al_loop_0/committee" / f"fit_{i}"
@@ -65,9 +69,7 @@ def test_falls_back_to_test_when_no_fit_has_a_validation_split(tmp_path, monkeyp
         model = fit / "committee_stagetwo.model"
         model.write_bytes(b"checkpoint")
         save_evaluation(fit, model, {"test": prediction_metrics([predicted(error)])})
-    best, _ = select_best_committee_model(
-        "al_loop_0", {"name": "committee", "num_of_models_in_committee": 3}, 803
-    )
+    best = _rank(tmp_path)
     assert best == 1
 
 
@@ -87,9 +89,7 @@ def test_refuses_when_fits_disagree_on_having_a_validation_split(tmp_path, monke
             splits["valid"] = prediction_metrics([predicted(error)])
         save_evaluation(fit, model, splits)
     with pytest.raises(RuntimeError, match="complete checkpoint validation"):
-        select_best_committee_model(
-            "al_loop_0", {"name": "committee", "num_of_models_in_committee": 3}, 803
-        )
+        _rank(tmp_path)
 
 
 @pytest.mark.unit

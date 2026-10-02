@@ -11,7 +11,6 @@ from ase.units import GPa, fs
 from mace.calculators import MACECalculator
 
 from alomancy.configs.remote_info import get_remote_info
-from alomancy.registry import resolve
 from alomancy.remote_submission.executor import submit_n
 from alomancy.utils.dataset_curation import geometry_digest
 from alomancy.utils.seed_selection import mark_structures_for_dft, select_diverse_seeds
@@ -311,15 +310,16 @@ def _run_md_via_trainer(
     **run_md_kwargs: Any,
 ) -> None:
     """Per-seed remote worker for generate() below. Builds its calculator
-    via the named trainer's own get_calculator(model_path, trainer_config),
+    via the named trainer's get_calculator(model_path) (mlip/base.get_trainer),
     resolved through the shared registry -- never a hardcoded MACECalculator
     -- then delegates to run_md's unchanged dynamics loop. Must only run
     inside a remote job: a live calculator must never cross the ExPyRe
     boundary (see the architecture plan's generator/calculator-coupling
     decision).
     """
-    entry = resolve("mlip_trainer", trainer)
-    calc = entry.get_calculator(model_path, trainer_config)
+    from alomancy.mlip.base import get_trainer
+
+    calc = get_trainer(trainer, trainer_config).get_calculator(model_path)
     run_md(
         structure_generation_job_dict=structure_generation_job_dict,
         initial_structure=initial_structure,

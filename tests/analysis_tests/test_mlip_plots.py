@@ -502,7 +502,7 @@ def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
 ):
     """Regression test: max_num_epochs="dynamic" with no
     resolved_mace_epochs.json sidecar (e.g. an older fit, or a plotting run
-    before mace_fit wrote the sidecar) must not crash trying to do
+    before the trainer wrote the sidecar) must not crash trying to do
     math.floor("dynamic" * 0.8) -- _get_stage_two_epoch must fall back to
     the numeric default instead."""
     from alomancy.analysis.mlip_plots import plot_training_curves

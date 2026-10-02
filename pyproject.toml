@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.26", "hatch-vcs>=0.4"]
+build-backend = "hatchling.build"
 
 [project]
 name = "alomancy"
@@ -37,29 +37,32 @@ dependencies = [
     "sage_lib>=0.1.9.13",
     "polars>=0.20.0",
     "deduplicate-lib>=0.1.0",
+    "sevenn>=0.10.4",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "pytest-mock>=3.10",
-    "pytest-xdist>=3.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0",
-    "pre-commit>=3.0",
-]
+# An extra (not a dependency group) so Read the Docs can install it.
 docs = [
-        "sphinx>=6.0",
+    "sphinx>=6.0",
     "sphinx-rtd-theme>=1.2",
     "myst-parser>=0.18",
     "sphinxcontrib-napoleon>=0.7",
 ]
+
+# Development-only dependencies (PEP 735). `uv sync` installs the `dev`
+# group by default; never part of the published package.
+[dependency-groups]
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-mock>=3.10",
     "pytest-xdist>=3.0",
+]
+dev = [
+    { include-group = "test" },
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
 ]
 
 [project.scripts]
@@ -70,21 +73,30 @@ Homepage = "https://github.com/julianholland/ALomancy"
 Repository = "https://github.com/julianholland/ALomancy"
 Documentation = "https://alomancy.readthedocs.io"
 
-[tool.setuptools_scm]
-write_to = "src/alomancy/version.py"
-version_scheme = "post-release"
-local_scheme = "no-local-version"
+# Version from git tags (vMAJOR.MINOR.PATCH), as before with setuptools_scm.
+[tool.hatch.version]
+source = "vcs"
+raw-options = { version_scheme = "post-release", local_scheme = "no-local-version" }
 
-# Add setuptools configuration for src layout
-[tool.setuptools.packages.find]
-where = ["src"]
+# Written at build/install time; read by alomancy.version (not tracked).
+[tool.hatch.build.hooks.vcs]
+version-file = "src/alomancy/version.py"
 
-[tool.setuptools.package-dir]
-"" = "src"
+# src layout. Non-Python package files (the logo PNGs, the report's
+# suggestions.yaml) are included because they live inside the package.
+[tool.hatch.build.targets.wheel]
+packages = ["src/alomancy"]
 
-[tool.setuptools.package-data]
-"alomancy.analysis" = ["*.png"]
-"alomancy.analysis.report" = ["*.yaml"]
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/alomancy",
+    "tests",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "pyproject.toml",
+]
+exclude = ["**/__pycache__", "tests/results"]
 
 # Testing configuration
 [tool.pytest.ini_options]

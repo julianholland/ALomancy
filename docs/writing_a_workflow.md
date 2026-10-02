@@ -139,3 +139,65 @@ changed mid-training), the model is reused and a warning is logged.
   for a committee. `CommitteeUncertaintyWorkflow.plot_loop` calls them; a
   new workflow can call the same functions or skip plotting. Plotting will
   be generalised separately.
+
+## Adding an MLIP trainer
+
+Trainers are separate from workflows: any workflow trains through
+`train_models`, which runs whichever trainer `training.trainer` names. A
+trainer subclasses `ALomancyTrainer` (`src/alomancy/mlip/base.py`) and
+implements three methods; evaluation, restart checks, isolated-atom
+energies and clean-up are inherited.
+
+```python
+# src/alomancy/mlip/sevennet/trainer.py
+from pathlib import Path
+
+from alomancy.mlip.base import ALomancyTrainer
+from alomancy.utils.training_schedule import resolve_epochs
+
+
+class SevenNetTrainer(ALomancyTrainer):
+    NAME = "sevennet"                          # training.trainer value
+    KWARGS_KEY = "sevennet_kwargs"             # its settings: training.sevennet_kwargs
+    KWARGS_DEFAULTS = {"epoch": "dynamic", "batch_size": 8}
+    # The backend's name for per-element isolated-atom energies. ALomancy
+    # fills it from the database's IsolatedAtom energies unless the user
+    # sets it; None if the backend doesn't use them.
+    ISOLATED_ATOM_ENERGIES_KWARG = "elemwise_reference_energies"
+
+    def model_path(self, fit_dir: Path) -> Path:
+        return fit_dir / "checkpoint_best.pth"
+
+    def get_calculator(self, model_path):
+        from sevenn.calculator import SevenNetCalculator
+        return SevenNetCalculator(str(model_path))
+
+    def fit(self, train_path, valid_path, test_path, seed, fit_dir, *,
+            isolated_atom_energies):
+        epochs = resolve_epochs(self.kwargs["epoch"], self.kwargs["batch_size"], n_structures)
+        ...  # run SevenNet in fit_dir with self.kwargs, epochs and seed
+        return self.model_path(fit_dir)   # or None if no model was produced
+```
+
+Then register it in `src/alomancy/registry.py`:
+
+```python
+register(
+    "mlip_trainer",
+    "sevennet",
+    "alomancy.mlip.sevennet.trainer",
+    trainer_class="SevenNetTrainer",
+)
+```
+
+- **`train` is the same for every backend:** split paths and a seed in, the
+  model's path (or `None`) out. Metrics are read back from the
+  `evaluation_metrics.json` that `evaluate()` writes, never returned.
+- **Override only what differs:** `format_isolated_atom_energies` (MACE
+  converts the dict to its own string), `deployable_model_path` (what
+  `results/best_model/` gets; MACE uses its compiled model),
+  `cleanup_paths` (files to delete after a fit), `report_section` (the
+  loop report).
+- Training runs remotely through the module-level `run_training`, which
+  builds the trainer on the HPC node from its registry name, so changes
+  to a trainer need `alomancy upgrade-hpc` before the next run.

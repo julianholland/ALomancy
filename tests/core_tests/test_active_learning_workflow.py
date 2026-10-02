@@ -34,6 +34,7 @@ from alomancy.core.active_learning_workflow import (
     phase,
 )
 from alomancy.core.committee_uncertainty_workflow import CommitteeUncertaintyWorkflow
+from alomancy.mlip.base import ALomancyTrainer, run_training
 from alomancy.mlip.evaluation import prediction_metrics, save_evaluation
 from alomancy.mlip.predict import predict_with_model
 
@@ -236,7 +237,7 @@ class TestBuildWorkflow:
 
 
 # ---------------------------------------------------------------------------
-# _select_validation_split (same logic as mace_wfl's, new skeleton-owned copy)
+# _select_validation_split (the workflow's per-loop validation carve-out)
 # ---------------------------------------------------------------------------
 
 
@@ -313,8 +314,8 @@ class TestScoreStructuresWithMember:
         for atoms in structures:
             atoms.calc = None
 
-        with patch("alomancy.mlip.predict.resolve") as mock_resolve:
-            mock_resolve.return_value = MagicMock(
+        with patch("alomancy.mlip.predict.get_trainer") as mock_get_trainer:
+            mock_get_trainer.return_value = MagicMock(
                 get_calculator=MagicMock(return_value=fake_calc)
             )
             with (
@@ -325,7 +326,8 @@ class TestScoreStructuresWithMember:
                     structures, "model.pt", "mace", {"device": "cpu"}
                 )
 
-        mock_resolve.assert_called_once_with("mlip_trainer", "mace")
+        mock_get_trainer.assert_called_once_with("mace", {"device": "cpu"})
+        mock_get_trainer.return_value.get_calculator.assert_called_once_with("model.pt")
         assert len(result["forces"]) == 2
         assert len(result["energies"]) == 2
         assert all(atoms.calc is fake_calc for atoms in structures)
@@ -545,13 +547,15 @@ class TestStorePredictionsAndCleanup:
         checkpoints_dir = fit_dir / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
         (checkpoints_dir / "epoch_1.pt").write_bytes(b"x")
+        # MACE deletes checkpoints/ only once its compiled model exists.
+        (fit_dir / "training_stagetwo_compiled.model").write_bytes(b"compiled")
 
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         results = {0: ("model.pt", "model_compiled.pt", {"test": {}})}
 
         with (
             patch(
-                f"{_MODULE}.read_mace_eval_predictions",
+                f"{_MODULE}.read_predictions",
                 return_value={0: {"energy": -1.0, "forces": [[0.0, 0.0, 0.0]]}},
             ),
             patch.object(wf.db, "store_model_predictions") as mock_store,
@@ -574,7 +578,7 @@ class TestStorePredictionsAndCleanup:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         results = {0: ("model.pt", None, {"test": {}})}
 
-        with patch(f"{_MODULE}.read_mace_eval_predictions", return_value={}):
+        with patch(f"{_MODULE}.read_predictions", return_value={}):
             wf._store_predictions_and_cleanup("al_loop_0", "committee", results)
 
         assert checkpoints_dir.exists()
@@ -585,24 +589,32 @@ class TestStorePredictionsAndCleanup:
 # ---------------------------------------------------------------------------
 
 
+def _fit_index(fit_dir) -> int:
+    return int(Path(fit_dir).name.rsplit("_", 1)[1])
+
+
 class _FakeTrainer:
-    """Stand-in trainer registry entry whose "outputs" are marker files, so
+    """Stand-in ALomancyTrainer whose "outputs" are marker files, so
     train_models' success rule (outputs exist and read back) can be
     exercised: `submit_n` below writes a fit's marker when that job
     succeeds, the way a real remote job syncs back its model and
     evaluation."""
 
-    train = staticmethod(lambda **kwargs: None)
-
     @staticmethod
     def marker(fit_idx: int) -> Path:
         return Path(f"fit_{fit_idx}.outputs")
 
-    def output_paths(self, config, *, base_name, name, fit_idx):
-        return [self.marker(fit_idx)]
+    def output_paths(self, fit_dir):
+        return [self.marker(_fit_index(fit_dir))]
 
-    def read_existing_result(self, config, *, base_name, name, fit_idx):
-        return (f"fit_{fit_idx}.pt", None, {})
+    def read_existing_result(self, fit_dir):
+        return (f"fit_{_fit_index(fit_dir)}.pt", None, {})
+
+    def deployable_model_path(self, fit_dir):
+        return None
+
+    def cleanup(self, fit_dir):
+        pass
 
     def submit_n(self, outcome):
         """A fake submit_n. `outcome(fit_idx, attempt)` is "ok" (job
@@ -611,7 +623,9 @@ class _FakeTrainer:
         calls: list[list[int]] = []
 
         def fake(function, job_configs, remote_info, **kwargs):
-            fit_indices = [jc["function_kwargs"]["fit_idx"] for jc in job_configs]
+            fit_indices = [
+                _fit_index(jc["function_kwargs"]["fit_dir"]) for jc in job_configs
+            ]
             attempt = len(calls)
             calls.append(fit_indices)
             results = []
@@ -619,7 +633,7 @@ class _FakeTrainer:
                 result = outcome(fit_idx, attempt)
                 if result == "ok":
                     self.marker(fit_idx).write_text("done")
-                results.append(None if result == "fail" else ("x.pt", None, {}))
+                results.append(None if result == "fail" else "x.pt")
             return results
 
         return fake, calls
@@ -647,7 +661,7 @@ class TestTrainMlip:
         fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit) as mock_submit_n,
             patch(f"{_MODULE}.get_remote_info"),
             patch.object(wf, "_store_predictions_and_cleanup"),
@@ -656,13 +670,16 @@ class TestTrainMlip:
 
         assert calls == [[0, 1, 2]]
         assert [m.model_path for m in models] == ["fit_0.pt", "fit_1.pt", "fit_2.pt"]
-        # isolated_atom_e0s is computed once locally from the DB and passed
-        # to every fit so the trainer can default its reference energies.
+        # isolated_atom_energies is computed once locally from the DB and
+        # passed to every fit so the trainer can default its reference
+        # energies; each job runs the generic run_training worker.
+        assert mock_submit_n.call_args.args[0] is run_training
         job_configs = mock_submit_n.call_args.args[1]
-        assert (
-            job_configs[0]["function_kwargs"]["isolated_atom_e0s"]
-            == wf.db.get_isolated_atom_energies()
-        )
+        kwargs = job_configs[0]["function_kwargs"]
+        assert kwargs["isolated_atom_energies"] == wf.db.get_isolated_atom_energies()
+        assert kwargs["trainer"] == "mace"
+        assert kwargs["fit_dir"] == str(Path("results/al_loop_0/training/fit_0"))
+        assert kwargs["seed"] == 803
 
     def test_reuses_cached_fits_and_only_submits_missing(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
@@ -675,7 +692,7 @@ class TestTrainMlip:
         fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
             patch.object(wf, "_store_predictions_and_cleanup"),
@@ -696,7 +713,7 @@ class TestTrainMlip:
         )
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
             patch.object(wf, "_store_predictions_and_cleanup"),
@@ -722,7 +739,7 @@ class TestTrainMlip:
         )
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
             patch.object(wf, "_store_predictions_and_cleanup"),
@@ -744,7 +761,7 @@ class TestTrainMlip:
         )
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
             pytest.raises(RuntimeError, match="only 2 trained model"),
@@ -798,7 +815,7 @@ class TestTrainMlip:
         fake_entry.output_paths.return_value = [Path("does_not_exist.model")]
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=fake_entry),
+            patch.object(wf, "trainer", return_value=fake_entry),
             patch(f"{_MODULE}.submit_n", return_value=[None, None, None]),
             patch(f"{_MODULE}.get_remote_info"),
             pytest.raises(RuntimeError, match="only 0 trained model"),
@@ -813,14 +830,14 @@ class TestTrainMlip:
         Path("results/al_loop_0/train_mlip.done").write_text("done\n")
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
         fake_entry = MagicMock()
-        fake_entry.read_existing_result.side_effect = lambda *a, **kw: (
-            f"model_{kw['fit_idx']}.pt",
+        fake_entry.read_existing_result.side_effect = lambda fit_dir: (
+            f"model_{_fit_index(fit_dir)}.pt",
             None,
             {},
         )
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=fake_entry),
+            patch.object(wf, "trainer", return_value=fake_entry),
             patch(f"{_MODULE}.submit_n") as mock_submit_n,
         ):
             models = wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
@@ -1916,7 +1933,7 @@ class TestTrainModelsEdgeCases:
         fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit) as submit_n,
             patch(f"{_MODULE}.get_remote_info"),
         ):
@@ -1924,7 +1941,7 @@ class TestTrainModelsEdgeCases:
 
         job_configs = submit_n.call_args.args[1]
         assert calls == [[0]]
-        assert job_configs[0]["function_kwargs"]["fit_seed"] == 42
+        assert job_configs[0]["function_kwargs"]["seed"] == 42
         assert model.seed == 42 and model.fit_idx == 0
         recorded = Path("results/al_loop_0/training/fit_0/fit_seed.json")
         assert json.loads(recorded.read_text()) == {"seed": 42}
@@ -1941,7 +1958,7 @@ class TestTrainModelsEdgeCases:
         )
 
         with (
-            patch(f"{_MODULE}.resolve", return_value=trainer),
+            patch.object(wf, "trainer", return_value=trainer),
             patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
             patch(f"{_MODULE}.get_remote_info"),
         ):
@@ -1969,7 +1986,7 @@ class TestTrainModelsEdgeCases:
         module_logger.addHandler(handler)
         try:
             with (
-                patch(f"{_MODULE}.resolve", return_value=fake_entry),
+                patch.object(wf, "trainer", return_value=fake_entry),
                 patch(f"{_MODULE}.submit_n") as submit_n,
             ):
                 (model,) = wf.train_models(_ctx(0), [803])
@@ -1983,3 +2000,104 @@ class TestTrainModelsEdgeCases:
             for r in records
             if r.levelno == logging.WARNING
         )
+
+
+# ---------------------------------------------------------------------------
+# End to end through the generic trainer path (no MACE)
+# ---------------------------------------------------------------------------
+
+
+class _EMTTrainer(ALomancyTrainer):
+    """A backend-free trainer: fit() writes a placeholder model, the
+    "model" is ASE's EMT, and a fake compiled copy is what gets deployed."""
+
+    NAME = "emt_e2e"
+    KWARGS_KEY = "emt_e2e_kwargs"
+
+    def model_path(self, fit_dir):
+        return Path(fit_dir) / f"{self.name}.model"
+
+    def deployable_model_path(self, fit_dir):
+        path = Path(fit_dir) / f"{self.name}_deployed.model"
+        return path if path.exists() else None
+
+    def get_calculator(self, model_path):
+        from ase.calculators.emt import EMT
+
+        return EMT()
+
+    def fit(
+        self,
+        train_path,
+        valid_path,
+        test_path,
+        seed,
+        fit_dir,
+        *,
+        isolated_atom_energies,
+    ):
+        (fit_dir / f"{self.name}_deployed.model").write_bytes(
+            f"deployed {seed}".encode()
+        )
+        model = self.model_path(fit_dir)
+        model.write_bytes(f"model {seed}".encode())
+        return model
+
+
+@pytest.mark.unit
+def test_train_models_end_to_end_through_a_registered_trainer(
+    tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+):
+    from alomancy.registry import _REGISTRY, register
+
+    monkeypatch.chdir(tmp_path)
+    register("mlip_trainer", "emt_e2e", __name__, trainer_class="_EMTTrainer")
+    try:
+        workflow_jobs_dict["training"]["trainer"] = "emt_e2e"
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        cu = [
+            Atoms(
+                "Cu2",
+                positions=[[0, 0, 0], [2.3 + 0.05 * i, 0, 0]],
+                cell=[8] * 3,
+                pbc=True,
+            )
+            for i in range(6)
+        ]
+        for a in cu:
+            a.info.update(config_type="init_dimer", REF_energy=0.5)
+            a.arrays["REF_forces"] = np.zeros((2, 3))
+        shared_db.add_structures(cu[:5], split="train", skip_duplicates=False)
+        shared_db.add_structures(cu[5:], split="test", skip_duplicates=False)
+        workdir = Path("results/al_loop_0")
+        workdir.mkdir(parents=True)
+        write(workdir / "train_set.xyz", shared_db.get_train_atoms(), format="extxyz")
+        write(workdir / "test_set.xyz", shared_db.get_test_atoms(), format="extxyz")
+
+        def in_process(function, job_configs, remote_info, **kwargs):
+            return [function(**jc["function_kwargs"]) for jc in job_configs]
+
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=in_process),
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            models = wf.train_models(_ctx(0), wf.seeds(2))
+    finally:
+        del _REGISTRY["mlip_trainer"]["emt_e2e"]
+
+    assert [m.fit_idx for m in models] == [0, 1]
+    fit_dir = Path("results/al_loop_0/training/fit_0")
+    for name in (
+        "training.model",
+        "train_pred.xyz",
+        "test_pred.xyz",
+        "evaluation_metrics.json",
+    ):
+        assert (fit_dir / name).exists(), name
+    assert models[0].compiled_model_path == str(fit_dir / "training_deployed.model")
+    assert (
+        Path("results/best_model/ALomancy_best_model.model")
+        .read_bytes()
+        .startswith(b"deployed")
+    )
+    assert shared_db.get_model_predictions(0, 0) is not None

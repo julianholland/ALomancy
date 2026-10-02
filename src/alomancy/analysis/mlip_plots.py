@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def _read_resolved_epochs(fit_dir: Path) -> dict | None:
-    """Read the resolved_mace_epochs.json sidecar written by mace_fit.
+    """Read the resolved_mace_epochs.json sidecar written by MaceTrainer.fit.
 
     Returns None gracefully if missing or unparseable -- fits trained before
     this sidecar existed have no such file.
@@ -250,7 +250,7 @@ def plot_training_curves(
 def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | None:
     """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft, f_pred).
 
-    Written by mace_fit after training completes on the remote node. Looks for
+    Written by ALomancyTrainer.evaluate after training, on the remote node. Looks for
     model_energy / model_forces keys. Returns None if the file has no usable rows.
 
     Energy values are per-atom eV/atom. If `e0` (element -> isolated-atom
@@ -467,7 +467,7 @@ def plot_dft_vs_model(
                 )
                 continue
 
-        # Secondary: read from eval xyz files written by mace_fit on the remote node.
+        # Secondary: read from eval xyz files written by ALomancyTrainer.evaluate on the remote node.
         fit_dir = Path("results", base_name, name, f"fit_{i}")
         train_xyz = fit_dir / "train_pred.xyz"
         test_xyz = fit_dir / "test_pred.xyz"

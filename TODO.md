@@ -27,4 +27,5 @@
 - [ ] element swap initialisation: take standard known crystals and swap elements 1.1
 - [ ] optional imports per module (ezga, mace etc) 1.2
 - [ ] External validation not just forces and energy, tricky to define but should be done outside the loop (pdf, xrd) 2.0
+- [ ] torchsim integration for the mlip trainig/running 2.0
 

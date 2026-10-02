@@ -66,12 +66,15 @@ pip install alomancy
 ```bash
 git clone https://github.com/julianholland/ALomancy.git
 cd ALomancy
-pip install -e ".[dev]"
+uv sync            # creates .venv with alomancy (editable) + the dev tools
 ```
+
+Without uv: `pip install -e .` (add `pytest ruff mypy pre-commit` yourself;
+the dev tools are a uv dependency group, not a pip extra).
 
 ### Dependencies
 
-- Python 3.9+
+- Python 3.10+
 - [ASE](https://wiki.fysik.dtu.dk/ase/) — Atomic Simulation Environment
 - [expyre-wfl](https://github.com/libAtoms/ExPyRe) — Remote HPC job execution
 - [MACE](https://github.com/ACEsuit/mace) — Machine Learning Accelerated Computational Engine
@@ -227,11 +230,11 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 git clone https://github.com/julianholland/ALomancy.git
 cd ALomancy
 
-# Install in development mode
-pip install -e ".[dev]"
+# Install in development mode (alomancy editable + dev tools, from uv.lock)
+uv sync
 
 # Run tests
-pytest
+uv run pytest
 
 # Run linting
 ruff check .

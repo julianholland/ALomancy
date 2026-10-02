@@ -103,10 +103,12 @@ class TestRunMdViaTrainer:
         initial_structure.info["job_id"] = 0
 
         with (
-            patch(f"{_MODULE}.resolve") as mock_resolve,
+            patch("alomancy.mlip.base.get_trainer") as mock_get_trainer,
             patch(f"{_MODULE}.run_md") as mock_run_md,
         ):
-            mock_resolve.return_value = MagicMock(get_calculator=fake_get_calculator)
+            mock_get_trainer.return_value = MagicMock(
+                get_calculator=fake_get_calculator
+            )
             _run_md_via_trainer(
                 structure_generation_job_dict={"name": "t"},
                 initial_structure=initial_structure,
@@ -118,8 +120,8 @@ class TestRunMdViaTrainer:
                 steps=10,
             )
 
-        mock_resolve.assert_called_once_with("mlip_trainer", "mace")
-        fake_get_calculator.assert_called_once_with("model.pt", {"device": "cpu"})
+        mock_get_trainer.assert_called_once_with("mace", {"device": "cpu"})
+        fake_get_calculator.assert_called_once_with("model.pt")
         assert mock_run_md.call_args.kwargs["calculator"] is fake_calc
         assert mock_run_md.call_args.kwargs["steps"] == 10
 

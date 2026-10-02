@@ -1,7 +1,7 @@
-"""MaceTrainer: the MACE backend of ALomancyTrainer (mlip/base.py).
+"""SevenNetTrainer: the SevenNet backend of ALomancyTrainer (mlip/base.py).
 
-Only MACE-specific work lives here: building MACE's arguments from
-``training.mace_kwargs``, the E0s format, stage-two (SWA) timing, stress
+Only SevenNet-specific work lives here: building SevenNet's arguments from
+``training.sevennet_kwargs``, the E0s format, stage-two (SWA) timing, stress
 training defaults, and which of MACE's output files is which. The standard
 ``train`` entry point, isolated-atom-energy resolution, evaluation,
 restart checks and clean-up are inherited.

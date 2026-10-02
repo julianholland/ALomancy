@@ -211,7 +211,7 @@ def test_logging_output():
 
 ### Pattern 5: MACE and wfl Handling
 
-MACE is a real dev dependency and is installed in the test environment (`pip install -e ".[dev]"`) -- tests import it directly rather than mocking `sys.modules`.
+MACE is a real dev dependency and is installed in the test environment (`uv sync`) -- tests import it directly rather than mocking `sys.modules`.
 
 **Never** import wfl in tests — it is not installed. If you need to mock wfl behavior, patch it via sys.modules.
 
