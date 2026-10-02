@@ -515,6 +515,10 @@ def generate(
             "MD run(s) %s for %s completed no MD step; replacing their seeds once.",
             not_started,
             base_name,
+            extra={
+                "event": "md_no_steps",
+                "data": {"n": len(not_started), "total": len(seeds)},
+            },
         )
         replacements = _replacement_seeds(
             seed_atoms, seeds, len(not_started), seed=selection_seed + len(seeds)
@@ -541,6 +545,7 @@ def generate(
             unfinished,
             base_name,
             len(completed),
+            extra={"event": "md_unfinished", "data": {"n": len(unfinished)}},
         )
     if not completed:
         raise RuntimeError(
@@ -550,8 +555,27 @@ def generate(
         )
 
     structure_list: list[Atoms] = []
+    frames_per_run = []
     for i in completed:
-        structure_list.extend(read(out_dir(i) / target_file, ":", format="extxyz"))
+        frames = read(out_dir(i) / target_file, ":", format="extxyz")
+        frames_per_run.append(len(frames))
+        structure_list.extend(frames)
+    logger.info(
+        "MD for %s: %d run(s) completed, %d candidate frame(s).",
+        base_name,
+        len(completed),
+        len(structure_list),
+        extra={
+            "event": "md_summary",
+            "data": {
+                "runs": len(seeds),
+                "completed": len(completed),
+                "replaced": len(replaced) + len(not_started),
+                "frames_per_run": frames_per_run,
+                "candidates": len(structure_list),
+            },
+        },
+    )
 
     candidates_path.parent.mkdir(parents=True, exist_ok=True)
     write(candidates_path, structure_list, format="extxyz")
@@ -583,3 +607,10 @@ def _replacement_seeds(
         copy.info["md_seed"] = next_md_seed + k
         replacements.append(copy)
     return replacements
+
+
+def report_section(stats: dict, **kwargs: Any) -> Any:
+    """Loop-report section for this module (see analysis/report/sections.py)."""
+    from alomancy.analysis.report.sections import md_section
+
+    return md_section(stats, **kwargs)

@@ -192,5 +192,14 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
         dict(reasons_count),
         max_force,
         window,
+        extra={
+            "event": "quality_filtered",
+            "data": {
+                "split": split,
+                "n": n_excluded,
+                "total": len(updates),
+                "by_reason": dict(reasons_count),
+            },
+        },
     )
     return {**reasons_count, "total": len(updates), "excluded": n_excluded}

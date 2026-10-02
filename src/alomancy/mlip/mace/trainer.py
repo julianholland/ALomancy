@@ -622,3 +622,10 @@ def train(
         str(compiled_model_full_path) if compiled_model_full_path.exists() else None,
         metrics,
     )
+
+
+def report_section(stats: dict, **kwargs: Any) -> Any:
+    """Loop-report section for this module (see analysis/report/sections.py)."""
+    from alomancy.analysis.report.sections import mace_section
+
+    return mace_section(stats, **kwargs)

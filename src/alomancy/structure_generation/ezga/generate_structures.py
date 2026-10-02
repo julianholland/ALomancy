@@ -440,3 +440,10 @@ def generate(
         output_dir=output_dir,
         **ezga_kwargs,
     )
+
+
+def report_section(stats: dict, **kwargs: Any) -> Any:
+    """Loop-report section for this module (see analysis/report/sections.py)."""
+    from alomancy.analysis.report.sections import ezga_section
+
+    return ezga_section(stats, **kwargs)

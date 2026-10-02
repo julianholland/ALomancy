@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -81,8 +82,12 @@ def _run_sp(
 ) -> Atoms:
     Path(out_dir).mkdir(exist_ok=True, parents=True)
     input_structure.calc = create_calc_fn(input_structure, job_dict, out_dir)
+    start = time.perf_counter()
     input_structure.get_potential_energy()
+    wall_time = time.perf_counter() - start
     refresh_dft_labels(input_structure, str(Path(out_dir).resolve()))
+    # Per-structure run statistics for the loop report (analysis/report).
+    input_structure.info["dft_wall_time_s"] = wall_time
     _write_dft_result(input_structure, out_dir, job_dict["name"])
     return input_structure
 
@@ -103,7 +108,9 @@ def _run_go(
     )
     fmax = job_dict.get("fmax", 0.05)
     steps = job_dict.get("max_num_of_relax_steps", 200)
+    start = time.perf_counter()
     converged = opt.run(fmax=fmax, steps=steps)
+    wall_time = time.perf_counter() - start
     if not converged:
         logger.warning(
             "Geometry optimization in %s did not reach fmax=%.4g eV/Angstrom "
@@ -115,5 +122,10 @@ def _run_go(
         )
     refresh_dft_labels(input_structure, str(Path(out_dir).resolve()))
     input_structure.info["geometry_converged"] = bool(converged)
+    # Per-structure run statistics for the loop report (analysis/report).
+    input_structure.info["geometry_steps"] = int(opt.nsteps)
+    input_structure.info["geometry_max_steps"] = int(steps)
+    input_structure.info["geometry_fmax_target"] = float(fmax)
+    input_structure.info["dft_wall_time_s"] = wall_time
     _write_dft_result(input_structure, out_dir, job_dict["name"])
     return input_structure

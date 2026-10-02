@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-loop report** (`results/reports/al_loop_N/report.md`, `latest.md`; docs: `docs/reports.md`). Each loop now writes a Markdown report with:
+  - a headline comparison with the previous loop;
+  - a trends table, the MAE-vs-loop and timing plots;
+  - the best model's parity plot;
+  - training-set composition by `config_type`, with what redundancy removal and the quality filters excluded;
+  - DFT statistics: average time per structure, BFGS steps against the budget, convergence rate;
+  - module-specific sections (MD, EZGA, MACE, QE/VASP) and workflow sections (committee std-dev cut, novelty tolerance);
+  - a warning/event summary and **issues with suggested fixes**.
+
+  Suggestions come from an editable `suggestions.yaml` (threshold, severity and text per trigger), which can be overridden per run with `general.report_suggestions`. Turn reports off with `general.report: false`, and rebuild them with `alomancy report [--loop N | --all]`.
+- **`results/events.jsonl`**: warnings and coded events (failed/died jobs, MD seed replacements, short-bond exclusions, fit retries, ...) as JSON lines tagged with the AL loop.
+- **`results/run_config.yaml`**: the resolved config, saved at start-up.
+- **Remote reinstall needed** (`alomancy upgrade-hpc`): the DFT runners now record `geometry_steps`, `geometry_max_steps`, `geometry_fmax_target` and `dft_wall_time_s` in each structure's `atoms.info`.
 - **`NoveltySelectionWorkflow` (`general.al_workflow: novelty_selection`)**: trains one model and sends to DFT the candidates least like each other and like the database's non-redundant structures, judged by the same `char_vec_128` descriptor redundancy removal uses. The tolerance is binary-searched (deduplicate_lib) to the largest value leaving at most `desired_num_of_structures` novel candidates.
 - **`ALomancy`: one entry point, with the architecture chosen by the config.** `from alomancy import ALomancy; ALomancy("config.yaml").run()` (or a config dict) builds the AL skeleton named by `general.al_workflow`, with the modules named in the config. The CLI equivalent is `alomancy run config.yaml`. Constructing a workflow class directly with a config whose `al_workflow` names a different skeleton now raises `ValueError`.
 - **`ActiveLearningWorkflow`: a generic parent for AL workflows** (`core/active_learning_workflow.py`). Everything the same for every strategy lives there: config loading, cold/warm start and resume, training N models on one shared split in one parallel batch (`train_models`), prediction with a list of models, candidate generation, DFT evaluation, dataset updates and restart sentinels (the `@phase` decorator). A workflow now only declares its settings and writes a short `run()`. The guide is `docs/writing_a_workflow.md`.

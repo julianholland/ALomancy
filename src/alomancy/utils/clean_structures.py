@@ -128,6 +128,10 @@ def filter_structures_by_min_bond_distance(
             n_excluded,
             len(structures),
             min_distance,
+            extra={
+                "event": "short_bond_excluded",
+                "data": {"n": n_excluded, "total": len(structures)},
+            },
         )
 
     return filtered

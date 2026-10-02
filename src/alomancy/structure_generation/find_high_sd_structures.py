@@ -34,6 +34,10 @@ def find_high_sd_structures(
             len(structure_list),
             desired_structures,
             len(structure_list),
+            extra={
+                "event": "fewer_candidates",
+                "data": {"n": len(structure_list), "desired": desired_structures},
+            },
         )
     effective_structures = min(desired_structures, len(structure_list))
 

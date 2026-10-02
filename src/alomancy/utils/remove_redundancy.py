@@ -177,6 +177,14 @@ def remove_redundancy_from_partition(
         len(duplicate_global),
         len(dedup_global_indices),
         tolerance,
+        extra={
+            "event": "redundancy_flagged",
+            "data": {
+                "n": len(duplicate_global),
+                "total": len(dedup_global_indices),
+                "tolerance": float(tolerance),
+            },
+        },
     )
     if duplicate_global:
         db.flag_as_duplicates(duplicate_global)

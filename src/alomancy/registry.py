@@ -95,6 +95,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_MACE_KWARGS_DEFAULTS",
+    report_section="report_section",
 )
 
 register(
@@ -104,6 +105,7 @@ register(
     sp="run_sp_qe",
     go="run_go_qe",
     resolve_effective_kwargs="resolve_effective_kwargs",
+    report_section="report_section",
 )
 register(
     "dft_evaluator",
@@ -112,6 +114,7 @@ register(
     sp="run_sp_vasp",
     go="run_go_vasp",
     resolve_effective_kwargs="resolve_effective_kwargs",
+    report_section="report_section",
 )
 
 register(
@@ -122,6 +125,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_MD_KWARGS_DEFAULTS",
+    report_section="report_section",
 )
 register(
     "structure_generator",
@@ -131,6 +135,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_EZGA_KWARGS_DEFAULTS",
+    report_section="report_section",
 )
 
 register(

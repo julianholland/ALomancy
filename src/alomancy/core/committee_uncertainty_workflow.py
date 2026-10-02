@@ -149,6 +149,16 @@ class CommitteeUncertaintyWorkflow(ActiveLearningWorkflow):
         )
         return selected
 
+    def report_sections(self, stats: dict, plots_dir: Path | None) -> list:
+        """Loop report: the candidates' committee force std dev and the
+        selection cut."""
+        from alomancy.analysis.report.sections import committee_section
+
+        section = committee_section(
+            stats, base_name=stats["base_name"], plots_dir=plots_dir
+        )
+        return [section] if section else []
+
     def plot_loop(self, ctx: LoopContext) -> None:
         """This loop's training plots (unchanged from before the workflow
         split; plotting will be generalised separately)."""

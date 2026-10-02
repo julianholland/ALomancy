@@ -427,6 +427,7 @@ def _get_results_with_resume(
                 retry_limit,
                 status,
                 backoff,
+                extra={"event": "job_resumed"},
             )
             time.sleep(backoff)
 
@@ -615,6 +616,7 @@ class RemoteJobExecutor:
                     "gone). resubmit_killed_jobs is enabled -- submitting "
                     "one fresh replacement instead of giving up.",
                     index + 1,
+                    extra={"event": "job_resubmitted"},
                 )
                 # Salvage whatever the dead attempt already produced BEFORE
                 # resubmitting: force_rerun=True only wipes the *remote*
@@ -641,7 +643,16 @@ class RemoteJobExecutor:
                 logger.debug("Job %d stderr:\n%s", index + 1, stderr)
             return index, result
         except Exception as exc:
-            logger.warning("Job %d failed: %s", index + 1, exc)
+            logger.warning(
+                "Job %d failed: %s",
+                index + 1,
+                exc,
+                extra={
+                    "event": "job_died"
+                    if isinstance(exc, ExPyReJobDiedError)
+                    else "job_failed"
+                },
+            )
             logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)
             self._salvage_partial_output(index, job)
             return index, None
@@ -730,6 +741,12 @@ class RemoteJobExecutor:
             )
             max_num_of_concurrent_jobs = 1
         max_workers = min(max_num_of_concurrent_jobs, len(self.jobs))
+        logger.info(
+            "Running %d remote job(s), at most %d at once.",
+            len(self.jobs),
+            max_workers,
+            extra={"event": "jobs_started", "data": {"n": len(self.jobs)}},
+        )
 
         results: list[Any] = [None] * len(self.jobs)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:

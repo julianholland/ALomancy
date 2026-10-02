@@ -84,6 +84,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "alomancy.analysis" = ["*.png"]
+"alomancy.analysis.report" = ["*.yaml"]
 
 # Testing configuration
 [tool.pytest.ini_options]
@@ -220,8 +221,6 @@ omit = [
     "*/tests/*",
     "*/test_*",
     "src/alomancy/version.py",
-    # Legacy file importing wfl (not installed); replaced by md_remote_submitter.py
-    "src/alomancy/structure_generation/md/generate_structures.py",
 ]
 
 [tool.coverage.report]

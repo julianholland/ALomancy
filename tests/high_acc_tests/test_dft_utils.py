@@ -179,6 +179,8 @@ class TestRunGo:
         captured = {}
 
         class _Capturing:
+            nsteps = 0  # ASE optimizers count completed steps here
+
             def __init__(self, atoms, logfile=None, trajectory=None):
                 pass
 
@@ -203,6 +205,8 @@ class TestRunGo:
         captured = {}
 
         class _Capturing:
+            nsteps = 0  # ASE optimizers count completed steps here
+
             def __init__(self, atoms, logfile=None, trajectory=None):
                 pass
 
@@ -229,6 +233,8 @@ class TestRunGo:
         keeping the best structure BFGS found rather than raising."""
 
         class _NeverConverges:
+            nsteps = 0  # ASE optimizers count completed steps here
+
             def __init__(self, atoms, logfile=None, trajectory=None):
                 pass
 

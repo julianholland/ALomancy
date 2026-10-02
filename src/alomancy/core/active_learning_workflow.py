@@ -228,7 +228,7 @@ from alomancy.utils.import_structures import (
     normalize_metadata,
     read_structures,
 )
-from alomancy.utils.logging_config import setup_logging
+from alomancy.utils.logging_config import set_current_loop, setup_logging
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
 )
@@ -315,6 +315,10 @@ _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     # Stop after the first loop's training (before any structure
     # generation) -- run control, honoured by every workflow's run().
     "train_only": False,
+    # Per-loop Markdown report (analysis/report) and an optional YAML whose
+    # entries override the packaged suggestions.yaml one trigger at a time.
+    "report": True,
+    "report_suggestions": None,
 }
 
 # high_accuracy_evaluation.force_ceiling default (eV/Angstrom): AL-generated
@@ -973,6 +977,8 @@ class ActiveLearningWorkflow(ABC):
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
         self.train_only = bool(general_kwargs["train_only"])
+        self.report = bool(general_kwargs["report"])
+        self.report_suggestions = general_kwargs["report_suggestions"]
         for filter_name in ("train_filter", "test_filter"):
             validate_split_filter(general_config.get(filter_name), filter_name)
         self.train_filter = resolve_split_filter(
@@ -1602,6 +1608,19 @@ class ActiveLearningWorkflow(ABC):
         mapping every run has used, so cached fits stay valid."""
         return [self.seed + i for i in range(n)]
 
+    def _write_run_config(self) -> None:
+        """Save the resolved config as results/run_config.yaml, so
+        `alomancy report` can rebuild this run's reports later. Best effort:
+        a value YAML can't represent is logged, never fatal."""
+        import yaml
+
+        path = Path("results", "run_config.yaml")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(yaml.safe_dump(self.jobs_dict, sort_keys=False))
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning("Could not save %s: %s", path, exc)
+
     def prepare_run(self) -> int:
         """Everything before the first loop: curation-policy check, pre-run
         checks, then resume from the database or build the initial
@@ -1620,6 +1639,7 @@ class ActiveLearningWorkflow(ABC):
             policy_path.parent.mkdir(parents=True, exist_ok=True)
             policy_path.write_text(policy)
         self.pre_run_checks()
+        self._write_run_config()
 
         last_complete = self._last_complete_loop()
         if last_complete >= 0:
@@ -1666,6 +1686,7 @@ class ActiveLearningWorkflow(ABC):
             base_name = f"al_loop_{loop}"
             if self._phase_done(base_name, "loop"):
                 continue
+            set_current_loop(loop)
             train_xyzs = self.db.get_train_atoms()
             test_xyzs = self.db.get_test_atoms()
 
@@ -1862,6 +1883,10 @@ class ActiveLearningWorkflow(ABC):
                     "train_mlip for %s: fit(s) %s failed; retrying them once.",
                     base_name,
                     failed,
+                    extra={
+                        "event": "fit_retry",
+                        "data": {"n": len(failed), "total": num_of_models},
+                    },
                 )
                 submit(failed)
 
@@ -1879,6 +1904,13 @@ class ActiveLearningWorkflow(ABC):
                 len(results),
                 num_of_models,
                 len(results),
+                extra={
+                    "event": "fit_missing",
+                    "data": {
+                        "n": num_of_models - len(results),
+                        "total": num_of_models,
+                    },
+                },
             )
 
         self._store_predictions_and_cleanup(base_name, name, results)
@@ -2068,8 +2100,14 @@ class ActiveLearningWorkflow(ABC):
             allow_relaxation=True,
             start_index=0,
         )
+        # Message text is parsed by analysis/timing_plots; keep it unchanged.
         logger.info(
-            "High-accuracy evaluation completed for %d structures.", len(labelled)
+            "High-accuracy evaluation completed for %d structures.",
+            len(labelled),
+            extra={
+                "event": "dft_summary",
+                "data": {"submitted": len(structures), "returned": len(labelled)},
+            },
         )
         return self._label_new_structures(ctx, labelled)
 
@@ -2131,6 +2169,18 @@ class ActiveLearningWorkflow(ABC):
         curation on the grown database, then mark the loop done."""
         self._curate_dataset()
         self._mark_phase_done(ctx.base_name, "loop")
+        if self.report:
+            try:
+                from alomancy.analysis.report import write_loop_report
+
+                write_loop_report(self, ctx.loop)
+            except Exception as exc:  # a report must never fail the loop
+                logger.warning(
+                    "Could not write the report for %s: %s",
+                    ctx.base_name,
+                    exc,
+                    exc_info=True,
+                )
         logger.debug(
             "Completed AL loop %d, retraining with %d structures.",
             ctx.loop,
@@ -2140,6 +2190,16 @@ class ActiveLearningWorkflow(ABC):
             from alomancy.analysis.timing_plots import timing_plots
 
             timing_plots(self.log_file, Path("results", "current_plots"))
+
+    def report_sections(
+        self,
+        stats: dict,  # noqa: ARG002 -- hook signature
+        plots_dir: Path | None,  # noqa: ARG002
+    ) -> list:
+        """Workflow-specific sections for the loop report (a list of
+        analysis.report.Section); *plots_dir* is None when plots are off.
+        Default: none."""
+        return []
 
     def validate_settings(self) -> None:  # noqa: B027 -- optional hook
         """Hook for workflow-specific config checks, called at the end of

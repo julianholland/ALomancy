@@ -79,6 +79,10 @@ class RandomSelectionWorkflow(ActiveLearningWorkflow):
                 len(candidates),
                 ctx.base_name,
                 wanted,
+                extra={
+                    "event": "fewer_candidates",
+                    "data": {"n": len(candidates), "desired": wanted},
+                },
             )
         rng = np.random.default_rng(self.seed + ctx.loop)
         chosen = sorted(rng.choice(len(candidates), size=n, replace=False))

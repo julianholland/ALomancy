@@ -120,7 +120,11 @@ def select_novel_indices(
         )
     logger.debug("Novelty tolerance search:\n%s", steps.getvalue().rstrip())
     for w in caught:
-        logger.warning("Novelty tolerance search: %s", w.message)
+        logger.warning(
+            "Novelty tolerance search: %s",
+            w.message,
+            extra={"event": "novelty_inexact"},
+        )
 
     dda.tolerance = tolerance
     dda.get_dataset_unique_structures()
@@ -153,6 +157,17 @@ class NoveltySelectionWorkflow(ActiveLearningWorkflow):
             self.add_to_dataset(ctx, self.high_accuracy_evaluate(ctx, selected))
             self.finish_loop(ctx)
 
+    def report_sections(
+        self,
+        stats: dict,
+        plots_dir: Path | None,  # noqa: ARG002 -- text only
+    ) -> list:
+        """Loop report: the tolerance found and the reference-set size."""
+        from alomancy.analysis.report.sections import novelty_section
+
+        section = novelty_section(stats)
+        return [section] if section else []
+
     def reference_descriptors(self) -> np.ndarray:
         """Descriptors of every database structure not flagged redundant
         (is_duplicate), read from the DB's cache and computed only where
@@ -180,6 +195,10 @@ class NoveltySelectionWorkflow(ActiveLearningWorkflow):
                 len(candidates),
                 ctx.base_name,
                 wanted,
+                extra={
+                    "event": "fewer_candidates",
+                    "data": {"n": len(candidates), "desired": wanted},
+                },
             )
             chosen, tolerance = list(range(len(candidates))), 0.0
             reference_count = 0
@@ -203,5 +222,14 @@ class NoveltySelectionWorkflow(ActiveLearningWorkflow):
             len(candidates),
             reference_count,
             tolerance,
+            extra={
+                "event": "novelty_selected",
+                "data": {
+                    "selected": len(selected),
+                    "candidates": len(candidates),
+                    "reference": reference_count,
+                    "tolerance": tolerance,
+                },
+            },
         )
         return selected

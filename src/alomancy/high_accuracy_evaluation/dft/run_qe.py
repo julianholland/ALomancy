@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import numpy as np
 from ase import Atoms
@@ -193,3 +194,10 @@ def run_go_qe(
         create_qe_calc_object,
         opt_prefix="qe_opt",
     )
+
+
+def report_section(stats: dict, **kwargs: Any) -> Any:
+    """Loop-report section for this module (see analysis/report/sections.py)."""
+    from alomancy.analysis.report.sections import dft_section
+
+    return dft_section(stats, **kwargs)

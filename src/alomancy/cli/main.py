@@ -15,6 +15,32 @@ def main() -> None:
     )
     run.add_argument("config", type=Path, help="Path to the run's YAML config")
 
+    rep = sub.add_parser(
+        "report",
+        help="Write the per-loop AL report(s) for an existing results directory",
+    )
+    rep.add_argument(
+        "--results-dir",
+        type=Path,
+        default=Path("results"),
+        metavar="PATH",
+        help="Path to the results/ directory (default: ./results)",
+    )
+    which = rep.add_mutually_exclusive_group()
+    which.add_argument(
+        "--loop", type=int, metavar="N", help="Report for AL loop N (default: latest)"
+    )
+    which.add_argument(
+        "--all", action="store_true", help="Reports for every completed AL loop"
+    )
+    rep.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="The run's YAML config (default: results/run_config.yaml)",
+    )
+
     res = sub.add_parser("results", help="Inspect and post-process workflow results")
     res.add_argument(
         "--replot",
@@ -77,6 +103,19 @@ def main() -> None:
         from alomancy import ALomancy
 
         ALomancy(args.config).run()
+    elif args.command == "report":
+        from alomancy.cli.report import completed_loops, write_reports
+
+        if args.all:
+            loops = completed_loops(args.results_dir)
+        elif args.loop is not None:
+            loops = [args.loop]
+        else:
+            loops = None
+        for path in write_reports(
+            args.results_dir, loops=loops, config_path=args.config
+        ):
+            print(path)
     elif args.command == "add-hpc":
         from alomancy.cli.add_hpc import add_hpc_wizard
 

@@ -1,6 +1,7 @@
 import logging
 import os
 from functools import partial
+from typing import Any
 
 from ase import Atoms
 from ase.calculators.vasp import Vasp
@@ -117,3 +118,10 @@ def run_go_vasp(
         create_vasp_calc_go,
         opt_prefix="vasp_opt",
     )
+
+
+def report_section(stats: dict, **kwargs: Any) -> Any:
+    """Loop-report section for this module (see analysis/report/sections.py)."""
+    from alomancy.analysis.report.sections import dft_section
+
+    return dft_section(stats, **kwargs)
