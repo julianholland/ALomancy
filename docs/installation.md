@@ -22,7 +22,7 @@ pip install -e ".[dev]"
 - [MACE](https://github.com/ACEsuit/mace) — Machine Learning Accelerated Computational Engine (pip package: mace-torch)
 - [sage-lib](https://github.com/sage-lib/sage-lib) — Hybrid HDF5+SQLite structure database (GlobalDatabase backend)
 - [mp-api](https://github.com/materialsproject/api) — Materials Project API for fetching reference structures
-- numpy, pandas, polars, scipy, matplotlib, seaborn, tqdm, pyyaml
+- numpy, polars, matplotlib, tqdm, pyyaml, pymatgen
 
 ## HPC Setup
 

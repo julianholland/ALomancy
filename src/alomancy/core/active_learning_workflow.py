@@ -184,7 +184,7 @@ from pathlib import Path
 from typing import Any, ClassVar, TypeVar, cast
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from ase import Atoms
 from ase.io import read, write
 
@@ -203,6 +203,7 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 from alomancy.mlip.evaluation import (
     best_fit_test_metrics,
     check_quality_gate,
+    loop_metrics_frame,
     rank_committee,
 )
 from alomancy.mlip.mace.mace_wfl import read_mace_eval_predictions
@@ -1545,8 +1546,8 @@ class ActiveLearningWorkflow(ABC):
             target,
         )
 
-    def _cross_loop_metrics_dataframe(self, name: str) -> pd.DataFrame:
-        """One row per AL loop (indexed by loop number): the test-split
+    def _cross_loop_metrics_dataframe(self, name: str) -> pl.DataFrame:
+        """One row per AL loop (loop number in the "al_loop" column): the test-split
         mae_f/mae_e_per_atom of that loop's best committee member, chosen
         the same way as MD's base model (mlip/evaluation.py's
         best_fit_test_metrics). A loop whose evaluations are missing or
@@ -1571,7 +1572,7 @@ class ActiveLearningWorkflow(ABC):
                 continue
             rows.append(row)
             loops.append(int(al_loop_dir.name.rsplit("_", 1)[1]))
-        return pd.DataFrame(rows, index=pd.Index(loops, name="al_loop"))
+        return loop_metrics_frame(loops, rows)
 
     def _store_predictions_and_cleanup(
         self, base_name: str, name: str, results: dict[int, tuple]

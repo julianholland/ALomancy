@@ -158,3 +158,9 @@ register(
     "alomancy.core.random_selection_workflow",
     workflow_class="RandomSelectionWorkflow",
 )
+register(
+    "al_workflow",
+    "novelty_selection",
+    "alomancy.core.novelty_selection_workflow",
+    workflow_class="NoveltySelectionWorkflow",
+)

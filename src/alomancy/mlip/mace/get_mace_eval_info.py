@@ -3,17 +3,21 @@ import json
 import logging
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
-from alomancy.mlip.evaluation import best_fit_test_metrics, rank_committee
+from alomancy.mlip.evaluation import (
+    best_fit_test_metrics,
+    loop_metrics_frame,
+    rank_committee,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def get_mace_eval_info(
     mlip_committee_job_dict: dict,
-) -> pd.DataFrame:
-    """One row per AL loop (indexed by loop number) with the best committee
+) -> pl.DataFrame:
+    """One row per AL loop (loop number in the "al_loop" column) with the best committee
     member's metrics -- the same member MD uses as its base model.
 
     Loops with checkpoint evaluations (``evaluation_metrics.json``) report
@@ -71,7 +75,7 @@ def get_mace_eval_info(
             )
         rows.append(row)
         loops.append(int(al_loop_dir.name.rsplit("_", 1)[1]))
-    return pd.DataFrame(rows, index=pd.Index(loops, name="al_loop"))
+    return loop_metrics_frame(loops, rows)
 
 
 def _read_last_metric_record(txt_path: Path) -> dict | None:

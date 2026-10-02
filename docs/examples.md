@@ -232,7 +232,7 @@ high_accuracy_evaluation:
 
 ### Configuration Key Descriptions
 
-- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, or `"random_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
+- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
 
 - **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 

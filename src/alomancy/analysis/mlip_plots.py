@@ -7,7 +7,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+import polars as pl
 
 from alomancy.analysis.colors import (
     DIAGONAL_COLOR,
@@ -64,7 +64,9 @@ def _get_stage_two_epoch(
 
 def _parse_training_jsonl(
     fit_dir: Path, name: str, fit_seed: int
-) -> pd.DataFrame | None:
+) -> pl.DataFrame | None:
+    """Per-epoch eval records from MACE's ``*_train.txt``, one row per
+    record with the epoch in the "epoch" column."""
     txt_path = fit_dir / "results" / f"{name}_run-{fit_seed}_train.txt"
     if not txt_path.exists():
         # Seed can differ from expected value — fall back to any matching file
@@ -92,8 +94,7 @@ def _parse_training_jsonl(
         logger.warning("No eval records found in %s", txt_path)
         return None
 
-    df = pd.DataFrame(rows).set_index("epoch")
-    return df
+    return pl.DataFrame(rows, infer_schema_length=None)
 
 
 def _parse_used_epoch(fit_dir: Path, name: str, fit_seed: int) -> int | None:
@@ -128,7 +129,7 @@ def plot_training_curves(
     colors = PALETTE
 
     # --- collect per-fit data ---
-    fit_data: list[tuple[int, pd.DataFrame, int | None]] = []
+    fit_data: list[tuple[int, pl.DataFrame, int | None]] = []
     first_fit_dir: Path | None = None
     for i in range(n_fits):
         fit_dir = Path("results", base_name, name, f"fit_{i}")
@@ -164,7 +165,7 @@ def plot_training_curves(
         if not cols:
             continue
         metrics_path = metrics_dir / f"{base_name}_fit_{i}_training_metrics.csv"
-        df[cols].to_csv(metrics_path)
+        df.select(["epoch", *cols]).write_csv(metrics_path)
     logger.info(
         "Saved per-fit training metrics (loss, mae_e_per_atom, mae_f) to %s",
         metrics_dir,
@@ -179,10 +180,14 @@ def plot_training_curves(
         label = f"fit_{i} (seed {seed + i})"
         if "mae_e_per_atom" in df.columns:
             ax_e.plot(
-                df.index, df["mae_e_per_atom"], color=color, label=label, linewidth=1.2
+                df["epoch"],
+                df["mae_e_per_atom"],
+                color=color,
+                label=label,
+                linewidth=1.2,
             )
         if "mae_f" in df.columns:
-            ax_f.plot(df.index, df["mae_f"], color=color, label=label, linewidth=1.2)
+            ax_f.plot(df["epoch"], df["mae_f"], color=color, label=label, linewidth=1.2)
         if used_ep is not None:
             ax_e.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
             ax_f.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
@@ -217,7 +222,9 @@ def plot_training_curves(
         color = colors[i % len(colors)]
         label = f"fit_{i} (seed {seed + i})"
         if "loss" in df.columns:
-            ax_loss.plot(df.index, df["loss"], color=color, label=label, linewidth=1.2)
+            ax_loss.plot(
+                df["epoch"], df["loss"], color=color, label=label, linewidth=1.2
+            )
         if used_ep is not None:
             ax_loss.axvline(
                 used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8

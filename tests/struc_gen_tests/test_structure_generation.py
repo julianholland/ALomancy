@@ -1734,76 +1734,35 @@ class TestForceVarianceCalculation:
         unflattened = flattened.reshape((5, 3))
         np.testing.assert_array_equal(forces, unflattened)
 
-    def test_standard_deviation_calculation(self, sample_md_structures):
-        """Test standard deviation calculation for forces."""
-        import pandas as pd
+    def test_standard_deviation_calculation(self, sample_md_structures, tmp_path):
+        """The real committee std-dev scoring over perturbed model forces."""
+        import polars as pl
 
-        # Simulate multiple model predictions
-        n_models = 5
+        from alomancy.structure_generation.find_high_sd_structures import (
+            std_deviation_of_forces,
+        )
+
+        rng = np.random.default_rng(0)
         structure_forces_dict = {}
-
-        for model_id in range(n_models):
-            model_name = f"model_{model_id}" if model_id > 0 else "base_mace"
-            structure_forces_dict[model_name] = {}
-
-            for struct_id, atoms in enumerate(sample_md_structures[:10]):
-                # Add some variation to the forces
-                base_forces = atoms.arrays["forces"]
-                noise = np.random.random(base_forces.shape) * 0.1 - 0.05
-                varied_forces = base_forces + noise
-
-                structure_forces_dict[model_name][f"structure_{struct_id}"] = {
-                    "forces": varied_forces,
-                    "energy": atoms.info["energy"] + np.random.random() * 0.1,
+        for model_id in range(5):
+            model_name = f"fit_{model_id}" if model_id > 0 else "base_mlip"
+            structure_forces_dict[model_name] = {
+                f"structure_{struct_id}": {
+                    "forces": atoms.arrays["forces"]
+                    + rng.random(atoms.arrays["forces"].shape) * 0.1
+                    - 0.05,
+                    "energy": atoms.info["energy"] + rng.random() * 0.1,
                 }
+                for struct_id, atoms in enumerate(sample_md_structures[:10])
+            }
 
-        # Test std deviation calculation function structure
-        def mock_std_deviation_of_forces(structure_forces_dict, md_dir, verbose=0):
-            number_of_structures = len(structure_forces_dict["base_mace"])
-            std_dev_array = np.zeros((number_of_structures, 3))
+        result_df = std_deviation_of_forces(structure_forces_dict, tmp_path)
 
-            for structure in range(number_of_structures):
-                forces_array = np.concatenate(
-                    [
-                        structure_forces_dict[fit][f"structure_{structure}"]["forces"]
-                        for fit in structure_forces_dict
-                    ],
-                    axis=0,
-                )
-
-                std_dev_per_force_fragment = np.std(forces_array, axis=0)
-                energy_array = np.array(
-                    [
-                        structure_forces_dict[fit][f"structure_{structure}"]["energy"]
-                        for fit in structure_forces_dict
-                    ]
-                )
-                std_dev_per_energy = np.std(energy_array)
-
-                std_dev_array[structure, :] = np.array(
-                    [
-                        np.max(std_dev_per_force_fragment),
-                        np.mean(std_dev_per_force_fragment),
-                        std_dev_per_energy,
-                    ]
-                )
-
-            df = pd.DataFrame(
-                std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
-            ).sort_values(by="max_std_dev", ascending=False)
-
-            return df
-
-        result_df = mock_std_deviation_of_forces(structure_forces_dict, "/tmp")
-
-        assert isinstance(result_df, pd.DataFrame)
+        assert isinstance(result_df, pl.DataFrame)
         assert len(result_df) == 10
-        assert "max_std_dev" in result_df.columns
-        assert "mean_std_dev" in result_df.columns
-        assert "std_dev_energy" in result_df.columns
-
-        # Check that max_std_dev >= mean_std_dev for each structure
-        assert all(result_df["max_std_dev"] >= result_df["mean_std_dev"])
+        for col in ("max_std_dev", "mean_std_dev", "std_dev_energy"):
+            assert col in result_df.columns
+        assert (result_df["max_std_dev"] >= result_df["mean_std_dev"]).all()
 
 
 class TestTrajectoryProcessing:

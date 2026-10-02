@@ -194,8 +194,8 @@ class TestGetMaceEvalInfo:
                 mae_f=0.1 * (i + 1),
             )
         df = get_mace_eval_info({"name": "mlip_committee"})
-        assert df["mae_f"].iloc[0] == pytest.approx(0.1)
-        assert df["best_fit_idx"].iloc[0] == 0
+        assert df["mae_f"][0] == pytest.approx(0.1)
+        assert df["best_fit_idx"][0] == 0
         assert "mae_f_std_dev" not in df.columns
 
     @pytest.mark.unit

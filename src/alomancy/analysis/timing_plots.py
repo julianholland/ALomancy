@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from matplotlib.ticker import MaxNLocator
 
 from alomancy.analysis.colors import (
@@ -51,7 +51,7 @@ def _ts(s: str) -> datetime:
     return datetime.strptime(s, _TS_FMT)
 
 
-def parse_timing_log(log_file: str | Path) -> pd.DataFrame:
+def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
     """Parse phase timings from an alomancy.log file.
 
     Infers phase boundaries from existing INFO/DEBUG messages — no new timing
@@ -63,7 +63,7 @@ def parse_timing_log(log_file: str | Path) -> pd.DataFrame:
     """
     log_path = Path(log_file)
     if not log_path.exists():
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     # Per-loop state
     loops: dict[int, dict] = {}
@@ -128,7 +128,7 @@ def parse_timing_log(log_file: str | Path) -> pd.DataFrame:
                     loops[n]["loop_end"] = _ts(m.group(1))
 
     if not loops:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     def _secs(t0: datetime, end: datetime | None) -> float:
         return float("nan") if end is None else (end - t0).total_seconds()
@@ -184,9 +184,9 @@ def parse_timing_log(log_file: str | Path) -> pd.DataFrame:
         )
 
     if not rows:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
-    return pd.DataFrame(rows).sort_values("loop").reset_index(drop=True)
+    return pl.DataFrame(rows, infer_schema_length=None).sort("loop")
 
 
 def timing_plots(log_file: str | Path, directory: str | Path) -> None:
@@ -209,7 +209,7 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
     import matplotlib.pyplot as plt
 
     df = parse_timing_log(log_file)
-    if df.empty:
+    if df.is_empty():
         logger.warning("No timing data found in %s — skipping timing plot.", log_file)
         return
 
@@ -217,7 +217,7 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     setup_alomancy_style()
 
-    loops = df["loop"].tolist()
+    loops = df["loop"].to_list()
     # Bars sit at their real loop numbers so the integer tick locator below
     # labels them directly (and a missing loop shows up as a gap).
     x = np.asarray(loops, dtype=float)
@@ -279,7 +279,8 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
 
     # --- training-set size overlay (secondary y-axis line) ---
     ax2 = ax.twinx()
-    n_train = df["n_train"].to_numpy(dtype=float)
+    # Loops with no logged training-set size are null -> NaN (no point).
+    n_train = df["n_train"].cast(pl.Float64).to_numpy()
     ax2.plot(
         x,
         n_train,

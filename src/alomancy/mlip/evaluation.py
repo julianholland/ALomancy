@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 from ase.stress import full_3x3_to_voigt_6_stress
 
 from alomancy.utils.dataset_curation import geometry_digest, structure_domain
@@ -223,6 +224,15 @@ def best_fit_test_metrics(committee_dir: Path, metric: str = "mae_f") -> dict | 
         "best_fit_idx": best_fit,
         "selection_split": split_used,
     }
+
+
+def loop_metrics_frame(loops: list[int], rows: list[dict]) -> pl.DataFrame:
+    """One row per AL loop, with the loop number as the first column
+    ("al_loop"); rows may carry different keys (missing ones are null)."""
+    return pl.DataFrame(
+        [{"al_loop": loop, **row} for loop, row in zip(loops, rows, strict=True)],
+        infer_schema_length=None,
+    )
 
 
 def check_quality_gate(workdir: Path, committee: dict) -> None:

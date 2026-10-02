@@ -40,7 +40,7 @@ def test_parse_single_loop(tmp_path):
     df = parse_timing_log(log)
 
     assert len(df) == 1
-    row = df.iloc[0]
+    row = df.row(0, named=True)
     assert row["loop"] == 0
     assert row["n_train"] == 15207
     # total: 2026-07-23 21:19:32 → 2026-07-24 05:58:44 = 8h 39m 12s = 31152 s
@@ -72,7 +72,7 @@ def test_parse_multiple_loops(tmp_path):
 
     assert len(df) == 2
     assert list(df["loop"]) == [0, 1]
-    assert df.iloc[1]["n_train"] == 15382
+    assert df["n_train"][1] == 15382
 
 
 @pytest.mark.unit
@@ -89,7 +89,7 @@ def test_last_write_wins_on_restart(tmp_path):
 
     assert len(df) == 1
     # Second occurrence wins → n_train from second run
-    assert df.iloc[0]["n_train"] == 15207
+    assert df["n_train"][0] == 15207
 
 
 @pytest.mark.unit
@@ -106,9 +106,9 @@ def test_missing_phase_gives_nan(tmp_path):
     df = parse_timing_log(log)
 
     assert len(df) == 1
-    assert math.isnan(df.iloc[0]["generate_structures_s"])
-    assert math.isnan(df.iloc[0]["high_accuracy_evaluation_s"])
-    assert not math.isnan(df.iloc[0]["total_s"])
+    assert math.isnan(df["generate_structures_s"][0])
+    assert math.isnan(df["high_accuracy_evaluation_s"][0])
+    assert not math.isnan(df["total_s"][0])
 
 
 @pytest.mark.unit
@@ -129,7 +129,7 @@ def test_queue_time_parsed(tmp_path):
     df = parse_timing_log(log)
 
     assert len(df) == 1
-    q = df.iloc[0]["training_plots_queue_s"]
+    q = df["training_plots_queue_s"][0]
     assert abs(q - 1500.0) < 1e-6  # mean of 1200 and 1800
 
 
@@ -140,9 +140,9 @@ def test_queue_time_nan_when_absent(tmp_path):
     log = _write_log(tmp_path, _loop0_lines())
     df = parse_timing_log(log)
 
-    assert math.isnan(df.iloc[0]["training_plots_queue_s"])
-    assert math.isnan(df.iloc[0]["generate_structures_queue_s"])
-    assert math.isnan(df.iloc[0]["high_accuracy_evaluation_queue_s"])
+    assert math.isnan(df["training_plots_queue_s"][0])
+    assert math.isnan(df["generate_structures_queue_s"][0])
+    assert math.isnan(df["high_accuracy_evaluation_queue_s"][0])
 
 
 @pytest.mark.unit
@@ -152,7 +152,7 @@ def test_empty_log_returns_empty_df(tmp_path):
     log = _write_log(tmp_path, ["no timing lines here"])
     df = parse_timing_log(log)
 
-    assert df.empty
+    assert df.is_empty()
 
 
 @pytest.mark.unit
@@ -161,7 +161,7 @@ def test_missing_file_returns_empty_df(tmp_path):
 
     df = parse_timing_log(tmp_path / "nonexistent.log")
 
-    assert df.empty
+    assert df.is_empty()
 
 
 @pytest.mark.unit

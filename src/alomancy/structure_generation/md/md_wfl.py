@@ -3,14 +3,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 from ase import Atoms
 from ase.io import read, write
 from ase.md.langevin import Langevin
 from ase.md.langevinbaoab import LangevinBAOAB
 from ase.units import GPa, fs
 from mace.calculators import MACECalculator
-from tqdm import tqdm
 
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.registry import resolve
@@ -288,158 +286,6 @@ def run_md(
     )
 
 
-def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
-    return np.reshape(forces, (1, forces.shape[0] * 3))
-
-
-def std_deviation_of_forces(
-    structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-    md_dir,
-) -> pd.DataFrame:
-    """
-    Calculate the standard deviation of forces for each structure in the dictionary.
-
-    Parameters
-    ----------
-    structure_force_dict : dict
-        A dictionary where keys are fit names and values are dictionaries with structure names as keys and forces as values.
-
-        e.g.:
-        {
-            'base_mace': {
-                'structure_0': {'forces': np.ndarray, 'energy': float},
-                'structure_1': {'forces': np.ndarray, 'energy': float},
-                ...
-            },
-            'fit_1': {
-                ...
-            },
-        }
-
-    Returns
-    -------
-    list
-        A list of standard deviations of forces for each structure.
-    """
-    number_of_structures = len(structure_forces_dict["base_mace"])
-    std_dev_array = np.zeros((number_of_structures, 3))
-    for structure in range(number_of_structures):
-        forces_array = np.concatenate(
-            [
-                structure_forces_dict[fit][f"structure_{structure}"]["forces"]
-                for fit in structure_forces_dict
-            ],
-            axis=0,
-        )
-        std_dev_per_force_fragment = np.std(forces_array, axis=0)
-        energy_array = np.array(
-            [
-                structure_forces_dict[fit][f"structure_{structure}"]["energy"]
-                for fit in structure_forces_dict
-            ]
-        )
-        std_dev_per_energy = np.std(energy_array)
-
-        logger.debug(
-            f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
-        )
-
-        std_dev_array[structure, :] = np.array(
-            [
-                np.max(std_dev_per_force_fragment),
-                np.mean(std_dev_per_force_fragment),
-                std_dev_per_energy,
-            ]
-        )
-
-    df = pd.DataFrame(
-        std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
-    ).sort_values(by="max_std_dev", ascending=False)
-
-    df.to_csv(str(Path(md_dir, "std_dev_forces.csv")), index=True)
-
-    return df
-
-
-def get_forces_for_all_maces(
-    structure_list: list[Atoms],
-    base_name: str,
-    job_dict: dict[str, dict[str, str]],
-    base_mlip: str,
-    fits_to_use: list[int] | None = None,
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
-    """
-    Get forces for all MACE models specified in fits_to_use.
-    """
-
-    if fits_to_use is None:
-        fits_to_use = [0]
-
-    logger.info(
-        "MACE evaluation: scoring %d structure(s) against the base model plus "
-        "%d committee fit(s) %s to compute per-structure force std dev.",
-        len(structure_list),
-        len(fits_to_use),
-        fits_to_use,
-    )
-
-    calc = MACECalculator(model_paths=base_mlip, device="cuda", default_dtype="float64")
-
-    for atoms in structure_list:
-        atoms.calc = calc
-    structure_forces_dict = {
-        "base_mlip": {
-            f"structure_{i}": {
-                "forces": flatten_array_of_forces(structure_list[i].get_forces()),
-                "energy": np.array(structure_list[i].get_potential_energy()),
-            }
-            for i in range(len(structure_list))
-        }
-    }
-    logger.info(
-        "MACE evaluation: base model done (%d structures).", len(structure_list)
-    )
-
-    for i in fits_to_use:
-        calc = MACECalculator(
-            model_paths=str(
-                Path(
-                    "results",
-                    base_name,
-                    f"{job_dict['mlip_committee']['name']}/fit_{i}/{job_dict['mlip_committee']['name']}_stagetwo.model",
-                )
-            ),
-            device="cuda",
-            default_dtype="float64",
-        )
-
-        for atoms in tqdm(structure_list):
-            atoms.calc = calc
-
-        structure_forces_dict[f"fit_{i}"] = {
-            f"structure_{i}": {
-                "forces": flatten_array_of_forces(structure_list[i].get_forces()),
-                "energy": structure_list[i].get_potential_energy(),
-            }
-            for i in range(len(structure_list))
-        }
-        logger.info(
-            "MACE evaluation: fit_%d done (%d/%d committee fit(s) complete).",
-            i,
-            fits_to_use.index(i) + 1,
-            len(fits_to_use),
-        )
-
-    logger.info(
-        "MACE evaluation complete: forces collected from %d model(s) for %d "
-        "structure(s).",
-        1 + len(fits_to_use),
-        len(structure_list),
-    )
-
-    return structure_forces_dict
-
-
 # ---------------------------------------------------------------------------
 # Modular AL architecture: structure_generator registry entry points.
 #
@@ -448,9 +294,9 @@ def get_forces_for_all_maces(
 # full eligible seed population, it selects a diversity-maximizing subset
 # via utils.seed_selection (population-side selection is MD's own business,
 # unlike EZGA which uses the population directly) and fans out one remote
-# MD job per selected seed via submit_n. get_forces_for_all_maces/
-# all_maces_remote_submitter above are committee-scoring concerns that move
-# to the skeleton, not part of this module's new interface.
+# MD job per selected seed via submit_n. Committee scoring of the
+# candidates lives in the skeleton (ActiveLearningWorkflow.predict), not
+# in this module.
 # ---------------------------------------------------------------------------
 
 

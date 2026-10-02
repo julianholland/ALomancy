@@ -121,7 +121,7 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     # shows the fullest cumulative history at that point), so it lands in the
     # last plotted loop's subdirectory rather than flat in plots_dir.
     df = get_mace_eval_info(job_dict)
-    if not df.empty:
+    if not df.is_empty():
         last_loop_plots_dir = plots_dir / loops[-1].name
         last_loop_plots_dir.mkdir(exist_ok=True, parents=True)
         mae_al_loop_plot(df, job_dict, directory=last_loop_plots_dir)

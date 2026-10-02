@@ -43,6 +43,28 @@ def _cached_descriptors(
     return np.array(vectors)
 
 
+def descriptors_for_atoms(atoms_list: list, dimensions: int = 128) -> np.ndarray:
+    """Descriptor per ASE structure not stored in the DB (e.g. AL candidates).
+
+    Builds each structure's AtomPositionManager the same way
+    GlobalDatabase._prepare_for_storage does, so the vectors are directly
+    comparable with the cached ``descriptor_key(dimensions)`` ones. Nothing
+    is cached: the structures aren't in the DB yet.
+    """
+    from sage_lib.single_run.SingleRun import SingleRun
+
+    vectors = []
+    for atoms in atoms_list:
+        run = SingleRun()
+        run.AtomPositionManager.configure(
+            atomPositions=atoms.positions,
+            atomLabels=atoms.symbols,
+            latticeVectors=atoms.cell,
+        )
+        vectors.append(make_char_vec(run.AtomPositionManager, dimensions=dimensions))
+    return np.array(vectors)
+
+
 def remove_redundancy_from_partition(
     db, config_list: list, tolerance: float = 0.01, dimensions: int = 128
 ) -> None:

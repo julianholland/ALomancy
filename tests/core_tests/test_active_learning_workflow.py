@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 from ase import Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
@@ -368,9 +368,9 @@ class TestCrossLoopMetricsDataframe:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         df = wf._cross_loop_metrics_dataframe("committee")
 
-        assert list(df.index) == [0, 1]
-        assert list(df["best_fit_idx"]) == [1, 1]
-        assert df["mae_f"].tolist() == pytest.approx([0.1, 0.1])
+        assert df["al_loop"].to_list() == [0, 1]
+        assert df["best_fit_idx"].to_list() == [1, 1]
+        assert df["mae_f"].to_list() == pytest.approx([0.1, 0.1])
         assert "mae_f_std_dev" not in df.columns
 
     def test_best_chosen_on_valid_but_reports_test(
@@ -386,9 +386,11 @@ class TestCrossLoopMetricsDataframe:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         df = wf._cross_loop_metrics_dataframe("committee")
 
-        assert df.loc[0, "best_fit_idx"] == 1
-        assert df.loc[0, "mae_f"] == pytest.approx(0.2)
-        assert df.loc[0, "selection_split"] == "valid"
+        row = df.row(0, named=True)
+        assert row["al_loop"] == 0
+        assert row["best_fit_idx"] == 1
+        assert row["mae_f"] == pytest.approx(0.2)
+        assert row["selection_split"] == "valid"
 
     def test_skips_loop_with_inconsistent_evaluations(
         self, tmp_path, monkeypatch, shared_db
@@ -401,7 +403,7 @@ class TestCrossLoopMetricsDataframe:
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         df = wf._cross_loop_metrics_dataframe("committee")
 
-        assert list(df.index) == [1]
+        assert df["al_loop"].to_list() == [1]
 
     def test_empty_when_no_loops(self, tmp_path, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
@@ -778,7 +780,7 @@ class TestTrainMlip:
             patch(f"{_MODULE}.submit_n") as mock_submit_n,
             patch.object(wf, "_store_predictions_and_cleanup"),
             patch.object(
-                wf, "_cross_loop_metrics_dataframe", return_value=pd.DataFrame()
+                wf, "_cross_loop_metrics_dataframe", return_value=pl.DataFrame()
             ),
         ):
             wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)

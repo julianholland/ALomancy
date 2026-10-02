@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 from ase import Atoms
 from ase.io import write
@@ -174,7 +174,7 @@ def test_parse_training_jsonl_filters_mode(tmp_path):
     assert df is not None
     # null-epoch row and opt-mode row must be excluded
     assert len(df) == 2
-    assert set(df.index.tolist()) == {0, 1}
+    assert set(df["epoch"].to_list()) == {0, 1}
 
 
 @pytest.mark.unit
@@ -206,7 +206,7 @@ def test_parse_training_jsonl_dataframe_columns(tmp_path):
     df = _parse_training_jsonl(fit_dir, "mymodel", 803)
 
     assert df is not None
-    assert isinstance(df, pd.DataFrame)
+    assert isinstance(df, pl.DataFrame)
     for col in ("loss", "mae_e", "mae_f"):
         assert col in df.columns
 
@@ -572,12 +572,12 @@ def test_plot_training_curves_metrics_csv_has_expected_columns(tmp_path, monkeyp
     plot_training_curves("demo", job_dict, 803, plots_dir)
 
     metrics_path = plots_dir / "metrics" / "demo_fit_0_training_metrics.csv"
-    df = pd.read_csv(metrics_path, index_col="epoch")
+    df = pl.read_csv(metrics_path)
 
-    assert list(df.columns) == ["loss", "mae_e_per_atom", "mae_f"]
-    assert len(df) == 5
-    assert df.loc[0, "loss"] == pytest.approx(1.0)
-    assert df.loc[4, "mae_f"] == pytest.approx(0.3 - 0.01 * 4)
+    assert df.columns == ["epoch", "loss", "mae_e_per_atom", "mae_f"]
+    assert df["epoch"].to_list() == [0, 1, 2, 3, 4]
+    assert df["loss"][0] == pytest.approx(1.0)
+    assert df["mae_f"][4] == pytest.approx(0.3 - 0.01 * 4)
 
 
 @pytest.mark.unit
