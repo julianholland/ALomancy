@@ -115,3 +115,149 @@ def test_partial_sections_only(tmp_path, monkeypatch):
     result = load_dictionaries(run_cfg)
     assert isinstance(result["mlip_committee"]["hpc"], dict)
     assert "structure_generation" not in result
+
+
+@pytest.mark.unit
+def test_empty_section_normalized_to_empty_dict_not_none(tmp_path, monkeypatch):
+    """A section written with nothing indented under it (e.g.
+    "initialization:" followed directly by the next top-level key) parses
+    from YAML as None, not {} -- this used to crash section_dict.get("hpc")
+    with AttributeError; every section's own settings are optional now, so
+    a genuinely empty section is valid input, not a config error."""
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(
+        global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "nonexistent.yaml"
+    )
+
+    run_cfg = tmp_path / "config.yaml"
+    run_cfg.write_text("initialization:\ntraining:\n  trainer: mace\n")
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["initialization"] == {}
+    assert result["training"]["trainer"] == "mace"
+
+
+@pytest.mark.unit
+def test_empty_workflow_section_also_normalized(tmp_path, monkeypatch):
+    """Normalization isn't limited to the four HPC-bearing job sections --
+    every top-level key in the loaded YAML gets the same treatment, so e.g.
+    an empty workflow: section doesn't crash downstream .get() calls
+    either, even though load_dictionaries itself never reads workflow."""
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(
+        global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "nonexistent.yaml"
+    )
+
+    run_cfg = tmp_path / "config.yaml"
+    run_cfg.write_text("workflow:\ntraining:\n  trainer: mace\n")
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["workflow"] == {}
+
+
+@pytest.mark.unit
+def test_training_section_hpc_resolved(tmp_path, monkeypatch):
+    """The renamed "training" section (mlip_committee's replacement) also
+    gets hpc string resolution -- it must be in _JOB_SECTIONS too."""
+    from alomancy.configs import global_config
+
+    hpc_cfg = tmp_path / "hpc_config.yaml"
+    _write_global_hpc(
+        hpc_cfg, {"raven": {"hpc_name": "raven", "partitions": ["general"]}}
+    )
+    monkeypatch.setattr(global_config, "ALOMANCY_HPC_CONFIG", hpc_cfg)
+
+    run_cfg = tmp_path / "config.yaml"
+    _write_run_config(run_cfg, {"training": {"name": "training", "hpc": "raven"}})
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert isinstance(result["training"]["hpc"], dict)
+    assert result["training"]["hpc"]["hpc_name"] == "raven"
+
+
+@pytest.mark.unit
+def test_max_time_defaults_to_24h_when_absent(tmp_path, monkeypatch):
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "empty.yaml")
+
+    run_cfg = tmp_path / "config.yaml"
+    hpc_dict = {"hpc_name": "raven", "partitions": ["general"]}
+    _write_run_config(run_cfg, {"training": {"name": "training", "hpc": hpc_dict}})
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["training"]["max_time"] == "24:00:00"
+
+
+@pytest.mark.unit
+def test_max_time_defaults_from_hpc_profile(tmp_path, monkeypatch):
+    """When the resolved HPC profile itself carries a default_max_time, that
+    wins over the hardcoded 24h fallback."""
+    from alomancy.configs import global_config
+
+    hpc_cfg = tmp_path / "hpc_config.yaml"
+    _write_global_hpc(
+        hpc_cfg,
+        {
+            "raven": {
+                "hpc_name": "raven",
+                "partitions": ["general"],
+                "default_max_time": "48:00:00",
+            }
+        },
+    )
+    monkeypatch.setattr(global_config, "ALOMANCY_HPC_CONFIG", hpc_cfg)
+
+    run_cfg = tmp_path / "config.yaml"
+    _write_run_config(run_cfg, {"training": {"name": "training", "hpc": "raven"}})
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["training"]["max_time"] == "48:00:00"
+
+
+@pytest.mark.unit
+def test_max_time_explicit_value_not_overridden(tmp_path, monkeypatch):
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "empty.yaml")
+
+    run_cfg = tmp_path / "config.yaml"
+    hpc_dict = {"hpc_name": "raven", "partitions": ["general"]}
+    _write_run_config(
+        run_cfg,
+        {"training": {"name": "training", "hpc": hpc_dict, "max_time": "2H"}},
+    )
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert result["training"]["max_time"] == "2H"
+
+
+@pytest.mark.unit
+def test_max_time_not_added_when_no_hpc(tmp_path, monkeypatch):
+    """A section with no hpc at all (e.g. initialization running locally)
+    gets no max_time default either -- there's nothing for it to bound."""
+    from alomancy.configs import global_config
+
+    monkeypatch.setattr(global_config, "ALOMANCY_HPC_CONFIG", tmp_path / "empty.yaml")
+
+    run_cfg = tmp_path / "config.yaml"
+    _write_run_config(run_cfg, {"initialization": {"name": "initialization"}})
+
+    from alomancy.configs.config_dictionaries import load_dictionaries
+
+    result = load_dictionaries(run_cfg)
+    assert "max_time" not in result["initialization"]

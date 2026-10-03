@@ -5,12 +5,14 @@ This document is a from-source audit of `src/alomancy/remote_submission/` (`subm
 Every claim below is anchored to a specific file:line or a specific test name — nothing here is inferred from memory or documentation comments alone.
 
 > **Status (2026-08-15): all Tier 1/Tier 2 fixes from §9's strategy memo, and its full sequencing plan (steps 0–4, §9.3), have been implemented and are covered by regression tests.** The gaps and case studies below are kept as-written — they're the evidence trail that justified each fix — but are now historical: §6's case studies describe bugs that have since been fixed, and §8's gap list is annotated with each item's resolution. Read this document as "what was wrong and why" plus "what's now true instead," not as an open TODO list. Anything not explicitly marked fixed below is still open.
+>
+> **Update (1.0.0 release): `core/standard_active_learning.py` and `core/base_active_learning.py`, referenced throughout this audit as the caller of `remote_submission/`, have since been deleted.** `core/committee_uncertainty_workflow.py` (built via `build_workflow()`) is now the sole caller, having absorbed the same `train_mlip`/`generate_structures`/`high_accuracy_evaluation` orchestration this document describes. File:line references below to the removed module are kept as-written for historical accuracy (they were correct when each incident/fix happened) — read `standard_active_learning.py` as "the workflow's orchestration code, now in committee_uncertainty_workflow.py" wherever it appears below.
 
 ## 1. Architecture overview
 
 ```
-core/standard_active_learning.py
-   │  (train_mlip, generate_structures, high_accuracy_evaluation)
+core/committee_uncertainty_workflow.py
+   │  (_train_mlip, _generate_structures, high_accuracy_evaluation)
    ▼
 remote_submission/submitters.py          ◄── one function per AL phase
    │  committee_remote_submitter()           (mlip_committee)
@@ -42,7 +44,7 @@ A plain data container passed into every submitter and into `RemoteJobExecutor`.
 **Fields that are actually consumed downstream** (verified by grep + read of every consumer):
 - `sys_name`, `job_name`, `resources`, `pre_cmds`, `post_cmds`, `env_vars`, `input_files`, `output_files`, `header_extra`, `exact_fit`, `partial_node` — all passed straight into `ExPyRe(...)`/`job.start(...)` in `executor.py:347-357` and `439-445`.
 - `timeout`, `check_interval` — passed into `job.get_results(...)` (`executor.py:451-454`).
-- `max_concurrent_jobs` — caps the `ThreadPoolExecutor` in `run_all_jobs_bounded` (`executor.py:557-565`).
+- `max_num_of_concurrent_jobs` — caps the `ThreadPoolExecutor` in `run_all_jobs_bounded` (`executor.py:557-565`).
 - `lock_timeout` — bounds how long a worker thread waits for the per-host ssh lock (`executor.py:430-436`, `622-626`).
 
 **Fields that are still dead** — accepted by the constructor, documented in the docstring, stored on `self`, and **never read by `RemoteJobExecutor` or any submitter**:
@@ -85,7 +87,7 @@ Well-tested (`TestSalvagePartialOutput`, 4 tests, `test_utilities.py:555-654`): 
 **Limitation this doesn't cover, and doesn't need to post-fix:** salvage only recovers whatever the remote side had *already written* at the moment the local exception fired — if a job dies 6 epochs into a 200-epoch training run, there's no model file yet to salvage. §6.2 describes an incident that hit exactly this. With §3.3's resume fix in place, a *transient* failure (the actual cause in §6.2) no longer reaches this fallback at all — the job resumes and finishes normally instead of being abandoned mid-training. Salvage's blind spot here is now only relevant for genuinely terminal deaths this early, not for the transient case that used to masquerade as one.
 
 ### 3.5 `run_all_jobs_bounded() -> list[Any]`
-`ThreadPoolExecutor(max_workers=min(max_concurrent_jobs, len(self.jobs)))`, one `_run_single_job` task per job, collected via `as_completed` so results land index-aligned in a pre-sized `[None] * len(self.jobs)` list regardless of completion order. Falls back to `max_workers=1` with a warning if `max_concurrent_jobs` is `None`/`0`/negative (`executor.py:557-564`) — **this fallback has no direct test**.
+`ThreadPoolExecutor(max_workers=min(max_num_of_concurrent_jobs, len(self.jobs)))`, one `_run_single_job` task per job, collected via `as_completed` so results land index-aligned in a pre-sized `[None] * len(self.jobs)` list regardless of completion order. Falls back to `max_workers=1` with a warning if `max_num_of_concurrent_jobs` is `None`/`0`/negative (`executor.py:557-564`) — **this fallback has no direct test**.
 
 There is also a second, outer exception guard (`executor.py:578-581`, `except Exception as exc: logger.error("Job %d worker raised unexpectedly")`) for the case where `_run_single_job` itself fails to catch something (e.g. `future.result()` raising `CancelledError`). This path is unreachable under normal operation since `_run_single_job` is designed to swallow everything — it has no test, and would be very hard to trigger deliberately.
 
@@ -133,7 +135,7 @@ Submits the single "evaluate every committee model against candidate structures"
 
 **FIXED — direct test coverage added** (`TestAllMacesRemoteSubmitter`, same new file): `test_job_name_defaults_to_mace_eval_prefixed` exercises the default naming and the single-job unwrap together (mocks only `RemoteJobExecutor.run_and_wait`, checks both the job config it received and the unwrapped return value); `test_explicit_job_name_overrides_default` covers the override path.
 
-### 4.4 `committee_remote_submitter(remote_info, base_name, function, seed=803, size_of_committee=5, function_kwargs=None, fit_indices=None) -> None`
+### 4.4 `committee_remote_submitter(remote_info, base_name, function, seed=803, num_of_models_in_committee=5, function_kwargs=None, fit_indices=None) -> None`
 Submits one MACE training job per committee member. `fit_indices`, when given, retrains only specific member indices (used by `train_mlip`'s backfill logic) — critically, each job's `output_files` is keyed by its **own** `fit_idx` value (`f"fit_{i}"` for `i in indices`), *not* by its position in the `job_configs` list, specifically to stay correct for non-contiguous subsets like `fit_indices=[2, 4]` (documented at `submitters.py:200-209` as guarding against the exact same bug class §4.2 already hit once).
 
 **FIXED — the highest-priority gap in the original audit, closed** (`TestCommitteeRemoteSubmitter`, same new file): `test_fit_indices_output_files_keyed_by_own_index_not_position` submits `fit_indices=[2, 4]` and asserts `output_files == ["fit_2"]`/`["fit_4"]` (and the corresponding `fit_idx`/`seed` in each job's `function_kwargs`) — the exact regression test the docstring's claim was missing, per §9.4's testing-strategy recommendation. `test_default_fit_indices_covers_full_committee_in_order` covers the default (no `fit_indices` given) path.
@@ -169,7 +171,7 @@ Also fixed independently: `mlip_committee`'s *local* checkpoint directories (a r
 | `RemoteJobExecutor.submit_multiple_jobs` | Indirect only | Malformed-config `KeyError` path untested; "job config validation" tests are vacuous (test plain dicts, never call real code) |
 | `RemoteJobExecutor._run_single_job` | Yes, extensively | Strong — real threads, real timing, failure isolation, stdout/stderr logging |
 | `RemoteJobExecutor._salvage_partial_output` | Yes | Strong, 4 tests covering success/no-marker/no-material/integration |
-| `RemoteJobExecutor.run_all_jobs_bounded` | Yes | Strong for scheduling guarantees; invalid-`max_concurrent_jobs` fallback and outer worker-exception guard untested |
+| `RemoteJobExecutor.run_all_jobs_bounded` | Yes | Strong for scheduling guarantees; invalid-`max_num_of_concurrent_jobs` fallback and outer worker-exception guard untested |
 | `RemoteJobExecutor.cleanup_jobs` | Yes (4 tests) | Terminal-status + ongoing-status-skip branches covered; exception-during-wipe path still untested |
 | `RemoteJobExecutor._get_results_with_resume` | Yes (6 tests) | New this update — transport resume, retry-limit exhaustion, timeout's tighter bound, terminal-status no-retry, both resubmit branches |
 | `RemoteJobExecutor.run_and_wait` | Indirect only | No dedicated test, but implicitly exercised everywhere |
@@ -235,4 +237,4 @@ So: branch on exception type in `_run_single_job` instead of collapsing everythi
 
 ### 9.4 Testing strategy — items 1–3 done, item 4 still open
 
-The pattern held up: tests that mocked the boundary (the four submitters) found nothing and were exactly where the incidents lived; tests that ran real machinery against a fake remote (the ssh-lock/db-safety code) were incident-free. Of the four recommendations: (1) ✅ the real-object `_FakeExPyReJob` fixture in `test_utilities.py` was extended with a `get_results_side_effects` queue modeling realistic failure sequences — this is what made §3.3.1/§3.3.2's resume/resubmit design testable; (2) ✅ `committee_remote_submitter(fit_indices=[2, 4])` regression test added (§4.4); (3) ✅ `ase_remote_submitter`'s `per_structure_function` length-mismatch and job-naming tests added (§4.1); (4) **not done** — the vacuous tests (gap 6) were left in place rather than deleted, and still cost credibility in this same audit. Skipped as recommended: the unreachable outer worker guard, the `max_concurrent_jobs` fallback, and the `KeyError` path remain untested — still correctly judged not worth it.
+The pattern held up: tests that mocked the boundary (the four submitters) found nothing and were exactly where the incidents lived; tests that ran real machinery against a fake remote (the ssh-lock/db-safety code) were incident-free. Of the four recommendations: (1) ✅ the real-object `_FakeExPyReJob` fixture in `test_utilities.py` was extended with a `get_results_side_effects` queue modeling realistic failure sequences — this is what made §3.3.1/§3.3.2's resume/resubmit design testable; (2) ✅ `committee_remote_submitter(fit_indices=[2, 4])` regression test added (§4.4); (3) ✅ `ase_remote_submitter`'s `per_structure_function` length-mismatch and job-naming tests added (§4.1); (4) **not done** — the vacuous tests (gap 6) were left in place rather than deleted, and still cost credibility in this same audit. Skipped as recommended: the unreachable outer worker guard, the `max_num_of_concurrent_jobs` fallback, and the `KeyError` path remain untested — still correctly judged not worth it.

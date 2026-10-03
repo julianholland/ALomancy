@@ -126,7 +126,6 @@ def minimal_jobs_dict():
         "initialization": {
             "name": "initialization",
             "max_time": "1H",
-            "extra_datasets": [],
             "test_to_train_ratio": 0.1,
             "test_config_types": ["IsolatedAtom"],
             "creation_kwargs": {"elements": ["H", "O"]},
@@ -134,20 +133,19 @@ def minimal_jobs_dict():
         },
         "mlip_committee": {
             "name": "mlip_committee",
-            "size_of_committee": 3,
+            "num_of_models_in_committee": 3,
             "max_time": "1H",
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
         "structure_generation": {
             "name": "structure_generation",
-            "desired_number_of_structures": 5,
+            "desired_num_of_structures": 5,
             "max_time": "30m",
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
         "high_accuracy_evaluation": {
             "name": "high_accuracy_evaluation",
             "max_time": "10m",
-            "max_batch_size": 10,
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
     }

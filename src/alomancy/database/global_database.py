@@ -28,6 +28,7 @@ class GlobalDatabase:
 
     def __init__(self, db_path: str = "results/global_database") -> None:
         Path(db_path).mkdir(parents=True, exist_ok=True)
+        self.db_path = Path(db_path)
         self.partition = Partition(path=db_path, storage="hybrid")
 
     def clear(self) -> None:
@@ -116,6 +117,50 @@ class GlobalDatabase:
         self.partition.add(sr_list)
         return added
 
+    def import_from_database(self, source_path: str | Path) -> int:
+        """Copy every structure of a former ALomancy GlobalDatabase into this
+        one, keeping its config_type, split and duplicate flags.
+
+        The source is only read, never written. Quality-filter flags are
+        recomputed by this run's own train/test filters. Its ``global_db_id`` becomes
+        ``source_global_db_id`` (this DB assigns its own ids), per-loop model
+        predictions are dropped (they describe the old run's models), and
+        every copy is tagged ``source_database`` so importing the same DB
+        again is a no-op. Returns the number of structures added.
+        """
+        source = Path(source_path).resolve()
+        if not source.is_dir():
+            raise FileNotFoundError(f"No ALomancy database at {source}.")
+        if source == self.db_path.resolve():
+            raise ValueError(
+                f"{source} is this run's own database; start_from.database must "
+                "point at a different (former) run's database."
+            )
+        marker = str(source)
+        if any(
+            c.AtomPositionManager.metadata.get("source_database") == marker
+            for c in self.partition.list_containers()
+        ):
+            logger.info("Database %s already imported; skipping.", source)
+            return 0
+
+        atoms_list = GlobalDatabase(marker).get_all_as_atoms()
+        for atoms in atoms_list:
+            old_id = atoms.info.pop("global_db_id", None)
+            if old_id is not None:
+                atoms.info["source_global_db_id"] = old_id
+            atoms.info["source_database"] = marker
+            for key in [k for k in atoms.info if k.startswith(("model_", "mace_"))]:
+                del atoms.info[key]
+        added = self.add_structures(atoms_list, skip_duplicates=True)
+        logger.info(
+            "Imported %d of %d structure(s) from database %s.",
+            added,
+            len(atoms_list),
+            source,
+        )
+        return added
+
     # ------------------------------------------------------------------
     # Querying / counting
     # ------------------------------------------------------------------
@@ -172,10 +217,13 @@ class GlobalDatabase:
     def get_train_atoms(
         self,
         exclude_duplicates: bool = True,
-        exclude_high_force: bool = True,
+        exclude_quality_filtered: bool = True,
         exclude_ineligible: bool = True,
     ) -> list[Atoms]:
-        """Return all train-split structures, optionally excluding flagged containers."""
+        """Return all train-split structures, optionally excluding flagged
+        containers. ``is_quality_filtered`` is set by utils/split_filter.py
+        (general.train_filter). The legacy ``is_high_force`` flag written by
+        older versions is ignored."""
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
@@ -189,13 +237,16 @@ class GlobalDatabase:
                 and c.AtomPositionManager.metadata.get("is_duplicate", False)
             )
             and not (
-                exclude_high_force
-                and c.AtomPositionManager.metadata.get("is_high_force", False)
+                exclude_quality_filtered
+                and c.AtomPositionManager.metadata.get("is_quality_filtered", False)
             )
         ]
 
-    def get_test_atoms(self, exclude_ineligible: bool = True) -> list[Atoms]:
-        """Return all test-split structures."""
+    def get_test_atoms(
+        self, exclude_ineligible: bool = True, exclude_quality_filtered: bool = True
+    ) -> list[Atoms]:
+        """Return all test-split structures, excluding those flagged by
+        general.test_filter (utils/split_filter.py) unless asked not to."""
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
@@ -203,6 +254,10 @@ class GlobalDatabase:
             and (
                 not exclude_ineligible
                 or c.AtomPositionManager.metadata.get("is_training_eligible", True)
+            )
+            and not (
+                exclude_quality_filtered
+                and c.AtomPositionManager.metadata.get("is_quality_filtered", False)
             )
         ]
 
@@ -225,22 +280,24 @@ class GlobalDatabase:
     # In-place metadata update helpers
     # ------------------------------------------------------------------
 
-    def store_mace_predictions(
+    def store_model_predictions(
         self,
         loop_idx: int,
         fit_idx: int,
         predictions: dict[int, dict],
     ) -> None:
-        """Write per-structure MACE predictions for one committee member.
+        """Write per-structure trainer predictions for one committee member.
 
         predictions: {global_db_id: {"energy": float, "forces": list[list[float]]}}
-        Writes keys mace_energy_loop_{loop_idx}_fit_{fit_idx} and
-        mace_forces_loop_{loop_idx}_fit_{fit_idx} into each container's metadata.
+        Writes keys model_energy_loop_{loop_idx}_fit_{fit_idx} and
+        model_forces_loop_{loop_idx}_fit_{fit_idx} into each container's
+        metadata. Named generically (not mace_*) since the trainer backend
+        is no longer assumed to be MACE -- see the module registry.
         """
         id_meta_map = {
             gid: {
-                f"mace_energy_loop_{loop_idx}_fit_{fit_idx}": p["energy"],
-                f"mace_forces_loop_{loop_idx}_fit_{fit_idx}": p["forces"],
+                f"model_energy_loop_{loop_idx}_fit_{fit_idx}": p["energy"],
+                f"model_forces_loop_{loop_idx}_fit_{fit_idx}": p["forces"],
             }
             for gid, p in predictions.items()
         }
@@ -262,13 +319,13 @@ class GlobalDatabase:
             e0[atoms.get_chemical_formula()] = atoms.info["REF_energy"]
         return e0
 
-    def get_mace_predictions(
+    def get_model_predictions(
         self,
         loop_idx: int,
         fit_idx: int,
         e0: dict[str, float] | None = None,
     ) -> dict[str, tuple] | None:
-        """Retrieve stored MACE predictions for parity plotting, split by train/test.
+        """Retrieve stored trainer predictions for parity plotting, split by train/test.
 
         Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)} where
         each element is a numpy array (f values flat eV/Å). Energy values are
@@ -280,8 +337,8 @@ class GlobalDatabase:
         rather than mixing formation- and raw-energy points in one figure.
         Returns None if no predictions are stored for this loop/fit.
         """
-        energy_key = f"mace_energy_loop_{loop_idx}_fit_{fit_idx}"
-        forces_key = f"mace_forces_loop_{loop_idx}_fit_{fit_idx}"
+        energy_key = f"model_energy_loop_{loop_idx}_fit_{fit_idx}"
+        forces_key = f"model_forces_loop_{loop_idx}_fit_{fit_idx}"
 
         buckets: dict[str, dict] = {
             "train": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
@@ -367,14 +424,14 @@ class GlobalDatabase:
         id_meta_map = {i: {"is_duplicate": True} for i in positional_indices}
         self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
 
-    def flag_as_high_force(self, positional_indices: list[int]) -> None:
-        """Set is_high_force=True on containers at the given positional indices.
-
-        High-force structures are never deleted from the archive; this flag causes
-        get_train_atoms(exclude_high_force=True) to omit them from XYZ outputs.
-        """
-        id_meta_map = {i: {"is_high_force": True} for i in positional_indices}
-        self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
+    def store_descriptors(self, descriptors: dict[int, list[float]], key: str) -> None:
+        """Cache structure descriptors (e.g. redundancy removal's char_vec)
+        in container metadata, keyed by positional index, so they are
+        computed once per structure rather than on every loop/restart.
+        Never exposed via atoms.info (see _atoms_from_container)."""
+        self.partition.set_metadata_bulk(
+            {i: {key: vector} for i, vector in descriptors.items()}, use_indices=True
+        )
 
     def assign_global_db_ids(self) -> int:
         """Assign global_db_id to any container that does not already have one.
@@ -392,6 +449,51 @@ class GlobalDatabase:
             self.partition.set_metadata_bulk(untagged, use_indices=True)
         logger.info("assign_global_db_ids: tagged %d container(s).", len(untagged))
         return len(untagged)
+
+    def migrate_mace_prediction_keys(self) -> int:
+        """One-time migration: copy every legacy mace_energy_loop_*/
+        mace_forces_loop_* metadata key to its generalized
+        model_energy_loop_*/model_forces_loop_* name (the trainer backend is
+        no longer assumed to be MACE -- see the module registry;
+        store_model_predictions/get_model_predictions above write/read only
+        the new names).
+
+        The old mace_* keys are deliberately left in place rather than
+        deleted: set_metadata_bulk has no per-key delete, only a
+        whole-container clear=True overwrite, which would risk silently
+        wiping unrelated metadata (config_type, global_db_id, split, ...)
+        for any container that happens to carry a legacy prediction key.
+        Leaving them is harmless -- every reader now looks only for the
+        model_* names, and the DB-seeding key-strippers
+        (active_learning_workflow.ActiveLearningWorkflow.
+        _import_xyz via utils.import_structures, utils.recover_dft_labels) strip both
+        prefixes.
+
+        Idempotent -- safe to call more than once. Already-migrated
+        containers (whose model_* key already has the same value) are
+        skipped. Returns the number of containers updated.
+        """
+        updates: dict[int, dict] = {}
+        for i, c in enumerate(self.partition.list_containers()):
+            meta = c.AtomPositionManager.metadata
+            new_keys = {}
+            for key, value in meta.items():
+                if key.startswith("mace_energy_loop_"):
+                    new_key = key.replace("mace_energy_loop_", "model_energy_loop_", 1)
+                elif key.startswith("mace_forces_loop_"):
+                    new_key = key.replace("mace_forces_loop_", "model_forces_loop_", 1)
+                else:
+                    continue
+                if meta.get(new_key) != value:
+                    new_keys[new_key] = value
+            if new_keys:
+                updates[i] = new_keys
+        if updates:
+            self.partition.set_metadata_bulk(updates, use_indices=True)
+        logger.info(
+            "migrate_mace_prediction_keys: updated %d container(s).", len(updates)
+        )
+        return len(updates)
 
     def apply_train_test_split(
         self,
@@ -600,6 +702,10 @@ class GlobalDatabase:
         )
         meta = dict(apm.metadata)
         stress = meta.pop("_REF_stresses", None)
+        # Cached descriptors (store_descriptors) are DB-internal: a 128-float
+        # array in atoms.info would be written into every train xyz file.
+        for key in [k for k in meta if k.startswith("char_vec")]:
+            del meta[key]
         energy = apm.energy
         forces = apm.forces
         atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)

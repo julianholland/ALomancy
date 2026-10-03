@@ -143,7 +143,7 @@ def acquire_local_expyre_lock() -> None:
 # job.start() (mkdir/stage-input/sbatch submit) and
 # sync_remote_results_status() (squeue status + rsync results, called from
 # inside get_results()'s polling loop). Both shell out over that host's own
-# shared multiplexed control connection; letting max_concurrent_jobs threads
+# shared multiplexed control connection; letting max_num_of_concurrent_jobs threads
 # hit either one simultaneously can exceed whatever session/connection cap
 # the remote sshd enforces, at which point the excess sessions silently fall
 # back to a fresh, separately-authenticated connection that hangs forever if
@@ -240,7 +240,7 @@ def _ensure_expyre_sync_serialized() -> None:
     actually shells out: system.scheduler.status(...) (ssh squeue-equivalent)
     and system.get_remotes(...) (ssh/rsync). Every job being monitored runs
     its own independent get_results() loop in its own thread, so without
-    this, up to max_concurrent_jobs threads can trigger these simultaneously
+    this, up to max_num_of_concurrent_jobs threads can trigger these simultaneously
     -- this was observed in production as a stuck ``squeue`` subprocess
     exactly like the stuck job.start() calls this module already guards
     against.
@@ -427,6 +427,7 @@ def _get_results_with_resume(
                 retry_limit,
                 status,
                 backoff,
+                extra={"event": "job_resumed"},
             )
             time.sleep(backoff)
 
@@ -615,6 +616,7 @@ class RemoteJobExecutor:
                     "gone). resubmit_killed_jobs is enabled -- submitting "
                     "one fresh replacement instead of giving up.",
                     index + 1,
+                    extra={"event": "job_resubmitted"},
                 )
                 # Salvage whatever the dead attempt already produced BEFORE
                 # resubmitting: force_rerun=True only wipes the *remote*
@@ -641,7 +643,16 @@ class RemoteJobExecutor:
                 logger.debug("Job %d stderr:\n%s", index + 1, stderr)
             return index, result
         except Exception as exc:
-            logger.warning("Job %d failed: %s", index + 1, exc)
+            logger.warning(
+                "Job %d failed: %s",
+                index + 1,
+                exc,
+                extra={
+                    "event": "job_died"
+                    if isinstance(exc, ExPyReJobDiedError)
+                    else "job_failed"
+                },
+            )
             logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)
             self._salvage_partial_output(index, job)
             return index, None
@@ -703,14 +714,14 @@ class RemoteJobExecutor:
 
     def run_all_jobs_bounded(self) -> list[Any]:
         """Start and wait for all submitted jobs, keeping at most
-        remote_info.max_concurrent_jobs started at once. The instant one
+        remote_info.max_num_of_concurrent_jobs started at once. The instant one
         finishes (success or failure), the next pending job is started to
         fill its slot -- ThreadPoolExecutor provides this rolling-window
         scheduling for free. Returned results stay index-aligned with the
         job_configs passed to submit_multiple_jobs, regardless of the order
         jobs actually complete in. Every individual ssh-invoking call (job
         start, and each job's own status/result sync while being monitored)
-        is serialized per HPC host regardless of max_concurrent_jobs -- see
+        is serialized per HPC host regardless of max_num_of_concurrent_jobs -- see
         _get_ssh_call_lock -- but the surrounding wait/poll cadence keeps
         real concurrency."""
         if not self.jobs:
@@ -719,15 +730,23 @@ class RemoteJobExecutor:
         _ensure_expyre_db_thread_safe()
         _ensure_expyre_sync_serialized()
 
-        max_concurrent_jobs = getattr(self.remote_info, "max_concurrent_jobs", 20)
-        if not max_concurrent_jobs or max_concurrent_jobs < 1:
+        max_num_of_concurrent_jobs = getattr(
+            self.remote_info, "max_num_of_concurrent_jobs", 20
+        )
+        if not max_num_of_concurrent_jobs or max_num_of_concurrent_jobs < 1:
             logger.warning(
-                "max_concurrent_jobs=%s is invalid; falling back to 1 "
+                "max_num_of_concurrent_jobs=%s is invalid; falling back to 1 "
                 "(serial submission).",
-                max_concurrent_jobs,
+                max_num_of_concurrent_jobs,
             )
-            max_concurrent_jobs = 1
-        max_workers = min(max_concurrent_jobs, len(self.jobs))
+            max_num_of_concurrent_jobs = 1
+        max_workers = min(max_num_of_concurrent_jobs, len(self.jobs))
+        logger.info(
+            "Running %d remote job(s), at most %d at once.",
+            len(self.jobs),
+            max_workers,
+            extra={"event": "jobs_started", "data": {"n": len(self.jobs)}},
+        )
 
         results: list[Any] = [None] * len(self.jobs)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -832,3 +851,42 @@ class RemoteJobExecutor:
         results = self.run_all_jobs_bounded()
         self.cleanup_jobs()
         return results
+
+
+def submit_n(
+    function: Callable,
+    job_configs: list[dict[str, Any]],
+    remote_info: RemoteInfo,
+    **kwargs: Any,
+) -> list[Any]:
+    """Generic N-times remote submission primitive: submit `function` once
+    per entry in `job_configs`, wait for every result, and clean up.
+
+    This is the one shared mechanism the modular AL architecture's
+    submission shapes are built from (see the registry/skeleton design):
+    the skeleton calls it directly to drive a trainer's N-times committee
+    loop (one job_configs entry per fit); a generator/evaluator module's
+    own local orchestrator entry point calls it internally to fan out
+    however many jobs it needs (one per selected MD seed, one per DFT
+    structure) -- the caller decides the shape, this function only handles
+    "submit these, wait, return index-aligned results, clean up".
+
+    Each entry of `job_configs` is the same shape `submit_multiple_jobs`/
+    `run_and_wait` already accept: a dict with `function_kwargs` (required)
+    and optionally `input_files`, `output_files`, `job_name`, `function`
+    (a per-job override of `function`, e.g. for mixed GO/SP batches).
+
+    Returns a list aligned to `job_configs` by index; a job whose worker
+    raised, or that could not be resumed to completion, contributes `None`
+    at its index rather than raising -- callers are expected to count
+    failures themselves and decide whether enough of the batch succeeded
+    to proceed (see the plan's partial-aware, failure-counted restart
+    design), not to treat a `None` as fatal on its own.
+
+    A thin wrapper around `RemoteJobExecutor.run_and_wait` -- it exists as
+    its own function so module entry points (trainer, generator, evaluator)
+    can depend on one stable, generic submission primitive without each
+    needing to know about `RemoteJobExecutor`/`RemoteInfo` construction
+    directly.
+    """
+    return RemoteJobExecutor(remote_info).run_and_wait(function, job_configs, **kwargs)

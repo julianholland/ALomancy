@@ -1,13 +1,12 @@
 import json
 import logging
-import math
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+import polars as pl
 
 from alomancy.analysis.colors import (
     DIAGONAL_COLOR,
@@ -17,54 +16,17 @@ from alomancy.analysis.colors import (
     setup_alomancy_style,
 )
 
+if TYPE_CHECKING:
+    from alomancy.mlip.base import ALomancyTrainer
+
 logger = logging.getLogger(__name__)
-
-
-def _read_resolved_epochs(fit_dir: Path) -> dict | None:
-    """Read the resolved_mace_epochs.json sidecar written by mace_fit.
-
-    Returns None gracefully if missing or unparseable -- fits trained before
-    this sidecar existed have no such file.
-    """
-    sidecar_path = fit_dir / "resolved_mace_epochs.json"
-    if not sidecar_path.exists():
-        return None
-    try:
-        with sidecar_path.open() as fh:
-            payload: dict = json.load(fh)
-            return payload
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Could not parse %s: %s", sidecar_path, exc)
-        return None
-
-
-def _get_stage_two_epoch(
-    mlip_committee_job_dict: dict, fit_dir: Path | None = None
-) -> int:
-    if fit_dir is not None:
-        resolved = _read_resolved_epochs(fit_dir)
-        if resolved is not None and "start_swa" in resolved:
-            return int(resolved["start_swa"])
-
-    mace_kwargs = mlip_committee_job_dict.get("mace_fit_kwargs", {})
-    if "start_swa" in mace_kwargs:
-        return int(mace_kwargs["start_swa"])
-    max_ep = mlip_committee_job_dict.get("max_num_epochs") or mace_kwargs.get(
-        "max_num_epochs", 80
-    )
-    if not isinstance(max_ep, int | float):
-        logger.warning(
-            "max_num_epochs is %r (not numeric) and no resolved_mace_epochs.json "
-            "sidecar was found; defaulting stage-two epoch marker to 80.",
-            max_ep,
-        )
-        max_ep = 80
-    return math.floor(max_ep * 0.8)
 
 
 def _parse_training_jsonl(
     fit_dir: Path, name: str, fit_seed: int
-) -> pd.DataFrame | None:
+) -> pl.DataFrame | None:
+    """Per-epoch eval records from MACE's ``*_train.txt``, one row per
+    record with the epoch in the "epoch" column."""
     txt_path = fit_dir / "results" / f"{name}_run-{fit_seed}_train.txt"
     if not txt_path.exists():
         # Seed can differ from expected value — fall back to any matching file
@@ -92,8 +54,7 @@ def _parse_training_jsonl(
         logger.warning("No eval records found in %s", txt_path)
         return None
 
-    df = pd.DataFrame(rows).set_index("epoch")
-    return df
+    return pl.DataFrame(rows, infer_schema_length=None)
 
 
 def _parse_used_epoch(fit_dir: Path, name: str, fit_seed: int) -> int | None:
@@ -115,31 +76,44 @@ def _parse_used_epoch(fit_dir: Path, name: str, fit_seed: int) -> int | None:
     return None
 
 
+def _curve_rows(frame: pl.DataFrame) -> pl.DataFrame:
+    """The validation rows of a TrainingHistory frame, or the train rows when
+    the fit had no validation split."""
+    if "split" not in frame.columns:
+        return frame
+    valid = frame.filter(pl.col("split") == "valid")
+    return valid if not valid.is_empty() else frame.filter(pl.col("split") == "train")
+
+
 def plot_training_curves(
     base_name: str,
     mlip_committee_job_dict: dict,
     seed: int,
     plots_dir: Path,
+    trainer: "ALomancyTrainer",
 ) -> None:
+    """Per-epoch MAE and loss curves of every fit in this loop, from each
+    fit's ``trainer.training_history`` (so any backend that implements it
+    gets curves), plus the raw numbers as CSV under ``plots_dir/metrics``."""
     name = mlip_committee_job_dict["name"]
-    n_fits = mlip_committee_job_dict["size_of_committee"]
+    n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
 
     setup_alomancy_style()
     colors = PALETTE
 
     # --- collect per-fit data ---
-    fit_data: list[tuple[int, pd.DataFrame, int | None]] = []
-    first_fit_dir: Path | None = None
+    fit_data: list[tuple[int, pl.DataFrame, int | None]] = []
+    stage2_epoch: int | None = None
     for i in range(n_fits):
         fit_dir = Path("results", base_name, name, f"fit_{i}")
-        df = _parse_training_jsonl(fit_dir, name, seed + i)
-        if df is None:
+        history = trainer.training_history(fit_dir, seed + i)
+        if history is None or history.frame.is_empty():
             logger.warning("Skipping fit_%d: no training data.", i)
             continue
-        if first_fit_dir is None:
-            first_fit_dir = fit_dir
-        used_ep = _parse_used_epoch(fit_dir, name, seed + i)
-        fit_data.append((i, df, used_ep))
+        # Never assume fit_0 succeeded: the first collected fit's marker.
+        if stage2_epoch is None:
+            stage2_epoch = history.stage_two_epoch
+        fit_data.append((i, _curve_rows(history.frame), history.selected_epoch))
 
     if not fit_data:
         logger.warning(
@@ -147,16 +121,7 @@ def plot_training_curves(
         )
         return
 
-    # Never assume fit_0 succeeded -- use the first successfully-collected
-    # fit's directory to look up the resolved_mace_epochs.json sidecar.
-    stage2_epoch = _get_stage_two_epoch(mlip_committee_job_dict, first_fit_dir)
-
     # --- Raw metrics, alongside the plots rendered from the same data ---
-    # The PNGs above are the only durable record of loss/MAE today; the
-    # per-epoch numbers behind them are discarded once plotting finishes.
-    # Writing them out lets downstream analysis (or re-plotting with
-    # different styling) work from the actual numbers instead of having to
-    # re-parse *_train.txt files directly.
     metrics_dir = plots_dir / "metrics"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     for i, df, _used_ep in fit_data:
@@ -164,13 +129,13 @@ def plot_training_curves(
         if not cols:
             continue
         metrics_path = metrics_dir / f"{base_name}_fit_{i}_training_metrics.csv"
-        df[cols].to_csv(metrics_path)
+        df.select(["epoch", *cols]).write_csv(metrics_path)
     logger.info(
         "Saved per-fit training metrics (loss, mae_e_per_atom, mae_f) to %s",
         metrics_dir,
     )
 
-    # --- Plot 2: MAE curves ---
+    # --- MAE curves ---
     fig_mae, (ax_e, ax_f) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
     fig_mae.suptitle(f"{name} — Training MAE  [{base_name}]")
 
@@ -179,22 +144,27 @@ def plot_training_curves(
         label = f"fit_{i} (seed {seed + i})"
         if "mae_e_per_atom" in df.columns:
             ax_e.plot(
-                df.index, df["mae_e_per_atom"], color=color, label=label, linewidth=1.2
+                df["epoch"],
+                df["mae_e_per_atom"],
+                color=color,
+                label=label,
+                linewidth=1.2,
             )
         if "mae_f" in df.columns:
-            ax_f.plot(df.index, df["mae_f"], color=color, label=label, linewidth=1.2)
+            ax_f.plot(df["epoch"], df["mae_f"], color=color, label=label, linewidth=1.2)
         if used_ep is not None:
             ax_e.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
             ax_f.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
 
     for ax in (ax_e, ax_f):
-        ax.axvline(
-            stage2_epoch,
-            color=STAGE2_COLOR,
-            linestyle="--",
-            linewidth=1.2,
-            label="Stage 2",
-        )
+        if stage2_epoch is not None:
+            ax.axvline(
+                stage2_epoch,
+                color=STAGE2_COLOR,
+                linestyle="--",
+                linewidth=1.2,
+                label="Stage 2",
+            )
         ax.grid(True)
         ax.legend(fontsize=8)
 
@@ -209,7 +179,7 @@ def plot_training_curves(
     plt.close(fig_mae)
     logger.info("Saved training MAE plot to %s", mae_path)
 
-    # --- Plot 3: Loss curves ---
+    # --- Loss curves ---
     fig_loss, ax_loss = plt.subplots(figsize=(10, 5))
     fig_loss.suptitle(f"{name} — Training Loss  [{base_name}]")
 
@@ -217,15 +187,22 @@ def plot_training_curves(
         color = colors[i % len(colors)]
         label = f"fit_{i} (seed {seed + i})"
         if "loss" in df.columns:
-            ax_loss.plot(df.index, df["loss"], color=color, label=label, linewidth=1.2)
+            ax_loss.plot(
+                df["epoch"], df["loss"], color=color, label=label, linewidth=1.2
+            )
         if used_ep is not None:
             ax_loss.axvline(
                 used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8
             )
 
-    ax_loss.axvline(
-        stage2_epoch, color=STAGE2_COLOR, linestyle="--", linewidth=1.2, label="Stage 2"
-    )
+    if stage2_epoch is not None:
+        ax_loss.axvline(
+            stage2_epoch,
+            color=STAGE2_COLOR,
+            linestyle="--",
+            linewidth=1.2,
+            label="Stage 2",
+        )
     ax_loss.set_xlabel("Epoch")
     ax_loss.set_ylabel("Loss")
     ax_loss.set_yscale("log")
@@ -243,8 +220,8 @@ def plot_training_curves(
 def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | None:
     """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft, f_pred).
 
-    Written by mace_fit after training completes on the remote node. Looks for
-    mace_energy / mace_forces keys. Returns None if the file has no usable rows.
+    Written by ALomancyTrainer.evaluate after training, on the remote node. Looks for
+    model_energy / model_forces keys. Returns None if the file has no usable rows.
 
     Energy values are per-atom eV/atom. If `e0` (element -> isolated-atom
     energy) is given, each structure's per-element E0 sum is subtracted before
@@ -264,7 +241,7 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
     rows = [
         atoms
         for atoms in atoms_list
-        if "REF_energy" in atoms.info and "mace_energy" in atoms.info
+        if "REF_energy" in atoms.info and "model_energy" in atoms.info
     ]
     if not rows:
         return None
@@ -289,16 +266,35 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
         n = len(atoms)
         shift = sum(e0_map[s] for s in atoms.get_chemical_symbols()) if use_e0 else 0.0
         e_dft.append((atoms.info["REF_energy"] - shift) / n)
-        e_pred.append((float(atoms.info["mace_energy"]) - shift) / n)
-        if "REF_forces" in atoms.arrays and "mace_forces" in atoms.arrays:
+        e_pred.append((float(atoms.info["model_energy"]) - shift) / n)
+        if "REF_forces" in atoms.arrays and "model_forces" in atoms.arrays:
             f_dft.extend(atoms.arrays["REF_forces"].flatten().tolist())
-            f_pred.extend(atoms.arrays["mace_forces"].flatten().tolist())
+            f_pred.extend(atoms.arrays["model_forces"].flatten().tolist())
 
     return (
         np.array(e_dft),
         np.array(e_pred),
         np.array(f_dft),
         np.array(f_pred),
+    )
+
+
+_BEST_STAR_COLOR = "#D4AF37"
+
+
+def _add_best_star(ax: Any) -> None:
+    """Gold star just above *ax*'s top-left corner (clear of the MAE label
+    inside the axes), marking the lowest-MAE subplot in its column."""
+    ax.text(
+        0.0,
+        1.02,
+        "★",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=20,
+        color=_BEST_STAR_COLOR,
+        gid="best_star",
     )
 
 
@@ -315,6 +311,8 @@ def _draw_parity_figure(
 ) -> None:
     fig, axes = plt.subplots(n_fits, 2, figsize=(8, 4 * n_fits), squeeze=False)
     fig.suptitle(f"{name} — {set_label} Set Parity  [{base_name}]", y=1.01)
+    energy_maes: dict[int, float] = {}
+    force_maes: dict[int, float] = {}
 
     for i, result in enumerate(results_per_fit):
         ax_e, ax_f = axes[i, 0], axes[i, 1]
@@ -336,6 +334,7 @@ def _draw_parity_figure(
 
             if len(e_dft_arr):
                 mae_e = np.mean(np.abs(e_dft_arr - e_pred_arr))
+                energy_maes[i] = float(mae_e)
                 lim = (
                     min(e_dft_arr.min(), e_pred_arr.min()),
                     max(e_dft_arr.max(), e_pred_arr.max()),
@@ -355,6 +354,7 @@ def _draw_parity_figure(
 
             if len(f_dft_arr):
                 mae_f = np.mean(np.abs(f_dft_arr - f_pred_arr))
+                force_maes[i] = float(mae_f)
                 lim_f = (
                     min(f_dft_arr.min(), f_pred_arr.min()),
                     max(f_dft_arr.max(), f_pred_arr.max()),
@@ -381,6 +381,12 @@ def _draw_parity_figure(
         ax_f.set_ylabel("Model forces (eV/Å)")
         ax_f.set_title(f"{row_title} — Forces")
 
+    # Per column: the energy and force winners may be different fits.
+    if energy_maes:
+        _add_best_star(axes[min(energy_maes, key=energy_maes.__getitem__), 0])
+    if force_maes:
+        _add_best_star(axes[min(force_maes, key=force_maes.__getitem__), 1])
+
     fig.tight_layout()
     add_logo_watermark(fig)
     path = plots_dir / f"fit_parity_{file_suffix}_{base_name}.png"
@@ -399,7 +405,7 @@ def plot_dft_vs_model(
 ) -> None:
     setup_alomancy_style()
     name = mlip_committee_job_dict["name"]
-    n_fits = mlip_committee_job_dict["size_of_committee"]
+    n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
 
     e0: dict[str, float] | None = None
     if db is not None:
@@ -422,7 +428,7 @@ def plot_dft_vs_model(
     for i in range(n_fits):
         # Primary: use stored DB predictions — no model load or GPU needed.
         if db is not None and loop_idx is not None:
-            stored = db.get_mace_predictions(loop_idx, i, e0=e0)
+            stored = db.get_model_predictions(loop_idx, i, e0=e0)
             if stored is not None:
                 train_results.append(stored.get("train"))
                 test_results.append(stored.get("test"))
@@ -431,7 +437,7 @@ def plot_dft_vs_model(
                 )
                 continue
 
-        # Secondary: read from eval xyz files written by mace_fit on the remote node.
+        # Secondary: read from eval xyz files written by ALomancyTrainer.evaluate on the remote node.
         fit_dir = Path("results", base_name, name, f"fit_{i}")
         train_xyz = fit_dir / "train_pred.xyz"
         test_xyz = fit_dir / "test_pred.xyz"

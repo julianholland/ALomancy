@@ -5,10 +5,16 @@ MLIP Training
    :members:
    :undoc-members:
 
-.. automodule:: alomancy.mlip.mace.mace_wfl
+.. automodule:: alomancy.mlip.base
    :members:
    :undoc-members:
 
-.. automodule:: alomancy.mlip.mace.get_mace_eval_info
+.. automodule:: alomancy.mlip.mace.trainer
    :members:
    :undoc-members:
+
+.. automodule:: alomancy.mlip.evaluation
+   :members:
+
+.. automodule:: alomancy.utils.training_schedule
+   :members:

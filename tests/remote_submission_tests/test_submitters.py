@@ -46,7 +46,7 @@ class TestCommitteeRemoteSubmitter:
 
         seed is passed through unchanged (not offset by fit_idx) -- the
         common validation split needs one shared seed across the whole
-        committee; mace_fit itself derives fit_idx-offset seeds for MACE's
+        committee; the trained function derives fit_idx-offset seeds for its
         own per-member initialization internally."""
         monkeypatch.chdir(tmp_path)
         captured: dict = {}
@@ -96,7 +96,7 @@ class TestCommitteeRemoteSubmitter:
             base_name="al_loop_0",
             function=MagicMock(),
             seed=803,
-            size_of_committee=3,
+            num_of_models_in_committee=3,
         )
 
         fit_idxs = [c["function_kwargs"]["fit_idx"] for c in captured["job_configs"]]

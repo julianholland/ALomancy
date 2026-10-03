@@ -186,7 +186,7 @@ def prepare_dataset(source: Path, config: Path, output: Path) -> dict:
     )
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     # A run-local resolved config freezes the actual reference used for filtering.
-    settings["initialization"]["extra_datasets"] = [
+    settings.setdefault("general", {}).setdefault("start_from", {})["xyz"] = [
         str((output / "selected.xyz").resolve())
     ]
     (output / "resolved_init.yaml").write_text(

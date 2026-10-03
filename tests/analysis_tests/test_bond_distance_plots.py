@@ -102,7 +102,7 @@ class TestPlotTrainingBondDistances:
         plot_training_bond_distances("demo", db, plots_dir)
 
         db.get_train_atoms.assert_called_once_with(
-            exclude_duplicates=True, exclude_high_force=True
+            exclude_duplicates=True, exclude_quality_filtered=True
         )
         assert (plots_dir / "train_bond_distances_demo.png").exists()
 

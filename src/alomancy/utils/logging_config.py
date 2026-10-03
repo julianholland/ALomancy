@@ -1,6 +1,77 @@
+import json
 import logging
 import sys
+import threading
+from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+EVENTS_FILENAME = "events.jsonl"
+
+# The AL loop currently running (None outside a loop). A plain module global
+# rather than a ContextVar: RemoteJobExecutor logs from ThreadPoolExecutor
+# worker threads, which would not inherit a ContextVar set on the main thread.
+_current_loop: int | None = None
+
+
+def set_current_loop(loop: int | None) -> None:
+    """Tag every event logged from now on with *loop* (see JsonlEventHandler)."""
+    global _current_loop
+    _current_loop = loop
+
+
+class JsonlEventHandler(logging.Handler):
+    """Append warnings, errors and coded events to a JSON-lines file.
+
+    A record is written when its level is WARNING or above, or when it
+    carries an ``event`` code (``logger.info(..., extra={"event": "x",
+    "data": {...}})``). Each line holds time, level, logger, message,
+    event (None if uncoded), loop (see set_current_loop) and data. The loop
+    report (analysis/report) counts these instead of parsing log text.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.path = Path(path).resolve()
+        self._lock_file = threading.Lock()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        event = getattr(record, "event", None)
+        if record.levelno < logging.WARNING and event is None:
+            return
+        try:
+            line: dict[str, Any] = {
+                "time": datetime.fromtimestamp(record.created).isoformat(
+                    timespec="seconds"
+                ),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+                "event": event,
+                "loop": _current_loop,
+                "data": getattr(record, "data", None),
+            }
+            text = json.dumps(line, default=str)
+            with self._lock_file, self.path.open("a", encoding="utf-8") as fh:
+                fh.write(text + "\n")
+        except Exception:
+            self.handleError(record)
+
+
+def read_events(path: str | Path) -> list[dict[str, Any]]:
+    """Every event in a JSON-lines event file; [] if it doesn't exist.
+    Unparseable lines (e.g. a line cut short by a crash) are skipped."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    events = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return events
 
 
 def setup_logging(
@@ -14,6 +85,8 @@ def setup_logging(
 
     The file handler always captures DEBUG regardless of verbose, so every
     run produces a complete timestamped record even when the console is quiet.
+    Next to the log file, events.jsonl collects warnings and coded events
+    (JsonlEventHandler) for the loop report.
     """
     root = logging.getLogger("alomancy")
     root.setLevel(logging.DEBUG)
@@ -42,6 +115,7 @@ def setup_logging(
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(fmt)
         root.addHandler(fh)
+        root.addHandler(JsonlEventHandler(Path(log_file).with_name(EVENTS_FILENAME)))
 
     # Route expyre's own logging through our handlers so HPC job events
     # appear in the same log file.

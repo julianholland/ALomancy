@@ -245,7 +245,7 @@ class TestFindHighSdStructures:
         return {
             "structure_generation": {
                 "name": "structure_generation",
-                "desired_number_of_structures": desired,
+                "desired_num_of_structures": desired,
             }
         }
 
@@ -379,7 +379,8 @@ class TestFindHighSdStructures:
 
         # setup_logging (when called) sets propagate=False on the "alomancy"
         # logger, so capture records by attaching a handler directly to it —
-        # see test_seed_logs_message in test_base_active_learning.py.
+        # see TestDisplayWorkflowSummary's _capture helper in
+        # test_committee_uncertainty_workflow.py.
         al_logger = logging.getLogger("alomancy")
         records: list[logging.LogRecord] = []
 
@@ -431,7 +432,7 @@ class TestFindHighSdStructures:
 
     @pytest.mark.unit
     def test_desired_structures_zero_raises_value_error(self, tmp_path, monkeypatch):
-        """desired_number_of_structures <= 0 is a config error: ValueError,
+        """desired_num_of_structures <= 0 is a config error: ValueError,
         not AssertionError (asserts are stripped under python -O)."""
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -575,7 +576,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             chem_formula_list=["H2"],
         )
         assert len(result) == 3
@@ -598,7 +599,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             atom_number_range=(2, 2),
         )
         assert len(result) == 4
@@ -619,7 +620,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=["al_loop_0"],
         )
         # The returned atoms should have config_type set to {base_name}_{job_name}
@@ -647,7 +648,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_1",
             structure_generation_job_dict=job_dict,
             train_atoms_list=init_structures + high_sd_structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=["init_amorphous"],
         )
         # high_sd structures are eligible even though selectable_configs only lists init_amorphous
@@ -674,7 +675,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_1",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
             selectable_configs=None,
         )
         assert len(result) == 5
@@ -697,7 +698,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_0",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=caller_list,
         )
         assert caller_list == ["init_amorphous"]
@@ -718,7 +719,7 @@ class TestSelectInitialStructures:
         kwargs = {
             "structure_generation_job_dict": job_dict,
             "train_atoms_list": structures,
-            "max_number_of_concurrent_jobs": 5,
+            "num_of_md_starts": 5,
             "selectable_configs": ["init_amorphous"],
         }
         # Loop 0 selection
@@ -743,7 +744,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=structures,
-                max_number_of_concurrent_jobs=3,
+                num_of_md_starts=3,
                 atom_number_range=(1, 5),
             )
         assert any(issubclass(warning.category, UserWarning) for warning in w)
@@ -764,7 +765,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 4
@@ -790,7 +791,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 3
@@ -812,7 +813,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             chem_formula_list=["H2", "O2"],
             atom_number_range=(2, 2),
         )
@@ -821,7 +822,7 @@ class TestSelectInitialStructures:
         assert all(a.get_chemical_formula() in ["H2", "O2"] for a in result)
 
     def test_reuses_structures_when_concurrency_exceeds_available(self):
-        """When max_number_of_concurrent_jobs exceeds the number of selectable
+        """When num_of_md_starts exceeds the number of selectable
         structures, structures are reused (not an error) and every returned
         atoms object gets a distinct md_seed."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -835,7 +836,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
         )
         assert len(result) == 5
         seeds = [a.info["md_seed"] for a in result]
@@ -867,7 +868,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=structures,
-                max_number_of_concurrent_jobs=5,
+                num_of_md_starts=5,
             )
         finally:
             al_logger.removeHandler(handler)
@@ -888,7 +889,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
         )
         assert len(result) == 3
         seeds = [a.info["md_seed"] for a in result]
@@ -896,7 +897,7 @@ class TestSelectInitialStructures:
 
     def test_reuse_with_enforce_chemical_diversity(self):
         """Reuse also works (no error) when enforce_chemical_diversity=True and
-        fewer structures exist than max_number_of_concurrent_jobs."""
+        fewer structures exist than num_of_md_starts."""
         from alomancy.structure_generation.select_initial_structures import (
             select_initial_structures,
         )
@@ -908,7 +909,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 4
@@ -928,7 +929,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=[],
-                max_number_of_concurrent_jobs=3,
+                num_of_md_starts=3,
             )
 
     def test_seed_param_controls_md_seed_values(self):
@@ -944,7 +945,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             seed=1000,
         )
         seeds = sorted(a.info["md_seed"] for a in result)
@@ -1094,7 +1095,7 @@ class TestMolecularDynamics:
             model_path=["test_model.pt"],
             steps=100,
             temperature=300,
-            desired_number_of_structures=10,
+            desired_num_of_structures=10,
             timestep_fs=0.5,
             verbose=0,
         )
@@ -1107,23 +1108,22 @@ class TestMolecularDynamics:
         valid_params = {
             "steps": 100,
             "temperature": 300,
-            "desired_number_of_structures": 20,
+            "desired_num_of_structures": 20,
             "total_md_runs": 5,
         }
 
         # Check basic constraints
-        assert valid_params["desired_number_of_structures"] > 0
+        assert valid_params["desired_num_of_structures"] > 0
         assert (
             valid_params["steps"]
-            > valid_params["desired_number_of_structures"]
-            / valid_params["total_md_runs"]
+            > valid_params["desired_num_of_structures"] / valid_params["total_md_runs"]
         )
         assert valid_params["temperature"] > 0
 
         # Test invalid parameters that would cause division by zero
         invalid_params = {
             "steps": 10,
-            "desired_number_of_structures": 50,
+            "desired_num_of_structures": 50,
             "total_md_runs": 5,
         }
 
@@ -1131,7 +1131,7 @@ class TestMolecularDynamics:
         snapshot_interval = (
             invalid_params["steps"]
             * invalid_params["total_md_runs"]
-            // invalid_params["desired_number_of_structures"]
+            // invalid_params["desired_num_of_structures"]
         )
         assert snapshot_interval == 1  # This would be problematic for the loop
 
@@ -1183,7 +1183,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1215,7 +1215,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1259,7 +1259,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "desired_num_of_structures": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1302,7 +1302,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "desired_num_of_structures": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1343,7 +1343,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "desired_num_of_structures": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1376,7 +1376,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1406,7 +1406,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1441,7 +1441,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1478,7 +1478,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1506,7 +1506,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "desired_num_of_structures": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1631,7 +1631,7 @@ class TestStructureSelection:
         result = select_initial_structures(
             base_name="test_loop_0",
             structure_generation_job_dict={"name": "test"},
-            max_number_of_concurrent_jobs=2,
+            num_of_md_starts=2,
             chem_formula_list=[],
             atom_number_range=(2, 10),
             enforce_chemical_diversity=True,
@@ -1734,76 +1734,35 @@ class TestForceVarianceCalculation:
         unflattened = flattened.reshape((5, 3))
         np.testing.assert_array_equal(forces, unflattened)
 
-    def test_standard_deviation_calculation(self, sample_md_structures):
-        """Test standard deviation calculation for forces."""
-        import pandas as pd
+    def test_standard_deviation_calculation(self, sample_md_structures, tmp_path):
+        """The real committee std-dev scoring over perturbed model forces."""
+        import polars as pl
 
-        # Simulate multiple model predictions
-        n_models = 5
+        from alomancy.structure_generation.find_high_sd_structures import (
+            std_deviation_of_forces,
+        )
+
+        rng = np.random.default_rng(0)
         structure_forces_dict = {}
-
-        for model_id in range(n_models):
-            model_name = f"model_{model_id}" if model_id > 0 else "base_mace"
-            structure_forces_dict[model_name] = {}
-
-            for struct_id, atoms in enumerate(sample_md_structures[:10]):
-                # Add some variation to the forces
-                base_forces = atoms.arrays["forces"]
-                noise = np.random.random(base_forces.shape) * 0.1 - 0.05
-                varied_forces = base_forces + noise
-
-                structure_forces_dict[model_name][f"structure_{struct_id}"] = {
-                    "forces": varied_forces,
-                    "energy": atoms.info["energy"] + np.random.random() * 0.1,
+        for model_id in range(5):
+            model_name = f"fit_{model_id}" if model_id > 0 else "base_mlip"
+            structure_forces_dict[model_name] = {
+                f"structure_{struct_id}": {
+                    "forces": atoms.arrays["forces"]
+                    + rng.random(atoms.arrays["forces"].shape) * 0.1
+                    - 0.05,
+                    "energy": atoms.info["energy"] + rng.random() * 0.1,
                 }
+                for struct_id, atoms in enumerate(sample_md_structures[:10])
+            }
 
-        # Test std deviation calculation function structure
-        def mock_std_deviation_of_forces(structure_forces_dict, md_dir, verbose=0):
-            number_of_structures = len(structure_forces_dict["base_mace"])
-            std_dev_array = np.zeros((number_of_structures, 3))
+        result_df = std_deviation_of_forces(structure_forces_dict, tmp_path)
 
-            for structure in range(number_of_structures):
-                forces_array = np.concatenate(
-                    [
-                        structure_forces_dict[fit][f"structure_{structure}"]["forces"]
-                        for fit in structure_forces_dict
-                    ],
-                    axis=0,
-                )
-
-                std_dev_per_force_fragment = np.std(forces_array, axis=0)
-                energy_array = np.array(
-                    [
-                        structure_forces_dict[fit][f"structure_{structure}"]["energy"]
-                        for fit in structure_forces_dict
-                    ]
-                )
-                std_dev_per_energy = np.std(energy_array)
-
-                std_dev_array[structure, :] = np.array(
-                    [
-                        np.max(std_dev_per_force_fragment),
-                        np.mean(std_dev_per_force_fragment),
-                        std_dev_per_energy,
-                    ]
-                )
-
-            df = pd.DataFrame(
-                std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
-            ).sort_values(by="max_std_dev", ascending=False)
-
-            return df
-
-        result_df = mock_std_deviation_of_forces(structure_forces_dict, "/tmp")
-
-        assert isinstance(result_df, pd.DataFrame)
+        assert isinstance(result_df, pl.DataFrame)
         assert len(result_df) == 10
-        assert "max_std_dev" in result_df.columns
-        assert "mean_std_dev" in result_df.columns
-        assert "std_dev_energy" in result_df.columns
-
-        # Check that max_std_dev >= mean_std_dev for each structure
-        assert all(result_df["max_std_dev"] >= result_df["mean_std_dev"])
+        for col in ("max_std_dev", "mean_std_dev", "std_dev_energy"):
+            assert col in result_df.columns
+        assert (result_df["max_std_dev"] >= result_df["mean_std_dev"]).all()
 
 
 class TestTrajectoryProcessing:
@@ -1914,3 +1873,55 @@ class TestStructureGenerationExternal:
     def test_real_ase_md(self, skip_if_no_external):
         """Test with real ASE MD if available."""
         pass
+
+
+class TestMdTrajectoryOutput:
+    """md_kwargs.traj_interval: optional full-resolution trajectory, run
+    through real ASE dynamics with a cheap EMT calculator."""
+
+    @staticmethod
+    def _run(tmp_path, **kwargs):
+        from ase.build import bulk
+        from ase.calculators.emt import EMT
+
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        atoms = bulk("Cu", "fcc", a=3.6, cubic=True)
+        atoms.info["job_id"] = 0
+        atoms.info["md_seed"] = 1
+        run_md(
+            structure_generation_job_dict={
+                "name": "structure_generation",
+                "desired_num_of_structures": 2,
+            },
+            initial_structure=atoms,
+            total_md_runs=1,
+            out_dir=str(tmp_path),
+            model_path=None,
+            steps=40,
+            calculator=EMT(),
+            **kwargs,
+        )
+
+    @pytest.mark.unit
+    def test_no_trajectory_file_by_default(self, tmp_path):
+        self._run(tmp_path)
+        assert not (tmp_path / "md_trajectory.xyz").exists()
+        assert (tmp_path / "structure_generation.xyz").exists()
+
+    @pytest.mark.unit
+    def test_trajectory_written_every_interval_without_duplicates(self, tmp_path):
+        from ase.io import read
+
+        self._run(tmp_path, traj_interval=5)
+
+        frames = read(tmp_path / "md_trajectory.xyz", ":", format="extxyz")
+        # steps 0, 5, ..., 40 -- one frame each, even where a snapshot
+        # segment boundary coincides with the interval.
+        assert len(frames) == 40 // 5 + 1
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [0, -3, 2.5, True, "10"])
+    def test_invalid_traj_interval_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="traj_interval"):
+            self._run(tmp_path, traj_interval=bad)

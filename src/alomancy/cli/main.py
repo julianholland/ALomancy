@@ -9,6 +9,38 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    run = sub.add_parser(
+        "run",
+        help="Run the AL workflow described by a YAML config",
+    )
+    run.add_argument("config", type=Path, help="Path to the run's YAML config")
+
+    rep = sub.add_parser(
+        "report",
+        help="Write the per-loop AL report(s) for an existing results directory",
+    )
+    rep.add_argument(
+        "--results-dir",
+        type=Path,
+        default=Path("results"),
+        metavar="PATH",
+        help="Path to the results/ directory (default: ./results)",
+    )
+    which = rep.add_mutually_exclusive_group()
+    which.add_argument(
+        "--loop", type=int, metavar="N", help="Report for AL loop N (default: latest)"
+    )
+    which.add_argument(
+        "--all", action="store_true", help="Reports for every completed AL loop"
+    )
+    rep.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="The run's YAML config (default: results/run_config.yaml)",
+    )
+
     res = sub.add_parser("results", help="Inspect and post-process workflow results")
     res.add_argument(
         "--replot",
@@ -31,6 +63,16 @@ def main() -> None:
     sub.add_parser(
         "add-hpc",
         help="Interactive wizard to add an HPC system to ALomancy",
+    )
+
+    list_hpc = sub.add_parser(
+        "list-hpc",
+        help="List configured HPC systems and a summary of their settings",
+    )
+    list_hpc.add_argument(
+        "--check-remote",
+        action="store_true",
+        help="Also ssh to each host to report its installed alomancy version",
     )
 
     sub.add_parser(
@@ -57,10 +99,31 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "add-hpc":
+    if args.command == "run":
+        from alomancy import ALomancy
+
+        ALomancy(args.config).run()
+    elif args.command == "report":
+        from alomancy.cli.report import completed_loops, write_reports
+
+        if args.all:
+            loops = completed_loops(args.results_dir)
+        elif args.loop is not None:
+            loops = [args.loop]
+        else:
+            loops = None
+        for path in write_reports(
+            args.results_dir, loops=loops, config_path=args.config
+        ):
+            print(path)
+    elif args.command == "add-hpc":
         from alomancy.cli.add_hpc import add_hpc_wizard
 
         add_hpc_wizard()
+    elif args.command == "list-hpc":
+        from alomancy.cli.list_hpc import list_hpc as list_hpc_table
+
+        print(list_hpc_table(check_remote=args.check_remote))
     elif args.command == "upgrade-hpc":
         from alomancy.cli.upgrade_hpc import upgrade_hpc_wizard
 
