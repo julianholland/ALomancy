@@ -182,7 +182,11 @@ class CommitteeUncertaintyWorkflow(ActiveLearningWorkflow):
         )
 
         plot_training_curves(
-            ctx.base_name, training_config_with_name, self.seed, ctx.plots_dir
+            ctx.base_name,
+            training_config_with_name,
+            self.seed,
+            ctx.plots_dir,
+            self.trainer(),
         )
         plot_dft_vs_model(
             ctx.base_name,

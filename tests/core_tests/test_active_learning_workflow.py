@@ -547,8 +547,12 @@ class TestStorePredictionsAndCleanup:
         checkpoints_dir = fit_dir / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
         (checkpoints_dir / "epoch_1.pt").write_bytes(b"x")
-        # MACE deletes checkpoints/ only once its compiled model exists.
+        # MACE deletes checkpoints/ and the unused stage-one models only
+        # once its compiled model exists.
         (fit_dir / "training_stagetwo_compiled.model").write_bytes(b"compiled")
+        (fit_dir / "training_stagetwo.model").write_bytes(b"stagetwo")
+        for stage_one in ("training.model", "training_compiled.model"):
+            (fit_dir / stage_one).write_bytes(b"stage one")
 
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         results = {0: ("model.pt", "model_compiled.pt", {"test": {}})}
@@ -566,6 +570,10 @@ class TestStorePredictionsAndCleanup:
             0, 0, {0: {"energy": -1.0, "forces": [[0.0, 0.0, 0.0]]}}
         )
         assert not checkpoints_dir.exists()
+        assert sorted(p.name for p in fit_dir.glob("*.model")) == [
+            "training_stagetwo.model",
+            "training_stagetwo_compiled.model",
+        ]
 
     def test_no_cleanup_when_compiled_model_missing(
         self, tmp_path, monkeypatch, shared_db
@@ -574,6 +582,7 @@ class TestStorePredictionsAndCleanup:
         fit_dir = Path("results/al_loop_0/committee/fit_0")
         checkpoints_dir = fit_dir / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
+        (fit_dir / "training.model").write_bytes(b"stage one")
 
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         results = {0: ("model.pt", None, {"test": {}})}
@@ -582,6 +591,7 @@ class TestStorePredictionsAndCleanup:
             wf._store_predictions_and_cleanup("al_loop_0", "committee", results)
 
         assert checkpoints_dir.exists()
+        assert (fit_dir / "training.model").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -1,9 +1,8 @@
 import json
 import logging
-import math
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,49 +16,10 @@ from alomancy.analysis.colors import (
     setup_alomancy_style,
 )
 
+if TYPE_CHECKING:
+    from alomancy.mlip.base import ALomancyTrainer
+
 logger = logging.getLogger(__name__)
-
-
-def _read_resolved_epochs(fit_dir: Path) -> dict | None:
-    """Read the resolved_mace_epochs.json sidecar written by MaceTrainer.fit.
-
-    Returns None gracefully if missing or unparseable -- fits trained before
-    this sidecar existed have no such file.
-    """
-    sidecar_path = fit_dir / "resolved_mace_epochs.json"
-    if not sidecar_path.exists():
-        return None
-    try:
-        with sidecar_path.open() as fh:
-            payload: dict = json.load(fh)
-            return payload
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Could not parse %s: %s", sidecar_path, exc)
-        return None
-
-
-def _get_stage_two_epoch(
-    mlip_committee_job_dict: dict, fit_dir: Path | None = None
-) -> int:
-    if fit_dir is not None:
-        resolved = _read_resolved_epochs(fit_dir)
-        if resolved is not None and "start_swa" in resolved:
-            return int(resolved["start_swa"])
-
-    mace_kwargs = mlip_committee_job_dict.get("mace_fit_kwargs", {})
-    if "start_swa" in mace_kwargs:
-        return int(mace_kwargs["start_swa"])
-    max_ep = mlip_committee_job_dict.get("max_num_epochs") or mace_kwargs.get(
-        "max_num_epochs", 80
-    )
-    if not isinstance(max_ep, int | float):
-        logger.warning(
-            "max_num_epochs is %r (not numeric) and no resolved_mace_epochs.json "
-            "sidecar was found; defaulting stage-two epoch marker to 80.",
-            max_ep,
-        )
-        max_ep = 80
-    return math.floor(max_ep * 0.8)
 
 
 def _parse_training_jsonl(
@@ -116,12 +76,25 @@ def _parse_used_epoch(fit_dir: Path, name: str, fit_seed: int) -> int | None:
     return None
 
 
+def _curve_rows(frame: pl.DataFrame) -> pl.DataFrame:
+    """The validation rows of a TrainingHistory frame, or the train rows when
+    the fit had no validation split."""
+    if "split" not in frame.columns:
+        return frame
+    valid = frame.filter(pl.col("split") == "valid")
+    return valid if not valid.is_empty() else frame.filter(pl.col("split") == "train")
+
+
 def plot_training_curves(
     base_name: str,
     mlip_committee_job_dict: dict,
     seed: int,
     plots_dir: Path,
+    trainer: "ALomancyTrainer",
 ) -> None:
+    """Per-epoch MAE and loss curves of every fit in this loop, from each
+    fit's ``trainer.training_history`` (so any backend that implements it
+    gets curves), plus the raw numbers as CSV under ``plots_dir/metrics``."""
     name = mlip_committee_job_dict["name"]
     n_fits = mlip_committee_job_dict["num_of_models_in_committee"]
 
@@ -130,17 +103,17 @@ def plot_training_curves(
 
     # --- collect per-fit data ---
     fit_data: list[tuple[int, pl.DataFrame, int | None]] = []
-    first_fit_dir: Path | None = None
+    stage2_epoch: int | None = None
     for i in range(n_fits):
         fit_dir = Path("results", base_name, name, f"fit_{i}")
-        df = _parse_training_jsonl(fit_dir, name, seed + i)
-        if df is None:
+        history = trainer.training_history(fit_dir, seed + i)
+        if history is None or history.frame.is_empty():
             logger.warning("Skipping fit_%d: no training data.", i)
             continue
-        if first_fit_dir is None:
-            first_fit_dir = fit_dir
-        used_ep = _parse_used_epoch(fit_dir, name, seed + i)
-        fit_data.append((i, df, used_ep))
+        # Never assume fit_0 succeeded: the first collected fit's marker.
+        if stage2_epoch is None:
+            stage2_epoch = history.stage_two_epoch
+        fit_data.append((i, _curve_rows(history.frame), history.selected_epoch))
 
     if not fit_data:
         logger.warning(
@@ -148,16 +121,7 @@ def plot_training_curves(
         )
         return
 
-    # Never assume fit_0 succeeded -- use the first successfully-collected
-    # fit's directory to look up the resolved_mace_epochs.json sidecar.
-    stage2_epoch = _get_stage_two_epoch(mlip_committee_job_dict, first_fit_dir)
-
     # --- Raw metrics, alongside the plots rendered from the same data ---
-    # The PNGs above are the only durable record of loss/MAE today; the
-    # per-epoch numbers behind them are discarded once plotting finishes.
-    # Writing them out lets downstream analysis (or re-plotting with
-    # different styling) work from the actual numbers instead of having to
-    # re-parse *_train.txt files directly.
     metrics_dir = plots_dir / "metrics"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     for i, df, _used_ep in fit_data:
@@ -171,7 +135,7 @@ def plot_training_curves(
         metrics_dir,
     )
 
-    # --- Plot 2: MAE curves ---
+    # --- MAE curves ---
     fig_mae, (ax_e, ax_f) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
     fig_mae.suptitle(f"{name} — Training MAE  [{base_name}]")
 
@@ -193,13 +157,14 @@ def plot_training_curves(
             ax_f.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
 
     for ax in (ax_e, ax_f):
-        ax.axvline(
-            stage2_epoch,
-            color=STAGE2_COLOR,
-            linestyle="--",
-            linewidth=1.2,
-            label="Stage 2",
-        )
+        if stage2_epoch is not None:
+            ax.axvline(
+                stage2_epoch,
+                color=STAGE2_COLOR,
+                linestyle="--",
+                linewidth=1.2,
+                label="Stage 2",
+            )
         ax.grid(True)
         ax.legend(fontsize=8)
 
@@ -214,7 +179,7 @@ def plot_training_curves(
     plt.close(fig_mae)
     logger.info("Saved training MAE plot to %s", mae_path)
 
-    # --- Plot 3: Loss curves ---
+    # --- Loss curves ---
     fig_loss, ax_loss = plt.subplots(figsize=(10, 5))
     fig_loss.suptitle(f"{name} — Training Loss  [{base_name}]")
 
@@ -230,9 +195,14 @@ def plot_training_curves(
                 used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8
             )
 
-    ax_loss.axvline(
-        stage2_epoch, color=STAGE2_COLOR, linestyle="--", linewidth=1.2, label="Stage 2"
-    )
+    if stage2_epoch is not None:
+        ax_loss.axvline(
+            stage2_epoch,
+            color=STAGE2_COLOR,
+            linestyle="--",
+            linewidth=1.2,
+            label="Stage 2",
+        )
     ax_loss.set_xlabel("Epoch")
     ax_loss.set_ylabel("Loss")
     ax_loss.set_yscale("log")

@@ -95,6 +95,12 @@ register(
     "alomancy.mlip.mace.trainer",
     trainer_class="MaceTrainer",
 )
+register(
+    "mlip_trainer",
+    "sevennet",
+    "alomancy.mlip.sevennet.trainer",
+    trainer_class="SevenNetTrainer",
+)
 
 register(
     "dft_evaluator",

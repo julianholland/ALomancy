@@ -12,6 +12,8 @@ model's forces failed for every multi-atom structure on one production
 GPU/CUDA/PyTorch combination) and ``<name>_stagetwo_compiled.model``
 (copied to results/best_model/). MACE writes the compiled one inside a bare
 ``except Exception: pass``, so it can be missing even after a successful fit.
+MACE also writes stage-one ``<name>.model``/``<name>_compiled.model``; no
+code reads them, so they are cleaned up with ``checkpoints/``.
 """
 
 import importlib.util
@@ -22,12 +24,17 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import polars as pl
 from ase.io import read
 from mace import tools
 from mace.calculators import MACECalculator
 from mace.cli.run_train import run
 
-from alomancy.mlip.base import ALomancyTrainer
+from alomancy.mlip.base import (
+    ALomancyTrainer,
+    TrainingHistory,
+    isolated_atom_reference_energies_by_z,
+)
 from alomancy.utils.training_schedule import resolve_epochs
 
 logger = logging.getLogger(__name__)
@@ -107,26 +114,7 @@ def _mace_e0s_arg(e0s: dict) -> str:
     """{element symbol or atomic number: energy (eV)} -> the string MACE's
     E0s argument expects: a dict literal keyed by atomic number, e.g.
     ``"{1: -13.6, 8: -432.1}"``."""
-    from ase.data import atomic_numbers
-
-    converted: dict[int, float] = {}
-    for key, energy in e0s.items():
-        if isinstance(key, str) and key in atomic_numbers:
-            z = atomic_numbers[key]
-        elif isinstance(key, int) and not isinstance(key, bool) and key > 0:
-            z = key
-        elif isinstance(key, str) and key.isdigit() and int(key) > 0:
-            z = int(key)
-        else:
-            raise ValueError(
-                f"mace_kwargs.E0s key {key!r} is not an element symbol or "
-                "atomic number."
-            )
-        value = float(energy)
-        if not np.isfinite(value):
-            raise ValueError(f"mace_kwargs.E0s[{key!r}] is not finite: {energy!r}.")
-        converted[z] = value
-    return str(converted)
+    return str(isolated_atom_reference_energies_by_z(e0s, "mace_kwargs.E0s"))
 
 
 class MaceTrainer(ALomancyTrainer):
@@ -149,11 +137,19 @@ class MaceTrainer(ALomancyTrainer):
         return path if path.exists() else None
 
     def cleanup_paths(self, fit_dir: Path) -> list[Path]:
-        """checkpoints/, once the compiled model exists: MACE only needs it to
-        restore its best state before writing that model."""
+        """Once the compiled model exists: checkpoints/ (MACE only needs it to
+        restore its best state before writing that model) and the stage-one
+        models <name>.model / <name>_compiled.model (about 88 MB each),
+        which nothing reads -- evaluation, MD and prediction use the
+        uncompiled stage-two model, results/best_model/ the compiled one."""
         if not self.compiled_model_path(fit_dir).exists():
             return []
-        return [Path(fit_dir) / "checkpoints"]
+        fit_dir = Path(fit_dir)
+        return [
+            fit_dir / "checkpoints",
+            fit_dir / f"{self.name}.model",
+            fit_dir / f"{self.name}_compiled.model",
+        ]
 
     def format_isolated_atom_energies(self, energies: dict) -> str:
         return _mace_e0s_arg(energies)
@@ -171,9 +167,35 @@ class MaceTrainer(ALomancyTrainer):
         )
 
     def report_section(self, stats: dict, **kwargs: Any) -> Any:
-        from alomancy.analysis.report.sections import mace_section
+        from alomancy.analysis.report.sections import trainer_section
 
-        return mace_section(stats, **kwargs)
+        return trainer_section(stats, trainer=self, **kwargs)
+
+    def training_history(self, fit_dir: Path, seed: int) -> TrainingHistory | None:
+        """MACE's per-epoch validation records (``results/*_train.txt``), the
+        stage-two start (resolved_mace_epochs.json) and the epoch MACE
+        restored its stage-two model from (``logs/*.log``)."""
+        from alomancy.analysis.mlip_plots import (
+            _parse_training_jsonl,
+            _parse_used_epoch,
+        )
+
+        fit_dir = Path(fit_dir)
+        frame = _parse_training_jsonl(fit_dir, self.name, seed)
+        if frame is None:
+            return None
+        stage_two = None
+        sidecar = fit_dir / "resolved_mace_epochs.json"
+        if sidecar.exists():
+            try:
+                stage_two = int(json.loads(sidecar.read_text())["start_swa"])
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                logger.warning("Could not read %s: %s", sidecar, exc)
+        return TrainingHistory(
+            frame=frame.with_columns(split=pl.lit("valid")),
+            stage_two_epoch=stage_two,
+            selected_epoch=_parse_used_epoch(fit_dir, self.name, seed),
+        )
 
     def fit(
         self,

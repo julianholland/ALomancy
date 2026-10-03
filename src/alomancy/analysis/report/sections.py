@@ -7,7 +7,6 @@ remote-only modules never import matplotlib) and registering it. Each
 returns a Section or None when it has nothing to show for this loop.
 """
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,38 +156,44 @@ def dft_section(
     return section
 
 
-def mace_section(
+def trainer_section(
     stats: dict,
     *,
+    trainer: Any,
     base_name: str,
     plots_dir: Path | None,
     config: dict,  # noqa: ARG001 -- uniform report_section signature
 ) -> Section | None:
-    """MACE trainer: the best fit's resolved epochs and training curve."""
-    from alomancy.analysis.mlip_plots import _parse_training_jsonl
+    """Any trainer: the best fit's training length and validation curve,
+    from ``trainer.training_history`` (mlip/base.py)."""
+    from alomancy.analysis.mlip_plots import _curve_rows
     from alomancy.analysis.report.plots import training_curve
 
     model = stats.get("model") or {}
     fit_idx = model.get("best_fit_idx")
     if fit_idx is None:
         return None
-    fit_dir = Path("results", base_name, "training", f"fit_{fit_idx}")
-    section = Section("MLIP training: MACE")
-    epochs_file = fit_dir / "resolved_mace_epochs.json"
-    if epochs_file.exists():
-        resolved = json.loads(epochs_file.read_text())
-        section.lines.append(
-            f"- Best fit (fit_{fit_idx}) trained for up to "
-            f"{resolved.get('max_num_epochs')} epochs, stage two from epoch "
-            f"{resolved.get('start_swa')}."
-        )
+    fit_dir = Path("results", base_name, trainer.name, f"fit_{fit_idx}")
     seed = (stats.get("seed") or 0) + int(fit_idx)
-    df = _parse_training_jsonl(fit_dir, "training", seed) if plots_dir else None
-    if df is not None and "mae_f" in df.columns:
+    history = trainer.training_history(fit_dir, seed)
+    if history is None or history.frame.is_empty():
+        return None
+    section = Section(f"MLIP training: {trainer.NAME}")
+    line = (
+        f"- Best fit (fit_{fit_idx}) trained for "
+        f"{int(history.frame['epoch'].max())} epochs"
+    )
+    if history.stage_two_epoch is not None:
+        line += f", stage two from epoch {history.stage_two_epoch}"
+    if history.selected_epoch is not None:
+        line += f"; weights kept from epoch {history.selected_epoch}"
+    section.lines.append(line + ".")
+    df = _curve_rows(history.frame)
+    if plots_dir is not None and "mae_f" in df.columns:
         path = plots_dir / "best_model_training_curve.png"
         training_curve(df, path, title=f"Best model (fit_{fit_idx}) [{base_name}]")
         section.plots.append(path)
-    return section if section.lines or section.plots else None
+    return section
 
 
 def committee_section(

@@ -1,12 +1,16 @@
+import json
 import logging
 import os
 import re
 from pathlib import Path
 
+import yaml
+
 from alomancy.analysis.mlip_plots import plot_dft_vs_model, plot_training_curves
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.analysis.timing_plots import timing_plots
 from alomancy.database.global_database import GlobalDatabase
+from alomancy.mlip.base import ALomancyTrainer, get_trainer
 from alomancy.mlip.evaluation import metrics_by_loop
 
 logger = logging.getLogger(__name__)
@@ -16,7 +20,8 @@ def detect_committee_info(results_dir: Path) -> tuple[str, int, int]:
     """Infer (name, num_of_models_in_committee, seed) from the results directory layout.
 
     Searches ``results_dir/al_loop_*/`` for the first subdirectory that
-    contains a ``fit_0/`` child. The seed is parsed from the filename of the
+    contains a ``fit_0/`` child. The seed is read from ``fit_0/fit_seed.json``
+    (recorded by the workflow), else parsed from the filename of the
     ``*_run-{N}_train.txt`` metrics file written by MACE.
     """
     for loop_dir in sorted(results_dir.glob("al_loop_*")):
@@ -30,6 +35,16 @@ def detect_committee_info(results_dir: Path) -> tuple[str, int, int]:
                 n_fits = sum(1 for _ in candidate.glob("fit_*") if _.is_dir())
 
                 seed = 803  # project-wide default fallback
+                seed_file = candidate / "fit_0" / "fit_seed.json"
+                if seed_file.exists():
+                    try:
+                        return (
+                            name,
+                            n_fits,
+                            int(json.loads(seed_file.read_text())["seed"]),
+                        )
+                    except (OSError, ValueError, KeyError, TypeError):
+                        pass
                 txt_files = list(
                     (candidate / "fit_0" / "results").glob("*_run-*_train.txt")
                 )
@@ -44,6 +59,22 @@ def detect_committee_info(results_dir: Path) -> tuple[str, int, int]:
         f"Could not detect mlip_committee directory under {results_dir}. "
         "Expected a subdirectory of an al_loop_* dir that contains fit_0/."
     )
+
+
+def _trainer_for(results_dir: Path, name: str) -> ALomancyTrainer:
+    """The run's trainer, from results/run_config.yaml's ``training``
+    section when the run saved one, else MACE (runs from before the
+    config was saved were all MACE)."""
+    training: dict = {}
+    config_path = results_dir / "run_config.yaml"
+    if config_path.exists():
+        try:
+            training = (yaml.safe_load(config_path.read_text()) or {}).get(
+                "training"
+            ) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning("Could not read %s: %s", config_path, exc)
+    return get_trainer(training.get("trainer", "mace"), training, name)
 
 
 def replot_results(results_dir: Path, no_parity: bool = False) -> None:
@@ -67,6 +98,7 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
     logger.info("Detected committee: name=%r, size=%d, seed=%d", name, n_fits, seed)
 
     job_dict = {"name": name, "num_of_models_in_committee": n_fits}
+    trainer = _trainer_for(results_dir, name)
     plots_dir = results_dir / "current_plots"
     plots_dir.mkdir(exist_ok=True, parents=True)
 
@@ -83,15 +115,17 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
             db_path,
         )
 
-    # Loops whose MACE training has produced at least one metrics file.
-    def _has_train_txt(loop_dir: Path) -> bool:
-        return bool(
-            next((loop_dir / name / "fit_0" / "results").glob("*_train.txt"), None)
-        )
+    # Loops with at least one evaluated fit (any trainer).
+    def _has_evaluated_fit(loop_dir: Path) -> bool:
+        return bool(next((loop_dir / name).glob("fit_*/evaluation_metrics.json"), None))
 
     # Numeric order: sorting by name would put al_loop_9 after al_loop_14.
     loops = sorted(
-        (d for d in results_dir.glob("al_loop_*") if d.is_dir() and _has_train_txt(d)),
+        (
+            d
+            for d in results_dir.glob("al_loop_*")
+            if d.is_dir() and _has_evaluated_fit(d)
+        ),
         key=lambda p: int(p.name.rsplit("_", 1)[1]),
     )
 
@@ -110,7 +144,7 @@ def replot_results(results_dir: Path, no_parity: bool = False) -> None:
         # AL loop's results/current_plots/<base_name>/ layout.
         loop_plots_dir = plots_dir / base_name
         loop_plots_dir.mkdir(exist_ok=True, parents=True)
-        plot_training_curves(base_name, job_dict, seed, loop_plots_dir)
+        plot_training_curves(base_name, job_dict, seed, loop_plots_dir, trainer)
         if not no_parity:
             plot_dft_vs_model(
                 base_name, job_dict, seed, loop_plots_dir, db=db, loop_idx=loop_idx

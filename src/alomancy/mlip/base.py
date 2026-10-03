@@ -1,7 +1,7 @@
 """ALomancyTrainer: the generic base of every MLIP trainer backend.
 
-A backend (``mlip/mace/trainer.py``'s ``MaceTrainer``; next, SevenNet)
-subclasses ``ALomancyTrainer``, declares its settings as class attributes
+A backend (``mlip/mace/trainer.py``'s ``MaceTrainer``,
+``mlip/sevennet/trainer.py``'s ``SevenNetTrainer``) subclasses ``ALomancyTrainer``, declares its settings as class attributes
 and implements three methods:
 
 - ``fit(...)``: train one model, return the model file's path (or None);
@@ -11,7 +11,9 @@ and implements three methods:
 Everything else is shared and lives here: the standard ``train`` entry
 point, resolving the per-element isolated-atom energies, evaluating the
 model on every split (``{split}_pred.xyz`` + ``evaluation_metrics.json``),
-restart checks and clean-up.
+restart checks and clean-up. A backend may also implement
+``training_history`` so its per-epoch errors reach the training-curve plots
+and the loop report (``TrainingHistory``).
 
 ``train`` always takes the three split paths and the seed and returns the
 model's path, or None if no model was produced. Metrics are not returned:
@@ -28,10 +30,12 @@ the trainer on the remote node. Register a trainer with
 import logging
 import shutil
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
+import polars as pl
 from ase.io import read, write
 
 from alomancy.mlip.evaluation import (
@@ -46,6 +50,51 @@ EVALUATION_FILENAME = "evaluation_metrics.json"
 _SPLITS = ("train", "valid", "test")
 
 
+@dataclass
+class TrainingHistory:
+    """Per-epoch training errors of one fit, in one backend-independent form,
+    so the training-curve plots and the loop report never need to know a
+    backend's log file names or formats.
+
+    ``frame`` has one row per epoch per split: columns ``epoch``, ``split``
+    ("train" or "valid"), and whichever of ``loss``, ``mae_e_per_atom``
+    (eV/atom) and ``mae_f`` (eV/Å) the backend records. The two optional
+    markers are drawn as vertical lines: ``stage_two_epoch`` (e.g. MACE's
+    SWA start) and ``selected_epoch`` (the epoch whose weights were kept).
+    """
+
+    frame: pl.DataFrame
+    stage_two_epoch: int | None = None
+    selected_epoch: int | None = None
+
+
+def isolated_atom_reference_energies_by_z(
+    energies: dict, setting_name: str
+) -> dict[int, float]:
+    """{element symbol or atomic number: energy (eV)} -> {atomic number:
+    energy}, rejecting unknown keys and non-finite values. *setting_name*
+    names the config setting in error messages."""
+    from ase.data import atomic_numbers
+
+    converted: dict[int, float] = {}
+    for key, energy in energies.items():
+        if isinstance(key, str) and key in atomic_numbers:
+            z = atomic_numbers[key]
+        elif isinstance(key, int) and not isinstance(key, bool) and key > 0:
+            z = key
+        elif isinstance(key, str) and key.isdigit() and int(key) > 0:
+            z = int(key)
+        else:
+            raise ValueError(
+                f"{setting_name} key {key!r} is not an element symbol or atomic number."
+            )
+        value = float(energy)
+        if not np.isfinite(value):
+            raise ValueError(f"{setting_name}[{key!r}] is not finite: {energy!r}.")
+        converted[z] = value
+    return converted
+
+
 class ALomancyTrainer(ABC):
     """Generic MLIP trainer; see the module docstring."""
 
@@ -55,8 +104,9 @@ class ALomancyTrainer(ABC):
     KWARGS_KEY: ClassVar[str] = ""
     #: Defaults for training.<KWARGS_KEY>; shown in the config summary.
     KWARGS_DEFAULTS: ClassVar[dict[str, Any]] = {}
-    #: The backend's name for the per-element isolated-atom energies (MACE
-    #: "E0s", SevenNet "elemwise_reference_energies"); None if not needed.
+    #: The backend setting holding the per-element isolated-atom reference
+    #: energies (MACE "E0s", SevenNet "isolated_atom_reference_energies");
+    #: None if not needed.
     ISOLATED_ATOM_ENERGIES_KWARG: ClassVar[str | None] = None
 
     def __init__(self, config: dict, name: str = "training") -> None:
@@ -115,6 +165,15 @@ class ALomancyTrainer(ABC):
 
     def report_section(self, stats: dict, **kwargs: Any) -> Any:  # noqa: ARG002
         """This trainer's loop-report section (analysis/report); None = none."""
+        return None
+
+    def training_history(
+        self,
+        fit_dir: Path,  # noqa: ARG002
+        seed: int,  # noqa: ARG002
+    ) -> TrainingHistory | None:
+        """The fit's per-epoch errors, read from wherever the backend logs
+        them; None when there is nothing to read (no training curves)."""
         return None
 
     def effective_kwargs(self) -> dict[str, Any]:

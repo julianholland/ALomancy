@@ -32,6 +32,7 @@ def _make_results_tree(
             (fit_results / f"{committee_name}_run-{seed + fit_i}_train.txt").write_text(
                 '{"mae_f": 0.1, "mae_e_per_atom": 0.01}\n'
             )
+            (committee / f"fit_{fit_i}" / "evaluation_metrics.json").write_text("{}")
         (loop_dir / "train_set.xyz").write_text("")
         (loop_dir / "test_set.xyz").write_text("")
 
@@ -224,12 +225,12 @@ def test_replot_no_parity(tmp_path):
 
 
 @pytest.mark.unit
-def test_replot_skips_loop_without_train_txt(tmp_path):
+def test_replot_skips_loop_without_evaluated_fit(tmp_path):
     from alomancy.cli.replot import replot_results
 
     results = _make_results_tree(tmp_path, n_loops=2)
-    # Remove train.txt from loop_1 → should only plot loop_0
-    for f in (results / "al_loop_1").rglob("*_train.txt"):
+    # No evaluated fit in loop_1 → should only plot loop_0
+    for f in (results / "al_loop_1").rglob("evaluation_metrics.json"):
         f.unlink()
 
     import polars as pl
@@ -332,3 +333,35 @@ def test_replot_orders_loops_numerically(tmp_path):
     plotted = [c.args[0] for c in m_train.call_args_list]
     assert plotted == [f"al_loop_{i}" for i in range(11)]
     assert m_mae.call_args.kwargs["directory"].name == "al_loop_10"
+
+
+@pytest.mark.unit
+def test_detect_seed_prefers_fit_seed_json(tmp_path):
+    """fit_seed.json (written by the workflow for every trainer) wins over
+    the MACE-only *_run-N_train.txt file name."""
+    from alomancy.cli.replot import detect_committee_info
+
+    results = _make_results_tree(tmp_path, seed=803)
+    (results / "al_loop_0" / "mlip_committee" / "fit_0" / "fit_seed.json").write_text(
+        '{"seed": 42}\n'
+    )
+    _, _, seed = detect_committee_info(results)
+    assert seed == 42
+
+
+@pytest.mark.unit
+def test_trainer_for_reads_run_config(tmp_path):
+    """The replot trainer comes from results/run_config.yaml's training
+    section; without one, MACE (runs that predate the saved config)."""
+    from alomancy.cli.replot import _trainer_for
+
+    results = tmp_path / "results"
+    results.mkdir()
+    assert _trainer_for(results, "training").NAME == "mace"
+
+    (results / "run_config.yaml").write_text(
+        "training:\n  trainer: sevennet\n  sevennet_kwargs:\n    model: {channel: 8}\n"
+    )
+    trainer = _trainer_for(results, "training")
+    assert trainer.NAME == "sevennet"
+    assert trainer.kwargs["model"]["channel"] == 8

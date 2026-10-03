@@ -10,112 +10,6 @@ from ase import Atoms
 from ase.io import write
 
 # ---------------------------------------------------------------------------
-# _get_stage_two_epoch
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_default():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    result = _get_stage_two_epoch({"max_num_epochs": 80, "mace_fit_kwargs": {}})
-    assert result == 64
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_explicit_start_swa():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    result = _get_stage_two_epoch({"mace_fit_kwargs": {"start_swa": 100}})
-    assert result == 100
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_top_level_max_epochs():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    result = _get_stage_two_epoch({"max_num_epochs": 200, "mace_fit_kwargs": {}})
-    assert result == 160
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_max_epochs_in_kwargs():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # max_num_epochs inside mace_fit_kwargs, not at top level
-    result = _get_stage_two_epoch({"mace_fit_kwargs": {"max_num_epochs": 100}})
-    assert result == 80
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_default_80_when_none():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # Neither max_num_epochs nor start_swa anywhere → default 80 → 64
-    result = _get_stage_two_epoch({"mace_fit_kwargs": {}})
-    assert result == 64
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_prefers_sidecar_over_config(tmp_path):
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    (tmp_path / "resolved_mace_epochs.json").write_text(
-        json.dumps({"max_num_epochs": 160, "start_swa": 128})
-    )
-    # Config says 80/64, but the sidecar (the actually-resolved value,
-    # e.g. from max_num_epochs="dynamic") should win.
-    result = _get_stage_two_epoch(
-        {"max_num_epochs": 80, "mace_fit_kwargs": {}}, tmp_path
-    )
-    assert result == 128
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_falls_back_when_sidecar_missing(tmp_path):
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # No resolved_mace_epochs.json in tmp_path -- falls back to config formula.
-    result = _get_stage_two_epoch(
-        {"max_num_epochs": 200, "mace_fit_kwargs": {}}, tmp_path
-    )
-    assert result == 160
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_dynamic_with_no_sidecar_defaults_to_80_with_warning(
-    tmp_path,
-):
-    import logging
-
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # max_num_epochs="dynamic" with no sidecar present (e.g. plotting ran
-    # before the sidecar was written) -- must not crash trying to do
-    # math.floor("dynamic" * 0.8); falls back to the 80-epoch default.
-    al_logger = logging.getLogger("alomancy")
-    al_logger.setLevel(logging.WARNING)
-    records: list[logging.LogRecord] = []
-
-    class _Collector(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            records.append(record)
-
-    handler = _Collector()
-    handler.setLevel(logging.WARNING)
-    al_logger.addHandler(handler)
-    try:
-        result = _get_stage_two_epoch(
-            {"max_num_epochs": "dynamic", "mace_fit_kwargs": {}}, tmp_path
-        )
-    finally:
-        al_logger.removeHandler(handler)
-
-    assert result == 64
-    assert any("not numeric" in r.getMessage() for r in records)
-
-
-# ---------------------------------------------------------------------------
 # _parse_training_jsonl
 # ---------------------------------------------------------------------------
 
@@ -447,6 +341,12 @@ def test_parse_eval_xyz_missing_e0_element_falls_back(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _mace(name: str):
+    from alomancy.mlip.mace.trainer import MaceTrainer
+
+    return MaceTrainer({}, name=name)
+
+
 def _write_fit_data(base_dir: Path, name: str, seed: int, n_epochs: int = 10) -> None:
     fit_dir = base_dir / f"results/demo/{name}/fit_0"
     results_dir = fit_dir / "results"
@@ -475,6 +375,36 @@ def _write_fit_data(base_dir: Path, name: str, seed: int, n_epochs: int = 10) ->
 
 
 @pytest.mark.unit
+def test_mace_training_history_reads_records_and_markers(tmp_path):
+    """MaceTrainer.training_history: the eval records as "valid" rows, the
+    stage-two start from resolved_mace_epochs.json and the restored epoch
+    from the log."""
+    _write_fit_data(tmp_path, "mlip_committee", seed=803, n_epochs=5)
+    fit_dir = tmp_path / "results/demo/mlip_committee/fit_0"
+    (fit_dir / "resolved_mace_epochs.json").write_text(
+        json.dumps({"max_num_epochs": 5, "start_swa": 4})
+    )
+
+    history = _mace("mlip_committee").training_history(fit_dir, 803)
+
+    assert history is not None
+    assert history.frame["epoch"].to_list() == [0, 1, 2, 3, 4]
+    assert set(history.frame["split"].to_list()) == {"valid"}
+    assert history.stage_two_epoch == 4
+    assert history.selected_epoch == 3
+
+
+@pytest.mark.unit
+def test_mace_training_history_without_sidecar_or_records(tmp_path):
+    _write_fit_data(tmp_path, "mlip_committee", seed=803)
+    fit_dir = tmp_path / "results/demo/mlip_committee/fit_0"
+    trainer = _mace("mlip_committee")
+
+    assert trainer.training_history(fit_dir, 803).stage_two_epoch is None
+    assert trainer.training_history(tmp_path / "missing", 803) is None
+
+
+@pytest.mark.unit
 def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
     from alomancy.analysis.mlip_plots import plot_training_curves
 
@@ -489,7 +419,7 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
         "max_num_epochs": 10,
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     assert (plots_dir / "training_mae_demo.png").exists()
     assert (plots_dir / "training_loss_demo.png").exists()
@@ -500,11 +430,9 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
 def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
     tmp_path, monkeypatch
 ):
-    """Regression test: max_num_epochs="dynamic" with no
-    resolved_mace_epochs.json sidecar (e.g. an older fit, or a plotting run
-    before the trainer wrote the sidecar) must not crash trying to do
-    math.floor("dynamic" * 0.8) -- _get_stage_two_epoch must fall back to
-    the numeric default instead."""
+    """A fit without a resolved_mace_epochs.json sidecar (e.g. trained
+    before it existed) has no stage-two marker: the plots are still drawn,
+    just without the Stage 2 line."""
     from alomancy.analysis.mlip_plots import plot_training_curves
 
     monkeypatch.chdir(tmp_path)
@@ -518,7 +446,7 @@ def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
         "max_num_epochs": "dynamic",
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     assert (plots_dir / "training_mae_demo.png").exists()
     assert (plots_dir / "training_loss_demo.png").exists()
@@ -545,7 +473,7 @@ def test_plot_training_curves_dynamic_epochs_uses_sidecar(tmp_path, monkeypatch)
         "max_num_epochs": "dynamic",
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     assert (plots_dir / "training_mae_demo.png").exists()
 
@@ -569,7 +497,7 @@ def test_plot_training_curves_metrics_csv_has_expected_columns(tmp_path, monkeyp
         "max_num_epochs": 5,
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     metrics_path = plots_dir / "metrics" / "demo_fit_0_training_metrics.csv"
     df = pl.read_csv(metrics_path)
@@ -578,6 +506,39 @@ def test_plot_training_curves_metrics_csv_has_expected_columns(tmp_path, monkeyp
     assert df["epoch"].to_list() == [0, 1, 2, 3, 4]
     assert df["loss"][0] == pytest.approx(1.0)
     assert df["mae_f"][4] == pytest.approx(0.3 - 0.01 * 4)
+
+
+@pytest.mark.unit
+def test_plot_training_curves_uses_train_rows_without_valid(tmp_path, monkeypatch):
+    """A backend whose fit had no validation split reports only "train"
+    rows; the curves and metrics CSV are drawn from those."""
+    from alomancy.analysis.mlip_plots import plot_training_curves
+    from alomancy.mlip.base import TrainingHistory
+
+    class _TrainOnly:
+        def training_history(self, fit_dir, seed):
+            return TrainingHistory(
+                frame=pl.DataFrame(
+                    {
+                        "epoch": [1, 2],
+                        "split": ["train", "train"],
+                        "loss": [1.0, 0.5],
+                        "mae_e_per_atom": [0.1, 0.05],
+                        "mae_f": [0.3, 0.2],
+                    }
+                ),
+                selected_epoch=2,
+            )
+
+    monkeypatch.chdir(tmp_path)
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {"name": "training", "num_of_models_in_committee": 1}
+    plot_training_curves("demo", job_dict, 803, plots_dir, _TrainOnly())
+
+    df = pl.read_csv(plots_dir / "metrics" / "demo_fit_0_training_metrics.csv")
+    assert df["mae_f"].to_list() == [0.3, 0.2]
+    assert (plots_dir / "training_mae_demo.png").exists()
 
 
 @pytest.mark.unit
@@ -593,7 +554,9 @@ def test_plot_training_curves_no_data_no_output(tmp_path, monkeypatch):
         "max_num_epochs": 80,
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("empty_loop", job_dict, 803, plots_dir)
+    plot_training_curves(
+        "empty_loop", job_dict, 803, plots_dir, _mace("mlip_committee")
+    )
     assert not list(plots_dir.glob("*.png"))
 
 

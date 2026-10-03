@@ -206,7 +206,7 @@ def parity(
 
 def training_curve(df: Any, path: Path, *, title: str) -> None:
     """Validation force MAE per epoch for one fit (a polars frame with
-    "epoch" and "mae_f" columns, as mlip_plots._parse_training_jsonl gives)."""
+    "epoch" and "mae_f" columns, from a trainer's TrainingHistory)."""
     setup_alomancy_style()
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(
