@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-04
 
 ### Added
+- **`examples/configs/`: tested example configs** for committee uncertainty with MACE (cold start) and with SevenNet (`start_from.xyz`), the random-selection baseline, and novelty selection with EZGA and VASP (`start_from.database`). `tests/test_example_configs.py` builds every config under `examples/` and resolves each module's settings, failing on any warning, so a renamed key breaks a test instead of an example. The `basic_use`/`ezga_use` examples now cold-start (they pointed `start_from` at xyz files that aren't in the repo).
 - **Per-loop report** (`results/reports/al_loop_N/report.md`, `latest.md`; docs: `docs/reports.md`). Each loop now writes a Markdown report with:
   - a headline comparison with the previous loop;
   - a trends table, the MAE-vs-loop and timing plots;

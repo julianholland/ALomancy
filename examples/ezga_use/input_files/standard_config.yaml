@@ -1,11 +1,12 @@
 general:
   al_workflow: "committee_uncertainty"
   elements: ["C", "Na"]  # atomic symbols, not atomic numbers -- match your system
-  # Warm start from a pre-split train/test pair (see docs/starting_a_run.md
-  # for the other start modes; omit start_from entirely for a cold start).
-  start_from:
-    train_xyz: "input_files/C_Na_amorphous_5255_train.xyz"
-    test_xyz: "input_files/C_Na_amorphous_583_test.xyz"
+  # Cold start: initialization builds the first training set. To warm start
+  # from your own labelled data instead, uncomment start_from and point it
+  # at your files (other start modes: docs/starting_a_run.md).
+  # start_from:
+  #   train_xyz: "input_files/my_train.xyz"
+  #   test_xyz: "input_files/my_test.xyz"
   num_of_al_loops: 25
   num_of_structures_per_loop: 50  # selected for DFT each loop
   verbose: 1

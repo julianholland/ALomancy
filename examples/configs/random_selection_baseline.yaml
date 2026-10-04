@@ -1,0 +1,33 @@
+# Baseline: one model, and the same DFT budget per loop spent on candidates
+# chosen uniformly at random (seeded by general.seed + loop). Compare its
+# learning curve against an uncertainty-driven run on the same system.
+
+general:
+  al_workflow: "random_selection"      # no workflow-specific settings
+  elements: ["C", "O"]
+  num_of_al_loops: 10
+  num_of_structures_per_loop: 50
+  seed: 803
+  dataset_kwargs:
+    target_config_types: ["init_MP", "init_amorphous"]
+    test_ratio: 0.1
+
+initialization:
+  max_time: "2H"
+  hpc: "my_cpu_hpc"
+
+training:
+  trainer: "mace"
+  max_time: "5H"
+  hpc: "my_gpu_hpc"
+
+structure_generation:
+  generator: "md"
+  num_of_structures_to_generate: 500
+  max_time: "10H"
+  hpc: "my_gpu_hpc"
+
+high_accuracy_evaluation:
+  evaluator: "qe"
+  max_time: "30m"
+  hpc: "my_cpu_hpc"

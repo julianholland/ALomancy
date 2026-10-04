@@ -1,0 +1,53 @@
+# Committee uncertainty with MACE, cold start: initialization generates and
+# DFT-labels the first training set, then each loop trains a committee,
+# runs MD with the best model and sends the structures the committee
+# disagrees on most to DFT. Every unlisted setting uses its default.
+#
+# HPC profiles ('my_gpu_hpc', 'my_cpu_hpc') come from ~/.alomancy/hpc_config.yaml
+# (create them with `alomancy add-hpc`). Run: `alomancy run committee_mace_cold_start.yaml`.
+
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "O"]
+  num_of_al_loops: 10
+  num_of_structures_per_loop: 50     # selected for DFT each loop
+  verbose: 1
+  dataset_kwargs:
+    target_config_types: ["init_MP", "init_amorphous"]
+    test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 3    # minimum 3
+  train_filter:
+    max_force: 100.0                 # eV/A; the default, shown for clarity
+
+initialization:
+  max_time: "2H"
+  hpc: "my_cpu_hpc"
+  amorphous_kwargs:
+    num_of_amorphous_structures: 50
+    densities_list: [1.0, 2.0]
+
+training:
+  trainer: "mace"
+  max_time: "5H"
+  hpc: "my_gpu_hpc"
+  mace_kwargs:
+    max_num_epochs: "dynamic"        # resolved from the training-set size
+
+structure_generation:
+  generator: "md"
+  num_of_structures_to_generate: 500 # candidate pool; default 10x per loop
+  max_time: "10H"
+  hpc: "my_gpu_hpc"
+  md_kwargs:
+    steps: 20000
+    temperature: 800
+    structure_selection_kwargs:
+      num_of_md_starts: 10
+
+high_accuracy_evaluation:
+  evaluator: "qe"
+  max_time: "30m"
+  max_go_time: "4H"                  # walltime when a batch needs relaxation
+  force_ceiling: 100.0               # relax AL structures until max force <= this
+  hpc: "my_cpu_hpc"

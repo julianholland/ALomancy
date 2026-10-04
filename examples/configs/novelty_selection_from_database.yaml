@@ -1,0 +1,38 @@
+# Novelty selection, continuing from a former run's database: one model,
+# and each loop sends to DFT the candidates least like each other and like
+# the structures already in the database. The former database is copied,
+# never written to.
+
+general:
+  al_workflow: "novelty_selection"
+  elements: ["C", "O"]
+  num_of_al_loops: 10
+  num_of_structures_per_loop: 30
+  dataset_kwargs:
+    target_config_types: ["init_MP", "init_amorphous"]
+    test_ratio: 0.1
+  start_from:
+    database: "../previous_run/results/global_database"
+
+initialization:
+  max_time: "2H"
+  hpc: "my_cpu_hpc"
+
+training:
+  trainer: "mace"
+  max_time: "5H"
+  hpc: "my_gpu_hpc"
+
+structure_generation:
+  generator: "ezga"                    # genetic-algorithm search instead of MD
+  num_of_structures_to_generate: 100
+  max_time: "4H"
+  hpc: "my_gpu_hpc"
+  ezga_kwargs:
+    max_generations: 10
+    population_size: 20
+
+high_accuracy_evaluation:
+  evaluator: "vasp"
+  max_time: "1H"
+  hpc: "my_cpu_hpc"
