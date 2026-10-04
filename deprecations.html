@@ -56,6 +56,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#shipped-in-1-0-0">Shipped in 1.0.0</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#max-batch-size-job-dict-key-removed"><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removed</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#activelearningstandardmace-baseactivelearningworkflow-removed"><code class="docutils literal notranslate"><span class="pre">ActiveLearningStandardMACE</span></code> / <code class="docutils literal notranslate"><span class="pre">BaseActiveLearningWorkflow</span></code> removed</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#config-keys-renamed-or-moved">Config keys renamed or moved</a></li>
 </ul>
 </li>
 </ul>
@@ -99,14 +100,16 @@ changes that have already shipped.</p>
 <li><p><strong>Status</strong>: removed in 1.0.0 (deprecated since v0.4.8)</p></li>
 <li><p><strong>What changed</strong>: the <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> key on <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code>
 (and any other job-dict section) is no longer read at all. Concurrency is
-governed entirely by <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code>, which lives on the <strong>HPC
+governed entirely by <code class="docutils literal notranslate"><span class="pre">max_num_of_concurrent_jobs</span></code>, which lives on the <strong>HPC
 profile</strong> (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>), not a per-workflow-phase job
 dict, since it’s a property of the HPC system/account, not of any one
 phase.</p></li>
 <li><p><strong>Migrate</strong>: re-run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code> for each profile (or hand-edit
-<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>) to add <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs:</span> <span class="pre">&lt;N&gt;</span></code> under the
-relevant profile’s <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> dict, then delete <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> from your job
-YAML – it is now silently ignored rather than used as a fallback.</p></li>
+<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>) to add <code class="docutils literal notranslate"><span class="pre">max_num_of_concurrent_jobs:</span> <span class="pre">&lt;N&gt;</span></code>
+under the relevant profile’s <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> dict, then delete <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code>
+from your job YAML – it is now ignored rather than used as a fallback.
+Profiles written before the rename, which use <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code>, are
+still read, with a warning asking you to rename the key.</p></li>
 </ul>
 </section>
 <section id="activelearningstandardmace-baseactivelearningworkflow-removed">
@@ -115,23 +118,54 @@ YAML – it is now silently ignored rather than used as a fallback.</p></li>
 <li><p><strong>Status</strong>: removed in 1.0.0</p></li>
 <li><p><strong>What changed</strong>: <code class="docutils literal notranslate"><span class="pre">src/alomancy/core/standard_active_learning.py</span></code> and
 <code class="docutils literal notranslate"><span class="pre">src/alomancy/core/base_active_learning.py</span></code> have been deleted.
-<code class="docutils literal notranslate"><span class="pre">CommitteeUncertaintyWorkflow</span></code> (<code class="docutils literal notranslate"><span class="pre">core/committee_uncertainty_workflow.py</span></code>,
-built via <code class="docutils literal notranslate"><span class="pre">build_workflow()</span></code>) is now the only workflow implementation –
-it does not subclass anything, resolving its trainer/structure-generator/
-DFT-evaluator/initialiser from config via the shared module registry
-instead of a different Python subclass per backend combination.</p></li>
+Workflows now subclass <code class="docutils literal notranslate"><span class="pre">ActiveLearningWorkflow</span></code>
+(<code class="docutils literal notranslate"><span class="pre">core/active_learning_workflow.py</span></code>; <code class="docutils literal notranslate"><span class="pre">CommitteeUncertaintyWorkflow</span></code>,
+<code class="docutils literal notranslate"><span class="pre">RandomSelectionWorkflow</span></code>, <code class="docutils literal notranslate"><span class="pre">NoveltySelectionWorkflow</span></code>) and resolve their
+trainer/structure-generator/DFT-evaluator/initialiser from config via the
+shared module registry instead of a different Python subclass per
+backend combination. The config, through <code class="docutils literal notranslate"><span class="pre">general.al_workflow</span></code>, picks
+the workflow.</p></li>
 <li><p><strong>Migrate</strong>: replace <code class="docutils literal notranslate"><span class="pre">ActiveLearningStandardMACE(...)</span></code> with
-<code class="docutils literal notranslate"><span class="pre">build_workflow(jobs_dict=...,</span> <span class="pre">...)</span></code> (same constructor kwargs otherwise).
-The job-dict schema changed too: <code class="docutils literal notranslate"><span class="pre">workflow</span></code> is renamed <code class="docutils literal notranslate"><span class="pre">general</span></code> (holding
-<code class="docutils literal notranslate"><span class="pre">al_workflow</span></code>, <code class="docutils literal notranslate"><span class="pre">elements</span></code>, and a <code class="docutils literal notranslate"><span class="pre">committee_uncertainty_kwargs</span></code> dict for
-committee-specific settings like <code class="docutils literal notranslate"><span class="pre">number_models_in_committee</span></code>, renamed
-from <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code>); <code class="docutils literal notranslate"><span class="pre">mlip_committee</span></code> is renamed <code class="docutils literal notranslate"><span class="pre">training</span></code> and
+<code class="docutils literal notranslate"><span class="pre">ALomancy(&quot;config.yaml&quot;).run()</span></code> (<code class="docutils literal notranslate"><span class="pre">from</span> <span class="pre">alomancy</span> <span class="pre">import</span> <span class="pre">ALomancy</span></code>) or
+<code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">run</span> <span class="pre">config.yaml</span></code>; every former constructor kwarg is a
+<code class="docutils literal notranslate"><span class="pre">general</span></code> key in the config. The job-dict schema changed too: <code class="docutils literal notranslate"><span class="pre">workflow</span></code>
+is renamed <code class="docutils literal notranslate"><span class="pre">general</span></code> (holding <code class="docutils literal notranslate"><span class="pre">al_workflow</span></code>, <code class="docutils literal notranslate"><span class="pre">elements</span></code>, and a
+<code class="docutils literal notranslate"><span class="pre">committee_uncertainty_kwargs</span></code> dict for committee-specific settings like
+<code class="docutils literal notranslate"><span class="pre">num_of_models_in_committee</span></code>, formerly <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code>);
+<code class="docutils literal notranslate"><span class="pre">mlip_committee</span></code> is renamed <code class="docutils literal notranslate"><span class="pre">training</span></code> and
 gains a <code class="docutils literal notranslate"><span class="pre">trainer</span></code> key; <code class="docutils literal notranslate"><span class="pre">initialization.creation_kwargs</span></code> is flattened –
 its sub-namespaces (<code class="docutils literal notranslate"><span class="pre">isolated_atom_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">dimer_kwargs</span></code>, etc.) are now
-direct children of <code class="docutils literal notranslate"><span class="pre">initialization</span></code>. See <code class="docutils literal notranslate"><span class="pre">examples/basic_use/</span></code> and
-<code class="docutils literal notranslate"><span class="pre">examples/ezga_use/</span></code> for complete migrated configs, and
-<code class="docutils literal notranslate"><span class="pre">committee_uncertainty_workflow.py</span></code>’s module docstring for the full
-schema reference.</p></li>
+direct children of <code class="docutils literal notranslate"><span class="pre">initialization</span></code>. See <code class="docutils literal notranslate"><span class="pre">examples/configs/</span></code> for
+complete, tested configs of every workflow, and <code class="docutils literal notranslate"><span class="pre">docs/examples.md</span></code> for
+each section’s settings.</p></li>
+</ul>
+</section>
+<section id="config-keys-renamed-or-moved">
+<h3>Config keys renamed or moved<a class="headerlink" href="#config-keys-renamed-or-moved" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Status</strong>: changed in 1.0.0</p></li>
+<li><p><strong>What changed</strong>: an old key raises a <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> at construction
+naming its replacement, so nothing is ignored without warning.</p>
+<ul>
+<li><p>Counts follow one <code class="docutils literal notranslate"><span class="pre">num_of_*</span></code> convention (full table in <code class="docutils literal notranslate"><span class="pre">CHANGELOG.md</span></code>),
+e.g. <code class="docutils literal notranslate"><span class="pre">number_of_al_loops</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">num_of_al_loops</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">structure_generation.desired_num_of_structures</span></code> is split in two:
+<code class="docutils literal notranslate"><span class="pre">general.num_of_structures_per_loop</span></code> (how many structures the selector
+sends to DFT each loop) and <code class="docutils literal notranslate"><span class="pre">structure_generation.</span> <span class="pre">num_of_structures_to_generate</span></code> (the candidate pool, default 10x per
+loop; it must be at least the per-loop count).</p></li>
+<li><p>The start-up keys (<code class="docutils literal notranslate"><span class="pre">initial_train_file_path</span></code>/<code class="docutils literal notranslate"><span class="pre">initial_test_file_path</span></code>,
+<code class="docutils literal notranslate"><span class="pre">initialization.extra_datasets</span></code>, <code class="docutils literal notranslate"><span class="pre">skip_initialization</span></code>) are replaced by
+<code class="docutils literal notranslate"><span class="pre">general.start_from</span></code> (see <code class="docutils literal notranslate"><span class="pre">starting_a_run.md</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">general.high_force_threshold</span></code> is replaced by
+<code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.force_ceiling</span></code> (relax AL structures before
+DFT) and <code class="docutils literal notranslate"><span class="pre">general.train_filter.max_force</span></code> (exclude high-force training
+structures).</p></li>
+<li><p>Split settings (<code class="docutils literal notranslate"><span class="pre">test_ratio</span></code>, <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code>, …) moved from
+<code class="docutils literal notranslate"><span class="pre">general.committee_uncertainty_kwargs</span></code> to <code class="docutils literal notranslate"><span class="pre">general.dataset_kwargs</span></code>.</p></li>
+</ul>
+</li>
+<li><p><strong>Migrate</strong>: run your config once; the error lists every old key with its
+new name or location.</p></li>
 </ul>
 </section>
 </section>

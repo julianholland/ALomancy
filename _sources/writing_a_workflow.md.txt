@@ -42,16 +42,16 @@ from alomancy.core.active_learning_workflow import (
 
 
 class MyWorkflow(ActiveLearningWorkflow):
-    NAME = "my_workflow"                       # general.al_workflow value
-    KWARGS_KEY = "my_workflow_kwargs"          # general.<key>; None if no settings
+    NAME = "my_workflow"  # general.al_workflow value
+    KWARGS_KEY = "my_workflow_kwargs"  # general.<key>; None if no settings
     KWARGS_DEFAULTS: ClassVar[dict[str, Any]] = {"num_to_pick": 20}
-    NEW_STRUCTURE_CONFIG_TYPE = "my_selection" # config_type of structures it adds
+    NEW_STRUCTURE_CONFIG_TYPE = "my_selection"  # config_type of structures it adds
 
-    def validate_settings(self) -> None:       # optional
+    def validate_settings(self) -> None:  # optional
         if self.workflow_kwargs["num_to_pick"] < 1:
             raise ValueError("general.my_workflow_kwargs.num_to_pick must be >= 1")
 
-    def run(self) -> None:                     # the only required method
+    def run(self) -> None:  # the only required method
         for ctx in self.iterate_loops(self.prepare_run()):
             (model,) = self.train_models(ctx, self.seeds(1))
             if ctx.train_only:
@@ -157,8 +157,8 @@ from alomancy.utils.training_schedule import resolve_epochs
 
 
 class SevenNetTrainer(ALomancyTrainer):
-    NAME = "sevennet"                          # training.trainer value
-    KWARGS_KEY = "sevennet_kwargs"             # its settings: training.sevennet_kwargs
+    NAME = "sevennet"  # training.trainer value
+    KWARGS_KEY = "sevennet_kwargs"  # its settings: training.sevennet_kwargs
     KWARGS_DEFAULTS = {"epoch": "dynamic", "batch_size": 8}
     # The backend's name for per-element isolated-atom energies. ALomancy
     # fills it from the database's IsolatedAtom energies unless the user
@@ -170,13 +170,24 @@ class SevenNetTrainer(ALomancyTrainer):
 
     def get_calculator(self, model_path):
         from sevenn.calculator import SevenNetCalculator
+
         return SevenNetCalculator(str(model_path))
 
-    def fit(self, train_path, valid_path, test_path, seed, fit_dir, *,
-            isolated_atom_energies):
-        epochs = resolve_epochs(self.kwargs["epoch"], self.kwargs["batch_size"], n_structures)
+    def fit(
+        self,
+        train_path,
+        valid_path,
+        test_path,
+        seed,
+        fit_dir,
+        *,
+        isolated_atom_energies,
+    ):
+        epochs = resolve_epochs(
+            self.kwargs["epoch"], self.kwargs["batch_size"], n_structures
+        )
         ...  # run SevenNet in fit_dir with self.kwargs, epochs and seed
-        return self.model_path(fit_dir)   # or None if no model was produced
+        return self.model_path(fit_dir)  # or None if no model was produced
 ```
 
 Then register it in `src/alomancy/registry.py`:

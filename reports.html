@@ -294,7 +294,8 @@ INFO records only when they carry an event code.</p></li>
 </ul>
 <p>To make a new situation countable, log it with an event code:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-    <span class="s2">"Something went wrong for </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span>
+    <span class="s2">"Something went wrong for </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
+    <span class="n">base_name</span><span class="p">,</span>
     <span class="n">extra</span><span class="o">=</span><span class="p">{</span><span class="s2">"event"</span><span class="p">:</span> <span class="s2">"my_event"</span><span class="p">,</span> <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="n">n</span><span class="p">,</span> <span class="s2">"total"</span><span class="p">:</span> <span class="n">total</span><span class="p">}},</span>
 <span class="p">)</span>
 </pre></div>

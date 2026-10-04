@@ -168,16 +168,16 @@ declare its settings and write a short <code class="docutils literal notranslate
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">MyWorkflow</span><span class="p">(</span><span class="n">ActiveLearningWorkflow</span><span class="p">):</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"my_workflow"</span>                       <span class="c1"># general.al_workflow value</span>
-    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"my_workflow_kwargs"</span>          <span class="c1"># general.&lt;key&gt;; None if no settings</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"my_workflow"</span>  <span class="c1"># general.al_workflow value</span>
+    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"my_workflow_kwargs"</span>  <span class="c1"># general.&lt;key&gt;; None if no settings</span>
     <span class="n">KWARGS_DEFAULTS</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"num_to_pick"</span><span class="p">:</span> <span class="mi">20</span><span class="p">}</span>
-    <span class="n">NEW_STRUCTURE_CONFIG_TYPE</span> <span class="o">=</span> <span class="s2">"my_selection"</span> <span class="c1"># config_type of structures it adds</span>
+    <span class="n">NEW_STRUCTURE_CONFIG_TYPE</span> <span class="o">=</span> <span class="s2">"my_selection"</span>  <span class="c1"># config_type of structures it adds</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">validate_settings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>       <span class="c1"># optional</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_settings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># optional</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">workflow_kwargs</span><span class="p">[</span><span class="s2">"num_to_pick"</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"general.my_workflow_kwargs.num_to_pick must be &gt;= 1"</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>                     <span class="c1"># the only required method</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># the only required method</span>
         <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterate_loops</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prepare_run</span><span class="p">()):</span>
             <span class="p">(</span><span class="n">model</span><span class="p">,)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_models</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seeds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
             <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">train_only</span><span class="p">:</span>
@@ -278,8 +278,8 @@ energies and clean-up are inherited.</p>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">SevenNetTrainer</span><span class="p">(</span><span class="n">ALomancyTrainer</span><span class="p">):</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"sevennet"</span>                          <span class="c1"># training.trainer value</span>
-    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"sevennet_kwargs"</span>             <span class="c1"># its settings: training.sevennet_kwargs</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"sevennet"</span>  <span class="c1"># training.trainer value</span>
+    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"sevennet_kwargs"</span>  <span class="c1"># its settings: training.sevennet_kwargs</span>
     <span class="n">KWARGS_DEFAULTS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"epoch"</span><span class="p">:</span> <span class="s2">"dynamic"</span><span class="p">,</span> <span class="s2">"batch_size"</span><span class="p">:</span> <span class="mi">8</span><span class="p">}</span>
     <span class="c1"># The backend's name for per-element isolated-atom energies. ALomancy</span>
     <span class="c1"># fills it from the database's IsolatedAtom energies unless the user</span>
@@ -291,13 +291,24 @@ energies and clean-up are inherited.</p>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">sevenn.calculator</span><span class="w"> </span><span class="kn">import</span> <span class="n">SevenNetCalculator</span>
+
         <span class="k">return</span> <span class="n">SevenNetCalculator</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">))</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">train_path</span><span class="p">,</span> <span class="n">valid_path</span><span class="p">,</span> <span class="n">test_path</span><span class="p">,</span> <span class="n">seed</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
-            <span class="n">isolated_atom_energies</span><span class="p">):</span>
-        <span class="n">epochs</span> <span class="o">=</span> <span class="n">resolve_epochs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"epoch"</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"batch_size"</span><span class="p">],</span> <span class="n">n_structures</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">train_path</span><span class="p">,</span>
+        <span class="n">valid_path</span><span class="p">,</span>
+        <span class="n">test_path</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">,</span>
+        <span class="n">fit_dir</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">isolated_atom_energies</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">epochs</span> <span class="o">=</span> <span class="n">resolve_epochs</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"epoch"</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"batch_size"</span><span class="p">],</span> <span class="n">n_structures</span>
+        <span class="p">)</span>
         <span class="o">...</span>  <span class="c1"># run SevenNet in fit_dir with self.kwargs, epochs and seed</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>   <span class="c1"># or None if no model was produced</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>  <span class="c1"># or None if no model was produced</span>
 </pre></div>
 </div>
 <p>Then register it in <code class="docutils literal notranslate"><span class="pre">src/alomancy/registry.py</span></code>:</p>

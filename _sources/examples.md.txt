@@ -237,7 +237,7 @@ high_accuracy_evaluation:
 
 - **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 
-- **training**: Trains an ensemble (committee) of interatomic potentials. `trainer` selects the registered `mlip_trainer` backend (currently only `"mace"`); backend-specific settings go under `mace_kwargs`.
+- **training**: Trains an ensemble (committee) of interatomic potentials. `trainer` selects the registered `mlip_trainer` backend: `"mace"` (default) or `"sevennet"`. Backend-specific settings go under `mace_kwargs` / `sevennet_kwargs` (SevenNet's own `model`/`train`/`data` input sections; requires `sevenn` on the training nodes). Complete, tested configs for each workflow and backend are in `examples/configs/`.
 
 - **structure_generation**: Generates candidate structures for labeling. `num_of_structures_to_generate` (default 10 × `general.num_of_structures_per_loop`) is the size of the candidate pool; it must be at least `num_of_structures_per_loop` (error) and should be at least twice it (warning). `generator` selects the registered `structure_generator` backend (`"md"`, the default, or `"ezga"` for genetic-algorithm search); uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `md_kwargs`:
 
