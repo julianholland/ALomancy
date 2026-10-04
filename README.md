@@ -218,7 +218,7 @@ structure_generation:
 - **EZGA**: genetic-algorithm structure search with configurable mutations
   (rattle, strain, add, remove).
 - **Quantum ESPRESSO / VASP**: single points, or geometry optimisation below
-  a force ceiling. Your settings are merged into sensible PBE defaults.
+  a force ceiling. 
 
 ## What you get from every run
 
