@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-04
+
+### Changed
+- **README rewritten for 1.0** (also the PyPI project page): a current cold-start config, one-line edits showing how to swap the trainer, structure generator, DFT code, selection strategy, starting data and per-loop budget, a table of every available workflow and module, what each run produces, and the CLI. The mermaid chart and outdated sections are gone. `tests/test_example_configs.py` now also checks the README: its config must build without warnings and match `examples/configs/committee_mace_cold_start.yaml`, and each one-line edit must build when applied to it.
+
 ## [1.0.0] - 2026-10-04
 
 ### Added
