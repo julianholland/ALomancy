@@ -107,7 +107,8 @@ under "Suggestions file notes" in the report and logged.
 | `short_bond_excluded` | structures dropped for a bond < 0.5 Å / structures checked |
 | `md_runs_no_steps` | MD runs that never took a step / runs |
 | `remote_jobs_failed` | remote jobs failed or died / jobs started |
-| `fewer_candidates` | shortfall of candidates against `desired_num_of_structures` |
+| `fewer_candidates` | shortfall of selected structures against `general.num_of_structures_per_loop` |
+| `few_candidates_generated` | shortfall of generated candidates against twice `general.num_of_structures_per_loop` |
 | `redundancy_removed_new` | this loop's new structures flagged redundant / new |
 | `queue_dominated` | largest share of a phase's time spent queued |
 | `fit_retries` | model fits retried / fits |

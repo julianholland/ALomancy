@@ -15,9 +15,13 @@ def find_high_sd_structures(
     base_name: str,
     job_dict: dict[str, dict[str, str]],
     structure_forces_dict: dict,
+    num_of_structures: int,
     read_xyz: bool = True,
 ) -> list[Atoms]:
-    desired_structures = job_dict["structure_generation"]["desired_num_of_structures"]
+    """Select the *num_of_structures* candidates (general.
+    num_of_structures_per_loop) with the highest committee force standard
+    deviation."""
+    desired_structures = num_of_structures
 
     if desired_structures <= 0:
         raise ValueError("Number of structures must be greater than 0")
@@ -29,7 +33,7 @@ def find_high_sd_structures(
     if len(structure_list) < desired_structures:
         logger.warning(
             "Only %d candidate structure(s) available, fewer than the %d "
-            "requested (desired_num_of_structures) — proceeding with all "
+            "requested (general.num_of_structures_per_loop) — proceeding with all "
             "%d available structure(s) instead of crashing the run.",
             len(structure_list),
             desired_structures,

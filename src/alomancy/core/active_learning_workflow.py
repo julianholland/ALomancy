@@ -114,7 +114,7 @@ generator`, `high_accuracy_evaluation.evaluator`). `qe_kwargs`/
 `vasp_input_kwargs` names at the evaluator orchestrator boundary (see
 `high_accuracy_calc_interface.py`), since the shared, unchanged `run_sp`/
 `run_go` workers still read those directly. Settings genuinely
-generator-agnostic (`structure_generation.desired_num_of_structures`,
+generator-agnostic (`structure_generation.num_of_structures_to_generate`,
 `structure_generation.structure_selection_kwargs` for the skeleton's own
 `filter_eligible_structures` pre-filter, called once before any generator
 dispatch) stay at the top `structure_generation` level rather than being
@@ -133,9 +133,11 @@ trainer today. Omitting `mace_kwargs.max_num_epochs` entirely resolves
 dynamically (not a fixed number, and not MACE's own native default of
 2048) -- the same as explicitly setting it to `"dynamic"`.
 
-Other per-module defaults introduced alongside this: `structure_generation
-.desired_num_of_structures` defaults to 50 when omitted (applied once
-by the skeleton, so it's consistent regardless of which generator runs);
+Other per-module defaults introduced alongside this: `general.
+num_of_structures_per_loop` (the selector's per-loop DFT budget) defaults to
+50 and `structure_generation.num_of_structures_to_generate` (the generator's
+candidate pool) to 10x that, resolved once in `__init__` so it's consistent
+regardless of which generator runs;
 `md_kwargs` defaults to `steps=20000`/`temperature=300`/`timestep_fs=0.5`
 (not `run_md`'s own far-shorter built-in defaults) and `md_kwargs.
 structure_selection_kwargs.num_of_md_starts` defaults to 10;
@@ -229,6 +231,7 @@ from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 from alomancy.utils.import_structures import (
     EXTERNAL_CONFIG_TYPE,
     file_sha256,
+    filter_by_elements,
     normalize_metadata,
     read_structures,
 )
@@ -276,14 +279,12 @@ _BEST_MODEL_FILENAME = "ALomancy_best_model.model"
 _STRUCTURE_GENERATION_NAME = "structure_generation"
 _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 
-# structure_generation.desired_num_of_structures is generator-agnostic
-# (find_high_sd_structures' post-generation selection cap, and run_md's own
-# trajectory-sampling stride -- both old/shared, both require this key with
-# no default of their own). Defaulted once here, before generator dispatch,
-# so the same value applies regardless of which generator module runs
-# (EZGA doesn't read it today, but would get the same default too if a
-# future version started to).
-_DEFAULT_DESIRED_NUM_OF_STRUCTURES = 50
+# structure_generation.num_of_structures_to_generate (the candidate pool a
+# generator produces) defaults to this many times general.
+# num_of_structures_per_loop (how many of them the selector sends to DFT).
+# 10x keeps MD's snapshot stride exactly what the old single
+# desired_num_of_structures setting gave.
+_TO_GENERATE_PER_LOOP_FACTOR = 10
 
 # general.dataset_kwargs: how the data is split, the same for every AL
 # workflow. test_ratio and target_config_types have no default -- a
@@ -323,6 +324,8 @@ _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     # entries override the packaged suggestions.yaml one trigger at a time.
     "report": True,
     "report_suggestions": None,
+    # How many structures the selector sends to DFT each loop.
+    "num_of_structures_per_loop": 50,
 }
 
 # high_accuracy_evaluation.force_ceiling default (eV/Angstrom): AL-generated
@@ -340,11 +343,6 @@ _RENAMED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
         ("general", "committee_uncertainty_kwargs"),
         "number_models_in_committee",
         "num_of_models_in_committee",
-    ),
-    (
-        ("structure_generation",),
-        "desired_number_of_structures",
-        "desired_num_of_structures",
     ),
     (
         ("structure_generation", "structure_selection_kwargs"),
@@ -413,6 +411,16 @@ _MOVED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
         )
     ),
     (("general", "committee_uncertainty_kwargs"), "train_only", "general.train_only"),
+    # The per-loop DFT budget is the selector's, not the generator's.
+    *(
+        (
+            ("structure_generation",),
+            key,
+            "general.num_of_structures_per_loop (and structure_generation."
+            "num_of_structures_to_generate for the candidate pool size)",
+        )
+        for key in ("desired_num_of_structures", "desired_number_of_structures")
+    ),
 )
 
 
@@ -421,6 +429,44 @@ def _section(jobs_dict: dict, path: tuple[str, ...]) -> Any:
     for part in path:
         node = node.get(part) if isinstance(node, dict) else None
     return node
+
+
+def _is_positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _resolve_structure_counts(
+    per_loop: Any, sg_config: dict | None
+) -> tuple[int, int | None]:
+    """Validate general.num_of_structures_per_loop, default structure_
+    generation.num_of_structures_to_generate in place (10x per loop) and
+    validate it too: the generator must produce at least as many
+    candidates as the selector adds per loop. Returns (per_loop,
+    to_generate); to_generate is None without a structure_generation
+    section."""
+    if not _is_positive_int(per_loop):
+        raise ValueError(
+            "general.num_of_structures_per_loop must be a positive integer, "
+            f"got {per_loop!r}."
+        )
+    if not isinstance(sg_config, dict):
+        return per_loop, None
+    to_generate = sg_config.setdefault(
+        "num_of_structures_to_generate", _TO_GENERATE_PER_LOOP_FACTOR * per_loop
+    )
+    if not _is_positive_int(to_generate):
+        raise ValueError(
+            "structure_generation.num_of_structures_to_generate must be a "
+            f"positive integer, got {to_generate!r}."
+        )
+    if to_generate < per_loop:
+        raise ValueError(
+            f"structure_generation.num_of_structures_to_generate ({to_generate}) "
+            f"is less than general.num_of_structures_per_loop ({per_loop}): "
+            "the generator must produce at least as many candidates as are "
+            "added per loop."
+        )
+    return per_loop, to_generate
 
 
 def _find_renamed_keys(jobs_dict: dict) -> list[str]:
@@ -669,9 +715,6 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
         kwargs_key = f"{generator}_kwargs"
         defaults = resolve("structure_generator", generator).kwargs_defaults
         effective[kwargs_key] = {**defaults, **effective.get(kwargs_key, {})}
-        effective.setdefault(
-            "desired_num_of_structures", _DEFAULT_DESIRED_NUM_OF_STRUCTURES
-        )
     elif phase == "high_accuracy_evaluation":
         evaluator = effective.get("evaluator", "qe")
         kwargs_key = f"{evaluator}_kwargs"
@@ -840,6 +883,9 @@ def phase(
                     ctx.base_name,
                 )
                 return load(self, ctx, *args, **kwargs)
+            # Parsed by analysis/timing_plots as phase boundaries, together
+            # with _mark_phase_done's "marked complete" line.
+            logger.debug("Phase %s started for %s.", phase_name, ctx.base_name)
             result = fn(self, ctx, *args, **kwargs)
             self._mark_phase_done(ctx.base_name, phase_name)
             return result
@@ -999,8 +1045,31 @@ class ActiveLearningWorkflow(ABC):
                 "high_accuracy_evaluation.force_ceiling must be a positive number "
                 f"(eV/Angstrom) or null, got {self.force_ceiling!r}."
             )
+        self.num_of_structures_per_loop, to_generate = _resolve_structure_counts(
+            general_kwargs["num_of_structures_per_loop"],
+            jobs_dict.get("structure_generation"),
+        )
         self.log_file = general_kwargs["log_file"]
         setup_logging(verbose=self.verbose, log_file=self.log_file)
+        # After setup_logging so the warning reaches the console/log file.
+        if (
+            to_generate is not None
+            and to_generate < 2 * self.num_of_structures_per_loop
+        ):
+            logger.warning(
+                "structure_generation.num_of_structures_to_generate (%d) is less "
+                "than twice general.num_of_structures_per_loop (%d): the "
+                "selector has little to choose from.",
+                to_generate,
+                self.num_of_structures_per_loop,
+                extra={
+                    "event": "few_candidates_configured",
+                    "data": {
+                        "to_generate": to_generate,
+                        "per_loop": self.num_of_structures_per_loop,
+                    },
+                },
+            )
         # After setup_logging so the warnings reach the console/log file.
         known = _GENERAL_KNOWN_KEYS | ({self.KWARGS_KEY} if self.KWARGS_KEY else set())
         unknown = sorted(set(general_config) - known)
@@ -1181,7 +1250,9 @@ class ActiveLearningWorkflow(ABC):
 
         Labels are normalized first (utils/import_structures.normalize_
         metadata, honouring start_from.metadata_map), which also drops the
-        writing run's splits/flags. *split* tags every structure (train_xyz/
+        writing run's splits/flags; structures with elements outside
+        general.elements are then dropped (filter_by_elements), before any
+        redundancy or train/test filtering can see them. *split* tags every structure (train_xyz/
         test_xyz); None leaves them for the split rule. Idempotent: the
         file's sha256 is stored on each structure and a file already
         imported is skipped.
@@ -1198,6 +1269,9 @@ class ActiveLearningWorkflow(ABC):
             self.start_from.get("metadata_map"),
             source=str(path),
         )
+        atoms_list = filter_by_elements(
+            atoms_list, self._required_elements(), source=str(path)
+        )
         for atoms in atoms_list:
             atoms.info["source_dataset_sha256"] = digest
             atoms.info.setdefault("domain", structure_domain(atoms))
@@ -1213,6 +1287,15 @@ class ActiveLearningWorkflow(ABC):
         )
         return added
 
+    def _required_elements(self) -> list[str]:
+        elements = self.jobs_dict.get("general", {}).get("elements")
+        if not elements:
+            raise ValueError(
+                "general.elements is required (list of atomic symbols, e.g. "
+                '["C", "O"]).'
+            )
+        return list(elements)
+
     def _import_start_data(self) -> None:
         """Bring general.start_from's data into the global DB. Every mode
         then continues through the same DB-driven initialization."""
@@ -1223,7 +1306,9 @@ class ActiveLearningWorkflow(ABC):
             for path in self.start_from["xyz"]:
                 self._import_xyz(path)
         elif self.start_mode == START_MODE_DATABASE:
-            self.db.import_from_database(self.start_from["database"])
+            self.db.import_from_database(
+                self.start_from["database"], elements=self._required_elements()
+            )
         logger.info(
             "Start mode: %s (global DB now holds %d structures).",
             self.start_mode,
@@ -1238,17 +1323,11 @@ class ActiveLearningWorkflow(ABC):
         work_dir = Path("results", base_name)
         work_dir.mkdir(exist_ok=True, parents=True)
         init_config = self.jobs_dict["initialization"]
-        general_config = self.jobs_dict.get("general", {})
 
         self._import_start_data()
 
         initialiser_entry = resolve("initialiser", "default")
-        elements = general_config.get("elements")
-        if not elements:
-            raise ValueError(
-                "general.elements is required (list of atomic symbols, e.g. "
-                '["C", "O"]).'
-            )
+        elements = self._required_elements()
 
         if self.db.size > 0:
             logger.info(
@@ -1973,9 +2052,6 @@ class ActiveLearningWorkflow(ABC):
         drop candidates with unphysically short bonds. The generator caches
         its own candidates file for restarts."""
         sg_config = self.jobs_dict["structure_generation"]
-        sg_config.setdefault(
-            "desired_num_of_structures", _DEFAULT_DESIRED_NUM_OF_STRUCTURES
-        )
         selection_kwargs = sg_config.get("structure_selection_kwargs", {})
         eligible = filter_eligible_structures(
             ctx.train,
@@ -1996,6 +2072,19 @@ class ActiveLearningWorkflow(ABC):
             max_time=sg_config["max_time"],
         )
         kept: list[Atoms] = filter_structures_by_min_bond_distance(candidates)
+        per_loop = self.num_of_structures_per_loop
+        if len(kept) < 2 * per_loop:
+            logger.warning(
+                "Structure generation produced %d usable candidate(s), fewer "
+                "than twice general.num_of_structures_per_loop (%d): the "
+                "selector has little to choose from.",
+                len(kept),
+                per_loop,
+                extra={
+                    "event": "few_candidates_generated",
+                    "data": {"n": len(kept), "per_loop": per_loop},
+                },
+            )
         return kept
 
     def predict(

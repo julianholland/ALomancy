@@ -57,6 +57,48 @@ def read_structures(path: str | Path) -> list[Atoms]:
     return [frames] if isinstance(frames, Atoms) else list(frames)
 
 
+def filter_by_elements(
+    atoms_list: Iterable[Atoms], elements: Iterable[str], *, source: str = ""
+) -> list[Atoms]:
+    """Keep only structures made entirely of *elements*.
+
+    Imported data may contain species the run doesn't model (e.g. Na frames
+    in a carbon run); those are dropped before they reach the DB, so
+    redundancy removal and the train/test filters never see them. Logs one
+    WARNING (event ``start_from_elements_excluded``) when anything is dropped.
+    """
+    allowed = set(elements)
+    kept: list[Atoms] = []
+    foreign: set[str] = set()
+    n_excluded = 0
+    for atoms in atoms_list:
+        extra = set(atoms.get_chemical_symbols()) - allowed
+        if extra:
+            foreign |= extra
+            n_excluded += 1
+        else:
+            kept.append(atoms)
+    if n_excluded:
+        logger.warning(
+            "%s: excluded %d structure(s) containing element(s) %s not in "
+            "general.elements %s.",
+            source or "import",
+            n_excluded,
+            sorted(foreign),
+            sorted(allowed),
+            extra={
+                "event": "start_from_elements_excluded",
+                "data": {
+                    "source": source,
+                    "excluded": n_excluded,
+                    "foreign_elements": sorted(foreign),
+                    "elements": sorted(allowed),
+                },
+            },
+        )
+    return kept
+
+
 def strip_operational_metadata(atoms: Atoms) -> None:
     for key in _OPERATIONAL_INFO_KEYS:
         atoms.info.pop(key, None)

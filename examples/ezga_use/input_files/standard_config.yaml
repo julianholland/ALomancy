@@ -7,6 +7,7 @@ general:
     train_xyz: "input_files/C_Na_amorphous_5255_train.xyz"
     test_xyz: "input_files/C_Na_amorphous_583_test.xyz"
   num_of_al_loops: 25
+  num_of_structures_per_loop: 50  # selected for DFT each loop
   verbose: 1
   start_loop: 0
   dataset_kwargs:
@@ -60,7 +61,7 @@ training:
 structure_generation:
   name: "structure_generation"
   generator: "ezga"
-  desired_num_of_structures: 50
+  num_of_structures_to_generate: 500  # candidate pool (default 10x per loop)
   max_time: "10H"
   structure_selection_kwargs:
     chem_formula_list: null

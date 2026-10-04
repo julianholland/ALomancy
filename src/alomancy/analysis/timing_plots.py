@@ -37,6 +37,14 @@ _DFT_END_RE = re.compile(
     _TS + r".*High-accuracy evaluation completed for \d+ structures\."
 )
 _LOOP_END_RE = re.compile(_TS + r".*Completed AL loop (\d+),")
+# Phase boundaries logged by the @phase decorator (core/active_learning_
+# workflow.py) for every workflow. The message regexes above are fallbacks
+# for logs written before these markers existed.
+_GEN_PHASE_START_RE = re.compile(_TS + r".*Phase generate_structures started for ")
+_GEN_PHASE_END_RE = re.compile(
+    _TS + r".*Phase generate_structures marked complete for "
+)
+_DFT_PHASE_END_RE = re.compile(_TS + r".*Phase high_accuracy_eval marked complete for ")
 
 _QUEUE_COLOR = "#cccccc"
 _PHASE_LABELS = [
@@ -106,17 +114,17 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
                 )
                 continue
 
-            m = _GEN_START_RE.search(line)
+            m = _GEN_PHASE_START_RE.search(line) or _GEN_START_RE.search(line)
             if m and loops[active_loop]["gen_start"] is None:
                 loops[active_loop]["gen_start"] = _ts(m.group(1))
                 continue
 
-            m = _GEN_END_RE.search(line)
+            m = _GEN_PHASE_END_RE.search(line) or _GEN_END_RE.search(line)
             if m and loops[active_loop]["gen_end"] is None:
                 loops[active_loop]["gen_end"] = _ts(m.group(1))
                 continue
 
-            m = _DFT_END_RE.search(line)
+            m = _DFT_PHASE_END_RE.search(line) or _DFT_END_RE.search(line)
             if m and loops[active_loop]["dft_end"] is None:
                 loops[active_loop]["dft_end"] = _ts(m.group(1))
                 continue

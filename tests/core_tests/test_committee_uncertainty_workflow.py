@@ -129,9 +129,12 @@ def test_select_uncertain_predicts_with_best_model_first(
     prediction = {"forces": [np.zeros((1, 6))] * 2, "energies": [0.0, 0.0]}
     captured = {}
 
-    def fake_find(structure_list, base_name, job_dict, structure_forces_dict):
+    def fake_find(
+        structure_list, base_name, job_dict, structure_forces_dict, num_of_structures
+    ):
         captured["labels"] = list(structure_forces_dict)
         captured["name"] = job_dict["structure_generation"]["name"]
+        captured["num_of_structures"] = num_of_structures
         return structure_list[:1]
 
     with (
@@ -146,6 +149,7 @@ def test_select_uncertain_predicts_with_best_model_first(
     assert [m.fit_idx for m in predict.call_args.args[1]] == [1, 0, 2]
     assert captured["labels"] == ["base_mlip", "fit_0", "fit_2"]
     assert captured["name"] == "structure_generation"
+    assert captured["num_of_structures"] == wf.num_of_structures_per_loop
     assert len(selected) == 1
     assert Path("results/al_loop_0/generate_structures.done").exists()
 

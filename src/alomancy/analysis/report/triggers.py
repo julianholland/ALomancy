@@ -112,7 +112,7 @@ def remote_jobs_failed(stats: dict) -> dict | None:
 
 @trigger("fewer_candidates")
 def fewer_candidates(stats: dict) -> dict | None:
-    """Shortfall of candidates against desired_num_of_structures."""
+    """Shortfall of candidates against general.num_of_structures_per_loop."""
     rows = stats["events"]["data"].get("fewer_candidates") or []
     if not rows:
         return None
@@ -122,6 +122,21 @@ def fewer_candidates(stats: dict) -> dict | None:
         return None
     n = int(row.get("n") or 0)
     return {"value": 1 - n / desired, "n": n, "desired": desired}
+
+
+@trigger("few_candidates_generated")
+def few_candidates_generated(stats: dict) -> dict | None:
+    """Shortfall of generated candidates against twice general.
+    num_of_structures_per_loop (the selector's minimum useful pool)."""
+    rows = stats["events"]["data"].get("few_candidates_generated") or []
+    if not rows:
+        return None
+    row = rows[-1]
+    per_loop = int(row.get("per_loop") or 0)
+    if per_loop <= 0:
+        return None
+    n = int(row.get("n") or 0)
+    return {"value": 1 - n / (2 * per_loop), "n": n, "per_loop": per_loop}
 
 
 @trigger("redundancy_removed_new")

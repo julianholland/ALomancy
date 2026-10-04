@@ -5,8 +5,9 @@
 - [x] remove old timings plot(s) only the combined timings should be used
 - [x] only plot the best model of each loop for the totatl mlip mae plot
 - [x] add gold star watermark to top left of the subplot that has the lowest energy and lowest forces of the parity plots 
-- [ ] fix timings plot: only DFT plus queue time visible
-- [ ] fix the mlip_committee_al_loop_mae_plot this shouldn't be inside the loop folders but in the parent dir updated after each loop
+- [ ] fix timings plot: only DFT plus queue time visible 1.0
+- [ ] no test parity plots 1.0
+- [x] fix the mlip_committee_al_loop_mae_plot this shouldn't be inside the loop folders but in the parent dir updated after each loop
 
 
 ### Functionality 
@@ -20,7 +21,7 @@
 - [X] everything is defined in the config so to should the architecture the user should just call an ALomancy object and add the jobconfig to it and the correct skeleton is loaded as is the correct modules, 1.0
 - [X] remove pandas dependency entirely (swap with polars) and review other dependencies 1.0
 - [ ] surface construction allowing for different terminations, target symmetry vs preserved stoichiometry and cuts 1.1
-- [ ] Nequip interface, 1.0
+- [x] SevenNet interface, 1.0
 - [ ] FHI AIMS interface (or just a better ASE interface). 1.1
 - [x] novelty based selection, 1.0
 - [ ] rework plotting ownership, each module should own its own plots 1.1
@@ -28,4 +29,4 @@
 - [ ] optional imports per module (ezga, mace etc) 1.2
 - [ ] External validation not just forces and energy, tricky to define but should be done outside the loop (pdf, xrd) 2.0
 - [ ] torchsim integration for the mlip trainig/running 2.0
-
+- [ ] Don't include the executable in the list-hpc cli 1.1

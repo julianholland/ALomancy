@@ -241,13 +241,8 @@ class TestFindHighSdStructures:
     def _flatten(forces):
         return np.reshape(forces, (1, forces.shape[0] * 3))
 
-    def _build_job_dict(self, desired=3):
-        return {
-            "structure_generation": {
-                "name": "structure_generation",
-                "desired_num_of_structures": desired,
-            }
-        }
+    def _build_job_dict(self):
+        return {"structure_generation": {"name": "structure_generation"}}
 
     def _build_forces_dict(self, structures, n_models=3):
         rng = np.random.default_rng(42)
@@ -273,13 +268,15 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=3)
+        job_dict = self._build_job_dict()
+        desired = 3
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         result = find_high_sd_structures(
             structure_list=structures,
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=False,
         )
         assert len(result) == 3
@@ -292,13 +289,15 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=3)
+        job_dict = self._build_job_dict()
+        desired = 3
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         result = find_high_sd_structures(
             structure_list=structures,
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=False,
         )
         assert all(a in structures for a in result)
@@ -311,7 +310,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=3)
+        job_dict = self._build_job_dict()
+        desired = 3
         out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
         out_dir.mkdir(parents=True)
         find_high_sd_structures(
@@ -319,6 +319,7 @@ class TestFindHighSdStructures:
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=False,
         )
         assert (out_dir / "high_sd_structures.xyz").exists()
@@ -334,7 +335,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=2)
+        job_dict = self._build_job_dict()
+        desired = 2
         out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
         out_dir.mkdir(parents=True)
         # Write cache manually
@@ -355,6 +357,7 @@ class TestFindHighSdStructures:
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=True,
         )
         assert len(result) == 2
@@ -374,7 +377,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(2)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=5)
+        job_dict = self._build_job_dict()
+        desired = 5
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
 
         # setup_logging (when called) sets propagate=False on the "alomancy"
@@ -397,6 +401,7 @@ class TestFindHighSdStructures:
                 base_name="loop_0",
                 job_dict=job_dict,
                 structure_forces_dict=forces_dict,
+                num_of_structures=desired,
                 read_xyz=False,
             )
         finally:
@@ -419,7 +424,8 @@ class TestFindHighSdStructures:
         )
 
         monkeypatch.chdir(tmp_path)
-        job_dict = self._build_job_dict(desired=5)
+        job_dict = self._build_job_dict()
+        desired = 5
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         with pytest.raises(ValueError, match="No candidate structures"):
             find_high_sd_structures(
@@ -427,12 +433,13 @@ class TestFindHighSdStructures:
                 base_name="loop_0",
                 job_dict=job_dict,
                 structure_forces_dict={},
+                num_of_structures=desired,
                 read_xyz=False,
             )
 
     @pytest.mark.unit
     def test_desired_structures_zero_raises_value_error(self, tmp_path, monkeypatch):
-        """desired_num_of_structures <= 0 is a config error: ValueError,
+        """num_of_structures <= 0 is a config error: ValueError,
         not AssertionError (asserts are stripped under python -O)."""
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -441,7 +448,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(2)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=0)
+        job_dict = self._build_job_dict()
+        desired = 0
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         with pytest.raises(ValueError, match="greater than 0"):
             find_high_sd_structures(
@@ -449,6 +457,7 @@ class TestFindHighSdStructures:
                 base_name="loop_0",
                 job_dict=job_dict,
                 structure_forces_dict=forces_dict,
+                num_of_structures=desired,
                 read_xyz=False,
             )
 
@@ -1095,45 +1104,62 @@ class TestMolecularDynamics:
             model_path=["test_model.pt"],
             steps=100,
             temperature=300,
-            desired_num_of_structures=10,
+            num_of_structures_to_generate=10,
             timestep_fs=0.5,
             verbose=0,
         )
 
         mock_run_md.assert_called_once()
 
-    def test_md_parameter_validation(self):
-        """Test MD parameter validation."""
-        # Test valid parameters
-        valid_params = {
-            "steps": 100,
-            "temperature": 300,
-            "desired_num_of_structures": 20,
-            "total_md_runs": 5,
-        }
+    @staticmethod
+    def _run_emt_md(tmp_path, to_generate, steps=40, total_md_runs=1):
+        from ase.build import bulk
+        from ase.calculators.emt import EMT
 
-        # Check basic constraints
-        assert valid_params["desired_num_of_structures"] > 0
-        assert (
-            valid_params["steps"]
-            > valid_params["desired_num_of_structures"] / valid_params["total_md_runs"]
+        from alomancy.structure_generation.md.md_wfl import run_md
+
+        atoms = bulk("Cu", "fcc", a=3.6, cubic=True)
+        atoms.info["job_id"] = 0
+        atoms.info["md_seed"] = 1
+        run_md(
+            structure_generation_job_dict={
+                "name": "structure_generation",
+                "num_of_structures_to_generate": to_generate,
+            },
+            initial_structure=atoms,
+            total_md_runs=total_md_runs,
+            out_dir=str(tmp_path),
+            model_path=None,
+            steps=steps,
+            calculator=EMT(),
         )
-        assert valid_params["temperature"] > 0
 
-        # Test invalid parameters that would cause division by zero
-        invalid_params = {
-            "steps": 10,
-            "desired_num_of_structures": 50,
-            "total_md_runs": 5,
-        }
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "to_generate, total_md_runs, expected", [(8, 1, 8), (8, 2, 4), (40, 1, 40)]
+    )
+    def test_snapshots_split_num_to_generate_across_runs(
+        self, tmp_path, to_generate, total_md_runs, expected
+    ):
+        """Each run writes its share of num_of_structures_to_generate."""
+        from ase.io import read
 
-        # This should fail the constraint
-        snapshot_interval = (
-            invalid_params["steps"]
-            * invalid_params["total_md_runs"]
-            // invalid_params["desired_num_of_structures"]
-        )
-        assert snapshot_interval == 1  # This would be problematic for the loop
+        self._run_emt_md(tmp_path, to_generate, total_md_runs=total_md_runs)
+        frames = read(tmp_path / "structure_generation.xyz", ":")
+        assert len(frames) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_non_positive_num_to_generate_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="num_of_structures_to_generate"):
+            self._run_emt_md(tmp_path, bad)
+
+    @pytest.mark.unit
+    def test_more_structures_than_md_steps_raises(self, tmp_path):
+        """steps x runs < num_of_structures_to_generate would make the
+        snapshot interval 0."""
+        with pytest.raises(ValueError, match="num_of_structures_to_generate"):
+            self._run_emt_md(tmp_path, 41, steps=40)
 
     @patch("ase.md.langevin.Langevin")
     @patch("mace.calculators.MACECalculator")
@@ -1183,7 +1209,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1215,7 +1241,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1259,7 +1285,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_num_of_structures": 1,
+                "num_of_structures_to_generate": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1302,7 +1328,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_num_of_structures": 1,
+                "num_of_structures_to_generate": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1343,7 +1369,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_num_of_structures": 1,
+                "num_of_structures_to_generate": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1376,7 +1402,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1406,7 +1432,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1441,7 +1467,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1478,7 +1504,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1506,7 +1532,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1892,7 +1918,7 @@ class TestMdTrajectoryOutput:
         run_md(
             structure_generation_job_dict={
                 "name": "structure_generation",
-                "desired_num_of_structures": 2,
+                "num_of_structures_to_generate": 20,
             },
             initial_structure=atoms,
             total_md_runs=1,

@@ -9,6 +9,7 @@ from ase.io import write
 
 from alomancy.utils.import_structures import (
     EXTERNAL_CONFIG_TYPE,
+    filter_by_elements,
     normalize_metadata,
     read_structures,
 )
@@ -161,3 +162,50 @@ def test_read_structures_reads_every_frame(tmp_path):
 def test_read_structures_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
         read_structures(tmp_path / "nope.xyz")
+
+
+@pytest.mark.unit
+def test_filter_by_elements_drops_structures_with_other_elements():
+    import logging
+
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger = logging.getLogger("alomancy")
+    logger.addHandler(handler)
+    try:
+        kept = filter_by_elements(
+            [Atoms("C2"), Atoms("CNa"), Atoms("C"), Atoms("NaLi")],
+            ["C"],
+            source="data.xyz",
+        )
+    finally:
+        logger.removeHandler(handler)
+
+    assert [a.get_chemical_formula() for a in kept] == ["C2", "C"]
+    (record,) = records
+    assert record.event == "start_from_elements_excluded"
+    assert record.data == {
+        "source": "data.xyz",
+        "excluded": 2,
+        "foreign_elements": ["Li", "Na"],
+        "elements": ["C"],
+    }
+
+
+@pytest.mark.unit
+def test_filter_by_elements_keeps_everything_silently_when_all_allowed():
+    import logging
+
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger = logging.getLogger("alomancy")
+    logger.addHandler(handler)
+    try:
+        kept = filter_by_elements([Atoms("C2"), Atoms("CNa")], ["Na", "C"])
+    finally:
+        logger.removeHandler(handler)
+
+    assert len(kept) == 2
+    assert records == []

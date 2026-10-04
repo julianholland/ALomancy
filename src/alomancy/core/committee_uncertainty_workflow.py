@@ -146,6 +146,7 @@ class CommitteeUncertaintyWorkflow(ActiveLearningWorkflow):
                 },
             },
             structure_forces_dict=structure_forces_dict,
+            num_of_structures=self.num_of_structures_per_loop,
         )
         return selected
 

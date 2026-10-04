@@ -43,6 +43,7 @@ from alomancy.mlip.evaluation import (
     read_evaluation,
     save_evaluation,
 )
+from alomancy.utils.clean_structures import drop_unwritable_info
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +310,9 @@ class ALomancyTrainer(ABC):
             out = []
             n_ok = n_failed = n_no_stress = 0
             for atoms in atoms_list:
-                a = atoms.copy()
+                # Inputs written by older versions can carry an empty info
+                # value that would swallow model_energy in the pred file.
+                a = drop_unwritable_info(atoms.copy())
                 a.info.pop("model_energy", None)
                 a.info.pop("model_stress", None)
                 a.arrays.pop("model_forces", None)
@@ -469,13 +472,27 @@ def read_predictions(fit_dir: Path) -> dict[int, dict]:
         except Exception as exc:
             logger.warning("Failed to read %s: %s", xyz, exc)
             continue
+        n_skipped = 0
         for atoms in atoms_list:
             gid = atoms.info.get("global_db_id")
             if gid is None or "model_energy" not in atoms.info:
+                n_skipped += 1
                 continue
             forces = atoms.arrays.get("model_forces")
             preds[int(gid)] = {
                 "energy": float(atoms.info["model_energy"]),
                 "forces": np.asarray(forces).tolist() if forces is not None else [],
             }
+        if n_skipped:
+            logger.warning(
+                "%d of %d structure(s) in %s have no model_energy or "
+                "global_db_id; they are left out of the parity plots.",
+                n_skipped,
+                len(atoms_list),
+                xyz,
+                extra={
+                    "event": "predictions_unreadable",
+                    "data": {"file": str(xyz), "n": n_skipped, "of": len(atoms_list)},
+                },
+            )
     return preds

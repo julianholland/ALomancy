@@ -8,6 +8,9 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from sage_lib.partition.Partition import Partition
 from sage_lib.single_run.SingleRun import SingleRun
 
+from alomancy.utils.clean_structures import drop_unwritable_info
+from alomancy.utils.import_structures import filter_by_elements
+
 _DEFAULT_DEDUP_CONFIG_TYPES = ["IsolatedAtom", "init_MP"]
 
 logger = logging.getLogger(__name__)
@@ -117,7 +120,9 @@ class GlobalDatabase:
         self.partition.add(sr_list)
         return added
 
-    def import_from_database(self, source_path: str | Path) -> int:
+    def import_from_database(
+        self, source_path: str | Path, *, elements: list[str] | None = None
+    ) -> int:
         """Copy every structure of a former ALomancy GlobalDatabase into this
         one, keeping its config_type, split and duplicate flags.
 
@@ -126,7 +131,8 @@ class GlobalDatabase:
         ``source_global_db_id`` (this DB assigns its own ids), per-loop model
         predictions are dropped (they describe the old run's models), and
         every copy is tagged ``source_database`` so importing the same DB
-        again is a no-op. Returns the number of structures added.
+        again is a no-op. With *elements*, structures containing any other
+        element are not imported. Returns the number of structures added.
         """
         source = Path(source_path).resolve()
         if not source.is_dir():
@@ -145,6 +151,8 @@ class GlobalDatabase:
             return 0
 
         atoms_list = GlobalDatabase(marker).get_all_as_atoms()
+        if elements is not None:
+            atoms_list = filter_by_elements(atoms_list, elements, source=marker)
         for atoms in atoms_list:
             old_id = atoms.info.pop("global_db_id", None)
             if old_id is not None:
@@ -715,5 +723,7 @@ class GlobalDatabase:
             atoms.arrays["REF_forces"] = forces
         if stress is not None:
             atoms.info["REF_stresses"] = np.array(stress)
-
+        # e.g. quality_filter_reasons=[]: kept in the DB, but would corrupt
+        # the next key of any xyz file written from these atoms.
+        drop_unwritable_info(atoms)
         return atoms

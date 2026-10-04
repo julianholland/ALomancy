@@ -232,8 +232,9 @@ def collect_loop_stats(workflow: Any, loop: int) -> dict[str, Any]:
                 "evaluator", "qe"
             ),
         },
-        "desired_num_of_structures": jobs.get("structure_generation", {}).get(
-            "desired_num_of_structures"
+        "num_of_structures_per_loop": workflow.num_of_structures_per_loop,
+        "num_of_structures_to_generate": jobs.get("structure_generation", {}).get(
+            "num_of_structures_to_generate"
         ),
         "train_filter": workflow.train_filter,
         "model": _model_stats(base_name),

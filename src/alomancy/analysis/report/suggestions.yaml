@@ -76,6 +76,16 @@ fewer_candidates:
     Generate more: raise md_kwargs.steps or
     structure_selection_kwargs.num_of_md_starts.
 
+few_candidates_generated:
+  threshold: 0.01
+  severity: warning
+  suggestion: >-
+    Structure generation produced only {n} usable candidates, less than
+    twice the {per_loop} structures added per loop, so the selector had
+    little to choose from. Raise
+    structure_generation.num_of_structures_to_generate (and md_kwargs.steps
+    or structure_selection_kwargs.num_of_md_starts if MD runs end early).
+
 redundancy_removed_new:
   threshold: 0.50
   severity: warning

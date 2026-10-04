@@ -208,6 +208,89 @@ class TestBuildWorkflow:
         assert "number_of_al_loops" in str(exc_info.value)
         assert "num_dimers_per_combo" in str(exc_info.value)
 
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "old", ["desired_num_of_structures", "desired_number_of_structures"]
+    )
+    def test_old_desired_structures_key_points_at_new_keys(
+        self, tmp_path, workflow_jobs_dict, shared_db, old
+    ):
+        workflow_jobs_dict["structure_generation"][old] = 50
+        with pytest.raises(ValueError) as exc_info:
+            _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        message = str(exc_info.value)
+        assert f"structure_generation.{old} -> general.num_of_structures_per_loop" in (
+            message
+        )
+        assert "num_of_structures_to_generate" in message
+
+    @pytest.mark.unit
+    def test_num_to_generate_defaults_to_ten_times_per_loop(
+        self, tmp_path, workflow_jobs_dict, shared_db
+    ):
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, num_of_structures_per_loop=7
+        )
+        assert wf.num_of_structures_per_loop == 7
+        assert (
+            wf.jobs_dict["structure_generation"]["num_of_structures_to_generate"] == 70
+        )
+
+    @pytest.mark.unit
+    def test_num_to_generate_below_per_loop_raises(
+        self, tmp_path, workflow_jobs_dict, shared_db
+    ):
+        workflow_jobs_dict["structure_generation"]["num_of_structures_to_generate"] = 9
+        with pytest.raises(ValueError, match="num_of_structures_to_generate \\(9\\)"):
+            _make_workflow(
+                tmp_path, workflow_jobs_dict, shared_db, num_of_structures_per_loop=10
+            )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("key", "bad"),
+        [
+            ("num_of_structures_per_loop", 0),
+            ("num_of_structures_per_loop", True),
+            ("num_of_structures_per_loop", 2.5),
+            ("num_of_structures_to_generate", 0),
+            ("num_of_structures_to_generate", "100"),
+        ],
+    )
+    def test_non_positive_int_structure_counts_raise(
+        self, tmp_path, workflow_jobs_dict, shared_db, key, bad
+    ):
+        if key == "num_of_structures_per_loop":
+            workflow_jobs_dict["general"][key] = bad
+        else:
+            workflow_jobs_dict["structure_generation"][key] = bad
+        with pytest.raises(ValueError, match=f"{key} must be a positive integer"):
+            _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("to_generate", "warns"), [(10, True), (19, True), (20, False)]
+    )
+    def test_warns_when_num_to_generate_below_twice_per_loop(
+        self, tmp_path, workflow_jobs_dict, shared_db, to_generate, warns
+    ):
+        workflow_jobs_dict["structure_generation"]["num_of_structures_to_generate"] = (
+            to_generate
+        )
+        records: list[logging.LogRecord] = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        module_logger = logging.getLogger("alomancy.core.active_learning_workflow")
+        module_logger.addHandler(handler)
+        try:
+            _make_workflow(
+                tmp_path, workflow_jobs_dict, shared_db, num_of_structures_per_loop=10
+            )
+        finally:
+            module_logger.removeHandler(handler)
+        events = [getattr(r, "event", None) for r in records]
+        assert ("few_candidates_configured" in events) is warns
+
     def test_warns_on_unrecognised_general_key(
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
@@ -932,22 +1015,35 @@ class TestPredict:
 
 @pytest.mark.unit
 class TestGenerateCandidates:
-    def test_defaults_desired_number_of_structures_when_absent(
+    @pytest.mark.unit
+    def test_warns_when_fewer_than_twice_per_loop_candidates(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
-        """find_high_sd_structures/run_md (old, shared) both require this
-        key with no default of their own -- the parent must apply one
-        consistent default regardless of which generator module runs."""
         monkeypatch.chdir(tmp_path)
-        del minimal_jobs_dict["structure_generation"]["desired_num_of_structures"]
-        wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+        wf = _make_workflow(
+            tmp_path, minimal_jobs_dict, shared_db, num_of_structures_per_loop=2
+        )
         fake_generator = MagicMock()
-        fake_generator.generate.return_value = []
+        fake_generator.generate.return_value = [
+            Atoms("H2", positions=[[0, 0, 0], [1.0, 0, 0]], cell=[5] * 3, pbc=True)
+            for _ in range(3)
+        ]
+        records = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        module_logger = logging.getLogger("alomancy.core.active_learning_workflow")
+        module_logger.addHandler(handler)
+        try:
+            with patch(f"{_MODULE}.resolve", return_value=fake_generator):
+                kept = wf.generate_candidates(_ctx(0, train=[_atoms()]), _model(0))
+        finally:
+            module_logger.removeHandler(handler)
 
-        with patch(f"{_MODULE}.resolve", return_value=fake_generator):
-            wf.generate_candidates(_ctx(0, train=[_atoms()]), _model(0))
-
-        assert wf.jobs_dict["structure_generation"]["desired_num_of_structures"] == 50
+        assert len(kept) == 3
+        events = [getattr(r, "event", None) for r in records]
+        assert "few_candidates_generated" in events
+        record = records[events.index("few_candidates_generated")]
+        assert record.data == {"n": 3, "per_loop": 2}
 
     def test_runs_generator_with_model_and_filters_short_bonds(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
@@ -1334,6 +1430,59 @@ class TestStartModes:
 
         assert shared_db.size == size == 6
 
+    @staticmethod
+    def _foreign(i: int, config_type: str = "init_amorphous") -> Atoms:
+        """Like _labelled, but contains Li -- not in the fixture's elements ["H"]."""
+        a = _labelled(i, config_type)
+        a.symbols[1] = "Li"
+        return a
+
+    def test_xyz_import_excludes_structures_with_other_elements(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("a.xyz", [_labelled(i) for i in range(4)], format="extxyz")
+        write("b.xyz", [self._foreign(i) for i in range(3)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={"xyz": ["a.xyz", "b.xyz"]},
+        )
+
+        train, test = self._init(wf)
+
+        # Excluded at import, so never in the DB that redundancy removal and
+        # the train/test filters (_curate_dataset, run after this) work on.
+        assert shared_db.size == 4
+        for atoms in shared_db.get_all_as_atoms() + train + test:
+            assert set(atoms.get_chemical_symbols()) == {"H"}
+
+    def test_database_import_excludes_structures_with_other_elements(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        from alomancy.database.global_database import GlobalDatabase
+
+        monkeypatch.chdir(tmp_path)
+        old = GlobalDatabase(str(tmp_path / "old_run" / "global_database"))
+        old.add_structures([_labelled(0), _labelled(1)], split="train")
+        old.add_structures([self._foreign(2)], split="test")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={"database": "old_run/global_database"},
+        )
+
+        self._init(wf)
+
+        assert shared_db.size == 2
+        assert all(
+            set(a.get_chemical_symbols()) == {"H"} for a in shared_db.get_all_as_atoms()
+        )
+
     def test_database_copy_keeps_splits_and_leaves_source_alone(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1687,17 +1836,15 @@ class TestResolveEffectivePhaseDict:
         effective = _resolve_effective_phase_dict("training", phase_dict)
         assert effective["mace_kwargs"]["E0s"] == {"H": -1.0}
 
-    def test_structure_generation_merges_md_defaults_and_desired_number(self):
+    def test_structure_generation_merges_md_defaults(self):
         phase_dict = {"generator": "md", "md_kwargs": {"steps": 500}}
         effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
         assert effective["md_kwargs"]["steps"] == 500
         assert effective["md_kwargs"]["temperature"] == 300  # default
-        assert effective["desired_num_of_structures"] == 50  # default
 
-    def test_structure_generation_respects_existing_desired_number(self):
-        phase_dict = {"generator": "md", "desired_num_of_structures": 10}
-        effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
-        assert effective["desired_num_of_structures"] == 10
+    def test_general_defaults_num_of_structures_per_loop(self):
+        effective = _resolve_effective_phase_dict("general", {})
+        assert effective["num_of_structures_per_loop"] == 50
 
     def test_structure_generation_ezga_defaults(self):
         phase_dict = {"generator": "ezga", "ezga_kwargs": {"population_size": 10}}
@@ -2111,3 +2258,88 @@ def test_train_models_end_to_end_through_a_registered_trainer(
         .startswith(b"deployed")
     )
     assert shared_db.get_model_predictions(0, 0) is not None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("legacy_input_files", [False, True])
+def test_every_split_keeps_its_predictions_through_the_training_chain(
+    tmp_path, workflow_jobs_dict, monkeypatch, shared_db, legacy_input_files
+):
+    """Regression: quality_filter_reasons=[] (every structure that passes
+    the filters) was written as a bare "quality_filter_reasons=" in
+    test_pred.xyz, which swallowed model_energy on read. No test predictions
+    reached the DB and no test parity plot was drawn, while train/valid
+    survived by accident. Runs the real chain: DB -> filters -> set files ->
+    train_models (split files, evaluate, pred files) -> DB -> parity plot.
+    legacy_input_files: set files written by an older version, still
+    carrying the empty value -- evaluate must strip it itself."""
+    from alomancy.analysis.mlip_plots import plot_dft_vs_model
+    from alomancy.mlip.base import read_predictions
+    from alomancy.registry import _REGISTRY, register
+    from alomancy.utils.split_filter import apply_split_filter
+
+    monkeypatch.chdir(tmp_path)
+    register("mlip_trainer", "emt_e2e", __name__, trainer_class="_EMTTrainer")
+    try:
+        workflow_jobs_dict["training"]["trainer"] = "emt_e2e"
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        cu = [
+            Atoms(
+                "Cu2",
+                positions=[[0, 0, 0], [2.3 + 0.05 * i, 0, 0]],
+                cell=[8] * 3,
+                pbc=True,
+            )
+            for i in range(8)
+        ]
+        for a in cu:
+            a.info.update(config_type="init_dimer", REF_energy=0.5)
+            a.arrays["REF_forces"] = np.zeros((2, 3))
+        shared_db.add_structures(cu[:6], split="train", skip_duplicates=False)
+        shared_db.add_structures(cu[6:], split="test", skip_duplicates=False)
+        shared_db.assign_global_db_ids()
+        for split in ("train", "test"):
+            apply_split_filter(shared_db, split, {"max_force": 100.0})
+        train_atoms = shared_db.get_train_atoms()
+        test_atoms = shared_db.get_test_atoms()
+        if legacy_input_files:
+            for a in train_atoms + test_atoms:
+                a.info["quality_filter_reasons"] = []
+        workdir = Path("results/al_loop_0")
+        workdir.mkdir(parents=True)
+        write(workdir / "train_set.xyz", train_atoms, format="extxyz")
+        write(workdir / "test_set.xyz", test_atoms, format="extxyz")
+
+        def in_process(function, job_configs, remote_info, **kwargs):
+            return [function(**jc["function_kwargs"]) for jc in job_configs]
+
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=in_process),
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            wf.train_models(_ctx(0, train=train_atoms, test=test_atoms), wf.seeds(1))
+    finally:
+        del _REGISTRY["mlip_trainer"]["emt_e2e"]
+
+    fit_dir = Path("results/al_loop_0/training/fit_0")
+    predicted = set(read_predictions(fit_dir))
+    test_ids = {a.info["global_db_id"] for a in test_atoms}
+    train_ids = {a.info["global_db_id"] for a in train_atoms}
+    assert test_ids <= predicted, "test structures lost their model_energy"
+    assert train_ids <= predicted
+
+    stored = shared_db.get_model_predictions(0, 0)
+    assert stored is not None
+    assert len(stored["test"][0]) == len(test_atoms)
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    plot_dft_vs_model(
+        "al_loop_0",
+        {"name": "training", "num_of_models_in_committee": 1},
+        seed=wf.seed,
+        plots_dir=plots_dir,
+        db=shared_db,
+        loop_idx=0,
+    )
+    assert (plots_dir / "fit_parity_test_al_loop_0.png").exists()

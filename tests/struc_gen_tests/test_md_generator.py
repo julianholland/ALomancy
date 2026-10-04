@@ -52,7 +52,7 @@ class TestRunMdCalculatorParameter:
             run_md(
                 structure_generation_job_dict={
                     "name": "t",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -78,7 +78,7 @@ class TestRunMdCalculatorParameter:
             run_md(
                 structure_generation_job_dict={
                     "name": "t",
-                    "desired_num_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,

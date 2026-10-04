@@ -6,7 +6,7 @@ candidate with redundancy removal's global descriptor (``char_vec_128``) →
 build one distance matrix over the database's non-redundant structures
 plus the candidates → binary-search (deduplicate_lib's
 ``binary_search_tolerance``) the largest tolerance at which at most
-``structure_generation.desired_num_of_structures`` candidates have no
+``general.num_of_structures_per_loop`` candidates have no
 neighbour, candidate or database, closer than it → DFT those candidates →
 add to the dataset.
 
@@ -185,13 +185,13 @@ class NoveltySelectionWorkflow(ActiveLearningWorkflow):
     @phase("generate_structures", load=_load_selected)
     def select_novel(self, ctx: LoopContext, model: TrainedModel) -> list[Atoms]:
         """Generate candidates with *model* and keep up to
-        desired_num_of_structures of them, chosen for highest novelty."""
+        general.num_of_structures_per_loop of them, chosen for highest novelty."""
         candidates = self.generate_candidates(ctx, model)
-        wanted = self.jobs_dict["structure_generation"]["desired_num_of_structures"]
+        wanted = self.num_of_structures_per_loop
         if len(candidates) <= wanted:
             logger.warning(
                 "Only %d candidate(s) generated for %s; selecting all of them "
-                "(desired_num_of_structures=%d).",
+                "(general.num_of_structures_per_loop=%d).",
                 len(candidates),
                 ctx.base_name,
                 wanted,

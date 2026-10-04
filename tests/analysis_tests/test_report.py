@@ -97,7 +97,7 @@ def jobs_dict(minimal_jobs_dict):
     }
     minimal_jobs_dict["training"] = minimal_jobs_dict.pop("mlip_committee")
     del minimal_jobs_dict["training"]["num_of_models_in_committee"]
-    minimal_jobs_dict["structure_generation"]["desired_num_of_structures"] = 4
+    minimal_jobs_dict["general"]["num_of_structures_per_loop"] = 4
     return minimal_jobs_dict
 
 

@@ -324,3 +324,32 @@ def test_prediction_files_carry_no_calculator_results(tmp_path, splits):
     for atoms in read(fit_dir / "train_pred.xyz", ":"):
         assert atoms.calc is None or "energy" not in (atoms.calc.results or {})
         assert "model_energy" in atoms.info
+
+
+@pytest.mark.unit
+def test_read_predictions_warns_about_structures_it_cannot_use(tmp_path):
+    """Frames without model_energy were skipped silently, which hid the
+    test parity plots disappearing; now each file with any gets a warning."""
+    import logging
+
+    good = Atoms("H", cell=[3.0] * 3, pbc=True)
+    good.info.update(global_db_id=0, model_energy=-1.0)
+    bad = Atoms("H", cell=[3.0] * 3, pbc=True)
+    bad.info["global_db_id"] = 1
+    write(tmp_path / "test_pred.xyz", [good, bad], format="extxyz")
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    module_logger = logging.getLogger("alomancy.mlip.base")
+    module_logger.addHandler(handler)
+    try:
+        preds = read_predictions(tmp_path)
+    finally:
+        module_logger.removeHandler(handler)
+
+    assert set(preds) == {0}
+    (warning,) = [r for r in records if r.levelno == logging.WARNING]
+    assert "1 of 2" in warning.getMessage()
+    assert "test_pred.xyz" in warning.getMessage()
+    assert warning.event == "predictions_unreadable"

@@ -139,7 +139,6 @@ def minimal_jobs_dict():
         },
         "structure_generation": {
             "name": "structure_generation",
-            "desired_num_of_structures": 5,
             "max_time": "30m",
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },

@@ -80,7 +80,7 @@ general:
 
 After the import, all four modes follow the same path:
 
-1. **Import into this run's database** (`results/global_database`). Imports are idempotent. Each xyz file's SHA-256 (and a database's path) is recorded on its structures, so restarting a run never imports the same data twice.
+1. **Import into this run's database** (`results/global_database`). Imports are idempotent. Each xyz file's SHA-256 (and a database's path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in `general.elements` are dropped at import, with one warning per source giving the count (event `start_from_elements_excluded`). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to `general.elements` later does not bring back structures that an earlier import excluded. To get them, start a fresh run.
 2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section.
 3. **Split into train/test** (next section) and write `results/initialization/train_set.xyz` / `test_set.xyz`.
 4. **Start the AL loop.**

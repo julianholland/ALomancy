@@ -2,7 +2,7 @@
 random, label them with DFT, repeat.
 
 A baseline to compare uncertainty-driven workflows against: it spends the
-same DFT budget per loop (``structure_generation.desired_num_of_structures``)
+same DFT budget per loop (``general.num_of_structures_per_loop``)
 but chooses which candidates to label uniformly at random. Also the
 smallest complete example of an ``ActiveLearningWorkflow`` child -- see
 docs/writing_a_workflow.md.
@@ -68,14 +68,14 @@ class RandomSelectionWorkflow(ActiveLearningWorkflow):
     @phase("generate_structures", load=_load_selected)
     def select_random(self, ctx: LoopContext, model: TrainedModel) -> list[Atoms]:
         """Generate candidates with *model* and keep
-        desired_num_of_structures of them, chosen uniformly at random."""
+        general.num_of_structures_per_loop of them, chosen uniformly at random."""
         candidates = self.generate_candidates(ctx, model)
-        wanted = self.jobs_dict["structure_generation"]["desired_num_of_structures"]
+        wanted = self.num_of_structures_per_loop
         n = min(wanted, len(candidates))
         if n < wanted:
             logger.warning(
                 "Only %d candidate(s) generated for %s; selecting all of them "
-                "(desired_num_of_structures=%d).",
+                "(general.num_of_structures_per_loop=%d).",
                 len(candidates),
                 ctx.base_name,
                 wanted,

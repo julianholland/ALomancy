@@ -955,6 +955,36 @@ class TestGlobalDbId:
         assert ids_after_first == ids_after_second
 
 
+class TestExportIsExtxyzSafe:
+    """Structures leaving the DB never carry an empty info value: extxyz
+    turns one into a bare "key=" on its second write, which swallows the
+    next key (this emptied every test_pred.xyz's model_energy)."""
+
+    @pytest.mark.unit
+    def test_passing_quality_filter_reasons_is_not_exported(self, tmp_path):
+        from alomancy.utils.split_filter import apply_split_filter
+
+        db = GlobalDatabase(str(tmp_path / "db"))
+        atoms = make_atoms(
+            ["H", "H"],
+            config_type="init_dimer",
+            ref_energy=-1.0,
+            ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+        )
+        db.add_structures([atoms], split="test", skip_duplicates=False)
+        apply_split_filter(db, "test", {"max_force": 100.0})
+
+        meta = next(iter(db.partition.list_containers())).AtomPositionManager.metadata
+        assert meta["quality_filter_reasons"] == []  # kept in the DB itself
+        (exported,) = db.get_test_atoms()
+        assert "quality_filter_reasons" not in exported.info
+        assert not any(
+            (v.size == 0 if isinstance(v, np.ndarray) else len(v) == 0)
+            for v in exported.info.values()
+            if isinstance(v, list | tuple | str | np.ndarray)
+        )
+
+
 class TestMacePredictions:
     """Tests for store_model_predictions and get_model_predictions."""
 

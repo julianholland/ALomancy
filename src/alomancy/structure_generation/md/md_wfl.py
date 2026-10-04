@@ -105,19 +105,22 @@ def run_md(
             f"{traj_interval!r}."
         )
 
-    assert structure_generation_job_dict["desired_num_of_structures"] > 0, (
-        "Number of structures must be greater than 0"
-    )
-    assert (
-        steps
-        > structure_generation_job_dict["desired_num_of_structures"] / total_md_runs
-    ), (
-        "Number of steps must be greater than the number of structures divided by the number of intended MD runs"
-    )
-    # further asserting needed here to avoid:
-    # for i in range(steps // snapshot_interval):
-    #                ~~~~~~^^~~~~~~~~~~~~~~~~~~
-    # ZeroDivisionError: integer division or modulo by zero
+    num_of_structures_to_generate = structure_generation_job_dict[
+        "num_of_structures_to_generate"
+    ]
+    if num_of_structures_to_generate <= 0:
+        raise ValueError(
+            "structure_generation.num_of_structures_to_generate must be greater "
+            f"than 0, got {num_of_structures_to_generate!r}."
+        )
+    # Otherwise the snapshot interval below is 0 (ZeroDivisionError).
+    if steps * total_md_runs < num_of_structures_to_generate:
+        raise ValueError(
+            f"md_kwargs.steps ({steps}) x {total_md_runs} MD run(s) is fewer "
+            "than structure_generation.num_of_structures_to_generate "
+            f"({num_of_structures_to_generate}): each candidate is one MD step "
+            "at least."
+        )
 
     Path(out_dir).mkdir(exist_ok=True, parents=True)
 
@@ -217,11 +220,8 @@ def run_md(
 
         dyn.attach(_write_traj_frame, interval=traj_interval)
 
-    snapshot_interval = (
-        steps
-        * total_md_runs
-        // (structure_generation_job_dict["desired_num_of_structures"] * 10)
-    )
+    # num_of_structures_to_generate snapshots in total, across all runs.
+    snapshot_interval = steps * total_md_runs // num_of_structures_to_generate
 
     for _ in range(steps // snapshot_interval):
         # recording -- happens before any force check/dynamics step below,

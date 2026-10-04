@@ -185,6 +185,7 @@ The configuration YAML file defines all the stages of the active learning workfl
 general:
   al_workflow: "committee_uncertainty"
   elements: ["H", "O"]   # atomic symbols, not atomic numbers
+  num_of_structures_per_loop: 50   # structures selected for DFT each loop
   dataset_kwargs:
     target_config_types:
       - "IsolatedAtom"
@@ -219,7 +220,7 @@ training:
 structure_generation:
   name: "structure_generation"
   generator: "md"   # "md" (default) or "ezga"
-  desired_num_of_structures: 50
+  num_of_structures_to_generate: 500   # candidate pool; default 10x per loop
   max_time: "10H"
   hpc: 'my_gpu_hpc'
 
@@ -232,19 +233,19 @@ high_accuracy_evaluation:
 
 ### Configuration Key Descriptions
 
-- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
+- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `num_of_structures_per_loop` (default 50) is how many structures the selector sends to DFT each loop. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
 
 - **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 
 - **training**: Trains an ensemble (committee) of interatomic potentials. `trainer` selects the registered `mlip_trainer` backend (currently only `"mace"`); backend-specific settings go under `mace_kwargs`.
 
-- **structure_generation**: Generates candidate structures for labeling. `generator` selects the registered `structure_generator` backend (`"md"`, the default, or `"ezga"` for genetic-algorithm search); uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `md_kwargs`:
+- **structure_generation**: Generates candidate structures for labeling. `num_of_structures_to_generate` (default 10 × `general.num_of_structures_per_loop`) is the size of the candidate pool; it must be at least `num_of_structures_per_loop` (error) and should be at least twice it (warning). `generator` selects the registered `structure_generator` backend (`"md"`, the default, or `"ezga"` for genetic-algorithm search); uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `md_kwargs`:
 
   ```yaml
   structure_generation:
     name: "structure_generation"
     generator: "md"
-    desired_num_of_structures: 50
+    num_of_structures_to_generate: 500   # candidate pool; default 10x per loop
     max_time: "10H"
     md_kwargs:
       steps: 20000
