@@ -1,0 +1,25 @@
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "S"]
+  # No start_from: a cold start (see docs/starting_a_run.md).
+  num_of_al_loops: 5
+  verbose: 1
+  start_loop: 0
+  dataset_kwargs:
+    target_config_types:
+      - "init_MP"
+    test_ratio: 0.1
+
+initialization:
+
+training:
+  trainer: "mace"  # selects the registered mlip_trainer backend (registry.py)
+  hpc: "raccoon_big"
+
+structure_generation:
+  generator: "md"  
+  hpc: "raccoon_big"
+
+high_accuracy_evaluation:
+  evaluator: "qe"  
+  hpc: "raven"

@@ -2,7 +2,8 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import pandas as pd
+import polars as pl
+from matplotlib.ticker import MaxNLocator
 
 from alomancy.analysis.colors import PALETTE, add_logo_watermark, setup_alomancy_style
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 class Plot:
     def __init__(
         self,
-        data: pd.DataFrame,
+        data: pl.DataFrame | dict | list,
         title: str,
         xlabel: str,
         ylabel: str,
@@ -21,7 +22,8 @@ class Plot:
         error_bars: bool = False,
     ):
         """
-        data: pd.DataFrame or dict-like, where each column/field is a series to plot
+        data: pl.DataFrame or dict-like, where each column/field is a series
+        to plot against its row number
         """
         self.data = data
         self.error_bars = error_bars
@@ -37,7 +39,7 @@ class Plot:
         self.ax = None
 
     def find_data(self, data_name):
-        if isinstance(self.data, pd.DataFrame):
+        if isinstance(self.data, pl.DataFrame):
             return self.data[data_name]
 
     def create(self):
@@ -50,11 +52,11 @@ class Plot:
         setup_alomancy_style()
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.set_prop_cycle(matplotlib.cycler(color=PALETTE))
-        if isinstance(self.data, pd.DataFrame):
+        if isinstance(self.data, pl.DataFrame):
             for col in self.data.columns:
                 ax.plot(
-                    self.data.index,
-                    self.data[col],
+                    range(self.data.height),
+                    self.data[col].to_numpy(),
                     marker="o",
                     linestyle="-",
                     label=col,
@@ -84,8 +86,8 @@ class Plot:
 
     def clear(self):
         logger.debug("Clearing plot data")
-        if isinstance(self.data, pd.DataFrame):
-            self.data = self.data.iloc[0:0]
+        if isinstance(self.data, pl.DataFrame):
+            self.data = self.data.clear()
         elif isinstance(self.data, dict):
             self.data = {k: [] for k in self.data}
         else:
@@ -93,8 +95,8 @@ class Plot:
 
     def update(self, new_data):
         logger.debug("Updating plot with new data")
-        if isinstance(self.data, pd.DataFrame) and isinstance(new_data, pd.DataFrame):
-            self.data = pd.concat([self.data, new_data], ignore_index=True)
+        if isinstance(self.data, pl.DataFrame) and isinstance(new_data, pl.DataFrame):
+            self.data = pl.concat([self.data, new_data], how="diagonal_relaxed")
         elif isinstance(self.data, dict) and isinstance(new_data, dict):
             for k, v in new_data.items():
                 self.data.setdefault(k, []).extend(v)
@@ -104,7 +106,7 @@ class Plot:
 
 
 def mae_al_loop_plot(
-    all_avg_results: pd.DataFrame,
+    all_avg_results: pl.DataFrame,
     mlip_committee_job_dict: dict,
     directory: Path = Path("results"),
 ) -> None:
@@ -114,12 +116,18 @@ def mae_al_loop_plot(
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.set_prop_cycle(matplotlib.cycler(color=PALETTE))
 
-    x = all_avg_results.index.tolist()
+    # One row per loop; "al_loop" holds the loop number, so a skipped loop
+    # shows as a gap rather than shifting later loops left.
+    x = (
+        all_avg_results["al_loop"].to_list()
+        if "al_loop" in all_avg_results.columns
+        else list(range(all_avg_results.height))
+    )
     name = mlip_committee_job_dict["name"]
 
     for col, label in (
-        ("mae_e_per_atom", "Energy MAE (eV/atom)"),
-        ("mae_f", "Force MAE (eV/Å)"),
+        ("mae_e_per_atom", "Best model energy MAE (eV/atom)"),
+        ("mae_f", "Best model force MAE (eV/Å)"),
     ):
         if col not in all_avg_results.columns:
             continue
@@ -143,7 +151,8 @@ def mae_al_loop_plot(
 
     ax.set_xlabel("AL Loop Iteration")
     ax.set_ylabel("Mean Absolute Error")
-    ax.set_title(f"{name} AL Loop MAE")
+    ax.set_title(f"{name} AL Loop MAE (best committee member per loop)")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.set_yscale("log")
     ax.grid(True)
     ax.legend()
@@ -158,8 +167,12 @@ def mae_al_loop_plot(
 
 if __name__ == "__main__":
     # Example usage
-    example_data = pd.DataFrame(
-        {"mae_e": [0.1, 0.2, 0.15], "mae_f": [0.05, 0.07, 0.06]}
+    example_data = pl.DataFrame(
+        {
+            "al_loop": [0, 1, 2],
+            "mae_e_per_atom": [0.1, 0.2, 0.15],
+            "mae_f": [0.05, 0.07, 0.06],
+        }
     )
     mae_al_loop_plot(
         all_avg_results=example_data,

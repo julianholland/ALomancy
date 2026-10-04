@@ -100,11 +100,16 @@ def recover_dataset(source: Path, raw_root: Path, output_dir: Path) -> dict:
         atoms = original.copy()
         # Remove operational state inherited from previous active-learning runs.
         for key in list(atoms.info):
-            if key.startswith("mace_") or key in {
+            # Strip both the current ("model_") and legacy ("mace_",
+            # pre-migration -- see the DB key migration script)
+            # prediction-key prefixes.
+            if key.startswith(("model_", "mace_")) or key in {
                 "global_db_id",
                 "split",
                 "is_duplicate",
                 "is_high_force",
+                "is_quality_filtered",
+                "quality_filter_reasons",
                 "is_training_eligible",
                 "filter_reasons",
             }:

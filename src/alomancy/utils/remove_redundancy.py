@@ -2,18 +2,71 @@
 
 import logging
 import warnings
+from typing import Any
 
 import numpy as np
 
-from alomancy.global_descriptor.atomic_distance_descriptor import (
-    assign_descriptor_to_all_partition,
-)
+from alomancy.global_descriptor.atomic_distance_descriptor import make_char_vec
 
 logger = logging.getLogger(__name__)
 
 
+def descriptor_key(dimensions: int) -> str:
+    """Container-metadata key for a cached descriptor. Dimension-specific, so
+    changing ``dimensions`` never reuses vectors of the wrong length."""
+    return f"char_vec_{dimensions}"
+
+
+def _cached_descriptors(
+    db: Any, all_containers: list, global_indices: list[int], dimensions: int
+) -> np.ndarray:
+    """Descriptor per container, reading the copy cached in the DB and
+    computing (and persisting) only the ones not stored yet. Structures in
+    the DB never change, so a stored descriptor is always valid."""
+    key = descriptor_key(dimensions)
+    vectors: list[list[float]] = []
+    new: dict[int, list[float]] = {}
+    for i in global_indices:
+        apm = all_containers[i].AtomPositionManager
+        vector = apm.metadata.get(key)
+        if vector is None:
+            vector = make_char_vec(apm, dimensions=dimensions).tolist()
+            new[i] = vector
+        vectors.append(vector)
+    logger.info(
+        "Redundancy descriptors: %d reused from the DB, %d computed.",
+        len(global_indices) - len(new),
+        len(new),
+    )
+    if new:
+        db.store_descriptors(new, key)
+    return np.array(vectors)
+
+
+def descriptors_for_atoms(atoms_list: list, dimensions: int = 128) -> np.ndarray:
+    """Descriptor per ASE structure not stored in the DB (e.g. AL candidates).
+
+    Builds each structure's AtomPositionManager the same way
+    GlobalDatabase._prepare_for_storage does, so the vectors are directly
+    comparable with the cached ``descriptor_key(dimensions)`` ones. Nothing
+    is cached: the structures aren't in the DB yet.
+    """
+    from sage_lib.single_run.SingleRun import SingleRun
+
+    vectors = []
+    for atoms in atoms_list:
+        run = SingleRun()
+        run.AtomPositionManager.configure(
+            atomPositions=atoms.positions,
+            atomLabels=atoms.symbols,
+            latticeVectors=atoms.cell,
+        )
+        vectors.append(make_char_vec(run.AtomPositionManager, dimensions=dimensions))
+    return np.array(vectors)
+
+
 def remove_redundancy_from_partition(
-    db, config_list: list, tolerance: float = 0.01
+    db, config_list: list, tolerance: float = 0.01, dimensions: int = 128
 ) -> None:
     """Flag near-duplicate structures in the training split of *db*.
 
@@ -30,6 +83,9 @@ def remove_redundancy_from_partition(
             (e.g. ["init_amorphous", "high_sd"]).
         tolerance: Euclidean distance threshold in descriptor space. Pairs closer
             than this are considered duplicates; the later-encountered one is flagged.
+        dimensions: descriptor length. Descriptors are cached in the DB
+            (``descriptor_key(dimensions)``) and only computed for structures
+            that don't have one yet.
     """
     from deduplicate_lib.plugins.duplicate_detection_algorithms.distance_matrix import (
         DistanceMatrix,
@@ -38,35 +94,32 @@ def remove_redundancy_from_partition(
         NaturalTolerancePlateauProbe,
     )
 
-    train_partition = db.get_split_partition("train")
-    if len(train_partition) == 0:
+    all_containers = list(db.partition.list_containers())
+    train_global_indices = [
+        i
+        for i, c in enumerate(all_containers)
+        if c.AtomPositionManager.metadata.get("split") == "train"
+    ]
+    if not train_global_indices:
         logger.warning("No train-split structures in DB — skipping redundancy removal.")
         return
 
-    metadata = list(train_partition.get_metadata("config_type"))
-    config_indices = [i for i, ct in enumerate(metadata) if ct in config_list]
-
-    if not config_indices:
+    dedup_global_indices = [
+        i
+        for i in train_global_indices
+        if all_containers[i].AtomPositionManager.metadata.get("config_type")
+        in config_list
+    ]
+    if not dedup_global_indices:
         logger.info(
             "No train structures matching config_list %s — nothing to dedup.",
             config_list,
         )
         return
 
-    subset_p = train_partition.export_subset(
-        config_indices,
-        new_path=None,
-        new_storage="memory",
-        batch_size=500,
-        verbose=False,
+    descriptor_array = _cached_descriptors(
+        db, all_containers, dedup_global_indices, dimensions
     )
-    logger.info(
-        "Assigning descriptors to %d train structures for redundancy removal.",
-        len(subset_p),
-    )
-    assign_descriptor_to_all_partition(subset_p, dimensions=128)
-
-    descriptor_array = np.array(list(subset_p.get_metadata("char_vec")))
 
     dm_dda = DistanceMatrix(
         dataset_array=descriptor_array,
@@ -113,25 +166,25 @@ def remove_redundancy_from_partition(
     dm_dda.get_dataset_unique_structures()
     unique_local = set(map(int, dm_dda.get_unique_vector_indices()))
 
-    # Map local subset indices → positional indices in the global DB partition
-    all_containers = list(db.partition.list_containers())
-    train_global_indices = [
-        i
-        for i, c in enumerate(all_containers)
-        if c.AtomPositionManager.metadata.get("split") == "train"
-    ]
-    dedup_global_indices = [train_global_indices[j] for j in config_indices]
     duplicate_global = [
         dedup_global_indices[j]
-        for j in range(len(config_indices))
+        for j in range(len(dedup_global_indices))
         if j not in unique_local
     ]
 
     logger.info(
         "Redundancy removal: %d/%d structures flagged as duplicates (tolerance=%.4f).",
         len(duplicate_global),
-        len(config_indices),
+        len(dedup_global_indices),
         tolerance,
+        extra={
+            "event": "redundancy_flagged",
+            "data": {
+                "n": len(duplicate_global),
+                "total": len(dedup_global_indices),
+                "tolerance": float(tolerance),
+            },
+        },
     )
     if duplicate_global:
         db.flag_as_duplicates(duplicate_global)

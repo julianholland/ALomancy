@@ -15,11 +15,13 @@ def find_high_sd_structures(
     base_name: str,
     job_dict: dict[str, dict[str, str]],
     structure_forces_dict: dict,
+    num_of_structures: int,
     read_xyz: bool = True,
 ) -> list[Atoms]:
-    desired_structures = job_dict["structure_generation"][
-        "desired_number_of_structures"
-    ]
+    """Select the *num_of_structures* candidates (general.
+    num_of_structures_per_loop) with the highest committee force standard
+    deviation."""
+    desired_structures = num_of_structures
 
     if desired_structures <= 0:
         raise ValueError("Number of structures must be greater than 0")
@@ -31,11 +33,15 @@ def find_high_sd_structures(
     if len(structure_list) < desired_structures:
         logger.warning(
             "Only %d candidate structure(s) available, fewer than the %d "
-            "requested (desired_number_of_structures) — proceeding with all "
+            "requested (general.num_of_structures_per_loop) — proceeding with all "
             "%d available structure(s) instead of crashing the run.",
             len(structure_list),
             desired_structures,
             len(structure_list),
+            extra={
+                "event": "fewer_candidates",
+                "data": {"n": len(structure_list), "desired": desired_structures},
+            },
         )
     effective_structures = min(desired_structures, len(structure_list))
 
@@ -137,77 +143,6 @@ def find_sd_of_all_structures(
 
 def flatten_array_of_forces(forces: np.ndarray) -> np.ndarray:
     return np.reshape(forces, (1, forces.shape[0] * 3))
-
-
-# def std_deviation_of_forces(
-#     structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],
-#     structure_generation_dir: Path,
-#     verbose: int = 0,
-# ) -> pd.DataFrame:
-#     """
-#     Calculate the standard deviation of forces for each structure in the dictionary.
-
-#     Parameters
-#     ----------
-#     structure_force_dict : dict
-#         A dictionary where keys are fit names and values are dictionaries with structure names as keys and forces as values.
-
-#         e.g.:
-#         {
-#             'base_mace': {
-#                 'structure_0': {'forces': np.ndarray, 'energy': float},
-#                 'structure_1': {'forces': np.ndarray, 'energy': float},
-#                 ...
-#             },
-#             'fit_1': {
-#                 ...
-#             },
-#         }
-
-#     Returns
-#     -------
-#     list
-#         A list of standard deviations of forces for each structure.
-#     """
-#     number_of_structures = len(structure_forces_dict["base_mlip"])
-#     std_dev_array = np.zeros((number_of_structures, 3))
-#     for structure in range(number_of_structures):
-#         forces_array = np.concatenate(
-#             [
-#                 structure_forces_dict[fit][f"structure_{structure}"]["forces"]
-#                 for fit in structure_forces_dict
-#             ],
-#             axis=0,
-#         )
-#         std_dev_per_force_fragment = np.std(forces_array, axis=0)
-#         energy_array = np.array(
-#             [
-#                 structure_forces_dict[fit][f"structure_{structure}"]["energy"]
-#                 for fit in structure_forces_dict
-#             ]
-#         )
-#         std_dev_per_energy = np.std(energy_array)
-
-#         if verbose > 0:
-#             print(
-#                 f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"
-#             )
-
-#         std_dev_array[structure, :] = np.array(
-#             [
-#                 np.max(std_dev_per_force_fragment),
-#                 np.mean(std_dev_per_force_fragment),
-#                 std_dev_per_energy,
-#             ]
-#         )
-
-#     df = pd.DataFrame(
-#         std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
-#     ).sort_values(by="max_std_dev", ascending=False)
-
-#     df.to_csv(str(Path(structure_generation_dir, "std_dev_forces.csv")), index=True)
-
-#     return df
 
 
 def std_deviation_of_forces(

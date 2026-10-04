@@ -19,16 +19,18 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # Fast unit tests only
+  # Fast tier: every unit test except `slow` ones, in parallel (~20 s).
+  # `python -m pytest` runs in the active venv, the one alomancy is
+  # installed in. The full suite, with coverage, runs in CI.
   - repo: local
     hooks:
       - id: pytest-unit
-        name: Unit tests
-        entry: pytest
+        name: Unit tests (fast tier)
+        entry: python -m pytest
         language: system
         pass_filenames: false
         always_run: true
-        args: [-m, "not integration and not slow", --tb=line, -q, tests/]
+        args: [-m, "unit and not slow", -n, auto, --tb=line, -q, tests/]
         stages: [pre-commit]
 
 exclude: |

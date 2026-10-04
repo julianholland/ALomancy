@@ -1,6 +1,6 @@
 ---
 description: Check CI, bump version tag, build, and publish to PyPI
-allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git status:*), Bash(git add:*), Bash(git commit:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(python -m build:*), Bash(twine upload:*), Bash(twine check:*), Bash(rm -rf:*), Bash(pip install:*), Bash(date:*), Bash(ruff:*)
+allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git status:*), Bash(git add:*), Bash(git commit:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(uv build:*), Bash(uv lock:*), Bash(uv run ruff:*), Bash(uv version:*), Bash(uvx twine check:*), Bash(uv publish:*), Bash(rm -rf dist:*), Bash(date:*)
 ---
 
 ## Context
@@ -25,9 +25,17 @@ If CI is still in progress, tell the user and stop.
 Run ruff to auto-fix any formatting or lint issues before checking the working tree:
 
 ```bash
-ruff format .
-ruff check . --fix
+uv run ruff format .
+uv run ruff check . --fix
 ```
+
+Also make sure the lockfile matches `pyproject.toml` (CI runs `uv sync --locked`, which fails on a stale lock):
+
+```bash
+uv lock --check || uv lock
+```
+
+If `uv lock` changed `uv.lock`, it is committed with the rest in Step 2.
 
 If ruff reports unfixable errors after `--fix`, stop and report them — do not proceed with a broken codebase. If ruff modified any files, the working-tree check in Step 2 will pick them up and commit them.
 
@@ -40,13 +48,13 @@ git add <files>
 git commit -m "chore: pre-release cleanup"
 ```
 
-An uncommitted file causes `setuptools_scm` to append `.post0` to the version (e.g. `0.3.0.post0` instead of `0.3.0`). The tag must sit on a clean commit.
+The version comes from git tags (`hatch-vcs`, configured in `[tool.hatch.version]`). Building from a commit after the tag gives a `.postN` version (e.g. `0.3.0.post1` instead of `0.3.0`), so the tag must sit on the final, clean commit.
 
 Only proceed to Step 3 once `git status --short` shows no modified tracked files. Untracked files (lines beginning with `??`) are fine and can be ignored.
 
 ### Step 3 — Determine the new version tag
 
-The project uses `setuptools_scm` — the version is driven entirely by git tags (format: `vMAJOR.MINOR.PATCH`). Show the user the current latest tag and ask them which version bump they want:
+The project uses `hatch-vcs` — the version is driven entirely by git tags (format: `vMAJOR.MINOR.PATCH`); there is no version number to edit in `pyproject.toml`. Show the user the current latest tag and ask them which version bump they want:
 - **patch** (e.g. v0.2.0 → v0.2.1) — bug fixes only
 - **minor** (e.g. v0.2.0 → v0.3.0) — new features, backwards-compatible
 - **major** (e.g. v0.2.0 → v1.0.0) — breaking changes
@@ -103,39 +111,29 @@ Confirm the tag was pushed successfully.
 
 ### Step 5 — Build the package
 
-Clean any previous build artifacts, then build:
+Clean any previous build artifacts, then build the sdist and wheel with uv (the build backend is hatchling; no egg-info is produced):
 
 ```bash
-rm -rf dist/ build/
-pip install --quiet build twine
-python -m build
-twine check dist/*
+rm -rf dist/
+uv build
+uvx twine check dist/*
 ```
 
-Verify the built version string (shown in the `python -m build` output) is exactly `<new_tag>` without any `.post0` or `.devN` suffix. If it has a suffix, **stop**: there are uncommitted changes or extra commits since the tag — go back to Step 2.
+Verify the built file names (`dist/alomancy-<version>.tar.gz` and `dist/alomancy-<version>-py3-none-any.whl`, also shown in the `uv build` output) carry exactly `<new_tag>` without the `v` and without any `.postN` or `.devN` suffix. If there is a suffix, **stop**: there are extra commits since the tag — go back to Step 2.
 
 If `twine check` reports any errors, stop and report them. Do not upload a broken package.
 
 ### Step 6 — Upload to PyPI
 
 ```bash
-twine upload dist/*
+uv publish
 ```
 
-`twine` requires credentials. It reads `~/.pypirc` automatically if present. The recommended setup:
+`uv publish` uploads everything in `dist/`. It needs a PyPI API token and, unlike twine, does **not** read `~/.pypirc`. It takes the token from the `UV_PUBLISH_TOKEN` environment variable (or `--token`).
 
-```ini
-[distutils]
-index-servers = pypi
-
-[pypi]
-username = __token__
-password = pypi-<your-token-here>
-```
-
-If credentials are not configured and you see an auth error or `EOFError` (twine tried to prompt but can't in a non-interactive terminal), tell the user to:
-- Create `~/.pypirc` as above, then run `! twine upload dist/*` themselves, **or**
-- Run `! TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-<token> twine upload dist/*` to pass the token inline.
+If no token is configured you will see an authentication error (or a prompt it can't answer in a non-interactive terminal). Never ask the user to paste the token into the chat. Tell them to run it themselves:
+- `! UV_PUBLISH_TOKEN=pypi-<token> uv publish`, **or**
+- export `UV_PUBLISH_TOKEN` in their shell profile and then `! uv publish`.
 
 ### Step 7 — Confirm
 

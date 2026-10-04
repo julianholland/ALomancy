@@ -6,6 +6,29 @@ from ase import Atoms
 logger = logging.getLogger(__name__)
 
 
+def drop_unwritable_info(atoms: Atoms) -> Atoms:
+    """Remove ``atoms.info`` entries extxyz can't round-trip -- empty
+    lists, tuples, arrays and strings -- in place, and return *atoms*.
+
+    ASE writes ``[]`` as ``key="_JSON []"`` but reads that back as an empty
+    numpy array, which it then writes as a bare ``key=``. Reading a bare
+    ``key=`` takes the next ``key=value`` in the header as the value, so
+    whichever key follows is silently lost. That is how
+    ``quality_filter_reasons=[]`` swallowed ``model_energy`` in every
+    ``test_pred.xyz`` (its second write) and so emptied the test parity
+    plots.
+    """
+    for key in [k for k, v in atoms.info.items() if _is_empty_value(v)]:
+        del atoms.info[key]
+    return atoms
+
+
+def _is_empty_value(value: object) -> bool:
+    if isinstance(value, np.ndarray):
+        return value.size == 0
+    return isinstance(value, list | tuple | str) and len(value) == 0
+
+
 def clean_structures(
     structures: list[Atoms],
     config_type: str,
@@ -128,6 +151,10 @@ def filter_structures_by_min_bond_distance(
             n_excluded,
             len(structures),
             min_distance,
+            extra={
+                "event": "short_bond_excluded",
+                "data": {"n": n_excluded, "total": len(structures)},
+            },
         )
 
     return filtered

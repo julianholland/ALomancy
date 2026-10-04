@@ -4,116 +4,10 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 from ase import Atoms
 from ase.io import write
-
-# ---------------------------------------------------------------------------
-# _get_stage_two_epoch
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_default():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    result = _get_stage_two_epoch({"max_num_epochs": 80, "mace_fit_kwargs": {}})
-    assert result == 64
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_explicit_start_swa():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    result = _get_stage_two_epoch({"mace_fit_kwargs": {"start_swa": 100}})
-    assert result == 100
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_top_level_max_epochs():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    result = _get_stage_two_epoch({"max_num_epochs": 200, "mace_fit_kwargs": {}})
-    assert result == 160
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_max_epochs_in_kwargs():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # max_num_epochs inside mace_fit_kwargs, not at top level
-    result = _get_stage_two_epoch({"mace_fit_kwargs": {"max_num_epochs": 100}})
-    assert result == 80
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_default_80_when_none():
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # Neither max_num_epochs nor start_swa anywhere → default 80 → 64
-    result = _get_stage_two_epoch({"mace_fit_kwargs": {}})
-    assert result == 64
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_prefers_sidecar_over_config(tmp_path):
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    (tmp_path / "resolved_mace_epochs.json").write_text(
-        json.dumps({"max_num_epochs": 160, "start_swa": 128})
-    )
-    # Config says 80/64, but the sidecar (the actually-resolved value,
-    # e.g. from max_num_epochs="dynamic") should win.
-    result = _get_stage_two_epoch(
-        {"max_num_epochs": 80, "mace_fit_kwargs": {}}, tmp_path
-    )
-    assert result == 128
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_falls_back_when_sidecar_missing(tmp_path):
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # No resolved_mace_epochs.json in tmp_path -- falls back to config formula.
-    result = _get_stage_two_epoch(
-        {"max_num_epochs": 200, "mace_fit_kwargs": {}}, tmp_path
-    )
-    assert result == 160
-
-
-@pytest.mark.unit
-def test_get_stage_two_epoch_dynamic_with_no_sidecar_defaults_to_80_with_warning(
-    tmp_path,
-):
-    import logging
-
-    from alomancy.analysis.mlip_plots import _get_stage_two_epoch
-
-    # max_num_epochs="dynamic" with no sidecar present (e.g. plotting ran
-    # before the sidecar was written) -- must not crash trying to do
-    # math.floor("dynamic" * 0.8); falls back to the 80-epoch default.
-    al_logger = logging.getLogger("alomancy")
-    al_logger.setLevel(logging.WARNING)
-    records: list[logging.LogRecord] = []
-
-    class _Collector(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            records.append(record)
-
-    handler = _Collector()
-    handler.setLevel(logging.WARNING)
-    al_logger.addHandler(handler)
-    try:
-        result = _get_stage_two_epoch(
-            {"max_num_epochs": "dynamic", "mace_fit_kwargs": {}}, tmp_path
-        )
-    finally:
-        al_logger.removeHandler(handler)
-
-    assert result == 64
-    assert any("not numeric" in r.getMessage() for r in records)
-
 
 # ---------------------------------------------------------------------------
 # _parse_training_jsonl
@@ -174,7 +68,7 @@ def test_parse_training_jsonl_filters_mode(tmp_path):
     assert df is not None
     # null-epoch row and opt-mode row must be excluded
     assert len(df) == 2
-    assert set(df.index.tolist()) == {0, 1}
+    assert set(df["epoch"].to_list()) == {0, 1}
 
 
 @pytest.mark.unit
@@ -206,7 +100,7 @@ def test_parse_training_jsonl_dataframe_columns(tmp_path):
     df = _parse_training_jsonl(fit_dir, "mymodel", 803)
 
     assert df is not None
-    assert isinstance(df, pd.DataFrame)
+    assert isinstance(df, pl.DataFrame)
     for col in ("loss", "mae_e", "mae_f"):
         assert col in df.columns
 
@@ -339,7 +233,7 @@ def test_parse_eval_xyz_missing_file(tmp_path):
 def test_parse_eval_xyz_skips_missing_keys(tmp_path):
     from alomancy.analysis.mlip_plots import _parse_eval_xyz
 
-    # Structure has REF_energy but no mace_energy — should be skipped
+    # Structure has REF_energy but no model_energy — should be skipped
     atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
     atoms.info["REF_energy"] = -1.0
     xyz_path = tmp_path / "pred.xyz"
@@ -355,9 +249,9 @@ def test_parse_eval_xyz_returns_per_atom_energy(tmp_path):
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
-    atoms.info["mace_energy"] = -3.8
+    atoms.info["model_energy"] = -3.8
     atoms.arrays["REF_forces"] = np.zeros((2, 3))
-    atoms.arrays["mace_forces"] = np.ones((2, 3)) * 0.01
+    atoms.arrays["model_forces"] = np.ones((2, 3)) * 0.01
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -376,8 +270,8 @@ def test_parse_eval_xyz_no_forces_still_returns_energy(tmp_path):
 
     atoms = Atoms("H", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
     atoms.info["REF_energy"] = -1.0
-    atoms.info["mace_energy"] = -1.05
-    # deliberately no mace_forces / REF_forces
+    atoms.info["model_energy"] = -1.05
+    # deliberately no model_forces / REF_forces
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -395,7 +289,7 @@ def test_parse_eval_xyz_with_e0_returns_formation_energy(tmp_path):
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
-    atoms.info["mace_energy"] = -3.8
+    atoms.info["model_energy"] = -3.8
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -414,7 +308,7 @@ def test_parse_eval_xyz_missing_e0_element_falls_back(tmp_path):
 
     atoms = Atoms("S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10, 10, 10], pbc=True)
     atoms.info["REF_energy"] = -4.0
-    atoms.info["mace_energy"] = -3.8
+    atoms.info["model_energy"] = -3.8
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
@@ -447,6 +341,12 @@ def test_parse_eval_xyz_missing_e0_element_falls_back(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _mace(name: str):
+    from alomancy.mlip.mace.trainer import MaceTrainer
+
+    return MaceTrainer({}, name=name)
+
+
 def _write_fit_data(base_dir: Path, name: str, seed: int, n_epochs: int = 10) -> None:
     fit_dir = base_dir / f"results/demo/{name}/fit_0"
     results_dir = fit_dir / "results"
@@ -475,6 +375,36 @@ def _write_fit_data(base_dir: Path, name: str, seed: int, n_epochs: int = 10) ->
 
 
 @pytest.mark.unit
+def test_mace_training_history_reads_records_and_markers(tmp_path):
+    """MaceTrainer.training_history: the eval records as "valid" rows, the
+    stage-two start from resolved_mace_epochs.json and the restored epoch
+    from the log."""
+    _write_fit_data(tmp_path, "mlip_committee", seed=803, n_epochs=5)
+    fit_dir = tmp_path / "results/demo/mlip_committee/fit_0"
+    (fit_dir / "resolved_mace_epochs.json").write_text(
+        json.dumps({"max_num_epochs": 5, "start_swa": 4})
+    )
+
+    history = _mace("mlip_committee").training_history(fit_dir, 803)
+
+    assert history is not None
+    assert history.frame["epoch"].to_list() == [0, 1, 2, 3, 4]
+    assert set(history.frame["split"].to_list()) == {"valid"}
+    assert history.stage_two_epoch == 4
+    assert history.selected_epoch == 3
+
+
+@pytest.mark.unit
+def test_mace_training_history_without_sidecar_or_records(tmp_path):
+    _write_fit_data(tmp_path, "mlip_committee", seed=803)
+    fit_dir = tmp_path / "results/demo/mlip_committee/fit_0"
+    trainer = _mace("mlip_committee")
+
+    assert trainer.training_history(fit_dir, 803).stage_two_epoch is None
+    assert trainer.training_history(tmp_path / "missing", 803) is None
+
+
+@pytest.mark.unit
 def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
     from alomancy.analysis.mlip_plots import plot_training_curves
 
@@ -485,11 +415,11 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": 10,
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     assert (plots_dir / "training_mae_demo.png").exists()
     assert (plots_dir / "training_loss_demo.png").exists()
@@ -500,11 +430,9 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
 def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
     tmp_path, monkeypatch
 ):
-    """Regression test: max_num_epochs="dynamic" with no
-    resolved_mace_epochs.json sidecar (e.g. an older fit, or a plotting run
-    before mace_fit wrote the sidecar) must not crash trying to do
-    math.floor("dynamic" * 0.8) -- _get_stage_two_epoch must fall back to
-    the numeric default instead."""
+    """A fit without a resolved_mace_epochs.json sidecar (e.g. trained
+    before it existed) has no stage-two marker: the plots are still drawn,
+    just without the Stage 2 line."""
     from alomancy.analysis.mlip_plots import plot_training_curves
 
     monkeypatch.chdir(tmp_path)
@@ -514,11 +442,11 @@ def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": "dynamic",
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     assert (plots_dir / "training_mae_demo.png").exists()
     assert (plots_dir / "training_loss_demo.png").exists()
@@ -541,11 +469,11 @@ def test_plot_training_curves_dynamic_epochs_uses_sidecar(tmp_path, monkeypatch)
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": "dynamic",
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     assert (plots_dir / "training_mae_demo.png").exists()
 
@@ -565,19 +493,52 @@ def test_plot_training_curves_metrics_csv_has_expected_columns(tmp_path, monkeyp
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 1,
+        "num_of_models_in_committee": 1,
         "max_num_epochs": 5,
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("demo", job_dict, 803, plots_dir)
+    plot_training_curves("demo", job_dict, 803, plots_dir, _mace("mlip_committee"))
 
     metrics_path = plots_dir / "metrics" / "demo_fit_0_training_metrics.csv"
-    df = pd.read_csv(metrics_path, index_col="epoch")
+    df = pl.read_csv(metrics_path)
 
-    assert list(df.columns) == ["loss", "mae_e_per_atom", "mae_f"]
-    assert len(df) == 5
-    assert df.loc[0, "loss"] == pytest.approx(1.0)
-    assert df.loc[4, "mae_f"] == pytest.approx(0.3 - 0.01 * 4)
+    assert df.columns == ["epoch", "loss", "mae_e_per_atom", "mae_f"]
+    assert df["epoch"].to_list() == [0, 1, 2, 3, 4]
+    assert df["loss"][0] == pytest.approx(1.0)
+    assert df["mae_f"][4] == pytest.approx(0.3 - 0.01 * 4)
+
+
+@pytest.mark.unit
+def test_plot_training_curves_uses_train_rows_without_valid(tmp_path, monkeypatch):
+    """A backend whose fit had no validation split reports only "train"
+    rows; the curves and metrics CSV are drawn from those."""
+    from alomancy.analysis.mlip_plots import plot_training_curves
+    from alomancy.mlip.base import TrainingHistory
+
+    class _TrainOnly:
+        def training_history(self, fit_dir, seed):
+            return TrainingHistory(
+                frame=pl.DataFrame(
+                    {
+                        "epoch": [1, 2],
+                        "split": ["train", "train"],
+                        "loss": [1.0, 0.5],
+                        "mae_e_per_atom": [0.1, 0.05],
+                        "mae_f": [0.3, 0.2],
+                    }
+                ),
+                selected_epoch=2,
+            )
+
+    monkeypatch.chdir(tmp_path)
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {"name": "training", "num_of_models_in_committee": 1}
+    plot_training_curves("demo", job_dict, 803, plots_dir, _TrainOnly())
+
+    df = pl.read_csv(plots_dir / "metrics" / "demo_fit_0_training_metrics.csv")
+    assert df["mae_f"].to_list() == [0.3, 0.2]
+    assert (plots_dir / "training_mae_demo.png").exists()
 
 
 @pytest.mark.unit
@@ -589,11 +550,13 @@ def test_plot_training_curves_no_data_no_output(tmp_path, monkeypatch):
     plots_dir.mkdir()
     job_dict = {
         "name": "mlip_committee",
-        "size_of_committee": 2,
+        "num_of_models_in_committee": 2,
         "max_num_epochs": 80,
         "mace_fit_kwargs": {},
     }
-    plot_training_curves("empty_loop", job_dict, 803, plots_dir)
+    plot_training_curves(
+        "empty_loop", job_dict, 803, plots_dir, _mace("mlip_committee")
+    )
     assert not list(plots_dir.glob("*.png"))
 
 
@@ -710,6 +673,95 @@ def test_draw_parity_figure_formation_energy_label(tmp_path, monkeypatch):
     assert captured["xlabel"] == "DFT formation energy (eV/atom)"
 
 
+def _parity_result(energy_error: float, force_error: float) -> tuple:
+    e_dft = np.linspace(-5.0, -4.0, 5)
+    f_dft = np.linspace(-1.0, 1.0, 15)
+    return (e_dft, e_dft + energy_error, f_dft, f_dft + force_error)
+
+
+def _capture_starred_axes(monkeypatch) -> dict:
+    """After the figure closes, captured["starred"] holds the (row, column)
+    of every axes carrying the best-model star."""
+    from alomancy.analysis import mlip_plots
+
+    captured: dict = {}
+    real_close = mlip_plots.plt.close
+
+    def fake_close(fig):
+        grid = [ax for ax in fig.axes if ax.get_label() != "_alomancy_watermark"]
+        captured["starred"] = [
+            (idx // 2, idx % 2)
+            for idx, ax in enumerate(grid)
+            if any(t.get_gid() == "best_star" for t in ax.texts)
+        ]
+        real_close(fig)
+
+    monkeypatch.setattr(mlip_plots.plt, "close", fake_close)
+    return captured
+
+
+@pytest.mark.unit
+def test_parity_star_marks_lowest_mae_per_column(tmp_path, monkeypatch):
+    """Energy winner (fit_2) and force winner (fit_0) differ: each column
+    gets its own star."""
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    results = [
+        _parity_result(energy_error=0.3, force_error=0.01),
+        _parity_result(energy_error=0.2, force_error=0.2),
+        _parity_result(energy_error=0.05, force_error=0.3),
+    ]
+    captured = _capture_starred_axes(monkeypatch)
+    _draw_parity_figure(
+        results_per_fit=results,
+        n_fits=3,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=tmp_path,
+        file_suffix="test",
+    )
+    assert sorted(captured["starred"]) == [(0, 1), (2, 0)]
+
+
+@pytest.mark.unit
+def test_parity_star_skips_missing_fits(tmp_path, monkeypatch):
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    results = [None, _parity_result(energy_error=0.2, force_error=0.2)]
+    captured = _capture_starred_axes(monkeypatch)
+    _draw_parity_figure(
+        results_per_fit=results,
+        n_fits=2,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=tmp_path,
+        file_suffix="test",
+    )
+    assert sorted(captured["starred"]) == [(1, 0), (1, 1)]
+
+
+@pytest.mark.unit
+def test_parity_no_star_when_no_predictions(tmp_path, monkeypatch):
+    from alomancy.analysis.mlip_plots import _draw_parity_figure
+
+    captured = _capture_starred_axes(monkeypatch)
+    _draw_parity_figure(
+        results_per_fit=[None, None],
+        n_fits=2,
+        name="mlip_committee",
+        seed=803,
+        set_label="Test",
+        base_name="test_loop",
+        plots_dir=tmp_path,
+        file_suffix="test",
+    )
+    assert captured["starred"] == []
+
+
 # ---------------------------------------------------------------------------
 # plot_dft_vs_model — E0 threading (real GlobalDatabase, no mock-testing)
 # ---------------------------------------------------------------------------
@@ -732,7 +784,7 @@ def test_plot_dft_vs_model_uses_formation_energy_when_isolated_atoms_present(
         for a in db.get_all_as_atoms()
         if a.info.get("config_type") == "init_dimer"
     )
-    db.store_mace_predictions(
+    db.store_model_predictions(
         0,
         0,
         {dimer_id: {"energy": -30.0, "forces": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}},
@@ -757,7 +809,7 @@ def test_plot_dft_vs_model_uses_formation_energy_when_isolated_atoms_present(
 
     mlip_plots.plot_dft_vs_model(
         "al_loop_0",
-        {"name": "mlip_committee", "size_of_committee": 1},
+        {"name": "mlip_committee", "num_of_models_in_committee": 1},
         seed=803,
         plots_dir=tmp_path / "plots",
         db=db,
@@ -785,7 +837,7 @@ def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
     db.add_structures([h2_dimer], split="train", skip_duplicates=False)
     db.assign_global_db_ids()
     dimer_id = db.get_all_as_atoms()[0].info["global_db_id"]
-    db.store_mace_predictions(
+    db.store_model_predictions(
         0,
         0,
         {dimer_id: {"energy": -30.0, "forces": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]}},
@@ -820,7 +872,7 @@ def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
     try:
         mlip_plots.plot_dft_vs_model(
             "al_loop_0",
-            {"name": "mlip_committee", "size_of_committee": 1},
+            {"name": "mlip_committee", "num_of_models_in_committee": 1},
             seed=803,
             plots_dir=tmp_path / "plots",
             db=db,
@@ -872,7 +924,7 @@ def test_plot_dft_vs_model_e0_exception_logs_only_one_warning(
     try:
         mlip_plots.plot_dft_vs_model(
             "al_loop_0",
-            {"name": "mlip_committee", "size_of_committee": 1},
+            {"name": "mlip_committee", "num_of_models_in_committee": 1},
             seed=803,
             plots_dir=tmp_path / "plots",
             db=db,
@@ -906,7 +958,7 @@ def test_plot_dft_vs_model_e0_computed_once_per_call(tmp_path, monkeypatch, h_at
 
     mlip_plots.plot_dft_vs_model(
         "al_loop_0",
-        {"name": "mlip_committee", "size_of_committee": 3},
+        {"name": "mlip_committee", "num_of_models_in_committee": 3},
         seed=803,
         plots_dir=tmp_path / "plots",
         db=db,

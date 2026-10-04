@@ -119,6 +119,35 @@ class TestGetQeInputData:
         assert result["system"]["ecutwfc"] == 80.0
 
     @pytest.mark.unit
+    def test_partial_namelist_override_keeps_other_defaults(self):
+        # Regression: overriding only control.tstress used to replace the
+        # whole control namelist, dropping tprnfor/calculation so QE never
+        # printed forces.
+        result = get_qe_input_data(
+            "scf",
+            {
+                "control": {"tstress": False},
+                "electrons": {"startingwfc": "atomic+random"},
+            },
+        )
+        assert result["control"]["tstress"] is False
+        assert result["control"]["tprnfor"] is True
+        assert result["control"]["calculation"] == "scf"
+        assert result["electrons"]["startingwfc"] == "atomic+random"
+        assert result["electrons"]["conv_thr"] == pytest.approx(1.0e-12)
+
+    @pytest.mark.unit
+    def test_new_namelist_added(self):
+        result = get_qe_input_data("scf", {"fcp": {"fcp_mu": 0.0}})
+        assert result["fcp"] == {"fcp_mu": 0.0}
+
+    @pytest.mark.unit
+    def test_does_not_mutate_input(self):
+        overrides = {"control": {"tstress": False}}
+        get_qe_input_data("scf", overrides)
+        assert overrides == {"control": {"tstress": False}}
+
+    @pytest.mark.unit
     def test_default_ecutwfc(self):
         result = get_qe_input_data("scf", {})
         assert result["system"]["ecutwfc"] == 40.0

@@ -1,0 +1,127 @@
+# Loop report: what to suggest when a trigger fires.
+#
+# Each entry is keyed by a trigger name from analysis/report/triggers.py:
+#   threshold:  the entry fires when the trigger's value is >= threshold
+#   severity:   info | warning | error
+#   suggestion: text shown in the report. {value} and the trigger's other
+#               named values can be used, with Python format specs, e.g.
+#               {value:.0%}, {mean_steps:.0f}. An unknown name leaves the
+#               text unfilled (with a warning) rather than failing.
+#
+# Edit thresholds and wording freely. To override per run without editing
+# this file, point general.report_suggestions at your own YAML with the same
+# layout; its entries replace these one key at a time.
+# A new trigger needs a function in triggers.py plus an entry here.
+
+go_not_converged:
+  threshold: 0.10
+  severity: warning
+  suggestion: >-
+    {n}/{total} geometry optimisations ({value:.0%}) stopped at the step
+    budget ({max_steps} steps) before reaching the force ceiling. Raise
+    high_accuracy_evaluation.max_num_of_relax_steps, or raise
+    high_accuracy_evaluation.force_ceiling (now {force_ceiling} eV/Å) so they
+    stop earlier. Non-converged structures are still kept as training data.
+
+go_steps_near_budget:
+  threshold: 0.80
+  severity: info
+  suggestion: >-
+    Geometry optimisations used {mean_steps:.0f} of {max_steps} allowed steps
+    on average ({value:.0%}). Consider raising
+    high_accuracy_evaluation.max_num_of_relax_steps before they start hitting
+    the limit.
+
+new_structures_force_filtered:
+  threshold: 0.25
+  severity: warning
+  suggestion: >-
+    {n}/{total} new structures ({value:.0%}) were excluded from training by
+    general.train_filter.max_force ({max_force} eV/Å). Lower
+    high_accuracy_evaluation.force_ceiling (now {force_ceiling}) so DFT relaxes
+    them further, or make generation gentler (lower md_kwargs.temperature or
+    md_kwargs.timestep_fs).
+
+short_bond_excluded:
+  threshold: 0.10
+  severity: warning
+  suggestion: >-
+    {n}/{total} structures ({value:.0%}) were dropped for a bond shorter than
+    0.5 Å. The model is driving MD into collisions: lower md_kwargs.temperature
+    or md_kwargs.timestep_fs, or add more short-range initialization data
+    (dimers/trimers).
+
+md_runs_no_steps:
+  threshold: 0.10
+  severity: warning
+  suggestion: >-
+    {n}/{total} MD runs ({value:.0%}) failed before their first step. The model
+    is unstable at the seed structures: lower md_kwargs.temperature, check the
+    seeds (structure_selection_kwargs), or train longer before generating.
+
+remote_jobs_failed:
+  threshold: 0.05
+  severity: error
+  suggestion: >-
+    {n}/{total} remote jobs ({value:.0%}) failed ({failed}) or died ({died}).
+    Check the job logs (results/alomancy.log has each failure's traceback);
+    jobs killed by the scheduler usually need a longer max_time for that
+    phase, or a partition with more memory.
+
+fewer_candidates:
+  threshold: 0.01
+  severity: warning
+  suggestion: >-
+    Only {n} candidates were available for {desired} requested structures.
+    Generate more: raise md_kwargs.steps or
+    structure_selection_kwargs.num_of_md_starts.
+
+few_candidates_generated:
+  threshold: 0.01
+  severity: warning
+  suggestion: >-
+    Structure generation produced only {n} usable candidates, less than
+    twice the {per_loop} structures added per loop, so the selector had
+    little to choose from. Raise
+    structure_generation.num_of_structures_to_generate (and md_kwargs.steps
+    or structure_selection_kwargs.num_of_md_starts if MD runs end early).
+
+redundancy_removed_new:
+  threshold: 0.50
+  severity: warning
+  suggestion: >-
+    {n}/{total} of this loop's new structures ({value:.0%}) were flagged as
+    redundant. Generation is revisiting known configurations: raise
+    md_kwargs.temperature, use a different generator, or a selection workflow
+    that rewards novelty (al_workflow: novelty_selection).
+
+queue_dominated:
+  threshold: 0.50
+  severity: info
+  suggestion: >-
+    {phase} spent {value:.0%} of its time ({queue_hours:.1f} h) queued. Raise
+    max_num_of_concurrent_jobs in the HPC profile or use a less busy partition.
+
+fit_retries:
+  threshold: 0.01
+  severity: warning
+  suggestion: >-
+    {n}/{total} model fits had to be retried. Check the training logs for GPU
+    out-of-memory errors or a too-short training max_time.
+
+overfitting:
+  threshold: 2.0
+  severity: info
+  suggestion: >-
+    The best model's test force MAE ({test_mae_f:.3g} eV/Å) is {value:.1f}x its
+    training MAE ({train_mae_f:.3g} eV/Å). The test set covers configurations
+    training doesn't: keep adding data, or raise
+    general.dataset_kwargs.valid_fraction to select models on held-out data.
+
+dft_partial_failure:
+  threshold: 0.05
+  severity: error
+  suggestion: >-
+    {n}/{total} structures sent to DFT ({value:.0%}) came back without a result.
+    Check the DFT output in results/<loop>/high_accuracy_evaluation; raise
+    high_accuracy_evaluation.max_time / max_go_time if jobs timed out.

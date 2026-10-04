@@ -8,18 +8,10 @@ Core Module
    :undoc-members:
    :show-inheritance:
 
-Base Active Learning
--------------------
+Committee Uncertainty Workflow
+------------------------------
 
-.. automodule:: alomancy.core.base_active_learning
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Standard Active Learning
------------------------
-
-.. automodule:: alomancy.core.standard_active_learning
+.. automodule:: alomancy.core.committee_uncertainty_workflow
    :members:
    :undoc-members:
    :show-inheritance:

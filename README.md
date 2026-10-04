@@ -66,12 +66,15 @@ pip install alomancy
 ```bash
 git clone https://github.com/julianholland/ALomancy.git
 cd ALomancy
-pip install -e ".[dev]"
+uv sync            # creates .venv with alomancy (editable) + the dev tools
 ```
+
+Without uv: `pip install -e .` (add `pytest ruff mypy pre-commit` yourself;
+the dev tools are a uv dependency group, not a pip extra).
 
 ### Dependencies
 
-- Python 3.9+
+- Python 3.10+
 - [ASE](https://wiki.fysik.dtu.dk/ase/) — Atomic Simulation Environment
 - [expyre-wfl](https://github.com/libAtoms/ExPyRe) — Remote HPC job execution
 - [MACE](https://github.com/ACEsuit/mace) — Machine Learning Accelerated Computational Engine
@@ -83,21 +86,13 @@ pip install -e ".[dev]"
 ### 1. Basic Active Learning Workflow
 
 ```python
-from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+from alomancy import ALomancy
 
-# Load job configuration from YAML
-jobs_dict = load_dictionaries("standard_config.yaml")
-
-# Initialize workflow
-workflow = ActiveLearningStandardMACE(
-    initial_train_file_path="results/initialization/train_set.xyz",
-    initial_test_file_path="results/initialization/test_set.xyz",
-    jobs_dict=jobs_dict,
-    number_of_al_loops=5,
-    verbose=1,
-)
-workflow.run()
+# The config picks everything: the AL skeleton (general.al_workflow) and
+# every module (training.trainer, structure_generation.generator,
+# high_accuracy_evaluation.evaluator). Every run setting (start_from,
+# num_of_al_loops, verbose, ...) lives under the YAML's `general:` section.
+ALomancy("standard_config.yaml").run()
 ```
 
 ### 2. Configuration File
@@ -105,6 +100,21 @@ workflow.run()
 Create a `standard_config.yaml` file to specify your computational setup:
 
 ```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "O"]   # atomic symbols, not atomic numbers
+  # Optional: start from existing data instead of generating it. See
+  # docs/starting_a_run.md for all four start modes.
+  # start_from:
+  #   xyz: "my_dft_data.xyz"
+  num_of_al_loops: 5
+  verbose: 1
+  dataset_kwargs:
+    target_config_types: ["IsolatedAtom"]
+    test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
+
 initialization:
   name: "init"
   max_time: "04:00:00"
@@ -113,8 +123,9 @@ initialization:
     partitions: [""]
     pre_cmds: []
 
-mlip_committee:
+training:
   name: "mace_training"
+  trainer: "mace"   # selects the registered mlip_trainer backend
   max_time: "24:00:00"
   hpc:
     hpc_name: "gpu_cluster"
@@ -123,6 +134,7 @@ mlip_committee:
 
 structure_generation:
   name: "md_generation"
+  generator: "md"   # "md" (default) or "ezga"
   max_time: "12:00:00"
   hpc:
     hpc_name: "gpu_cluster"
@@ -131,7 +143,7 @@ structure_generation:
 
 high_accuracy_evaluation:
   name: "dft_evaluation"
-  calculator: "qe"   # "qe" (default) or "vasp"
+  evaluator: "qe"   # "qe" (default) or "vasp"
   max_time: "48:00:00"
   hpc:
     hpc_name: "cpu_cluster"
@@ -139,47 +151,17 @@ high_accuracy_evaluation:
     pre_cmds: ["module load quantum-espresso"]
 ```
 
-### 3. Custom Workflow Implementation
+### 3. Adding a New Backend
 
-Extend the base class for specialized workflows:
-
-```python
-from alomancy.core.base_active_learning import BaseActiveLearningWorkflow
-from ase import Atoms
-import pandas as pd
-
-
-class CustomWorkflow(BaseActiveLearningWorkflow):
-    def initialize_training_set(self, base_name: str, **kwargs):
-        """Generate or load initial training data"""
-        # Your custom initialization logic here
-        return train_xyzs, test_xyzs
-
-    def train_mlip(
-        self, base_name: str, mlip_committee_job_dict: dict, **kwargs
-    ) -> pd.DataFrame:
-        """Train committee and return MAE metrics"""
-        # Your custom training logic here
-        return pd.DataFrame({"mae_e": [...], "mae_f": [...]})
-
-    def generate_structures(
-        self, base_name: str, job_dict: dict, train_data: list[Atoms], **kwargs
-    ) -> list[Atoms]:
-        """Run MD and select high-uncertainty structures"""
-        # Your structure generation logic here
-        return high_uncertainty_structures
-
-    def high_accuracy_evaluation(
-        self,
-        base_name: str,
-        high_accuracy_eval_job_dict: dict,
-        structures: list[Atoms],
-        **kwargs,
-    ) -> list[Atoms]:
-        """Run DFT on selected structures"""
-        # Your high-accuracy calculation logic here
-        return evaluated_structures
-```
+There's no subclassing to extend ALomancy: each pluggable category (trainer,
+structure generator, DFT evaluator, initialiser) is a module registered
+against a name in `src/alomancy/registry.py`, resolved lazily from config at
+runtime (`training.trainer`, `structure_generation.generator`,
+`high_accuracy_evaluation.evaluator`). Adding a new backend means writing a
+new module with the category's expected entry points (`output_paths`,
+`read_existing_result`, and the category-specific worker function) and
+registering it — see any existing module under `mlip/`,
+`structure_generation/`, or `high_accuracy_evaluation/dft/` for the pattern.
 
 ## 📚 Examples
 
@@ -206,8 +188,8 @@ alomancy/
 ## 🔧 Key Components
 
 ### Core Framework
-- **BaseActiveLearningWorkflow**: Abstract base class for AL workflows
-- **ActiveLearningStandardMACE**: Ready-to-use implementation with MACE committee and Quantum Espresso DFT
+- **ALomancy**: The single entry point (`from alomancy import ALomancy; ALomancy("config.yaml").run()`, or `alomancy run config.yaml`); builds whichever AL skeleton `general.al_workflow` names
+- **CommitteeUncertaintyWorkflow**: The default AL skeleton (`al_workflow: committee_uncertainty`); resolves its trainer/structure-generator/DFT-evaluator/initialiser from config via the shared module registry rather than subclassing
 - **GlobalDatabase**: Persistent HDF5+SQLite store for all DFT-evaluated structures; deduplication by (config_type, formula)
 - **Structured Logging**: All output routed through Python logging; verbose=0/1/2 controls console level; file always captures DEBUG
 
@@ -248,11 +230,11 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 git clone https://github.com/julianholland/ALomancy.git
 cd ALomancy
 
-# Install in development mode
-pip install -e ".[dev]"
+# Install in development mode (alomancy editable + dev tools, from uv.lock)
+uv sync
 
 # Run tests
-pytest
+uv run pytest
 
 # Run linting
 ruff check .

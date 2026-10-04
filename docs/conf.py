@@ -23,6 +23,10 @@ extensions = [
     "myst_parser",  # For markdown support
 ]
 
+# Generate anchors for Markdown headings (h1-h3) so pages can link to
+# their own sections, e.g. starting_a_run.md's [..](#train-test-split).
+myst_heading_anchors = 3
+
 # Napoleon settings for Google/NumPy style docstrings
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True

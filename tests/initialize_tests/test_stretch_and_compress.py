@@ -22,7 +22,7 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.1, 5)
+        result = create_stretch_compress_atoms_list(atoms, 0.1, 5)
         assert len(result) == 5
 
     def test_zero_structures_returns_empty(self):
@@ -31,7 +31,7 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.1, 0)
+        result = create_stretch_compress_atoms_list(atoms, 0.1, 0)
         assert result == []
 
     def test_config_type(self):
@@ -40,7 +40,7 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.2, 4)
+        result = create_stretch_compress_atoms_list(atoms, 0.2, 4)
         assert all(a.info["config_type"] == "init_stretch_compress" for a in result)
 
     def test_needs_relaxation_false(self):
@@ -49,7 +49,7 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.2, 4)
+        result = create_stretch_compress_atoms_list(atoms, 0.2, 4)
         assert all(a.info["needs_relaxation"] is False for a in result)
 
     def test_deformation_stored_in_info(self):
@@ -58,46 +58,19 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.2, 4)
+        result = create_stretch_compress_atoms_list(atoms, 0.2, 4)
         assert all("deformation" in a.info for a in result)
 
-    def test_cell_varies_with_true(self):
-        """With deform_xyz=True, each structure should have a different cell volume."""
+    def test_cell_varies_across_structures(self):
+        """Each structure should have a different cell volume."""
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.3, 5)
+        result = create_stretch_compress_atoms_list(atoms, 0.3, 5)
         volumes = [a.get_volume() for a in result]
         assert len(set(volumes)) > 1
-
-    def test_cell_unchanged_with_false(self):
-        """With deform_xyz=False, all cells should equal the original."""
-        from alomancy.initialize.stretch_and_compress import (
-            create_stretch_compress_atoms_list,
-        )
-
-        atoms = _make_h2o()
-        orig_vol = atoms.get_volume()
-        result = create_stretch_compress_atoms_list(atoms, False, 0.3, 5)
-        for a in result:
-            assert a.get_volume() == pytest.approx(orig_vol)
-
-    def test_list_deform_xyz_behaves_as_true(self):
-        """Per the implementation, a non-empty list is truthy and triggers uniform scaling."""
-        from alomancy.initialize.stretch_and_compress import (
-            create_stretch_compress_atoms_list,
-        )
-
-        atoms = _make_h2o()
-        result_list = create_stretch_compress_atoms_list(
-            atoms, [True, False, False], 0.2, 5
-        )
-        result_true = create_stretch_compress_atoms_list(atoms, True, 0.2, 5)
-        # Both should produce the same cells because bool([...]) is True
-        for a_l, a_t in zip(result_list, result_true):
-            np.testing.assert_allclose(a_l.cell.array, a_t.cell.array)
 
     def test_original_atoms_not_modified(self):
         """Source atoms object should not be mutated."""
@@ -107,7 +80,7 @@ class TestCreateStretchCompressAtomsList:
 
         atoms = _make_h2o()
         orig_cell = atoms.cell.array.copy()
-        create_stretch_compress_atoms_list(atoms, True, 0.5, 5)
+        create_stretch_compress_atoms_list(atoms, 0.5, 5)
         np.testing.assert_allclose(atoms.cell.array, orig_cell)
 
     def test_atoms_scaled_with_cell(self):
@@ -117,7 +90,7 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.1, 3)
+        result = create_stretch_compress_atoms_list(atoms, 0.1, 3)
         # The middle structure (index 1) should have scale ~1.0 (no deformation)
         mid = result[1]
         # Scaled atoms: fractional coords should be preserved
@@ -131,5 +104,57 @@ class TestCreateStretchCompressAtomsList:
         )
 
         atoms = _make_h2o()
-        result = create_stretch_compress_atoms_list(atoms, True, 0.2, 1)
+        result = create_stretch_compress_atoms_list(atoms, 0.2, 1)
         assert len(result) == 1
+
+
+def _non_orthogonal_cells():
+    from ase.build import bulk
+    from ase.geometry import cellpar_to_cell
+
+    # Diamond primitive (fcc) cell: every diagonal element is zero, so an
+    # element-wise diagonal scaling collapses it completely.
+    diamond = bulk("C", "diamond", a=3.57)
+    # Graphite-like hexagonal cell (gamma = 120 degrees).
+    hexagonal = Atoms(
+        "C4",
+        scaled_positions=[
+            [0, 0, 0.25],
+            [0, 0, 0.75],
+            [1 / 3, 2 / 3, 0.25],
+            [2 / 3, 1 / 3, 0.75],
+        ],
+        cell=cellpar_to_cell([2.46, 2.46, 6.71, 90, 90, 120]),
+        pbc=True,
+    )
+    return {"diamond_primitive": diamond, "hexagonal": hexagonal}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("name", ["diamond_primitive", "hexagonal"])
+def test_non_orthogonal_cell_keeps_its_shape(name):
+    """Regression: the deformation used to zero every off-diagonal cell
+    element, turning non-orthogonal cells (most Materials Project
+    structures) rectangular or collapsing a lattice vector to zero --
+    which crashed Atoms.wrap() before DFT."""
+    from alomancy.initialize.stretch_and_compress import (
+        create_stretch_compress_atoms_list,
+    )
+
+    atoms = _non_orthogonal_cells()[name]
+    result = create_stretch_compress_atoms_list(atoms, 0.2, 5)
+
+    for deformed in result:
+        factor = float(deformed.info["deformation"])
+        assert deformed.cell.rank == 3
+        np.testing.assert_allclose(deformed.cell.angles(), atoms.cell.angles())
+        np.testing.assert_allclose(
+            deformed.cell.lengths(), atoms.cell.lengths() * factor, rtol=1e-3
+        )
+        np.testing.assert_allclose(
+            deformed.get_volume(), atoms.get_volume() * factor**3, rtol=1e-2
+        )
+        np.testing.assert_allclose(
+            deformed.get_scaled_positions(), atoms.get_scaled_positions(), atol=1e-8
+        )
+        deformed.wrap()  # the step that crashed on collapsed cells

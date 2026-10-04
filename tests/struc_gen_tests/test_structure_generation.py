@@ -4,7 +4,6 @@ Tests for structure generation components.
 This module tests molecular dynamics, structure selection, and related functionality.
 """
 
-import tempfile
 import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -241,13 +240,8 @@ class TestFindHighSdStructures:
     def _flatten(forces):
         return np.reshape(forces, (1, forces.shape[0] * 3))
 
-    def _build_job_dict(self, desired=3):
-        return {
-            "structure_generation": {
-                "name": "structure_generation",
-                "desired_number_of_structures": desired,
-            }
-        }
+    def _build_job_dict(self):
+        return {"structure_generation": {"name": "structure_generation"}}
 
     def _build_forces_dict(self, structures, n_models=3):
         rng = np.random.default_rng(42)
@@ -273,13 +267,15 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=3)
+        job_dict = self._build_job_dict()
+        desired = 3
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         result = find_high_sd_structures(
             structure_list=structures,
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=False,
         )
         assert len(result) == 3
@@ -292,13 +288,15 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=3)
+        job_dict = self._build_job_dict()
+        desired = 3
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         result = find_high_sd_structures(
             structure_list=structures,
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=False,
         )
         assert all(a in structures for a in result)
@@ -311,7 +309,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=3)
+        job_dict = self._build_job_dict()
+        desired = 3
         out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
         out_dir.mkdir(parents=True)
         find_high_sd_structures(
@@ -319,6 +318,7 @@ class TestFindHighSdStructures:
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=False,
         )
         assert (out_dir / "high_sd_structures.xyz").exists()
@@ -334,7 +334,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(10)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=2)
+        job_dict = self._build_job_dict()
+        desired = 2
         out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
         out_dir.mkdir(parents=True)
         # Write cache manually
@@ -355,6 +356,7 @@ class TestFindHighSdStructures:
             base_name="loop_0",
             job_dict=job_dict,
             structure_forces_dict=forces_dict,
+            num_of_structures=desired,
             read_xyz=True,
         )
         assert len(result) == 2
@@ -374,12 +376,14 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(2)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=5)
+        job_dict = self._build_job_dict()
+        desired = 5
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
 
         # setup_logging (when called) sets propagate=False on the "alomancy"
         # logger, so capture records by attaching a handler directly to it —
-        # see test_seed_logs_message in test_base_active_learning.py.
+        # see TestDisplayWorkflowSummary's _capture helper in
+        # test_committee_uncertainty_workflow.py.
         al_logger = logging.getLogger("alomancy")
         records: list[logging.LogRecord] = []
 
@@ -396,6 +400,7 @@ class TestFindHighSdStructures:
                 base_name="loop_0",
                 job_dict=job_dict,
                 structure_forces_dict=forces_dict,
+                num_of_structures=desired,
                 read_xyz=False,
             )
         finally:
@@ -418,7 +423,8 @@ class TestFindHighSdStructures:
         )
 
         monkeypatch.chdir(tmp_path)
-        job_dict = self._build_job_dict(desired=5)
+        job_dict = self._build_job_dict()
+        desired = 5
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         with pytest.raises(ValueError, match="No candidate structures"):
             find_high_sd_structures(
@@ -426,12 +432,13 @@ class TestFindHighSdStructures:
                 base_name="loop_0",
                 job_dict=job_dict,
                 structure_forces_dict={},
+                num_of_structures=desired,
                 read_xyz=False,
             )
 
     @pytest.mark.unit
     def test_desired_structures_zero_raises_value_error(self, tmp_path, monkeypatch):
-        """desired_number_of_structures <= 0 is a config error: ValueError,
+        """num_of_structures <= 0 is a config error: ValueError,
         not AssertionError (asserts are stripped under python -O)."""
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -440,7 +447,8 @@ class TestFindHighSdStructures:
         monkeypatch.chdir(tmp_path)
         structures = [self._make_structure(i) for i in range(2)]
         forces_dict = self._build_forces_dict(structures)
-        job_dict = self._build_job_dict(desired=0)
+        job_dict = self._build_job_dict()
+        desired = 0
         (tmp_path / "results" / "loop_0" / "structure_generation").mkdir(parents=True)
         with pytest.raises(ValueError, match="greater than 0"):
             find_high_sd_structures(
@@ -448,6 +456,7 @@ class TestFindHighSdStructures:
                 base_name="loop_0",
                 job_dict=job_dict,
                 structure_forces_dict=forces_dict,
+                num_of_structures=desired,
                 read_xyz=False,
             )
 
@@ -575,7 +584,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             chem_formula_list=["H2"],
         )
         assert len(result) == 3
@@ -598,7 +607,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             atom_number_range=(2, 2),
         )
         assert len(result) == 4
@@ -619,7 +628,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=["al_loop_0"],
         )
         # The returned atoms should have config_type set to {base_name}_{job_name}
@@ -647,7 +656,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_1",
             structure_generation_job_dict=job_dict,
             train_atoms_list=init_structures + high_sd_structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=["init_amorphous"],
         )
         # high_sd structures are eligible even though selectable_configs only lists init_amorphous
@@ -674,7 +683,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_1",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
             selectable_configs=None,
         )
         assert len(result) == 5
@@ -697,7 +706,7 @@ class TestSelectInitialStructures:
             base_name="al_loop_0",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             selectable_configs=caller_list,
         )
         assert caller_list == ["init_amorphous"]
@@ -718,7 +727,7 @@ class TestSelectInitialStructures:
         kwargs = {
             "structure_generation_job_dict": job_dict,
             "train_atoms_list": structures,
-            "max_number_of_concurrent_jobs": 5,
+            "num_of_md_starts": 5,
             "selectable_configs": ["init_amorphous"],
         }
         # Loop 0 selection
@@ -743,7 +752,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=structures,
-                max_number_of_concurrent_jobs=3,
+                num_of_md_starts=3,
                 atom_number_range=(1, 5),
             )
         assert any(issubclass(warning.category, UserWarning) for warning in w)
@@ -764,7 +773,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 4
@@ -790,7 +799,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 3
@@ -812,7 +821,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             chem_formula_list=["H2", "O2"],
             atom_number_range=(2, 2),
         )
@@ -821,7 +830,7 @@ class TestSelectInitialStructures:
         assert all(a.get_chemical_formula() in ["H2", "O2"] for a in result)
 
     def test_reuses_structures_when_concurrency_exceeds_available(self):
-        """When max_number_of_concurrent_jobs exceeds the number of selectable
+        """When num_of_md_starts exceeds the number of selectable
         structures, structures are reused (not an error) and every returned
         atoms object gets a distinct md_seed."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -835,7 +844,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=5,
+            num_of_md_starts=5,
         )
         assert len(result) == 5
         seeds = [a.info["md_seed"] for a in result]
@@ -867,7 +876,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=structures,
-                max_number_of_concurrent_jobs=5,
+                num_of_md_starts=5,
             )
         finally:
             al_logger.removeHandler(handler)
@@ -888,7 +897,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
         )
         assert len(result) == 3
         seeds = [a.info["md_seed"] for a in result]
@@ -896,7 +905,7 @@ class TestSelectInitialStructures:
 
     def test_reuse_with_enforce_chemical_diversity(self):
         """Reuse also works (no error) when enforce_chemical_diversity=True and
-        fewer structures exist than max_number_of_concurrent_jobs."""
+        fewer structures exist than num_of_md_starts."""
         from alomancy.structure_generation.select_initial_structures import (
             select_initial_structures,
         )
@@ -908,7 +917,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=4,
+            num_of_md_starts=4,
             enforce_chemical_diversity=True,
         )
         assert len(result) == 4
@@ -928,7 +937,7 @@ class TestSelectInitialStructures:
                 base_name="test",
                 structure_generation_job_dict=job_dict,
                 train_atoms_list=[],
-                max_number_of_concurrent_jobs=3,
+                num_of_md_starts=3,
             )
 
     def test_seed_param_controls_md_seed_values(self):
@@ -944,7 +953,7 @@ class TestSelectInitialStructures:
             base_name="test",
             structure_generation_job_dict=job_dict,
             train_atoms_list=structures,
-            max_number_of_concurrent_jobs=3,
+            num_of_md_starts=3,
             seed=1000,
         )
         seeds = sorted(a.info["md_seed"] for a in result)
@@ -1074,92 +1083,55 @@ class TestTrajectoryIO:
 class TestMolecularDynamics:
     """Test molecular dynamics functionality."""
 
-    @patch("alomancy.structure_generation.md.md_wfl.run_md")
-    def test_run_md_function(self, mock_run_md):
-        """Test MD run function."""
+    @staticmethod
+    def _run_emt_md(tmp_path, to_generate, steps=40, total_md_runs=1):
+        from ase.build import bulk
+        from ase.calculators.emt import EMT
+
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        # Mock MD run
-        mock_run_md.return_value = None
-
-        # Test parameters
-        structure_generation_job_dict = {"name": "test_md"}
-        initial_structure = Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [0, 0, 1]])
-
+        atoms = bulk("Cu", "fcc", a=3.6, cubic=True)
+        atoms.info["job_id"] = 0
+        atoms.info["md_seed"] = 1
         run_md(
-            structure_generation_job_dict=structure_generation_job_dict,
-            initial_structure=initial_structure,
-            total_md_runs=1,
-            out_dir="/tmp/test",
-            model_path=["test_model.pt"],
-            steps=100,
-            temperature=300,
-            desired_number_of_structures=10,
-            timestep_fs=0.5,
-            verbose=0,
+            structure_generation_job_dict={
+                "name": "structure_generation",
+                "num_of_structures_to_generate": to_generate,
+            },
+            initial_structure=atoms,
+            total_md_runs=total_md_runs,
+            out_dir=str(tmp_path),
+            model_path=None,
+            steps=steps,
+            calculator=EMT(),
         )
 
-        mock_run_md.assert_called_once()
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "to_generate, total_md_runs, expected", [(8, 1, 8), (8, 2, 4), (40, 1, 40)]
+    )
+    def test_snapshots_split_num_to_generate_across_runs(
+        self, tmp_path, to_generate, total_md_runs, expected
+    ):
+        """Each run writes its share of num_of_structures_to_generate."""
+        from ase.io import read
 
-    def test_md_parameter_validation(self):
-        """Test MD parameter validation."""
-        # Test valid parameters
-        valid_params = {
-            "steps": 100,
-            "temperature": 300,
-            "desired_number_of_structures": 20,
-            "total_md_runs": 5,
-        }
+        self._run_emt_md(tmp_path, to_generate, total_md_runs=total_md_runs)
+        frames = read(tmp_path / "structure_generation.xyz", ":")
+        assert len(frames) == expected
 
-        # Check basic constraints
-        assert valid_params["desired_number_of_structures"] > 0
-        assert (
-            valid_params["steps"]
-            > valid_params["desired_number_of_structures"]
-            / valid_params["total_md_runs"]
-        )
-        assert valid_params["temperature"] > 0
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_non_positive_num_to_generate_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="num_of_structures_to_generate"):
+            self._run_emt_md(tmp_path, bad)
 
-        # Test invalid parameters that would cause division by zero
-        invalid_params = {
-            "steps": 10,
-            "desired_number_of_structures": 50,
-            "total_md_runs": 5,
-        }
-
-        # This should fail the constraint
-        snapshot_interval = (
-            invalid_params["steps"]
-            * invalid_params["total_md_runs"]
-            // invalid_params["desired_number_of_structures"]
-        )
-        assert snapshot_interval == 1  # This would be problematic for the loop
-
-    @patch("ase.md.langevin.Langevin")
-    @patch("mace.calculators.MACECalculator")
-    def test_md_setup(self, mock_mace_calc, mock_langevin):
-        """Test MD simulation setup."""
-        # Mock calculator
-        mock_calc = MagicMock()
-        mock_mace_calc.return_value = mock_calc
-
-        # Mock dynamics
-        mock_dyn = MagicMock()
-        mock_langevin.return_value = mock_dyn
-
-        # Test setup
-        atoms = Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [0, 0, 1]])
-        atoms.calc = mock_calc
-
-        from ase.md.langevin import Langevin
-        from ase.units import fs
-
-        dyn = Langevin(
-            atoms=atoms, timestep=0.5 * fs, temperature_K=300, friction=0.002
-        )
-
-        assert dyn is not None
-        mock_langevin.assert_called_once()
+    @pytest.mark.unit
+    def test_more_structures_than_md_steps_raises(self, tmp_path):
+        """steps x runs < num_of_structures_to_generate would make the
+        snapshot interval 0."""
+        with pytest.raises(ValueError, match="num_of_structures_to_generate"):
+            self._run_emt_md(tmp_path, 41, steps=40)
 
     @pytest.mark.unit
     @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
@@ -1183,7 +1155,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1215,7 +1187,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1259,7 +1231,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "num_of_structures_to_generate": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1302,7 +1274,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "num_of_structures_to_generate": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1343,7 +1315,7 @@ class TestMolecularDynamics:
         run_md(
             structure_generation_job_dict={
                 "name": "test",
-                "desired_number_of_structures": 1,
+                "num_of_structures_to_generate": 1,
             },
             initial_structure=initial_structure,
             total_md_runs=1,
@@ -1376,7 +1348,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1406,7 +1378,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1441,7 +1413,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1478,7 +1450,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1506,7 +1478,7 @@ class TestMolecularDynamics:
             run_md(
                 structure_generation_job_dict={
                     "name": "test",
-                    "desired_number_of_structures": 1,
+                    "num_of_structures_to_generate": 1,
                 },
                 initial_structure=initial_structure,
                 total_md_runs=1,
@@ -1515,39 +1487,6 @@ class TestMolecularDynamics:
                 steps=10,
                 ensemble="nph",
             )
-
-    @patch("alomancy.remote_submission.md_remote_submitter")
-    def test_md_remote_submission(self, mock_md_submitter):
-        """Test MD remote submission."""
-        from alomancy.remote_submission import md_remote_submitter
-
-        # Mock return trajectory files
-        mock_trajectories = [
-            "/test/path/md_output_0/trajectory.xyz",
-            "/test/path/md_output_1/trajectory.xyz",
-        ]
-        mock_md_submitter.return_value = mock_trajectories
-
-        # Test parameters
-        mock_remote_info = MagicMock()
-        base_name = "test_al_loop_0"
-        target_file = "trajectory.xyz"
-        input_atoms_list = [
-            Atoms(symbols=["H"], positions=[[0, 0, 0]]) for _ in range(2)
-        ]
-
-        result = md_remote_submitter(
-            remote_info=mock_remote_info,
-            base_name=base_name,
-            target_file=target_file,
-            input_atoms_list=input_atoms_list,
-            function=MagicMock(),
-            function_kwargs={},
-        )
-
-        assert len(result) == 2
-        assert all("md_output_" in path for path in result)
-        mock_md_submitter.assert_called_once()
 
     @pytest.mark.unit
     def test_md_remote_submission_offsets_output_dirs_past_existing_runs(
@@ -1609,308 +1548,88 @@ class TestMolecularDynamics:
             assert config["output_files"] == [expected_dir]
 
 
-class TestStructureSelection:
-    """Test structure selection functionality."""
-
-    @patch(
-        "alomancy.structure_generation.select_initial_structures.select_initial_structures"
-    )
-    def test_initial_structure_selection(self, mock_select_initial):
-        """Test initial structure selection."""
-        from alomancy.structure_generation.select_initial_structures import (
-            select_initial_structures,
-        )
-
-        # Mock selected structures
-        mock_structures = [
-            Atoms(symbols=["C", "O"], positions=[[0, 0, 0], [1.1, 0, 0]]),
-            Atoms(symbols=["N", "H"], positions=[[0, 0, 0], [1.0, 0, 0]]),
-        ]
-        mock_select_initial.return_value = mock_structures
-
-        result = select_initial_structures(
-            base_name="test_loop_0",
-            structure_generation_job_dict={"name": "test"},
-            max_number_of_concurrent_jobs=2,
-            chem_formula_list=[],
-            atom_number_range=(2, 10),
-            enforce_chemical_diversity=True,
-            train_atoms_list=[],
-            verbose=0,
-        )
-
-        assert len(result) == 2
-        mock_select_initial.assert_called_once()
-
-    def test_chemical_diversity_check(self):
-        """Test chemical diversity checking."""
-        structures = [
-            Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [1, 0, 0]]),  # H2
-            Atoms(
-                symbols=["O", "H", "H"], positions=[[0, 0, 0], [1, 0, 0], [0, 1, 0]]
-            ),  # H2O
-            Atoms(symbols=["C", "O"], positions=[[0, 0, 0], [1.1, 0, 0]]),  # CO
-        ]
-
-        # Check chemical formulas
-        formulas = [atoms.get_chemical_formula() for atoms in structures]
-        unique_formulas = set(formulas)
-
-        assert len(unique_formulas) == 3  # All different
-        assert "H2" in formulas
-        assert "H2O" in formulas
-        assert "CO" in formulas
-
-    def test_atom_number_filtering(self):
-        """Test filtering structures by atom number."""
-        structures = [
-            Atoms(symbols=["H"], positions=[[0, 0, 0]]),  # 1 atom
-            Atoms(symbols=["H", "H"], positions=[[0, 0, 0], [1, 0, 0]]),  # 2 atoms
-            Atoms(
-                symbols=["O", "H", "H"], positions=[[0, 0, 0], [1, 0, 0], [0, 1, 0]]
-            ),  # 3 atoms
-            Atoms(symbols=["C"] * 20, positions=np.random.random((20, 3))),  # 20 atoms
-        ]
-
-        # Filter by atom number range
-        min_atoms, max_atoms = 2, 10
-        filtered_structures = [
-            atoms for atoms in structures if min_atoms <= len(atoms) <= max_atoms
-        ]
-
-        assert len(filtered_structures) == 2  # 2-atom and 3-atom structures
-        assert all(
-            min_atoms <= len(atoms) <= max_atoms for atoms in filtered_structures
-        )
-
-    @patch(
-        "alomancy.structure_generation.find_high_sd_structures.find_high_sd_structures"
-    )
-    def test_high_sd_structure_selection(self, mock_find_high_sd, sample_md_structures):
-        """Test high standard deviation structure selection."""
-        from alomancy.structure_generation.find_high_sd_structures import (
-            find_high_sd_structures,
-        )
-
-        # Mock return high SD structures
-        high_sd_structures = sample_md_structures[:10]  # Select first 10
-        mock_find_high_sd.return_value = high_sd_structures
-
-        structure_list = sample_md_structures
-        base_name = "test_loop_0"
-        job_dict = {"test": "dict"}
-        list_of_calculators = [MagicMock() for _ in range(3)]
-
-        result = find_high_sd_structures(
-            structure_list=structure_list,
-            base_name=base_name,
-            job_dict=job_dict,
-            list_of_other_calculators=list_of_calculators,
-            forces_name="REF_forces",
-            energy_name="REF_energy",
-            verbose=0,
-        )
-
-        assert len(result) == 10
-        mock_find_high_sd.assert_called_once()
-
-
 class TestForceVarianceCalculation:
     """Test force variance calculation functionality."""
 
-    def test_force_flattening(self):
-        """Test force array flattening."""
-        # Test the flatten_array_of_forces function from md_wfl.py
-        forces = np.random.random((5, 3))  # 5 atoms, 3 components each
+    @pytest.mark.unit
+    def test_standard_deviation_calculation(self, sample_md_structures, tmp_path):
+        """The real committee std-dev scoring over perturbed model forces."""
+        import polars as pl
 
-        def flatten_array_of_forces(forces_array):
-            return np.reshape(forces_array, (1, forces_array.shape[0] * 3))
+        from alomancy.structure_generation.find_high_sd_structures import (
+            std_deviation_of_forces,
+        )
 
-        flattened = flatten_array_of_forces(forces)
-
-        assert flattened.shape == (1, 15)  # 5 atoms x 3 components
-
-        # Test that we can unflatten correctly
-        unflattened = flattened.reshape((5, 3))
-        np.testing.assert_array_equal(forces, unflattened)
-
-    def test_standard_deviation_calculation(self, sample_md_structures):
-        """Test standard deviation calculation for forces."""
-        import pandas as pd
-
-        # Simulate multiple model predictions
-        n_models = 5
+        rng = np.random.default_rng(0)
         structure_forces_dict = {}
-
-        for model_id in range(n_models):
-            model_name = f"model_{model_id}" if model_id > 0 else "base_mace"
-            structure_forces_dict[model_name] = {}
-
-            for struct_id, atoms in enumerate(sample_md_structures[:10]):
-                # Add some variation to the forces
-                base_forces = atoms.arrays["forces"]
-                noise = np.random.random(base_forces.shape) * 0.1 - 0.05
-                varied_forces = base_forces + noise
-
-                structure_forces_dict[model_name][f"structure_{struct_id}"] = {
-                    "forces": varied_forces,
-                    "energy": atoms.info["energy"] + np.random.random() * 0.1,
+        for model_id in range(5):
+            model_name = f"fit_{model_id}" if model_id > 0 else "base_mlip"
+            structure_forces_dict[model_name] = {
+                f"structure_{struct_id}": {
+                    "forces": atoms.arrays["forces"]
+                    + rng.random(atoms.arrays["forces"].shape) * 0.1
+                    - 0.05,
+                    "energy": atoms.info["energy"] + rng.random() * 0.1,
                 }
+                for struct_id, atoms in enumerate(sample_md_structures[:10])
+            }
 
-        # Test std deviation calculation function structure
-        def mock_std_deviation_of_forces(structure_forces_dict, md_dir, verbose=0):
-            number_of_structures = len(structure_forces_dict["base_mace"])
-            std_dev_array = np.zeros((number_of_structures, 3))
+        result_df = std_deviation_of_forces(structure_forces_dict, tmp_path)
 
-            for structure in range(number_of_structures):
-                forces_array = np.concatenate(
-                    [
-                        structure_forces_dict[fit][f"structure_{structure}"]["forces"]
-                        for fit in structure_forces_dict
-                    ],
-                    axis=0,
-                )
-
-                std_dev_per_force_fragment = np.std(forces_array, axis=0)
-                energy_array = np.array(
-                    [
-                        structure_forces_dict[fit][f"structure_{structure}"]["energy"]
-                        for fit in structure_forces_dict
-                    ]
-                )
-                std_dev_per_energy = np.std(energy_array)
-
-                std_dev_array[structure, :] = np.array(
-                    [
-                        np.max(std_dev_per_force_fragment),
-                        np.mean(std_dev_per_force_fragment),
-                        std_dev_per_energy,
-                    ]
-                )
-
-            df = pd.DataFrame(
-                std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]
-            ).sort_values(by="max_std_dev", ascending=False)
-
-            return df
-
-        result_df = mock_std_deviation_of_forces(structure_forces_dict, "/tmp")
-
-        assert isinstance(result_df, pd.DataFrame)
+        assert isinstance(result_df, pl.DataFrame)
         assert len(result_df) == 10
-        assert "max_std_dev" in result_df.columns
-        assert "mean_std_dev" in result_df.columns
-        assert "std_dev_energy" in result_df.columns
-
-        # Check that max_std_dev >= mean_std_dev for each structure
-        assert all(result_df["max_std_dev"] >= result_df["mean_std_dev"])
+        for col in ("max_std_dev", "mean_std_dev", "std_dev_energy"):
+            assert col in result_df.columns
+        assert (result_df["max_std_dev"] >= result_df["mean_std_dev"]).all()
 
 
-class TestTrajectoryProcessing:
-    """Test trajectory file processing."""
+class TestMdTrajectoryOutput:
+    """md_kwargs.traj_interval: optional full-resolution trajectory, run
+    through real ASE dynamics with a cheap EMT calculator."""
 
-    def test_trajectory_file_reading(self, sample_md_structures):
-        """Test reading trajectory files."""
-        from ase.io import read, write
+    @staticmethod
+    def _run(tmp_path, **kwargs):
+        from ase.build import bulk
+        from ase.calculators.emt import EMT
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            traj_file = Path(tmpdir) / "trajectory.xyz"
+        from alomancy.structure_generation.md.md_wfl import run_md
 
-            # Write trajectory
-            write(str(traj_file), sample_md_structures[:10], format="extxyz")
+        atoms = bulk("Cu", "fcc", a=3.6, cubic=True)
+        atoms.info["job_id"] = 0
+        atoms.info["md_seed"] = 1
+        run_md(
+            structure_generation_job_dict={
+                "name": "structure_generation",
+                "num_of_structures_to_generate": 20,
+            },
+            initial_structure=atoms,
+            total_md_runs=1,
+            out_dir=str(tmp_path),
+            model_path=None,
+            steps=40,
+            calculator=EMT(),
+            **kwargs,
+        )
 
-            # Read trajectory
-            read_structures = read(str(traj_file), ":", format="extxyz")
+    @pytest.mark.unit
+    def test_no_trajectory_file_by_default(self, tmp_path):
+        self._run(tmp_path)
+        assert not (tmp_path / "md_trajectory.xyz").exists()
+        assert (tmp_path / "structure_generation.xyz").exists()
 
-            assert len(read_structures) == 10
-            assert all(isinstance(atoms, Atoms) for atoms in read_structures)
+    @pytest.mark.unit
+    def test_trajectory_written_every_interval_without_duplicates(self, tmp_path):
+        from ase.io import read
 
-    def test_trajectory_concatenation(self, sample_md_structures):
-        """Test concatenating multiple trajectory files."""
-        from ase.io import write
+        self._run(tmp_path, traj_interval=5)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create multiple trajectory files
-            traj_files = []
-            for i in range(3):
-                traj_file = Path(tmpdir) / f"trajectory_{i}.xyz"
-                start_idx = i * 10
-                end_idx = (i + 1) * 10
-                write(
-                    str(traj_file),
-                    sample_md_structures[start_idx:end_idx],
-                    format="extxyz",
-                )
-                traj_files.append(str(traj_file))
+        frames = read(tmp_path / "md_trajectory.xyz", ":", format="extxyz")
+        # steps 0, 5, ..., 40 -- one frame each, even where a snapshot
+        # segment boundary coincides with the interval.
+        assert len(frames) == 40 // 5 + 1
 
-            # Simulate reading and concatenating
-            all_structures = []
-            for _ in traj_files:
-                structures = sample_md_structures[:10]  # Mock read
-                all_structures.extend(structures)
-
-            assert len(all_structures) == 30  # 3 files x 10 structures each
-
-
-@pytest.mark.integration
-class TestStructureGenerationIntegration:
-    """Integration tests for structure generation."""
-
-    @patch(
-        "alomancy.structure_generation.select_initial_structures.select_initial_structures"
-    )
-    @patch("alomancy.remote_submission.submitters.md_remote_submitter")
-    @patch(
-        "alomancy.structure_generation.find_high_sd_structures.find_high_sd_structures"
-    )
-    @patch("ase.io.read")
-    @patch("pathlib.Path.glob")
-    def test_full_structure_generation_workflow(
-        self,
-        mock_glob,
-        mock_read,
-        mock_find_high_sd,
-        mock_md_submitter,
-        mock_select_initial,
-        sample_md_structures,
-    ):
-        """Test complete structure generation workflow."""
-        # Mock all components
-        mock_select_initial.return_value = sample_md_structures[:5]
-        mock_md_submitter.return_value = ["/path/to/traj1.xyz", "/path/to/traj2.xyz"]
-        mock_read.return_value = sample_md_structures[:20]
-        mock_glob.return_value = [Path("model1.pt"), Path("model2.pt")]
-        mock_find_high_sd.return_value = sample_md_structures[:3]
-
-        # Test workflow components are called in sequence
-        # This would be part of the generate_structures method
-
-        # 1. Select initial structures
-        initial_structures = mock_select_initial()
-        assert len(initial_structures) == 5
-
-        # 2. Run MD simulations
-        trajectories = mock_md_submitter()
-        assert len(trajectories) == 2
-
-        # 3. Read MD results
-        md_structures = mock_read()
-        assert len(md_structures) == 20
-
-        # 4. Find high SD structures
-        high_sd_structures = mock_find_high_sd()
-        assert len(high_sd_structures) == 3
-
-
-@pytest.mark.slow
-@pytest.mark.requires_external
-class TestStructureGenerationExternal:
-    """Tests requiring external dependencies."""
-
-    def test_real_md_simulation(self, skip_if_no_external):
-        """Test with real MD simulation if MACE is available."""
-        pass
-
-    def test_real_ase_md(self, skip_if_no_external):
-        """Test with real ASE MD if available."""
-        pass
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [0, -3, 2.5, True, "10"])
+    def test_invalid_traj_interval_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="traj_interval"):
+            self._run(tmp_path, traj_interval=bad)

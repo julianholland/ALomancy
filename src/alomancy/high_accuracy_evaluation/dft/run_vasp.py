@@ -1,6 +1,7 @@
 import logging
 import os
 from functools import partial
+from typing import Any
 
 from ase import Atoms
 from ase.calculators.vasp import Vasp
@@ -48,6 +49,17 @@ def get_vasp_input_kwargs(vasp_input_kwargs: dict) -> dict:
     }
     defaults.update(vasp_input_kwargs)
     return defaults
+
+
+def resolve_effective_kwargs(vasp_kwargs: dict) -> dict:
+    """The dft_evaluator registry's uniform defaults-resolution entry point
+    (see registry.py) -- used only by the skeleton's pre-run config summary
+    (active_learning_workflow.py's display_workflow_summary) to show
+    the fully-resolved effective vasp_kwargs, not just what the user wrote.
+    Thin alias for get_vasp_input_kwargs (above, unchanged) so this display
+    can never drift out of sync with the real merge.
+    """
+    return get_vasp_input_kwargs(vasp_kwargs)
 
 
 def create_vasp_calc_object(
@@ -106,3 +118,10 @@ def run_go_vasp(
         create_vasp_calc_go,
         opt_prefix="vasp_opt",
     )
+
+
+def report_section(stats: dict, **kwargs: Any) -> Any:
+    """Loop-report section for this module (see analysis/report/sections.py)."""
+    from alomancy.analysis.report.sections import dft_section
+
+    return dft_section(stats, **kwargs)

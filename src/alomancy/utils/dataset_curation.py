@@ -38,7 +38,7 @@ def structure_domain(atoms: Atoms) -> str:
     ct = str(atoms.info.get("config_type", ""))
     if ct.startswith("surface"):
         return "surface"
-    if ct in {"init_MP", "bulk_rattle", "init_stretch_compress"}:
+    if ct in {"init_MP", "bulk_rattle", "init_stretch_compress", "init_rattle"}:
         return "bulk"
     if ct == "init_amorphous":
         return "amorphous"

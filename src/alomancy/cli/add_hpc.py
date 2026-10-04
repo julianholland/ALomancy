@@ -129,7 +129,7 @@ def build_alomancy_profile(
     triton_cache: str | None = None,
     dft_code: str | None = None,
     dft_paths: dict | None = None,
-    max_concurrent_jobs: int = 20,
+    max_num_of_concurrent_jobs: int = 20,
 ) -> dict:
     """Build the dict for one ALomancy HPC profile entry."""
     pre_cmds = [venv_cmd]
@@ -142,7 +142,7 @@ def build_alomancy_profile(
         "pre_cmds": pre_cmds,
         "partitions": partitions,
         "node_info": node_info,
-        "max_concurrent_jobs": max_concurrent_jobs,
+        "max_num_of_concurrent_jobs": max_num_of_concurrent_jobs,
     }
 
     if dft_paths:
@@ -446,7 +446,7 @@ def add_hpc_wizard() -> None:
         "started (occupying a queue slot) at the same time — the next queued job "
         "starts the instant a running one finishes."
     )
-    max_concurrent_jobs = _prompt_int(
+    max_num_of_concurrent_jobs = _prompt_int(
         "Number of concurrent jobs you wish to have running on this hpc from alomancy",
         default=20,
     )
@@ -482,7 +482,7 @@ def add_hpc_wizard() -> None:
         triton_cache=triton_cache,
         dft_code=dft_code,
         dft_paths=dft_paths if dft_paths else None,
-        max_concurrent_jobs=max_concurrent_jobs,
+        max_num_of_concurrent_jobs=max_num_of_concurrent_jobs,
     )
 
     # --- Write files (before remote install so a failed install doesn't lose answers) ---

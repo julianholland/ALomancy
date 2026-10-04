@@ -48,10 +48,11 @@ def plot_training_bond_distances(
     """Plot a per-element-pair histogram of pairwise interatomic distances
     across the current training set, one panel per element pair.
 
-    Reads db.get_train_atoms(exclude_duplicates=True, exclude_high_force=True)
-    directly -- train-split structures only, with anything flagged by
-    remove_redundancy_from_partition or remove_high_force_structures_from_
-    partition already excluded, matching what the committee actually trains
+    Reads db.get_train_atoms(exclude_duplicates=True,
+    exclude_quality_filtered=True) directly -- train-split structures only,
+    with anything flagged by remove_redundancy_from_partition or the train
+    quality filter (utils/split_filter.py) already excluded, matching what
+    the committee actually trains
     on rather than everything the DB happens to hold.
 
     Intended to run at the start of every AL loop, before train_mlip, as a
@@ -63,7 +64,9 @@ def plot_training_bond_distances(
     "the model saw it but the flagging pipeline is filtering it out before
     training," which look identical from the MD-collapse symptom alone.
     """
-    atoms_list = db.get_train_atoms(exclude_duplicates=True, exclude_high_force=True)
+    atoms_list = db.get_train_atoms(
+        exclude_duplicates=True, exclude_quality_filtered=True
+    )
     if not atoms_list:
         logger.warning(
             "No training structures available -- skipping bond-distance plot."

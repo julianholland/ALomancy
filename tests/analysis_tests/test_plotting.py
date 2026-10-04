@@ -2,12 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
+import polars as pl
 import pytest
 
 
 def _make_df():
-    return pd.DataFrame({"mae_e": [0.1, 0.05, 0.03], "mae_f": [0.2, 0.1, 0.06]})
+    return pl.DataFrame({"mae_e": [0.1, 0.05, 0.03], "mae_f": [0.2, 0.1, 0.06]})
 
 
 @pytest.mark.unit
@@ -218,8 +218,8 @@ class TestPlotUpdate:
     def test_update_dataframe(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
-        df1 = pd.DataFrame({"a": [1.0]})
-        df2 = pd.DataFrame({"a": [2.0]})
+        df1 = pl.DataFrame({"a": [1.0]})
+        df2 = pl.DataFrame({"a": [2.0]})
         p = Plot(
             data=df1, title="Test", xlabel="X", ylabel="Y", directory=str(tmp_path)
         )
@@ -268,7 +268,7 @@ class TestMaeAlLoopPlot:
 
         mock_fig, mock_ax = MagicMock(), MagicMock()
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "mae_e_per_atom": [0.1, 0.05],
                 "mae_f": [0.3, 0.15],
@@ -286,7 +286,7 @@ class TestMaeAlLoopPlot:
 
         mock_fig, mock_ax = MagicMock(), MagicMock()
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
-        df = pd.DataFrame({"mae_e_per_atom": [0.1, 0.05], "mae_f": [0.3, 0.15]})
+        df = pl.DataFrame({"mae_e_per_atom": [0.1, 0.05], "mae_f": [0.3, 0.15]})
         mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
         assert not mock_ax.errorbar.called
         assert mock_ax.plot.called
@@ -297,8 +297,22 @@ class TestMaeAlLoopPlot:
 
         mock_fig, mock_ax = MagicMock(), MagicMock()
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
-        df = pd.DataFrame({"mae_e_per_atom": [0.1], "mae_f": [0.3]})
+        df = pl.DataFrame({"mae_e_per_atom": [0.1], "mae_f": [0.3]})
         mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
         labels = [call.kwargs.get("label", "") for call in mock_ax.plot.call_args_list]
         assert any("eV/atom" in lbl for lbl in labels)
         assert any("eV/Å" in lbl for lbl in labels)
+
+    @patch("alomancy.analysis.plotting.plt")
+    def test_x_axis_is_al_loop_column_so_skipped_loops_leave_a_gap(
+        self, mock_plt, tmp_path
+    ):
+        from alomancy.analysis.plotting import mae_al_loop_plot
+
+        mock_fig, mock_ax = MagicMock(), MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        df = pl.DataFrame(
+            {"al_loop": [0, 2], "mae_e_per_atom": [0.1, 0.05], "mae_f": [0.3, 0.15]}
+        )
+        mae_al_loop_plot(df, {"name": "test"}, directory=tmp_path)
+        assert all(call.args[0] == [0, 2] for call in mock_ax.plot.call_args_list)

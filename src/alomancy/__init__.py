@@ -3,6 +3,7 @@ import shutil
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 import matplotlib
 
@@ -141,3 +142,24 @@ _register_rsync_retry_warning_filter()
 # in-flight remote job along with it. Agg never creates GUI/Tk state, so
 # it has no thread affinity to violate.
 matplotlib.use("Agg")
+
+__all__ = ["ALomancy", "__version__"]
+
+
+def __getattr__(name: str) -> Any:
+    # Lazy: importing alomancy.core here would pull in expyre, matplotlib
+    # and the MLIP stack at package import, before the setup above is
+    # guaranteed to have run for every import path.
+    if name == "ALomancy":
+        from alomancy.core.entry import ALomancy
+
+        return ALomancy
+    if name == "__version__":
+        # Written by the build backend (hatch-vcs) at build/install time;
+        # missing only in a source tree that was never installed.
+        try:
+            from alomancy.version import __version__
+        except ImportError:
+            return "unknown"
+        return __version__
+    raise AttributeError(f"module 'alomancy' has no attribute {name!r}")
