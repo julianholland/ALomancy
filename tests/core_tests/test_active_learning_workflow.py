@@ -1483,6 +1483,30 @@ class TestStartModes:
             set(a.get_chemical_symbols()) == {"H"} for a in shared_db.get_all_as_atoms()
         )
 
+    @pytest.mark.unit
+    def test_xyz_with_every_structure_excluded_is_not_reread(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """No structure is stored to carry the file's marker when every one
+        is excluded, so only imported_sources.json stops a re-read on each
+        start."""
+        from alomancy.utils.import_structures import read_structures
+
+        monkeypatch.chdir(tmp_path)
+        write("foreign.xyz", [self._foreign(i) for i in range(2)], format="extxyz")
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "foreign.xyz"}
+        )
+
+        with patch(f"{_MODULE}.read_structures", wraps=read_structures) as reader:
+            assert wf._import_xyz("foreign.xyz") == 0
+            assert wf._import_xyz("foreign.xyz") == 0
+
+        assert reader.call_count == 1
+        assert shared_db.size == 0
+        (record,) = shared_db.imported_sources.values()
+        assert record["n_added"] == 0
+
     def test_database_copy_keeps_splits_and_leaves_source_alone(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):

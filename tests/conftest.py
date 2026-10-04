@@ -1,11 +1,72 @@
 """Test Configuration and Fixtures for ALomancy test suite."""
 
 import os
+import shutil
+import tempfile
+from pathlib import Path
 
 import numpy as np
 import pytest
 from ase import Atoms
 from ase.io import write
+
+# ---------------------------------------------------------------------------
+# Temporary directories on tmpfs (performance)
+# ---------------------------------------------------------------------------
+
+# GlobalDatabase construction is 13 SQLite statements, each waiting on an
+# fsync: measured 3-6 s per database on a btrfs /tmp and 5 ms on tmpfs.
+# With dozens of tests building databases, this alone took the full suite
+# from 18 s to 278 s (8 xdist workers). So the session's basetemp goes on
+# /dev/shm when it is usable; set ALOMANCY_TEST_DISK_TMP=1 (or pass
+# --basetemp) to keep pytest's normal disk location instead.
+_TMPFS = Path("/dev/shm")
+_TMPFS_MIN_FREE = 1 << 30  # 1 GB
+
+
+def _tmpfs_usable() -> bool:
+    try:
+        return (
+            _TMPFS.is_dir()
+            and os.access(_TMPFS, os.W_OK)
+            and shutil.disk_usage(_TMPFS).free >= _TMPFS_MIN_FREE
+        )
+    except OSError:
+        return False
+
+
+def pytest_configure(config):
+    # xdist workers get their own subdirectory of the controller's basetemp.
+    if hasattr(config, "workerinput") or config.option.basetemp:
+        return
+    if os.environ.get("ALOMANCY_TEST_DISK_TMP") or not _tmpfs_usable():
+        return
+    config.option.basetemp = tempfile.mkdtemp(prefix="alomancy-pytest-", dir=_TMPFS)
+    config._alomancy_tmpfs_basetemp = config.option.basetemp
+
+
+def pytest_collection_modifyitems(config, items):
+    """Every test must say which tier it is in: `pytest -m unit` (and the
+    local/pre-commit `-m "unit and not slow"`) silently skips a test with
+    no marker, which hid 19 tests from it before this check existed."""
+    unmarked = [
+        item.nodeid
+        for item in items
+        if item.get_closest_marker("unit") is None
+        and item.get_closest_marker("integration") is None
+    ]
+    if unmarked:
+        raise pytest.UsageError(
+            "Test(s) without @pytest.mark.unit or @pytest.mark.integration "
+            "(mark each test function):\n  " + "\n  ".join(unmarked)
+        )
+
+
+def pytest_unconfigure(config):
+    created = getattr(config, "_alomancy_tmpfs_basetemp", None)
+    if created:
+        shutil.rmtree(created, ignore_errors=True)
+
 
 # ---------------------------------------------------------------------------
 # Utility: build test Atoms objects
@@ -224,10 +285,10 @@ def shared_db(_session_global_database):
     filesystem path, without paying that construction's ~1-3s cost per test.
 
     Safe under both plain `pytest` (sequential within a process) and
-    pytest-xdist (distributes whole test files/classes to separate worker
-    processes, each with its own conftest session fixtures -- never splits
-    one test file's tests across workers in a way that would race on this
-    instance). Not suitable for a test that specifically asserts on the
+    pytest-xdist: xdist does spread one file's tests across workers, but
+    each worker process builds its own session instance, and tests within
+    a worker run one at a time, so no two tests ever share it at once. Not
+    suitable for a test that specifically asserts on the
     DB's on-disk path/location, or that needs to inspect the raw contents
     of a `db_path` directory it controls -- those tests should keep
     constructing their own GlobalDatabase(str(tmp_path / "db")) directly.

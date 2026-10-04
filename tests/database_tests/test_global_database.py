@@ -955,6 +955,67 @@ class TestGlobalDbId:
         assert ids_after_first == ids_after_second
 
 
+class TestImportedSources:
+    """import_from_database records each source it has read, so a source
+    whose structures were all excluded is not re-read on every start."""
+
+    @staticmethod
+    def _source(tmp_path, symbols):
+        source = GlobalDatabase(str(tmp_path / "old_run"))
+        source.add_structures(
+            [
+                make_atoms(
+                    symbols,
+                    config_type="init_amorphous",
+                    ref_energy=-1.0,
+                    ref_forces=np.zeros((len(symbols), 3)),
+                )
+            ],
+            split="train",
+            skip_duplicates=False,
+        )
+        return tmp_path / "old_run"
+
+    @pytest.mark.unit
+    def test_fully_excluded_database_is_not_reread(self, tmp_path, monkeypatch):
+        source = self._source(tmp_path, ["Cu", "Cu"])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        reads = []
+        original = GlobalDatabase.get_all_as_atoms
+
+        def counting(self):
+            reads.append(self.db_path)
+            return original(self)
+
+        monkeypatch.setattr(GlobalDatabase, "get_all_as_atoms", counting)
+
+        assert db.import_from_database(source, elements=["H"]) == 0
+        assert db.import_from_database(source, elements=["H"]) == 0
+
+        assert len(reads) == 1
+        assert db.imported_sources[str(source.resolve())]["n_added"] == 0
+
+    @pytest.mark.unit
+    def test_structure_markers_from_older_databases_still_count(self, tmp_path):
+        """Databases imported before imported_sources.json existed only have
+        the per-structure source_database marker."""
+        source = self._source(tmp_path, ["H", "H"])
+        db = GlobalDatabase(str(tmp_path / "db"))
+        assert db.import_from_database(source) == 1
+        db._imported_sources_path.unlink()
+
+        assert db.is_imported(str(source.resolve()), "source_database")
+        assert db.import_from_database(source) == 0
+        assert db.size == 1
+
+    @pytest.mark.unit
+    def test_clear_forgets_imported_sources(self, tmp_path):
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.record_import("some-source", 0)
+        db.clear()
+        assert db.imported_sources == {}
+
+
 class TestExportIsExtxyzSafe:
     """Structures leaving the DB never carry an empty info value: extxyz
     turns one into a bare "key=" on its second write, which swallows the

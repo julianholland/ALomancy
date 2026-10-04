@@ -20,12 +20,14 @@ class _Dataset:
         return compositions
 
 
+@pytest.mark.unit
 def test_objective_energy_per_atom():
     objective = objective_energy_per_atom()
 
     np.testing.assert_allclose(objective(_Dataset()), [-5.0, -6.0])
 
 
+@pytest.mark.unit
 def test_objective_energy_per_atom_accepts_unevaluated_seeds():
     class DatasetWithNan(_Dataset):
         def get_all_energies(self):
@@ -36,6 +38,7 @@ def test_objective_energy_per_atom_accepts_unevaluated_seeds():
     np.testing.assert_allclose(objective(DatasetWithNan()), [0.0, -6.0])
 
 
+@pytest.mark.unit
 def test_ezga_config_uses_bounded_mutations_and_per_atom_energy():
     config = build_ezga_config(
         dataset_path=Path("initial.xyz"),
@@ -78,6 +81,7 @@ def test_ezga_config_uses_bounded_mutations_and_per_atom_energy():
     )
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("min_atoms", "max_atoms"),
     [(0, 41), (10, 9)],

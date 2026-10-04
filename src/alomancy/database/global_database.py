@@ -1,5 +1,8 @@
+import json
 import logging
+import os
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -53,6 +56,50 @@ class GlobalDatabase:
         ids = self.partition.get_ids()
         if ids:
             self.partition.remove_container(ids)
+        self._imported_sources_path.unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
+    # Imported sources (general.start_from)
+    # ------------------------------------------------------------------
+
+    @property
+    def _imported_sources_path(self) -> Path:
+        return self.db_path / "imported_sources.json"
+
+    @property
+    def imported_sources(self) -> dict[str, dict]:
+        """{marker: {"n_added", "imported"}} for every start_from source
+        already imported, from imported_sources.json next to the DB. A
+        source whose structures were all excluded (other elements, or all
+        duplicates) has no structure carrying its marker, so without this
+        record it would be re-read on every start."""
+        path = self._imported_sources_path
+        if not path.exists():
+            return {}
+        return dict(json.loads(path.read_text()))
+
+    def is_imported(self, marker: str, metadata_key: str) -> bool:
+        """Whether the source *marker* was imported before: recorded in
+        imported_sources.json, or (databases written before that file
+        existed) carried by any stored structure as *metadata_key*."""
+        if marker in self.imported_sources:
+            return True
+        return any(
+            c.AtomPositionManager.metadata.get(metadata_key) == marker
+            for c in self.partition.list_containers()
+        )
+
+    def record_import(self, marker: str, n_added: int) -> None:
+        """Record *marker* as imported, even when it added nothing."""
+        sources = self.imported_sources
+        sources[marker] = {
+            "n_added": int(n_added),
+            "imported": datetime.now().isoformat(timespec="seconds"),
+        }
+        path = self._imported_sources_path
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(sources, indent=2, sort_keys=True))
+        os.replace(tmp, path)
 
     # ------------------------------------------------------------------
     # Writing
@@ -143,10 +190,7 @@ class GlobalDatabase:
                 "point at a different (former) run's database."
             )
         marker = str(source)
-        if any(
-            c.AtomPositionManager.metadata.get("source_database") == marker
-            for c in self.partition.list_containers()
-        ):
+        if self.is_imported(marker, "source_database"):
             logger.info("Database %s already imported; skipping.", source)
             return 0
 
@@ -161,6 +205,7 @@ class GlobalDatabase:
             for key in [k for k in atoms.info if k.startswith(("model_", "mace_"))]:
                 del atoms.info[key]
         added = self.add_structures(atoms_list, skip_duplicates=True)
+        self.record_import(marker, added)
         logger.info(
             "Imported %d of %d structure(s) from database %s.",
             added,

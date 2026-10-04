@@ -1258,10 +1258,7 @@ class ActiveLearningWorkflow(ABC):
         imported is skipped.
         """
         digest = file_sha256(path)
-        if any(
-            c.AtomPositionManager.metadata.get("source_dataset_sha256") == digest
-            for c in self.db.partition.list_containers()
-        ):
+        if self.db.is_imported(digest, "source_dataset_sha256"):
             logger.info("%s already imported (sha256=%s); skipping.", path, digest)
             return 0
         atoms_list = normalize_metadata(
@@ -1278,6 +1275,7 @@ class ActiveLearningWorkflow(ABC):
             if split is not None:
                 atoms.info["split"] = split
         added = int(self.db.add_structures(atoms_list, skip_duplicates=True))
+        self.db.record_import(digest, added)
         skipped = len(atoms_list) - added
         logger.info(
             "Imported %s: %d structure(s) added%s.",

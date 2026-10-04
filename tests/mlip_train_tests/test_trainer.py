@@ -373,11 +373,11 @@ class TestTrain:
         assert mock_run.call_args.args[0].max_num_epochs == 300
 
     def test_dynamic_epochs_uses_train_plus_valid_count(self, tmp_path, monkeypatch):
-        """19000 train + 1000 valid -> ceil(3_200_000/20000) = 160; train
-        alone would give 169, so a regression to the train-only count shows."""
+        """950 train + 50 valid -> ceil(200_000/1000) = 200; train alone
+        would give 211, so a regression to the train-only count shows."""
         monkeypatch.chdir(tmp_path)
-        _write_structures(tmp_path / "train.xyz", 19000)
-        _write_structures(tmp_path / "valid.xyz", 1000)
+        _write_structures(tmp_path / "train.xyz", 950)
+        _write_structures(tmp_path / "valid.xyz", 50)
         _write_structures(tmp_path / "test.xyz", 1)
         captured = {}
 
@@ -391,10 +391,10 @@ class TestTrain:
             mock_tools.build_default_arg_parser.return_value.parse_args.return_value = (
                 argparse.Namespace()
             )
-            _trainer({"batch_size": 16, "max_num_epochs": "dynamic"}).train(
+            _trainer({"batch_size": 1, "max_num_epochs": "dynamic"}).train(
                 "train.xyz", "valid.xyz", "test.xyz", 803, fit_dir=_FIT_DIR
             )
-        assert captured["max_num_epochs"] == 160
+        assert captured["max_num_epochs"] == 200
 
 
 class TestMaceE0sArg:

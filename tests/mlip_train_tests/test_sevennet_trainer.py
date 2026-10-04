@@ -205,6 +205,7 @@ def _write_splits(tmp_path: Path) -> dict[str, Path]:
 
 
 @pytest.mark.unit
+@pytest.mark.slow  # real SevenNet training
 def test_end_to_end_fit_with_valid(tmp_path):
     pytest.importorskip("sevenn")
     import torch
@@ -255,6 +256,7 @@ def test_end_to_end_fit_with_valid(tmp_path):
 
 
 @pytest.mark.unit
+@pytest.mark.slow  # real SevenNet training
 def test_end_to_end_without_valid_keeps_last_epoch(tmp_path):
     pytest.importorskip("sevenn")
     paths = _write_splits(tmp_path)

@@ -100,25 +100,31 @@ exclude = ["**/__pycache__", "tests/results"]
 
 # Testing configuration
 [tool.pytest.ini_options]
+# The only pytest config (pytest.ini used to shadow this section). Coverage
+# is passed explicitly by CI (.github/workflows/ci.yml), never here.
 minversion = "7.0"
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=alomancy",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
-    "--cov-fail-under=80",
+    "-ra",
+    "--tb=short",
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
+    "unit: every test that needs no HPC/network (enforced in tests/conftest.py)",
+    "slow: real training, or > ~2 s even on tmpfs; left out of the local/pre-commit tier (-m \"unit and not slow\")",
+    "integration: end-to-end tests against real external services",
     "requires_external: marks tests that require external dependencies (MACE, QE, etc.)",
+    "requires_gpu: marks tests that require GPU",
+    "requires_hpc: marks tests that require HPC resources",
+]
+filterwarnings = [
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
 ]
 
 
