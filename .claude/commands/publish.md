@@ -1,6 +1,6 @@
 ---
 description: Check CI, bump version tag, build, and publish to PyPI
-allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git status:*), Bash(git add:*), Bash(git commit:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(uv build:*), Bash(uv lock:*), Bash(uv run ruff:*), Bash(uv version:*), Bash(uvx twine check:*), Bash(uv publish:*), Bash(rm -rf dist:*), Bash(date:*)
+allowed-tools: Bash(gh run list:*), Bash(gh run view:*), Bash(git status:*), Bash(git add:*), Bash(git commit:*), Bash(git tag:*), Bash(git describe:*), Bash(git push:*), Bash(uv build:*), Bash(uv lock:*), Bash(uv run ruff:*), Bash(uv version:*), Bash(uvx twine check:*), Bash(uv publish:*), Bash(UV_PUBLISH_TOKEN=*), Bash(curl -s https://pypi.org/pypi/alomancy/json:*), Bash(rm -rf dist:*), Bash(date:*)
 ---
 
 ## Context
@@ -125,15 +125,25 @@ If `twine check` reports any errors, stop and report them. Do not upload a broke
 
 ### Step 6 — Upload to PyPI
 
+`uv publish` uploads everything in `dist/`. It reads the PyPI API token from `UV_PUBLISH_TOKEN` and, unlike twine, does **not** read `~/.pypirc`. Claude's shell doesn't load the user's interactive profile, so the variable is often unset there even when the user has it. The token is also kept in `~/.pypirc` (`[pypi]`, `username = __token__`, `password = pypi-...`). Use `UV_PUBLISH_TOKEN` when set; otherwise pass the `~/.pypirc` token to this one command only:
+
 ```bash
-uv publish
+UV_PUBLISH_TOKEN="${UV_PUBLISH_TOKEN:-$(sed -n '/^\[pypi\]/,/^\[/s/^password[[:space:]]*=[[:space:]]*//p' ~/.pypirc)}" uv publish --no-progress
 ```
 
-`uv publish` uploads everything in `dist/`. It needs a PyPI API token and, unlike twine, does **not** read `~/.pypirc`. It takes the token from the `UV_PUBLISH_TOKEN` environment variable (or `--token`).
-
-If no token is configured you will see an authentication error (or a prompt it can't answer in a non-interactive terminal). Never ask the user to paste the token into the chat. Tell them to run it themselves:
+Never print, echo, log or otherwise display the token, and never write it to a file or into the chat. If neither source has a token (an authentication error such as "Missing credentials"), don't ask the user to paste it into the chat. Tell them to run it themselves:
 - `! UV_PUBLISH_TOKEN=pypi-<token> uv publish`, **or**
-- export `UV_PUBLISH_TOKEN` in their shell profile and then `! uv publish`.
+- add the token to `~/.pypirc` (as above) or export `UV_PUBLISH_TOKEN` in their shell profile, then run `/publish` again.
+
+If PyPI rejects the upload because the version already exists, the release was already published; go to Step 7.
+
+After uploading, confirm the release is live:
+
+```bash
+curl -s https://pypi.org/pypi/alomancy/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
+```
+
+(The PyPI JSON API can lag a minute or two behind the upload.)
 
 ### Step 7 — Confirm
 
