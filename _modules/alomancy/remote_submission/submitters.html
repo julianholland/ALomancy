@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -107,7 +110,7 @@
     <span class="n">function_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Submit one job per structure in input_atoms_list to a shared</span>
-<span class="sd">    RemoteJobExecutor pool (bounded by remote_info.max_concurrent_jobs).</span>
+<span class="sd">    RemoteJobExecutor pool (bounded by remote_info.max_num_of_concurrent_jobs).</span>
 
 <span class="sd">    per_structure_function, when given, must be the same length as</span>
 <span class="sd">    input_atoms_list and picks which function each structure's job runs</span>
@@ -279,19 +282,19 @@
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">function</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">803</span><span class="p">,</span>
-    <span class="n">size_of_committee</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+    <span class="n">num_of_models_in_committee</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
     <span class="n">function_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">fit_indices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Submit `size_of_committee` committee training jobs, one per fit index.</span>
+<span class="w">    </span><span class="sd">"""Submit `num_of_models_in_committee` committee training jobs, one per fit index.</span>
 
 <span class="sd">    fit_indices</span>
 <span class="sd">        Explicit committee-member indices to (re)train, e.g. to backfill only</span>
 <span class="sd">        the specific fits missing from a prior partial run. Defaults to</span>
-<span class="sd">        ``range(size_of_committee)`` (every member, indices 0..N-1).</span>
+<span class="sd">        ``range(num_of_models_in_committee)`` (every member, indices 0..N-1).</span>
 <span class="sd">        Each job's output directory is keyed off its own index (not its</span>
 <span class="sd">        position in this list) so it matches the `fit_{fit_idx}` directory</span>
-<span class="sd">        `mace_fit` itself writes to (`mlip/mace/mace_wfl.py`) — using the</span>
+<span class="sd">        the trainer writes to — using the</span>
 <span class="sd">        shared `common_output_pattern`/positional `job_id` mechanism here</span>
 <span class="sd">        would stage/sync the wrong directory whenever fit_indices is a</span>
 <span class="sd">        non-contiguous subset (e.g. backfilling just fit_2 and fit_4).</span>
@@ -301,14 +304,17 @@
 
     <span class="n">executor</span> <span class="o">=</span> <span class="n">RemoteJobExecutor</span><span class="p">(</span><span class="n">remote_info</span><span class="p">)</span>
 
-    <span class="n">indices</span> <span class="o">=</span> <span class="n">fit_indices</span> <span class="k">if</span> <span class="n">fit_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">size_of_committee</span><span class="p">))</span>
+    <span class="n">indices</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">fit_indices</span>
+        <span class="k">if</span> <span class="n">fit_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">num_of_models_in_committee</span><span class="p">))</span>
+    <span class="p">)</span>
 
     <span class="n">job_configs</span> <span class="o">=</span> <span class="p">[</span>
         <span class="p">{</span>
             <span class="s2">"function_kwargs"</span><span class="p">:</span> <span class="p">{</span>
-                <span class="c1"># The validation split uses this common base seed. mace_fit</span>
-                <span class="c1"># applies fit_idx only to the MACE initialization seed, so the</span>
-                <span class="c1"># models remain independent while validation stays identical.</span>
+                <span class="c1"># A common base seed for the submitted function, plus each</span>
+                <span class="c1"># member's own fit_idx.</span>
                 <span class="s2">"seed"</span><span class="p">:</span> <span class="n">seed</span><span class="p">,</span>
                 <span class="s2">"fit_idx"</span><span class="p">:</span> <span class="n">i</span><span class="p">,</span>
                 <span class="o">**</span><span class="p">(</span><span class="n">function_kwargs</span> <span class="ow">or</span> <span class="p">{}),</span>

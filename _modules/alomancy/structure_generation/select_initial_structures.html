@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -90,7 +93,7 @@
     <span class="n">base_name</span><span class="p">,</span>
     <span class="n">structure_generation_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">train_atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
-    <span class="n">max_number_of_concurrent_jobs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+    <span class="n">num_of_md_starts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
     <span class="n">chem_formula_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">selectable_configs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">atom_number_range</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
@@ -116,11 +119,11 @@
     <span class="c1"># Handle None default for mutable argument</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
         <span class="s2">"Selecting initial structures with parameters: base_name=</span><span class="si">%s</span><span class="s2">, structure_generation_job_dict=</span><span class="si">%s</span><span class="s2">, "</span>
-        <span class="s2">"max_number_of_concurrent_jobs=</span><span class="si">%d</span><span class="s2">, chem_formula_list=</span><span class="si">%s</span><span class="s2">, selectable_configs=</span><span class="si">%s</span><span class="s2">, "</span>
+        <span class="s2">"num_of_md_starts=</span><span class="si">%d</span><span class="s2">, chem_formula_list=</span><span class="si">%s</span><span class="s2">, selectable_configs=</span><span class="si">%s</span><span class="s2">, "</span>
         <span class="s2">"atom_number_range=</span><span class="si">%s</span><span class="s2">, enforce_chemical_diversity=</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
         <span class="n">base_name</span><span class="p">,</span>
         <span class="n">structure_generation_job_dict</span><span class="p">,</span>
-        <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
+        <span class="n">num_of_md_starts</span><span class="p">,</span>
         <span class="n">chem_formula_list</span><span class="p">,</span>
         <span class="n">selectable_configs</span><span class="p">,</span>
         <span class="n">atom_number_range</span><span class="p">,</span>
@@ -201,7 +204,7 @@
             <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">selectable_configs</span><span class="si">}</span><span class="s2">, atom_number_range=</span><span class="si">{</span><span class="n">atom_number_range</span><span class="si">}</span><span class="s2">)."</span>
         <span class="p">)</span>
 
-    <span class="n">reuse</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">max_number_of_concurrent_jobs</span>
+    <span class="n">reuse</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">num_of_md_starts</span>
     <span class="k">if</span> <span class="n">reuse</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
             <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> structures available for </span><span class="si">%d</span><span class="s2"> concurrent structure_generation "</span>
@@ -209,7 +212,7 @@
             <span class="s2">"reused structure is assigned a distinct MD seed (atoms.info['md_seed']) "</span>
             <span class="s2">"so its duplicate runs diverge into different trajectories."</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">),</span>
-            <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
+            <span class="n">num_of_md_starts</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="k">if</span> <span class="ow">not</span> <span class="n">enforce_chemical_diversity</span><span class="p">:</span>
@@ -217,7 +220,7 @@
             <span class="n">filtered_structures</span><span class="p">[</span><span class="n">x</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
                 <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_structures</span><span class="p">))),</span>
-                <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
+                <span class="n">num_of_md_starts</span><span class="p">,</span>
                 <span class="n">replace</span><span class="o">=</span><span class="n">reuse</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">]</span>
@@ -228,14 +231,14 @@
         <span class="k">return</span> <span class="n">initial_atoms</span>
 
     <span class="c1"># Ensure chemical diversity by selecting unique chemical formulas</span>
-    <span class="c1"># If there are fewer unique formulas than `max_number_of_concurrent_jobs`, select all</span>
+    <span class="c1"># If there are fewer unique formulas than `num_of_md_starts`, select all</span>
 
     <span class="n">unique_chemical_formulas</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">filtered_structures</span><span class="p">}</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_chemical_formulas</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_number_of_concurrent_jobs</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_chemical_formulas</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">num_of_md_starts</span><span class="p">:</span>
         <span class="n">list_of_formulas</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">unique_chemical_formulas</span><span class="p">)</span>
         <span class="n">extra_formulas</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">unique_chemical_formulas</span><span class="p">),</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_number_of_concurrent_jobs</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">list_of_formulas</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_of_md_starts</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">list_of_formulas</span><span class="p">))</span>
         <span class="p">]</span>
         <span class="n">list_of_formulas</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">extra_formulas</span><span class="p">)</span>
 
@@ -251,7 +254,7 @@
         <span class="p">}</span>
         <span class="n">list_of_formulas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
             <span class="nb">list</span><span class="p">(</span><span class="n">unique_chemical_formulas</span><span class="p">),</span>
-            <span class="n">max_number_of_concurrent_jobs</span><span class="p">,</span>
+            <span class="n">num_of_md_starts</span><span class="p">,</span>
             <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">p</span><span class="o">=</span><span class="p">[</span>
                 <span class="n">formula_probabilities</span><span class="p">[</span><span class="n">formula</span><span class="p">]</span> <span class="o">/</span> <span class="nb">sum</span><span class="p">(</span><span class="n">formula_probabilities</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
@@ -287,7 +290,7 @@
 <span class="w">    </span><span class="sd">"""Give each selected structure a distinct atoms.info['md_seed'].</span>
 
 <span class="sd">    Needed because the same source structure can be selected more than once</span>
-<span class="sd">    (when max_number_of_concurrent_jobs exceeds the number of selectable</span>
+<span class="sd">    (when num_of_md_starts exceeds the number of selectable</span>
 <span class="sd">    structures) — run_md seeds its stochastic dynamics from this value so</span>
 <span class="sd">    duplicate starting structures still diverge into different trajectories</span>
 <span class="sd">    instead of running identical MD.</span>

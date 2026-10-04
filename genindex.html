@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
@@ -85,23 +88,25 @@
  | <a href="#E"><strong>E</strong></a>
  | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
- | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
+ | <a href="#J"><strong>J</strong></a>
+ | <a href="#K"><strong>K</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
+ | <a href="#N"><strong>N</strong></a>
+ | <a href="#O"><strong>O</strong></a>
  | <a href="#P"><strong>P</strong></a>
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
  | <a href="#U"><strong>U</strong></a>
+ | <a href="#V"><strong>V</strong></a>
  | <a href="#W"><strong>W</strong></a>
  
 </div>
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE">ActiveLearningStandardMACE (class in alomancy.core.standard_active_learning)</a>
-</li>
       <li><a href="api/utils.html#alomancy.utils.test_train_manager.add_new_training_data">add_new_training_data() (in module alomancy.utils.test_train_manager)</a>
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.add_structures">add_structures() (alomancy.database.global_database.GlobalDatabase method)</a>
@@ -130,17 +135,10 @@
 </li>
       </ul></li>
       <li>
-    alomancy.core.base_active_learning
+    alomancy.core.committee_uncertainty_workflow
 
       <ul>
-        <li><a href="api/core.html#module-alomancy.core.base_active_learning">module</a>
-</li>
-      </ul></li>
-      <li>
-    alomancy.core.standard_active_learning
-
-      <ul>
-        <li><a href="api/core.html#module-alomancy.core.standard_active_learning">module</a>
+        <li><a href="api/core.html#module-alomancy.core.committee_uncertainty_workflow">module</a>
 </li>
       </ul></li>
       <li>
@@ -171,20 +169,27 @@
         <li><a href="api/high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft.run_vasp">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
-    alomancy.mlip.mace.get_mace_eval_info
+    alomancy.mlip.base
 
       <ul>
-        <li><a href="api/mlip.html#module-alomancy.mlip.mace.get_mace_eval_info">module</a>
+        <li><a href="api/mlip.html#module-alomancy.mlip.base">module</a>
 </li>
       </ul></li>
       <li>
-    alomancy.mlip.mace.mace_wfl
+    alomancy.mlip.evaluation
 
       <ul>
-        <li><a href="api/mlip.html#module-alomancy.mlip.mace.mace_wfl">module</a>
+        <li><a href="api/mlip.html#module-alomancy.mlip.evaluation">module</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    alomancy.mlip.mace.trainer
+
+      <ul>
+        <li><a href="api/mlip.html#module-alomancy.mlip.mace.trainer">module</a>
 </li>
       </ul></li>
       <li>
@@ -243,6 +248,15 @@
         <li><a href="api/utils.html#module-alomancy.utils.test_train_manager">module</a>
 </li>
       </ul></li>
+      <li>
+    alomancy.utils.training_schedule
+
+      <ul>
+        <li><a href="api/mlip.html#module-alomancy.utils.training_schedule">module</a>
+</li>
+      </ul></li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer">ALomancyTrainer (class in alomancy.mlip.base)</a>
+</li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.apply_train_test_split">apply_train_test_split() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/mlip.html#alomancy.remote_submission.submitters.ase_remote_submitter">ase_remote_submitter() (in module alomancy.remote_submission.submitters)</a>
@@ -255,7 +269,11 @@
 <h2 id="B">B</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow">BaseActiveLearningWorkflow (class in alomancy.core.base_active_learning)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.best_fit_test_metrics">best_fit_test_metrics() (in module alomancy.mlip.evaluation)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.build_workflow">build_workflow() (in module alomancy.core.committee_uncertainty_workflow)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -263,18 +281,30 @@
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.check_quality_gate">check_quality_gate() (in module alomancy.mlip.evaluation)</a>
+</li>
       <li><a href="api/utils.html#alomancy.utils.clean_structures.clean_structures">clean_structures() (in module alomancy.utils.clean_structures)</a>
 </li>
-      <li><a href="api/mlip.html#alomancy.mlip.mace.mace_wfl.cleanup_local_committee_checkpoints">cleanup_local_committee_checkpoints() (in module alomancy.mlip.mace.mace_wfl)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.cleanup">cleanup() (alomancy.mlip.base.ALomancyTrainer method)</a>
 </li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.cleanup_paths">cleanup_paths() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.cleanup_paths">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
+</li>
+      </ul></li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.clear">clear() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/mlip.html#alomancy.remote_submission.submitters.committee_remote_submitter">committee_remote_submitter() (in module alomancy.remote_submission.submitters)</a>
 </li>
-      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula">count_all_by_config_type_and_formula() (alomancy.database.global_database.GlobalDatabase method)</a>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow">CommitteeUncertaintyWorkflow (class in alomancy.core.committee_uncertainty_workflow)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.compiled_model_path">compiled_model_path() (alomancy.mlip.mace.trainer.MaceTrainer method)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula">count_all_by_config_type_and_formula() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.count_by_config_type">count_by_config_type() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula">count_by_config_type_and_formula() (alomancy.database.global_database.GlobalDatabase method)</a>
@@ -293,7 +323,17 @@
 <h2 id="D">D</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.display_workflow_summary">display_workflow_summary() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.deployable_model_path">deployable_model_path() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.deployable_model_path">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils.html#alomancy.utils.clean_structures.drop_unwritable_info">drop_unwritable_info() (in module alomancy.utils.clean_structures)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.utils.training_schedule.dynamic_epochs">dynamic_epochs() (in module alomancy.utils.training_schedule)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -301,6 +341,14 @@
 <h2 id="E">E</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.effective_kwargs">effective_kwargs() (alomancy.mlip.base.ALomancyTrainer method)</a>
+</li>
+      <li><a href="api/utils.html#alomancy.utils.logging_config.JsonlEventHandler.emit">emit() (alomancy.utils.logging_config.JsonlEventHandler method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.evaluate">evaluate() (alomancy.mlip.base.ALomancyTrainer method)</a>
+</li>
       <li><a href="api/utils.html#alomancy.utils.test_train_manager.extend_test_and_train_sets_with_extra_dataset">extend_test_and_train_sets_with_extra_dataset() (in module alomancy.utils.test_train_manager)</a>
 </li>
   </ul></td>
@@ -317,46 +365,52 @@
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.find_sd_of_all_structures">find_sd_of_all_structures() (in module alomancy.structure_generation.find_high_sd_structures)</a>
 </li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.fit">fit() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.fit">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates">flag_as_duplicates() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_high_force">flag_as_high_force() (alomancy.database.global_database.GlobalDatabase method)</a>
-</li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.flatten_array_of_forces">flatten_array_of_forces() (in module alomancy.structure_generation.find_high_sd_structures)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.format_isolated_atom_energies">format_isolated_atom_energies() (alomancy.mlip.base.ALomancyTrainer method)</a>
 
       <ul>
-        <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.flatten_array_of_forces">(in module alomancy.structure_generation.md.md_wfl)</a>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.format_isolated_atom_energies">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
 </li>
       </ul></li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.TrainingHistory.frame">frame (alomancy.mlip.base.TrainingHistory attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.generate">generate() (in module alomancy.structure_generation.md.md_wfl)</a>
+</li>
       <li><a href="api/utils.html#alomancy.utils.dft_utils.generate_kpts">generate_kpts() (in module alomancy.utils.dft_utils)</a>
 </li>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.generate_structures">generate_structures() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
-
-      <ul>
-        <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.generate_structures">(alomancy.core.standard_active_learning.ActiveLearningStandardMACE method)</a>
-</li>
-      </ul></li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_all_as_atoms">get_all_as_atoms() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.get_dft_functions">get_dft_functions() (in module alomancy.high_accuracy_evaluation.dft)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.get_calculator">get_calculator() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.get_calculator">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
 </li>
-      <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.get_forces_for_all_maces">get_forces_for_all_maces() (in module alomancy.structure_generation.md.md_wfl)</a>
+      </ul></li>
+      <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.get_dft_functions">get_dft_functions() (in module alomancy.high_accuracy_evaluation.dft)</a>
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_isolated_atom_energies">get_isolated_atom_energies() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      <li><a href="api/mlip.html#alomancy.mlip.mace.get_mace_eval_info.get_mace_eval_info">get_mace_eval_info() (in module alomancy.mlip.mace.get_mace_eval_info)</a>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_model_predictions">get_model_predictions() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_mace_predictions">get_mace_predictions() (alomancy.database.global_database.GlobalDatabase method)</a>
-</li>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">get_qe_input_data() (in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
 </li>
       <li><a href="api/configs.html#alomancy.configs.remote_info.get_remote_info">get_remote_info() (in module alomancy.configs.remote_info)</a>
@@ -369,6 +423,8 @@
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_train_atoms">get_train_atoms() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.get_trainer">get_trainer() (in module alomancy.mlip.base)</a>
+</li>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs">get_vasp_input_kwargs() (in module alomancy.high_accuracy_evaluation.dft.run_vasp)</a>
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase">GlobalDatabase (class in alomancy.database.global_database)</a>
@@ -376,25 +432,55 @@
   </ul></td>
 </tr></table>
 
-<h2 id="H">H</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.high_accuracy_evaluation">high_accuracy_evaluation() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
-
-      <ul>
-        <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.high_accuracy_evaluation">(alomancy.core.standard_active_learning.ActiveLearningStandardMACE method)</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
 <h2 id="I">I</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.initialize_training_set">initialize_training_set() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.import_from_database">import_from_database() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.imported_sources">imported_sources (alomancy.database.global_database.GlobalDatabase property)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.is_imported">is_imported() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.ISOLATED_ATOM_ENERGIES_KWARG">ISOLATED_ATOM_ENERGIES_KWARG (alomancy.mlip.base.ALomancyTrainer attribute)</a>
 
       <ul>
-        <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.initialize_training_set">(alomancy.core.standard_active_learning.ActiveLearningStandardMACE method)</a>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.ISOLATED_ATOM_ENERGIES_KWARG">(alomancy.mlip.mace.trainer.MaceTrainer attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.isolated_atom_reference_energies_by_z">isolated_atom_reference_energies_by_z() (in module alomancy.mlip.base)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="J">J</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils.html#alomancy.utils.logging_config.JsonlEventHandler">JsonlEventHandler (class in alomancy.utils.logging_config)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="K">K</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.KWARGS_DEFAULTS">KWARGS_DEFAULTS (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow attribute)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.KWARGS_DEFAULTS">(alomancy.mlip.base.ALomancyTrainer attribute)</a>
+</li>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.KWARGS_DEFAULTS">(alomancy.mlip.mace.trainer.MaceTrainer attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.KWARGS_KEY">KWARGS_KEY (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow attribute)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.KWARGS_KEY">(alomancy.mlip.base.ALomancyTrainer attribute)</a>
+</li>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.KWARGS_KEY">(alomancy.mlip.mace.trainer.MaceTrainer attribute)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -407,7 +493,7 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.load_initial_train_test_sets">load_initial_train_test_sets() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.loop_metrics_frame">loop_metrics_frame() (in module alomancy.mlip.evaluation)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -415,12 +501,22 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/mlip.html#alomancy.mlip.mace.mace_wfl.mace_fit">mace_fit() (in module alomancy.mlip.mace.mace_wfl)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer">MaceTrainer (class in alomancy.mlip.mace.trainer)</a>
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.select_initial_structures.mark_structures_for_dft">mark_structures_for_dft() (in module alomancy.structure_generation.select_initial_structures)</a>
 </li>
       <li><a href="api/mlip.html#alomancy.remote_submission.submitters.md_remote_submitter">md_remote_submitter() (in module alomancy.remote_submission.submitters)</a>
 </li>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.metrics_by_loop">metrics_by_loop() (in module alomancy.mlip.evaluation)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.migrate_mace_prediction_keys">migrate_mace_prediction_keys() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.model_path">model_path() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.model_path">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
+</li>
+      </ul></li>
       <li>
     module
 
@@ -431,9 +527,7 @@
 </li>
         <li><a href="api/core.html#module-alomancy.core">alomancy.core</a>
 </li>
-        <li><a href="api/core.html#module-alomancy.core.base_active_learning">alomancy.core.base_active_learning</a>
-</li>
-        <li><a href="api/core.html#module-alomancy.core.standard_active_learning">alomancy.core.standard_active_learning</a>
+        <li><a href="api/core.html#module-alomancy.core.committee_uncertainty_workflow">alomancy.core.committee_uncertainty_workflow</a>
 </li>
         <li><a href="api/database.html#module-alomancy.database.global_database">alomancy.database.global_database</a>
 </li>
@@ -443,9 +537,11 @@
 </li>
         <li><a href="api/high_accuracy_evaluation.html#module-alomancy.high_accuracy_evaluation.dft.run_vasp">alomancy.high_accuracy_evaluation.dft.run_vasp</a>
 </li>
-        <li><a href="api/mlip.html#module-alomancy.mlip.mace.get_mace_eval_info">alomancy.mlip.mace.get_mace_eval_info</a>
+        <li><a href="api/mlip.html#module-alomancy.mlip.base">alomancy.mlip.base</a>
 </li>
-        <li><a href="api/mlip.html#module-alomancy.mlip.mace.mace_wfl">alomancy.mlip.mace.mace_wfl</a>
+        <li><a href="api/mlip.html#module-alomancy.mlip.evaluation">alomancy.mlip.evaluation</a>
+</li>
+        <li><a href="api/mlip.html#module-alomancy.mlip.mace.trainer">alomancy.mlip.mace.trainer</a>
 </li>
         <li><a href="api/mlip.html#module-alomancy.remote_submission.submitters">alomancy.remote_submission.submitters</a>
 </li>
@@ -463,6 +559,38 @@
 </li>
         <li><a href="api/utils.html#module-alomancy.utils.test_train_manager">alomancy.utils.test_train_manager</a>
 </li>
+        <li><a href="api/mlip.html#module-alomancy.utils.training_schedule">alomancy.utils.training_schedule</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="N">N</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.NAME">NAME (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow attribute)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.NAME">(alomancy.mlip.base.ALomancyTrainer attribute)</a>
+</li>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.NAME">(alomancy.mlip.mace.trainer.MaceTrainer attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.NEW_STRUCTURE_CONFIG_TYPE">NEW_STRUCTURE_CONFIG_TYPE (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="O">O</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.output_paths">output_paths() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.output_paths">(in module alomancy.structure_generation.md.md_wfl)</a>
+</li>
       </ul></li>
   </ul></td>
 </tr></table>
@@ -470,11 +598,11 @@
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.pre_run_checks">pre_run_checks() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.plot_loop">plot_loop() (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.process_structure">process_structure() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.prediction_metrics">prediction_metrics() (in module alomancy.mlip.evaluation)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -482,16 +610,56 @@
 <h2 id="R">R</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.rank_committee">rank_committee() (in module alomancy.mlip.evaluation)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.read_evaluation">read_evaluation() (in module alomancy.mlip.evaluation)</a>
+</li>
+      <li><a href="api/utils.html#alomancy.utils.logging_config.read_events">read_events() (in module alomancy.utils.logging_config)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.read_existing_result">read_existing_result() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.read_existing_result">(in module alomancy.structure_generation.md.md_wfl)</a>
+</li>
+      </ul></li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.read_predictions">read_predictions() (in module alomancy.mlip.base)</a>
+</li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.record_import">record_import() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
       <li><a href="api/utils.html#alomancy.utils.dft_utils.refresh_dft_labels">refresh_dft_labels() (in module alomancy.utils.dft_utils)</a>
 </li>
       <li><a href="api/configs.html#alomancy.configs.remote_info.RemoteInfo">RemoteInfo (class in alomancy.configs.remote_info)</a>
 </li>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.run">run() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.report_section">report_section() (alomancy.mlip.base.ALomancyTrainer method)</a>
+
+      <ul>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.report_section">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
+</li>
+        <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.report_section">(in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
+</li>
+        <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.report_section">(in module alomancy.high_accuracy_evaluation.dft.run_vasp)</a>
+</li>
+        <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.report_section">(in module alomancy.structure_generation.md.md_wfl)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.report_sections">report_sections() (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow method)</a>
+</li>
+      <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.resolve_effective_kwargs">resolve_effective_kwargs() (in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
+
+      <ul>
+        <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.resolve_effective_kwargs">(in module alomancy.high_accuracy_evaluation.dft.run_vasp)</a>
+</li>
+      </ul></li>
+      <li><a href="api/mlip.html#alomancy.utils.training_schedule.resolve_epochs">resolve_epochs() (in module alomancy.utils.training_schedule)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.resolve_isolated_atom_energies">resolve_isolated_atom_energies() (alomancy.mlip.base.ALomancyTrainer method)</a>
+</li>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.run">run() (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow method)</a>
 </li>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe">run_go_qe() (in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.run_go_vasp">run_go_vasp() (in module alomancy.high_accuracy_evaluation.dft.run_vasp)</a>
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.run_md">run_md() (in module alomancy.structure_generation.md.md_wfl)</a>
@@ -500,50 +668,58 @@
 </li>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.run_sp_vasp">run_sp_vasp() (in module alomancy.high_accuracy_evaluation.dft.run_vasp)</a>
 </li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.run_training">run_training() (in module alomancy.mlip.base)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/mlip.html#alomancy.mlip.mace.get_mace_eval_info.select_best_committee_model">select_best_committee_model() (in module alomancy.mlip.mace.get_mace_eval_info)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.evaluation.save_evaluation">save_evaluation() (in module alomancy.mlip.evaluation)</a>
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.select_initial_structures.select_initial_structures">select_initial_structures() (in module alomancy.structure_generation.select_initial_structures)</a>
 </li>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.select_uncertain">select_uncertain() (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow method)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.TrainingHistory.selected_epoch">selected_epoch (alomancy.mlip.base.TrainingHistory attribute)</a>
+</li>
+      <li><a href="api/utils.html#alomancy.utils.logging_config.set_current_loop">set_current_loop() (in module alomancy.utils.logging_config)</a>
+</li>
       <li><a href="api/utils.html#alomancy.utils.logging_config.setup_logging">setup_logging() (in module alomancy.utils.logging_config)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.size">size (alomancy.database.global_database.GlobalDatabase property)</a>
 </li>
       <li><a href="api/utils.html#alomancy.utils.test_train_manager.split_atoms_list_into_test_and_train">split_atoms_list_into_test_and_train() (in module alomancy.utils.test_train_manager)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.base.TrainingHistory.stage_two_epoch">stage_two_epoch (alomancy.mlip.base.TrainingHistory attribute)</a>
+</li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.std_deviation_of_forces">std_deviation_of_forces() (in module alomancy.structure_generation.find_high_sd_structures)</a>
-
-      <ul>
-        <li><a href="api/structure_generation.html#alomancy.structure_generation.md.md_wfl.std_deviation_of_forces">(in module alomancy.structure_generation.md.md_wfl)</a>
 </li>
-      </ul></li>
-      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.store_mace_predictions">store_mace_predictions() (alomancy.database.global_database.GlobalDatabase method)</a>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.store_descriptors">store_descriptors() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.store_mlip_predictions">store_mlip_predictions() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
-
-      <ul>
-        <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.store_mlip_predictions">(alomancy.core.standard_active_learning.ActiveLearningStandardMACE method)</a>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.store_model_predictions">store_model_predictions() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/core.html#alomancy.core.base_active_learning.BaseActiveLearningWorkflow.train_mlip">train_mlip() (alomancy.core.base_active_learning.BaseActiveLearningWorkflow method)</a>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.train">train() (alomancy.mlip.base.ALomancyTrainer method)</a>
+</li>
+      <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.training_history">training_history() (alomancy.mlip.base.ALomancyTrainer method)</a>
 
       <ul>
-        <li><a href="api/core.html#alomancy.core.standard_active_learning.ActiveLearningStandardMACE.train_mlip">(alomancy.core.standard_active_learning.ActiveLearningStandardMACE method)</a>
+        <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.training_history">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mlip.html#alomancy.mlip.base.TrainingHistory">TrainingHistory (class in alomancy.mlip.base)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -551,6 +727,14 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc">update_splits_post_hoc() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="V">V</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.validate_settings">validate_settings() (alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow method)</a>
 </li>
   </ul></td>
 </tr></table>

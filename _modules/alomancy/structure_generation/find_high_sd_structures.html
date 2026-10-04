@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -94,11 +97,13 @@
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
     <span class="n">structure_forces_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">num_of_structures</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">read_xyz</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-    <span class="n">desired_structures</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span>
-        <span class="s2">"desired_number_of_structures"</span>
-    <span class="p">]</span>
+<span class="w">    </span><span class="sd">"""Select the *num_of_structures* candidates (general.</span>
+<span class="sd">    num_of_structures_per_loop) with the highest committee force standard</span>
+<span class="sd">    deviation."""</span>
+    <span class="n">desired_structures</span> <span class="o">=</span> <span class="n">num_of_structures</span>
 
     <span class="k">if</span> <span class="n">desired_structures</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Number of structures must be greater than 0"</span><span class="p">)</span>
@@ -110,11 +115,15 @@
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">desired_structures</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
             <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> candidate structure(s) available, fewer than the </span><span class="si">%d</span><span class="s2"> "</span>
-            <span class="s2">"requested (desired_number_of_structures) — proceeding with all "</span>
+            <span class="s2">"requested (general.num_of_structures_per_loop) — proceeding with all "</span>
             <span class="s2">"</span><span class="si">%d</span><span class="s2"> available structure(s) instead of crashing the run."</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
             <span class="n">desired_structures</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"fewer_candidates"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span> <span class="s2">"desired"</span><span class="p">:</span> <span class="n">desired_structures</span><span class="p">},</span>
+            <span class="p">},</span>
         <span class="p">)</span>
     <span class="n">effective_structures</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">desired_structures</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
 
@@ -223,77 +232,6 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">flatten_array_of_forces</span><span class="p">(</span><span class="n">forces</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
     <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">forces</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">forces</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span><span class="p">))</span></div>
 
-
-
-<span class="c1"># def std_deviation_of_forces(</span>
-<span class="c1">#     structure_forces_dict: dict[str, dict[str, dict[str, np.ndarray]]],</span>
-<span class="c1">#     structure_generation_dir: Path,</span>
-<span class="c1">#     verbose: int = 0,</span>
-<span class="c1"># ) -&gt; pd.DataFrame:</span>
-<span class="c1">#     """</span>
-<span class="c1">#     Calculate the standard deviation of forces for each structure in the dictionary.</span>
-
-<span class="c1">#     Parameters</span>
-<span class="c1">#     ----------</span>
-<span class="c1">#     structure_force_dict : dict</span>
-<span class="c1">#         A dictionary where keys are fit names and values are dictionaries with structure names as keys and forces as values.</span>
-
-<span class="c1">#         e.g.:</span>
-<span class="c1">#         {</span>
-<span class="c1">#             'base_mace': {</span>
-<span class="c1">#                 'structure_0': {'forces': np.ndarray, 'energy': float},</span>
-<span class="c1">#                 'structure_1': {'forces': np.ndarray, 'energy': float},</span>
-<span class="c1">#                 ...</span>
-<span class="c1">#             },</span>
-<span class="c1">#             'fit_1': {</span>
-<span class="c1">#                 ...</span>
-<span class="c1">#             },</span>
-<span class="c1">#         }</span>
-
-<span class="c1">#     Returns</span>
-<span class="c1">#     -------</span>
-<span class="c1">#     list</span>
-<span class="c1">#         A list of standard deviations of forces for each structure.</span>
-<span class="c1">#     """</span>
-<span class="c1">#     number_of_structures = len(structure_forces_dict["base_mlip"])</span>
-<span class="c1">#     std_dev_array = np.zeros((number_of_structures, 3))</span>
-<span class="c1">#     for structure in range(number_of_structures):</span>
-<span class="c1">#         forces_array = np.concatenate(</span>
-<span class="c1">#             [</span>
-<span class="c1">#                 structure_forces_dict[fit][f"structure_{structure}"]["forces"]</span>
-<span class="c1">#                 for fit in structure_forces_dict</span>
-<span class="c1">#             ],</span>
-<span class="c1">#             axis=0,</span>
-<span class="c1">#         )</span>
-<span class="c1">#         std_dev_per_force_fragment = np.std(forces_array, axis=0)</span>
-<span class="c1">#         energy_array = np.array(</span>
-<span class="c1">#             [</span>
-<span class="c1">#                 structure_forces_dict[fit][f"structure_{structure}"]["energy"]</span>
-<span class="c1">#                 for fit in structure_forces_dict</span>
-<span class="c1">#             ]</span>
-<span class="c1">#         )</span>
-<span class="c1">#         std_dev_per_energy = np.std(energy_array)</span>
-
-<span class="c1">#         if verbose &gt; 0:</span>
-<span class="c1">#             print(</span>
-<span class="c1">#                 f"Structure {structure}, max std dev: {np.max(std_dev_per_force_fragment)}, mean std dev: {np.mean(std_dev_per_force_fragment)}, std dev of energy: {std_dev_per_energy}, energies: {energy_array}"</span>
-<span class="c1">#             )</span>
-
-<span class="c1">#         std_dev_array[structure, :] = np.array(</span>
-<span class="c1">#             [</span>
-<span class="c1">#                 np.max(std_dev_per_force_fragment),</span>
-<span class="c1">#                 np.mean(std_dev_per_force_fragment),</span>
-<span class="c1">#                 std_dev_per_energy,</span>
-<span class="c1">#             ]</span>
-<span class="c1">#         )</span>
-
-<span class="c1">#     df = pd.DataFrame(</span>
-<span class="c1">#         std_dev_array, columns=["max_std_dev", "mean_std_dev", "std_dev_energy"]</span>
-<span class="c1">#     ).sort_values(by="max_std_dev", ascending=False)</span>
-
-<span class="c1">#     df.to_csv(str(Path(structure_generation_dir, "std_dev_forces.csv")), index=True)</span>
-
-<span class="c1">#     return df</span>
 
 
 <div class="viewcode-block" id="std_deviation_of_forces">

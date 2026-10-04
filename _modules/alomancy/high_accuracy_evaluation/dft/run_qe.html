@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
@@ -77,6 +80,7 @@
              
   <h1>Source code for alomancy.high_accuracy_evaluation.dft.run_qe</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
@@ -163,7 +167,16 @@
 <div class="viewcode-block" id="get_qe_input_data">
 <a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_qe_input_data</span><span class="p">(</span><span class="n">calculation_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">qe_input_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-    <span class="k">return</span> <span class="p">{</span>
+<span class="w">    </span><span class="sd">"""Default pw.x namelists with user overrides merged in per namelist.</span>
+
+<span class="sd">    Each namelist (``control``, ``system``, ...) is merged key-by-key, so</span>
+<span class="sd">    overriding one key (e.g. ``control.tstress``) keeps every other default</span>
+<span class="sd">    in that namelist. A shallow merge used to replace the whole namelist,</span>
+<span class="sd">    silently dropping ``control.tprnfor``/``calculation`` so QE never</span>
+<span class="sd">    printed forces and every job failed with "forces not present".</span>
+<span class="sd">    Non-dict values (e.g. a top-level scalar) replace the default outright.</span>
+<span class="sd">    """</span>
+    <span class="n">input_data</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">"control"</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">"calculation"</span><span class="p">:</span> <span class="n">calculation_type</span><span class="p">,</span>
             <span class="s2">"verbosity"</span><span class="p">:</span> <span class="s2">"high"</span><span class="p">,</span>
@@ -197,8 +210,31 @@
         <span class="p">},</span>
         <span class="s2">"ions"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"ion_dynamics"</span><span class="p">:</span> <span class="s2">"bfgs"</span><span class="p">,</span> <span class="s2">"upscale"</span><span class="p">:</span> <span class="mf">1e8</span><span class="p">,</span> <span class="s2">"bfgs_ndim"</span><span class="p">:</span> <span class="mi">6</span><span class="p">},</span>
         <span class="s2">"cell"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"press_conv_thr"</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span> <span class="s2">"cell_dofree"</span><span class="p">:</span> <span class="s2">"all"</span><span class="p">},</span>
-        <span class="o">**</span><span class="n">qe_input_kwargs</span><span class="p">,</span>
-    <span class="p">}</span></div>
+    <span class="p">}</span>
+    <span class="k">for</span> <span class="n">section</span><span class="p">,</span> <span class="n">overrides</span> <span class="ow">in</span> <span class="n">qe_input_kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">overrides</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">input_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">section</span><span class="p">),</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">input_data</span><span class="p">[</span><span class="n">section</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">input_data</span><span class="p">[</span><span class="n">section</span><span class="p">],</span> <span class="o">**</span><span class="n">overrides</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">input_data</span><span class="p">[</span><span class="n">section</span><span class="p">]</span> <span class="o">=</span> <span class="n">overrides</span>
+    <span class="k">return</span> <span class="n">input_data</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_effective_kwargs">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.resolve_effective_kwargs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_effective_kwargs</span><span class="p">(</span><span class="n">qe_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The dft_evaluator registry's uniform defaults-resolution entry point</span>
+<span class="sd">    (see registry.py) -- used only by the skeleton's pre-run config summary</span>
+<span class="sd">    (active_learning_workflow.py's display_workflow_summary) to show</span>
+<span class="sd">    the fully-resolved effective qe_kwargs, not just what the user wrote.</span>
+<span class="sd">    get_qe_input_data (above) already merges its own defaults with</span>
+<span class="sd">    whatever's passed to it, per namelist -- calling it directly here,</span>
+<span class="sd">    rather than re-deriving the same defaults separately, means this</span>
+<span class="sd">    display can never drift out of sync with the real merge. "scf" is passed as calculation_type since it doesn't affect</span>
+<span class="sd">    the input_data defaults shown (control.calculation itself does vary by</span>
+<span class="sd">    scf/relax, but that distinction isn't relevant to a settings summary).</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">get_qe_input_data</span><span class="p">(</span><span class="s2">"scf"</span><span class="p">,</span> <span class="n">qe_kwargs</span><span class="p">)</span></div>
 
 
 
@@ -259,6 +295,16 @@
         <span class="n">create_qe_calc_object</span><span class="p">,</span>
         <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">"qe_opt"</span><span class="p">,</span>
     <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="report_section">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.report_section">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">report_section</span><span class="p">(</span><span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Loop-report section for this module (see analysis/report/sections.py)."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.report.sections</span><span class="w"> </span><span class="kn">import</span> <span class="n">dft_section</span>
+
+    <span class="k">return</span> <span class="n">dft_section</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 </pre></div>
 

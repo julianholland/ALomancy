@@ -1,0 +1,381 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Starting a Run &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Loop reports" href="reports.html" />
+    <link rel="prev" title="Quick Start" href="quickstart.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Starting a Run</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#choosing-a-start-mode">Choosing a start mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#what-every-mode-does-next">What every mode does next</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#label-handling-for-xyz-files">Label handling for xyz files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#train-test-split">Train/test split</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#migrating-from-the-removed-keys">Migrating from the removed keys</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#common-errors-and-fixes">Common errors and fixes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Starting a Run</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/starting_a_run.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="starting-a-run">
+<h1>Starting a Run<a class="headerlink" href="#starting-a-run" title="Link to this heading"></a></h1>
+<p>Every ALomancy run needs an initial set of DFT-labelled structures before the
+first committee can be trained. <code class="docutils literal notranslate"><span class="pre">general.start_from</span></code> says where those come
+from. There are four start modes, and the mode is picked automatically from
+which keys you give.</p>
+<section id="choosing-a-start-mode">
+<h2>Choosing a start mode<a class="headerlink" href="#choosing-a-start-mode" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Keys under <code class="docutils literal notranslate"><span class="pre">general.start_from</span></code></p></th>
+<th class="head"><p>Mode</p></th>
+<th class="head"><p>What happens</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">train_xyz</span></code> + <code class="docutils literal notranslate"><span class="pre">test_xyz</span></code></p></td>
+<td><p>Pre-split files</p></td>
+<td><p>Both files are imported. Every structure in <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code> is training data and every structure in <code class="docutils literal notranslate"><span class="pre">test_xyz</span></code> is test data, exactly as given.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">xyz</span></code> (one path or a list)</p></td>
+<td><p>Single file</p></td>
+<td><p>The file(s) are imported, then split into train/test by <code class="docutils literal notranslate"><span class="pre">test_ratio</span></code> (see <a class="reference internal" href="#train-test-split"><span class="xref myst">Train/test split</span></a>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">database</span></code></p></td>
+<td><p>Former ALomancy database</p></td>
+<td><p>A <strong>copy</strong> of a previous run’s <code class="docutils literal notranslate"><span class="pre">global_database</span></code> is imported, keeping its <code class="docutils literal notranslate"><span class="pre">config_type</span></code>, train/test split and duplicate flags. The old database is never modified.</p></td>
+</tr>
+<tr class="row-odd"><td><p><em>(no <code class="docutils literal notranslate"><span class="pre">start_from</span></code>)</em></p></td>
+<td><p>Cold start</p></td>
+<td><p>Nothing is imported. ALomancy generates and DFT-evaluates the whole initial dataset itself.</p></td>
+</tr>
+</tbody>
+</table>
+<p>When to use each:</p>
+<ul class="simple">
+<li><p><strong>Pre-split files:</strong> you already have a train/test split you want to keep, e.g. from a paper or from another ALomancy run’s <code class="docutils literal notranslate"><span class="pre">results/initialization/train_set.xyz</span></code> and <code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>.</p></li>
+<li><p><strong>Single file:</strong> you have one pile of DFT data and want ALomancy to hold out a test set.</p></li>
+<li><p><strong>Former database:</strong> you are starting a new run (new settings, new results directory) on top of everything an earlier run computed.</p></li>
+<li><p><strong>Cold start:</strong> you have no data yet.</p></li>
+</ul>
+<p>Giving more than one source (e.g. <code class="docutils literal notranslate"><span class="pre">xyz</span></code> and <code class="docutils literal notranslate"><span class="pre">database</span></code>), or only one of <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_xyz</span></code>, is an error at start-up.</p>
+</section>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h2>
+<p>Pre-split files (ALomancy-written, or any extxyz with DFT labels):</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">start_from</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">train_xyz</span><span class="p">:</span><span class="w"> </span><span class="s">"data/train.xyz"</span>
+<span class="w">    </span><span class="nt">test_xyz</span><span class="p">:</span><span class="w"> </span><span class="s">"data/test.xyz"</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p>Single file from another code, whose keys don’t match ALomancy’s:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">start_from</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">xyz</span><span class="p">:</span><span class="w"> </span><span class="s">"data/carbon_dft.xyz"</span><span class="w">        </span><span class="c1"># or a list of files</span>
+<span class="w">    </span><span class="nt">metadata_map</span><span class="p">:</span><span class="w">                    </span><span class="c1"># only needed for non-standard keys</span>
+<span class="w">      </span><span class="nt">config_type</span><span class="p">:</span><span class="w"> </span><span class="s">"phase"</span><span class="w">            </span><span class="c1"># info key holding the structure label</span>
+<span class="w">      </span><span class="nt">energy</span><span class="p">:</span><span class="w"> </span><span class="s">"energy_pbe"</span><span class="w">            </span><span class="c1"># info key holding the DFT energy (eV)</span>
+<span class="w">      </span><span class="nt">forces</span><span class="p">:</span><span class="w"> </span><span class="s">"forces_pbe"</span><span class="w">            </span><span class="c1"># per-atom array holding DFT forces (eV/Å)</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"liquid"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"amorphous"</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># values of the "phase" key</span>
+</pre></div>
+</div>
+<p>Former ALomancy database:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">start_from</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="s">"../previous_run/results/global_database"</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p>Cold start: leave <code class="docutils literal notranslate"><span class="pre">start_from</span></code> out.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+</section>
+<section id="what-every-mode-does-next">
+<h2>What every mode does next<a class="headerlink" href="#what-every-mode-does-next" title="Link to this heading"></a></h2>
+<p>After the import, all four modes follow the same path:</p>
+<ol class="arabic simple">
+<li><p><strong>Import into this run’s database</strong> (<code class="docutils literal notranslate"><span class="pre">results/global_database</span></code>). Imports are idempotent. Each xyz file’s SHA-256 (and a database’s path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> are dropped at import, with one warning per source giving the count (event <code class="docutils literal notranslate"><span class="pre">start_from_elements_excluded</span></code>). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> later does not bring back structures that an earlier import excluded. To get them, start a fresh run.</p></li>
+<li><p><strong>Fill the gaps.</strong> ALomancy counts what the database already holds against the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> targets (isolated atoms, dimers, trimers, amorphous, Materials Project, …). It generates and DFT-evaluates <strong>only what is missing</strong>. Imported data counts towards those targets. To skip a structure type entirely, set its <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> in the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section.</p></li>
+<li><p><strong>Split into train/test</strong> (next section) and write <code class="docutils literal notranslate"><span class="pre">results/initialization/train_set.xyz</span></code> / <code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>.</p></li>
+<li><p><strong>Start the AL loop.</strong></p></li>
+</ol>
+<p>Once any AL loop has finished, a restart resumes from the database. <code class="docutils literal notranslate"><span class="pre">start_from</span></code> is not consulted again, and neither is the initialization step.</p>
+</section>
+<section id="label-handling-for-xyz-files">
+<h2>Label handling for xyz files<a class="headerlink" href="#label-handling-for-xyz-files" title="Link to this heading"></a></h2>
+<p>ALomancy stores DFT labels as <code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;REF_energy&quot;]</span></code>, <code class="docutils literal notranslate"><span class="pre">atoms.arrays[&quot;REF_forces&quot;]</span></code>, optionally <code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;REF_stresses&quot;]</span></code>, and a provenance label <code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;config_type&quot;]</span></code>. Files that already use these keys pass through unchanged. For other files, each label is looked up in this order, and the first match wins:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Label</p></th>
+<th class="head"><p>1. Already set</p></th>
+<th class="head"><p>2. <code class="docutils literal notranslate"><span class="pre">metadata_map</span></code></p></th>
+<th class="head"><p>3. Auto-detected keys</p></th>
+<th class="head"><p>4. Calculator</p></th>
+<th class="head"><p>If nothing matches</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">config_type</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">config_type</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">metadata_map.config_type</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">type</span></code>, <code class="docutils literal notranslate"><span class="pre">label</span></code>, <code class="docutils literal notranslate"><span class="pre">config</span></code>, <code class="docutils literal notranslate"><span class="pre">config_type_name</span></code></p></td>
+<td><p>—</p></td>
+<td><p>set to <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">REF_energy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">REF_energy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">metadata_map.energy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">energy</span></code>, <code class="docutils literal notranslate"><span class="pre">dft_energy</span></code>, <code class="docutils literal notranslate"><span class="pre">total_energy</span></code></p></td>
+<td><p>energy stored with the structure</p></td>
+<td><p><strong>error</strong></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">REF_forces</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">REF_forces</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">metadata_map.forces</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">forces</span></code>, <code class="docutils literal notranslate"><span class="pre">dft_forces</span></code></p></td>
+<td><p>forces stored with the structure</p></td>
+<td><p><strong>error</strong></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">REF_stresses</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">REF_stresses</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">metadata_map.stress</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">stress</span></code>, <code class="docutils literal notranslate"><span class="pre">dft_stress</span></code></p></td>
+<td><p>stress stored with the structure</p></td>
+<td><p>left out (stress is optional)</p></td>
+</tr>
+</tbody>
+</table>
+<p>“Calculator” covers the common case where ASE’s extxyz reader has already moved plain <code class="docutils literal notranslate"><span class="pre">energy</span></code>/<code class="docutils literal notranslate"><span class="pre">forces</span></code> keys into a single-point calculator.</p>
+<p>Labels are checked <strong>before</strong> anything is imported or sent to DFT. One summary line in the log says which key each label came from and how many structures became <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code>.</p>
+<p>Metadata that belongs to the run that wrote the file is dropped on import: train/test <code class="docutils literal notranslate"><span class="pre">split</span></code> tags, <code class="docutils literal notranslate"><span class="pre">global_db_id</span></code>, duplicate and quality-filter flags, and per-loop model predictions (<code class="docutils literal notranslate"><span class="pre">model_*</span></code>, <code class="docutils literal notranslate"><span class="pre">mace_*</span></code>). This run recomputes all of these. Provenance keys such as <code class="docutils literal notranslate"><span class="pre">al_loop</span></code> are kept. Pre-split files then get their split from which file they came from.</p>
+</section>
+<section id="train-test-split">
+<h2>Train/test split<a class="headerlink" href="#train-test-split" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Mode</p></th>
+<th class="head"><p>Split</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Pre-split files</p></td>
+<td><p>As given: <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code> → train, <code class="docutils literal notranslate"><span class="pre">test_xyz</span></code> → test.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Former database</p></td>
+<td><p>The imported database’s own <code class="docutils literal notranslate"><span class="pre">split</span></code> tags are kept (its quality-filter flags are recomputed by this run’s <code class="docutils literal notranslate"><span class="pre">train_filter</span></code>/<code class="docutils literal notranslate"><span class="pre">test_filter</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p>Single file</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">test_ratio</span></code> of the structures whose <code class="docutils literal notranslate"><span class="pre">config_type</span></code> is in <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code> go to test; everything else trains. At least one structure of each targeted type stays in training.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Cold start</p></td>
+<td><p>Same rule as a single file.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Structures generated to fill gaps have no split yet, so they follow the single-file rule in every mode.</p>
+<p><strong>Single file with no usable <code class="docutils literal notranslate"><span class="pre">config_type</span></code>.</strong> If none of a single file’s structures has a <code class="docutils literal notranslate"><span class="pre">config_type</span></code> (or an equivalent key), they all become <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code>. <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code> is not a target type unless you list it, so no test set could be formed and ALomancy stops with an error. Fix it in one of two ways:</p>
+<ul class="simple">
+<li><p>Give some structures a <code class="docutils literal notranslate"><span class="pre">config_type</span></code> (in the file, or point <code class="docutils literal notranslate"><span class="pre">start_from.metadata_map.config_type</span></code> at an existing key) and list those types in <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code>.</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code> to hold out a random <code class="docutils literal notranslate"><span class="pre">test_ratio</span></code> of the whole file.</p></li>
+</ul>
+</section>
+<section id="migrating-from-the-removed-keys">
+<h2>Migrating from the removed keys<a class="headerlink" href="#migrating-from-the-removed-keys" title="Link to this heading"></a></h2>
+<p>The old start-up keys now stop the run with an error that names the replacement:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Old key</p></th>
+<th class="head"><p>Replacement</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">general.initial_train_file_path</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.train_xyz</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">general.initial_test_file_path</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.test_xyz</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initialization.extra_datasets</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.xyz</span></code> (a list is allowed)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">general.skip_initialization</span></code></p></td>
+<td><p>Not needed. A warm start only generates what the imported data doesn’t cover; use <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> on a structure type to skip it.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initialization.reset_extra_splits</span></code></p></td>
+<td><p>Not needed. Imported files always drop the old run’s splits and flags.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Two behaviors differ from the old fast path. <code class="docutils literal notranslate"><span class="pre">initial_train_file_path</span></code>/<code class="docutils literal notranslate"><span class="pre">initial_test_file_path</span></code> used to be loaded as-is, with no gap filling. The same files under <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_xyz</span></code> now also get missing initialization structures generated. Set <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> on the structure types you don’t want.</p>
+</section>
+<section id="common-errors-and-fixes">
+<h2>Common errors and fixes<a class="headerlink" href="#common-errors-and-fixes" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Error message (start)</p></th>
+<th class="head"><p>Cause</p></th>
+<th class="head"><p>Fix</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">general.start_from</span> <span class="pre">has</span> <span class="pre">more</span> <span class="pre">than</span> <span class="pre">one</span> <span class="pre">data</span> <span class="pre">source</span></code></p></td>
+<td><p>e.g. both <code class="docutils literal notranslate"><span class="pre">xyz</span></code> and <code class="docutils literal notranslate"><span class="pre">database</span></code> given</p></td>
+<td><p>Keep one source.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.train_xyz</span> <span class="pre">and</span> <span class="pre">test_xyz</span> <span class="pre">must</span> <span class="pre">be</span> <span class="pre">given</span> <span class="pre">together</span></code></p></td>
+<td><p>Only one of the pair</p></td>
+<td><p>Add the other, or use <code class="docutils literal notranslate"><span class="pre">xyz</span></code> for a single file to be split.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Unknown</span> <span class="pre">general.start_from</span> <span class="pre">key(s)</span></code></p></td>
+<td><p>Typo</p></td>
+<td><p>Allowed keys: <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code>, <code class="docutils literal notranslate"><span class="pre">test_xyz</span></code>, <code class="docutils literal notranslate"><span class="pre">xyz</span></code>, <code class="docutils literal notranslate"><span class="pre">database</span></code>, <code class="docutils literal notranslate"><span class="pre">metadata_map</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.metadata_map</span> <span class="pre">only</span> <span class="pre">applies</span> <span class="pre">to</span> <span class="pre">xyz</span> <span class="pre">imports</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">metadata_map</span></code> with <code class="docutils literal notranslate"><span class="pre">database</span></code> or a cold start</p></td>
+<td><p>Remove <code class="docutils literal notranslate"><span class="pre">metadata_map</span></code>; databases already use ALomancy’s keys.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Could</span> <span class="pre">not</span> <span class="pre">find</span> <span class="pre">DFT</span> <span class="pre">labels</span> <span class="pre">for</span> <span class="pre">N</span> <span class="pre">structure(s)</span></code></p></td>
+<td><p>Energy or forces under an unrecognised key</p></td>
+<td><p>Name the keys with <code class="docutils literal notranslate"><span class="pre">start_from.metadata_map.energy</span></code> / <code class="docutils literal notranslate"><span class="pre">.forces</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">test</span> <span class="pre">set</span> <span class="pre">could</span> <span class="pre">be</span> <span class="pre">formed</span> <span class="pre">from</span> <span class="pre">general.start_from.xyz</span></code></p></td>
+<td><p>Single file, all structures <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code></p></td>
+<td><p>See <a class="reference internal" href="#train-test-split"><span class="xref myst">Train/test split</span></a>.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">ALomancy</span> <span class="pre">database</span> <span class="pre">at</span> <span class="pre">...</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">database</span></code> path wrong</p></td>
+<td><p>Point at the <code class="docutils literal notranslate"><span class="pre">global_database</span></code> directory itself, e.g. <code class="docutils literal notranslate"><span class="pre">../run/results/global_database</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">...</span> <span class="pre">is</span> <span class="pre">this</span> <span class="pre">run's</span> <span class="pre">own</span> <span class="pre">database</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">database</span></code> is the current run’s <code class="docutils literal notranslate"><span class="pre">db_path</span></code></p></td>
+<td><p>Point at the <em>former</em> run’s database, or just restart the current run.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Config</span> <span class="pre">uses</span> <span class="pre">removed</span> <span class="pre">key(s)</span></code></p></td>
+<td><p>Old keys</p></td>
+<td><p>See <a class="reference internal" href="#migrating-from-the-removed-keys">Migrating from the removed keys</a>.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="quickstart.html" class="btn btn-neutral float-left" title="Quick Start" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="reports.html" class="btn btn-neutral float-right" title="Loop reports" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

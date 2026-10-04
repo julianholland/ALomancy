@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -88,9 +91,12 @@
 <span class="n">_JOB_SECTIONS</span> <span class="o">=</span> <span class="p">(</span>
     <span class="s2">"initialization"</span><span class="p">,</span>
     <span class="s2">"mlip_committee"</span><span class="p">,</span>
+    <span class="s2">"training"</span><span class="p">,</span>
     <span class="s2">"structure_generation"</span><span class="p">,</span>
     <span class="s2">"high_accuracy_evaluation"</span><span class="p">,</span>
 <span class="p">)</span>
+
+<span class="n">_DEFAULT_MAX_TIME</span> <span class="o">=</span> <span class="s2">"24:00:00"</span>
 
 
 <div class="viewcode-block" id="load_dictionaries">
@@ -102,6 +108,17 @@
 <span class="sd">    ``~/.alomancy/hpc_config.yaml`` and replaced with the full profile dict.</span>
 <span class="sd">    Dict values are passed through unchanged (backwards compatible).</span>
 
+<span class="sd">    If a section's ``max_time`` is missing (or falsy), it defaults to that</span>
+<span class="sd">    section's resolved HPC profile's own ``default_max_time`` if the profile</span>
+<span class="sd">    defines one, else the hardcoded fallback ``"24:00:00"``. A section with</span>
+<span class="sd">    no ``hpc`` at all (e.g. ``initialization``, which runs locally) gets no</span>
+<span class="sd">    ``max_time`` default either -- there is nothing for it to bound.</span>
+
+<span class="sd">    An empty section (``"initialization:"`` with nothing indented under it)</span>
+<span class="sd">    is normalized to ``{}`` rather than left as YAML's ``None`` -- every</span>
+<span class="sd">    top-level key in the loaded YAML, not just the four processed here, so</span>
+<span class="sd">    e.g. an empty ``workflow:`` section doesn't crash downstream either.</span>
+
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
@@ -110,11 +127,22 @@
     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">config_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">jobs_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
+    <span class="c1"># An empty section (e.g. "initialization:" with nothing indented under</span>
+    <span class="c1"># it -- entirely valid now that every section's own settings are</span>
+    <span class="c1"># optional/defaulted) parses from YAML as None, not {}. Every section</span>
+    <span class="c1"># reader downstream (including this function's own section_dict.get</span>
+    <span class="c1"># below) assumes a dict -- normalize once here rather than requiring</span>
+    <span class="c1"># every section, in every module, to guard against None individually.</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">jobs_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
     <span class="n">hpc_config</span> <span class="o">=</span> <span class="n">_load_global_hpc_config</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">section</span> <span class="ow">in</span> <span class="n">_JOB_SECTIONS</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">section</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">jobs_dict</span><span class="p">:</span>
             <span class="k">continue</span>
-        <span class="n">hpc_ref</span> <span class="o">=</span> <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">)</span>
+        <span class="n">section_dict</span> <span class="o">=</span> <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">]</span>
+        <span class="n">hpc_ref</span> <span class="o">=</span> <span class="n">section_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hpc_ref</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">hpc_ref</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hpc_config</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -122,7 +150,13 @@
                     <span class="sa">f</span><span class="s2">"found in ~/.alomancy/hpc_config.yaml. "</span>
                     <span class="sa">f</span><span class="s2">"Run 'alomancy add-hpc' to add it."</span>
                 <span class="p">)</span>
-            <span class="n">jobs_dict</span><span class="p">[</span><span class="n">section</span><span class="p">][</span><span class="s2">"hpc"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">section_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc_config</span><span class="p">[</span><span class="n">hpc_ref</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="n">resolved_hpc</span> <span class="o">=</span> <span class="n">section_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">resolved_hpc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">section_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_time"</span><span class="p">):</span>
+            <span class="n">section_dict</span><span class="p">[</span><span class="s2">"max_time"</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolved_hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"default_max_time"</span><span class="p">,</span> <span class="n">_DEFAULT_MAX_TIME</span>
+            <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">jobs_dict</span></div>
 

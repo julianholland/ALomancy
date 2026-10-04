@@ -11,18 +11,21 @@ pip install alomancy
 ```bash
 git clone https://github.com/julianholland/ALomancy.git
 cd ALomancy
-pip install -e ".[dev]"
+uv sync            # creates .venv with alomancy (editable) + the dev tools
 ```
+
+Without uv: `pip install -e .` (add `pytest ruff mypy pre-commit` yourself;
+the dev tools are a uv dependency group, not a pip extra).
 
 ## Dependencies
 
-- Python 3.9+
+- Python 3.10+
 - [ASE](https://wiki.fysik.dtu.dk/ase/) — Atomic Simulation Environment
 - [expyre-wfl](https://github.com/libAtoms/ExPyRe) — Remote HPC job execution (pip package: expyre-wfl)
 - [MACE](https://github.com/ACEsuit/mace) — Machine Learning Accelerated Computational Engine (pip package: mace-torch)
 - [sage-lib](https://github.com/sage-lib/sage-lib) — Hybrid HDF5+SQLite structure database (GlobalDatabase backend)
 - [mp-api](https://github.com/materialsproject/api) — Materials Project API for fetching reference structures
-- numpy, pandas, polars, scipy, matplotlib, seaborn, tqdm, pyyaml
+- numpy, polars, matplotlib, tqdm, pyyaml, pymatgen
 
 ## HPC Setup
 
@@ -72,8 +75,8 @@ For contributors and developers:
 # Clone and install with development dependencies
 git clone https://github.com/julianholland/ALomancy.git
 cd ALomancy
-pip install -e ".[dev,docs]"
+uv sync --extra docs
 
 # Install pre-commit hooks
-pre-commit install
+uv run pre-commit install
 ```

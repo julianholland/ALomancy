@@ -47,6 +47,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#setting-up-an-hpc-system-with-alomancy-add-hpc">Setting Up an HPC System with <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code></a><ul>
@@ -59,11 +62,9 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#using-vasp-as-the-dft-backend">Using VASP as the DFT Backend</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#custom-workflows">Custom Workflows</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#method-signatures-and-responsibilities">Method Signatures and Responsibilities</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="#extra-datasets">Extra Datasets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#adding-a-new-backend">Adding a New Backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#starting-from-existing-data">Starting From Existing Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#filtering-the-training-and-test-sets">Filtering the Training and Test Sets</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#mace-committee-predictions-in-the-globaldatabase">MACE Committee Predictions in the GlobalDatabase</a></li>
 </ul>
 </li>
@@ -193,7 +194,7 @@ Python executable path on remote [/u/jholl/.venvs/alomancy/bin/python]:
   Done.
 
 Setup complete! Use 'raven_gpu' in your run YAML:
-  mlip_committee:
+  training:
     hpc: 'raven_gpu'
   structure_generation:
     hpc: 'raven_gpu'
@@ -215,7 +216,7 @@ Setup complete! Use 'raven_gpu' in your run YAML:
 <span class="w">    </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
 <span class="w">    </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">    </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120GB</span>
-<span class="w">  </span><span class="nt">max_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">  </span><span class="nt">max_num_of_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
 </pre></div>
 </div>
 <p>And this entry to <code class="docutils literal notranslate"><span class="pre">~/.expyre/config.json</span></code>:</p>
@@ -259,80 +260,81 @@ because it is per-element and changes between projects.</p>
 <section id="basic-usage">
 <h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h2>
 <p>Here’s a simple example of running an active learning workflow:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.config_dictionaries</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_dictionaries</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.standard_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActiveLearningStandardMACE</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy</span><span class="w"> </span><span class="kn">import</span> <span class="n">ALomancy</span>
 
-<span class="c1"># Load configuration from YAML file</span>
-<span class="n">jobs_dict</span> <span class="o">=</span> <span class="n">load_dictionaries</span><span class="p">(</span><span class="s2">"standard_config.yaml"</span><span class="p">)</span>
-
-<span class="c1"># Create and run the workflow</span>
-<span class="n">workflow</span> <span class="o">=</span> <span class="n">ActiveLearningStandardMACE</span><span class="p">(</span>
-    <span class="n">initial_train_file_path</span><span class="o">=</span><span class="s2">"results/initialization/train_set.xyz"</span><span class="p">,</span>
-    <span class="n">initial_test_file_path</span><span class="o">=</span><span class="s2">"results/initialization/test_set.xyz"</span><span class="p">,</span>
-    <span class="n">jobs_dict</span><span class="o">=</span><span class="n">jobs_dict</span><span class="p">,</span>
-    <span class="n">number_of_al_loops</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
-    <span class="n">verbose</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># 0=silent, 1=INFO progress, 2=DEBUG</span>
-    <span class="n">log_file</span><span class="o">=</span><span class="s2">"results/alomancy.log"</span><span class="p">,</span>  <span class="c1"># file always captures DEBUG</span>
-    <span class="n">db_path</span><span class="o">=</span><span class="s2">"results/global_database"</span><span class="p">,</span>
-<span class="p">)</span>
-
-<span class="n">workflow</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<span class="c1"># The config picks everything: the AL skeleton (general.al_workflow) and</span>
+<span class="c1"># every module (training.trainer, structure_generation.generator,</span>
+<span class="c1"># high_accuracy_evaluation.evaluator). Every run setting (start_from,</span>
+<span class="c1"># num_of_al_loops, verbose, ...) lives under the YAML's `general:` section.</span>
+<span class="n">ALomancy</span><span class="p">(</span><span class="s2">"standard_config.yaml"</span><span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
 </pre></div>
 </div>
 </section>
 <section id="configuration-file">
 <h2>Configuration File<a class="headerlink" href="#configuration-file" title="Link to this heading"></a></h2>
 <p>The configuration YAML file defines all the stages of the active learning workflow. Here’s a complete example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">al_workflow</span><span class="p">:</span><span class="w"> </span><span class="s">"committee_uncertainty"</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># atomic symbols, not atomic numbers</span>
+<span class="w">  </span><span class="nt">num_of_structures_per_loop</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">   </span><span class="c1"># structures selected for DFT each loop</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"IsolatedAtom"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"init_dimer"</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">committee_uncertainty_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_models_in_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+
+<span class="nt">initialization</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"initialization"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
-<span class="w">  </span><span class="nt">test_to_train_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
-<span class="w">  </span><span class="nt">test_config_types</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"IsolatedAtom"</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"init_dimer"</span>
-<span class="w">  </span><span class="nt">creation_kwargs</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
-<span class="w">    </span><span class="nt">mp_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">    </span><span class="nt">single_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">    </span><span class="nt">num_dimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-<span class="w">    </span><span class="nt">num_trimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-<span class="w">    </span><span class="nt">num_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
-<span class="w">    </span><span class="nt">num_stretch_compress_per_mp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-<span class="w">    </span><span class="nt">max_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
-<span class="w">    </span><span class="nt">amorphous_atom_number</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">  </span><span class="nt">mp_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">max_num_of_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
 <span class="w">    </span><span class="nt">mp_max_energy_above_hull</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">dimer_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_dimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">  </span><span class="nt">trimer_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_trimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">  </span><span class="nt">amorphous_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_amorphous_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<span class="w">    </span><span class="nt">num_of_atoms_per_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">  </span><span class="nt">stretch_compress_targets_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_stretch_compress_per_mp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_hpc'</span>
 
-<span class="nt">mlip_committee</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"mlip_committee"</span>
-<span class="w">  </span><span class="nt">size_of_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="nt">training</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"training"</span>
+<span class="w">  </span><span class="nt">trainer</span><span class="p">:</span><span class="w"> </span><span class="s">"mace"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"5H"</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_gpu_hpc'</span>
 
 <span class="nt">structure_generation</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"structure_generation"</span>
-<span class="w">  </span><span class="nt">desired_number_of_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"md"</span><span class="w">   </span><span class="c1"># "md" (default) or "ezga"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span><span class="w">   </span><span class="c1"># candidate pool; default 10x per loop</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"10H"</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_gpu_hpc'</span>
 
 <span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"high_accuracy_evaluation"</span>
-<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">"qe"</span><span class="w">   </span><span class="c1"># "qe" (default) or "vasp"</span>
+<span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"qe"</span><span class="w">   </span><span class="c1"># "qe" (default) or "vasp"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
-<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_cpu_hpc'</span><span class="w">   </span><span class="c1"># concurrency is set on the HPC profile, see max_concurrent_jobs above</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">'my_cpu_hpc'</span><span class="w">   </span><span class="c1"># concurrency is set on the HPC profile, see max_num_of_concurrent_jobs above</span>
 </pre></div>
 </div>
 <section id="configuration-key-descriptions">
 <h3>Configuration Key Descriptions<a class="headerlink" href="#configuration-key-descriptions" title="Link to this heading"></a></h3>
 <ul>
-<li><p><strong>initialization</strong>: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures. The <code class="docutils literal notranslate"><span class="pre">test_to_train_ratio</span></code> determines the split between test and training data.</p></li>
-<li><p><strong>mlip_committee</strong>: Trains an ensemble (committee) of MACE interatomic potentials. The <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code> parameter determines how many committee members are trained in parallel.</p></li>
-<li><p><strong>structure_generation</strong>: Uses MD to generate candidate structures for labeling. Uncertainty is measured as force standard deviation across the committee. MD parameters (<code class="docutils literal notranslate"><span class="pre">steps</span></code>, <code class="docutils literal notranslate"><span class="pre">temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">timestep_fs</span></code>, <code class="docutils literal notranslate"><span class="pre">friction</span></code>, <code class="docutils literal notranslate"><span class="pre">ensemble</span></code>, <code class="docutils literal notranslate"><span class="pre">pressure</span></code>) go under <code class="docutils literal notranslate"><span class="pre">run_md_kwargs</span></code>:</p>
+<li><p><strong>general</strong>: Settings shared across the whole workflow. <code class="docutils literal notranslate"><span class="pre">al_workflow</span></code> selects which AL skeleton <code class="docutils literal notranslate"><span class="pre">ALomancy(config)</span></code> builds (<code class="docutils literal notranslate"><span class="pre">&quot;committee_uncertainty&quot;</span></code>, the default, <code class="docutils literal notranslate"><span class="pre">&quot;random_selection&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;novelty_selection&quot;</span></code>). <code class="docutils literal notranslate"><span class="pre">elements</span></code> (atomic symbols, e.g. <code class="docutils literal notranslate"><span class="pre">[&quot;C&quot;,</span> <span class="pre">&quot;O&quot;]</span></code>) is the single shared source of element identity. <code class="docutils literal notranslate"><span class="pre">num_of_structures_per_loop</span></code> (default 50) is how many structures the selector sends to DFT each loop. <code class="docutils literal notranslate"><span class="pre">committee_uncertainty_kwargs</span></code> holds everything specific to this AL skeleton: <code class="docutils literal notranslate"><span class="pre">num_of_models_in_committee</span></code> (how many committee members are trained in parallel), <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code> (which config types count toward the train/test split), and <code class="docutils literal notranslate"><span class="pre">test_ratio</span></code> (the split between test and training data).</p></li>
+<li><p><strong>initialization</strong>: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own <code class="docutils literal notranslate"><span class="pre">*_kwargs</span></code> (<code class="docutils literal notranslate"><span class="pre">mp_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">dimer_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">trimer_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">amorphous_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">stretch_compress_targets_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">isolated_atom_kwargs</span></code>), each with its own <code class="docutils literal notranslate"><span class="pre">enabled</span></code> flag (default <code class="docutils literal notranslate"><span class="pre">true</span></code>).</p></li>
+<li><p><strong>training</strong>: Trains an ensemble (committee) of interatomic potentials. <code class="docutils literal notranslate"><span class="pre">trainer</span></code> selects the registered <code class="docutils literal notranslate"><span class="pre">mlip_trainer</span></code> backend (currently only <code class="docutils literal notranslate"><span class="pre">&quot;mace&quot;</span></code>); backend-specific settings go under <code class="docutils literal notranslate"><span class="pre">mace_kwargs</span></code>.</p></li>
+<li><p><strong>structure_generation</strong>: Generates candidate structures for labeling. <code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code> (default 10 × <code class="docutils literal notranslate"><span class="pre">general.num_of_structures_per_loop</span></code>) is the size of the candidate pool; it must be at least <code class="docutils literal notranslate"><span class="pre">num_of_structures_per_loop</span></code> (error) and should be at least twice it (warning). <code class="docutils literal notranslate"><span class="pre">generator</span></code> selects the registered <code class="docutils literal notranslate"><span class="pre">structure_generator</span></code> backend (<code class="docutils literal notranslate"><span class="pre">&quot;md&quot;</span></code>, the default, or <code class="docutils literal notranslate"><span class="pre">&quot;ezga&quot;</span></code> for genetic-algorithm search); uncertainty is measured as force standard deviation across the committee. MD parameters (<code class="docutils literal notranslate"><span class="pre">steps</span></code>, <code class="docutils literal notranslate"><span class="pre">temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">timestep_fs</span></code>, <code class="docutils literal notranslate"><span class="pre">friction</span></code>, <code class="docutils literal notranslate"><span class="pre">ensemble</span></code>, <code class="docutils literal notranslate"><span class="pre">pressure</span></code>) go under <code class="docutils literal notranslate"><span class="pre">md_kwargs</span></code>:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">structure_generation</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"structure_generation"</span>
-<span class="w">  </span><span class="nt">desired_number_of_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"md"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span><span class="w">   </span><span class="c1"># candidate pool; default 10x per loop</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"10H"</span>
-<span class="w">  </span><span class="nt">run_md_kwargs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">md_kwargs</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">steps</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20000</span>
 <span class="w">    </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200</span>
 <span class="w">    </span><span class="nt">timestep_fs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
@@ -344,18 +346,18 @@ because it is per-element and changes between projects.</p>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">&quot;nvt&quot;</span></code> runs fixed-cell Langevin dynamics (the default). <code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">&quot;npt&quot;</span></code> runs ASE’s <code class="docutils literal notranslate"><span class="pre">LangevinBAOAB</span></code> integrator with a barostat targeting <code class="docutils literal notranslate"><span class="pre">pressure</span></code> (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell’s fixed volume.</p>
 </li>
-<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">calculator</span></code> key selects the backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default) or <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>. Submission concurrency (how many jobs run at once) is controlled by <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code> on the HPC profile (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>, default 20) — not a per-workflow-phase setting, since it’s a property of the HPC system/account. The older job-dict-level <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> key is deprecated and will be removed in 1.0.0; see <a class="reference internal" href="deprecations.html"><span class="std std-doc">Deprecations</span></a>. If QE-specific keys (e.g. <code class="docutils literal notranslate"><span class="pre">pwx_path</span></code>) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.</p></li>
+<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">evaluator</span></code> key selects the registered <code class="docutils literal notranslate"><span class="pre">dft_evaluator</span></code> backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default) or <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>. Submission concurrency (how many jobs run at once) is controlled by <code class="docutils literal notranslate"><span class="pre">max_num_of_concurrent_jobs</span></code> on the HPC profile (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see <a class="reference internal" href="deprecations.html"><span class="std std-doc">Deprecations</span></a> for the removed <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> fallback. If QE-specific keys (e.g. <code class="docutils literal notranslate"><span class="pre">pwx_path</span></code>) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.</p></li>
 </ul>
 </section>
 </section>
 <section id="using-vasp-as-the-dft-backend">
 <h2>Using VASP as the DFT Backend<a class="headerlink" href="#using-vasp-as-the-dft-backend" title="Link to this heading"></a></h2>
-<p>To switch from Quantum Espresso to VASP, set <code class="docutils literal notranslate"><span class="pre">calculator:</span> <span class="pre">vasp</span></code> in the <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code> block and replace the QE-specific HPC keys:</p>
+<p>To switch from Quantum Espresso to VASP, set <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;vasp&quot;</span></code> in the <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code> block and replace the QE-specific HPC keys:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"high_accuracy_evaluation"</span>
-<span class="w">  </span><span class="nt">calculator</span><span class="p">:</span><span class="w"> </span><span class="s">"vasp"</span>
+<span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"vasp"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
-<span class="w">  </span><span class="nt">vasp_input_kwargs</span><span class="p">:</span><span class="w">          </span><span class="c1"># INCAR overrides (optional)</span>
+<span class="w">  </span><span class="nt">vasp_kwargs</span><span class="p">:</span><span class="w">                </span><span class="c1"># INCAR overrides (optional)</span>
 <span class="w">    </span><span class="nt">encut</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
 <span class="w">    </span><span class="nt">ediff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0e-7</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
@@ -370,7 +372,7 @@ because it is per-element and changes between projects.</p>
 <span class="w">      </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">36</span>
 <span class="w">      </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">"90G"</span>
-<span class="w">    </span><span class="nt">max_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">   </span><span class="c1"># jobs started at once on this HPC (default 20)</span>
+<span class="w">    </span><span class="nt">max_num_of_concurrent_jobs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">   </span><span class="c1"># jobs started at once on this HPC (default 20)</span>
 <span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"cpu"</span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">vasp"</span><span class="p p-Indicator">]</span>
 </pre></div>
@@ -384,140 +386,65 @@ what <code class="docutils literal notranslate"><span class="pre">module</span> 
 fall back to the default (unsuffixed) POTCAR under that path — if that directory doesn’t
 carry a given element (e.g. <code class="docutils literal notranslate"><span class="pre">Pd</span></code>), VASP fails with <code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">pseudopotential</span> <span class="pre">for</span> <span class="pre">&lt;element&gt;!</span></code>.</p>
 </div></blockquote>
-<p>QE configs work unchanged — <code class="docutils literal notranslate"><span class="pre">calculator:</span> <span class="pre">qe</span></code> is the default and can be omitted.</p>
+<p>QE configs work unchanged — <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;qe&quot;</span></code> is the default and can be omitted.</p>
 </section>
-<section id="custom-workflows">
-<h2>Custom Workflows<a class="headerlink" href="#custom-workflows" title="Link to this heading"></a></h2>
-<p>You can create custom active learning workflows by extending <code class="docutils literal notranslate"><span class="pre">BaseActiveLearningWorkflow</span></code>. You must implement four abstract methods:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.base_active_learning</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseActiveLearningWorkflow</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">ase.atoms</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">MyCustomWorkflow</span><span class="p">(</span><span class="n">BaseActiveLearningWorkflow</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">initialize_training_set</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">"""</span>
-<span class="sd">        Generate initial training and test sets.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            base_name: Name used for output directories</span>
-<span class="sd">            **kwargs: Additional configuration parameters</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            Tuple of (train_atoms_list, test_atoms_list)</span>
-<span class="sd">        """</span>
-        <span class="c1"># Your custom initialization logic</span>
-        <span class="n">train_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate training structures</span>
-        <span class="n">test_atoms</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Load or generate test structures</span>
-        <span class="k">return</span> <span class="n">train_atoms</span><span class="p">,</span> <span class="n">test_atoms</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">train_mlip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""</span>
-<span class="sd">        Train the machine-learned interatomic potential (MLIP).</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            base_name: Name used for output directories</span>
-<span class="sd">            job_dict: Configuration dictionary for this job</span>
-<span class="sd">            **kwargs: Additional parameters</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            DataFrame with training metrics (MAE, RMSE, etc.)</span>
-<span class="sd">        """</span>
-        <span class="c1"># Your custom MLIP training logic</span>
-        <span class="n">metrics</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
-            <span class="p">{</span>
-                <span class="s2">"train_mae"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.01</span><span class="p">],</span>
-                <span class="s2">"test_mae"</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.02</span><span class="p">],</span>
-            <span class="p">}</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">metrics</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">generate_structures</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">train_data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""</span>
-<span class="sd">        Generate candidate structures for labeling based on uncertainty.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            base_name: Name used for output directories</span>
-<span class="sd">            job_dict: Configuration dictionary for this job</span>
-<span class="sd">            train_data: Current training set (list[Atoms])</span>
-<span class="sd">            **kwargs: Additional parameters</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            List of candidate Atoms objects</span>
-<span class="sd">        """</span>
-        <span class="c1"># Your custom structure generation logic</span>
-        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Generate structures using MD or other methods</span>
-        <span class="k">return</span> <span class="n">candidates</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">high_accuracy_evaluation</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">structures</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""</span>
-<span class="sd">        Perform high-accuracy evaluation (e.g., DFT) on selected structures.</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            base_name: Name used for output directories</span>
-<span class="sd">            job_dict: Configuration dictionary for this job</span>
-<span class="sd">            structures: List of Atoms objects to evaluate</span>
-<span class="sd">            **kwargs: Additional parameters</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            List of Atoms objects with energy and force labels in:</span>
-<span class="sd">            - atoms.info["REF_energy"]</span>
-<span class="sd">            - atoms.arrays["REF_forces"]</span>
-<span class="sd">        """</span>
-        <span class="c1"># Your custom high-accuracy evaluation logic</span>
-        <span class="n">evaluated</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Run DFT and attach results</span>
-        <span class="k">return</span> <span class="n">evaluated</span>
+<section id="adding-a-new-backend">
+<h2>Adding a New Backend<a class="headerlink" href="#adding-a-new-backend" title="Link to this heading"></a></h2>
+<p>Users never pick a workflow class in Python — <code class="docutils literal notranslate"><span class="pre">ALomancy(config)</span></code> builds the skeleton named by <code class="docutils literal notranslate"><span class="pre">general.al_workflow</span></code> (new skeletons: see <code class="docutils literal notranslate"><span class="pre">writing_a_workflow.md</span></code>), and each pluggable category (<code class="docutils literal notranslate"><span class="pre">mlip_trainer</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generator</span></code>, <code class="docutils literal notranslate"><span class="pre">dft_evaluator</span></code>, <code class="docutils literal notranslate"><span class="pre">initialiser</span></code>) is a module registered against a name in <code class="docutils literal notranslate"><span class="pre">src/alomancy/registry.py</span></code>, resolved lazily from config at runtime (<code class="docutils literal notranslate"><span class="pre">training.trainer</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generation.generator</span></code>, <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.evaluator</span></code>).</p>
+<p>Adding a new backend means writing a new module that implements the category’s expected entry points — typically <code class="docutils literal notranslate"><span class="pre">output_paths(config,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">name,</span> <span class="pre">...)</span></code> and <code class="docutils literal notranslate"><span class="pre">read_existing_result(config,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">name,</span> <span class="pre">...)</span></code> for the skeleton’s restart mechanism, plus the category-specific worker function (<code class="docutils literal notranslate"><span class="pre">train</span></code>, <code class="docutils literal notranslate"><span class="pre">generate</span></code>, or <code class="docutils literal notranslate"><span class="pre">sp</span></code>/<code class="docutils literal notranslate"><span class="pre">go</span></code>) — and registering it in <code class="docutils literal notranslate"><span class="pre">registry.py</span></code>. See any existing module under <code class="docutils literal notranslate"><span class="pre">mlip/</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">mlip/mace/trainer.py</span></code>), <code class="docutils literal notranslate"><span class="pre">structure_generation/</span></code> (<code class="docutils literal notranslate"><span class="pre">structure_generation/md/md_wfl.py</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generation/ezga/generate_structures.py</span></code>), or <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation/dft/</span></code> (<code class="docutils literal notranslate"><span class="pre">run_qe.py</span></code>, <code class="docutils literal notranslate"><span class="pre">run_vasp.py</span></code>) for the pattern to follow.</p>
+</section>
+<section id="starting-from-existing-data">
+<h2>Starting From Existing Data<a class="headerlink" href="#starting-from-existing-data" title="Link to this heading"></a></h2>
+<p>External or earlier datasets are imported with <code class="docutils literal notranslate"><span class="pre">general.start_from</span></code>
+instead of being generated from scratch. For example, a single xyz file:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">al_workflow</span><span class="p">:</span><span class="w"> </span><span class="s">"committee_uncertainty"</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">start_from</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">xyz</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"path/to/external_structures.xyz"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"path/to/another_dataset.xyz"</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"liquid"</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
-<section id="method-signatures-and-responsibilities">
-<h3>Method Signatures and Responsibilities<a class="headerlink" href="#method-signatures-and-responsibilities" title="Link to this heading"></a></h3>
-<ul class="simple">
-<li><p><strong>initialize_training_set</strong>: Called once at the start. Should return initial train/test splits. Results are written to <code class="docutils literal notranslate"><span class="pre">results/&lt;base_name&gt;/initialization/</span></code>.</p></li>
-<li><p><strong>train_mlip</strong>: Called once per AL loop. Should train your MLIP on the current training set and return a DataFrame with performance metrics.</p></li>
-<li><p><strong>generate_structures</strong>: Called once per AL loop. Should use MD, Monte Carlo, or other methods to generate high-uncertainty candidates from the current committee.</p></li>
-<li><p><strong>high_accuracy_evaluation</strong>: Called once per AL loop. Should evaluate structures with DFT (or equivalent high-accuracy method) and attach energies and forces to the Atoms objects.</p></li>
-</ul>
+<p>Structures don’t need ALomancy’s own keys: <code class="docutils literal notranslate"><span class="pre">config_type</span></code>, <code class="docutils literal notranslate"><span class="pre">REF_energy</span></code>
+and <code class="docutils literal notranslate"><span class="pre">REF_forces</span></code> are mapped from common equivalents (or named explicitly
+with <code class="docutils literal notranslate"><span class="pre">start_from.metadata_map</span></code>). See <a class="reference internal" href="starting_a_run.html"><span class="std std-doc">Starting a run</span></a>
+for all start modes and the full rules.</p>
 </section>
-</section>
-<section id="extra-datasets">
-<h2>Extra Datasets<a class="headerlink" href="#extra-datasets" title="Link to this heading"></a></h2>
-<p>The initialization configuration can include external datasets via an <code class="docutils literal notranslate"><span class="pre">extra_datasets</span></code> parameter. These structures are seeded into the GlobalDatabase before initialization runs. This is useful for incorporating reference data (e.g., from literature or previous computations) without regenerating isolated atoms.</p>
-<p>Example configuration:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">initialization</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"initialization"</span>
-<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
-<span class="w">  </span><span class="nt">test_to_train_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
-<span class="w">  </span><span class="nt">extra_datasets</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"path/to/external_structures.xyz"</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"path/to/another_dataset.xyz"</span>
-<span class="w">  </span><span class="nt">creation_kwargs</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
-<span class="w">    </span><span class="c1"># ... other options ...</span>
+<section id="filtering-the-training-and-test-sets">
+<h2>Filtering the Training and Test Sets<a class="headerlink" href="#filtering-the-training-and-test-sets" title="Link to this heading"></a></h2>
+<p>Poor-quality DFT structures, such as near-collision MD frames with huge
+forces, can be kept out of either split without deleting them from the
+database. <code class="docutils literal notranslate"><span class="pre">general.train_filter</span></code> and <code class="docutils literal notranslate"><span class="pre">general.test_filter</span></code> take the same keys:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">train_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">max_force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100.0</span><span class="w">                  </span><span class="c1"># eV/Å; the default. null disables it</span>
+<span class="w">    </span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">   </span><span class="c1"># off by default</span>
+<span class="w">  </span><span class="nt">test_filter</span><span class="p">:</span><span class="w">                        </span><span class="c1"># off by default</span>
+<span class="w">    </span><span class="nt">max_force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20.0</span>
+<span class="w">    </span><span class="nt">formation_energy_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">null</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># eV/atom; null bound = open</span>
 </pre></div>
 </div>
-<p>Structures in extra datasets should have:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;REF_energy&quot;]</span></code> (float) — DFT energy</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">atoms.arrays[&quot;REF_forces&quot;]</span></code> (array, shape N×3) — DFT forces</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;config_type&quot;]</span></code> (str) — origin label (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;IsolatedAtom&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;external_data&quot;</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_force</span></code> excludes structures whose largest per-atom force is at or above the value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">formation_energy_per_atom</span></code> keeps only structures inside <code class="docutils literal notranslate"><span class="pre">[min,</span> <span class="pre">max]</span></code> (inclusive), measured against the database’s <code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code> energies: <code class="docutils literal notranslate"><span class="pre">(E</span> <span class="pre">−</span> <span class="pre">Σ</span> <span class="pre">E_isolated)</span> <span class="pre">/</span> <span class="pre">n_atoms</span></code>, the same definition as the parity plots. Structures containing an element without an <code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code> energy are not energy-filtered, and a warning says so.</p></li>
 </ul>
+<p>Excluded structures are flagged (<code class="docutils literal notranslate"><span class="pre">is_quality_filtered</span></code>, with the reason in <code class="docutils literal notranslate"><span class="pre">quality_filter_reasons</span></code>) and left out of <code class="docutils literal notranslate"><span class="pre">train_set.xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>, training and test metrics. The flags are recomputed every loop, so loosening or removing a filter brings them back.</p>
+<p>Separately, <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.force_ceiling</span></code> (default <code class="docutils literal notranslate"><span class="pre">100.0</span></code> eV/Å) controls how far AL-generated structures are relaxed before their DFT labels are kept: each is relaxed until its largest force is at most the ceiling. <code class="docutils literal notranslate"><span class="pre">null</span></code> means a single-point calculation with no relaxation. Initialization structures are not affected.</p>
 </section>
 <section id="mace-committee-predictions-in-the-globaldatabase">
 <h2>MACE Committee Predictions in the GlobalDatabase<a class="headerlink" href="#mace-committee-predictions-in-the-globaldatabase" title="Link to this heading"></a></h2>
 <p>After each AL loop’s MACE committee training finishes on the remote GPU node, ALomancy evaluates every committee model on the training and test sets <strong>before returning from the remote job</strong> and saves the per-structure predictions to <code class="docutils literal notranslate"><span class="pre">train_pred.xyz</span></code> / <code class="docutils literal notranslate"><span class="pre">test_pred.xyz</span></code> inside each fit directory. These files are synced back to your local machine by ExPyRe alongside the model files.</p>
-<p><code class="docutils literal notranslate"><span class="pre">store_mlip_predictions</span></code> then reads those files locally and stores the predicted energies and forces in the GlobalDatabase — no model loading or local GPU required. Parity plots (<code class="docutils literal notranslate"><span class="pre">plot_dft_vs_model</span></code>) read from the DB first, then fall back to the eval xyz files, and never run local inference.</p>
+<p>The skeleton then reads those files locally and stores the predicted energies and forces in the GlobalDatabase via <code class="docutils literal notranslate"><span class="pre">store_model_predictions</span></code> — no model loading or local GPU required. Parity plots (<code class="docutils literal notranslate"><span class="pre">plot_dft_vs_model</span></code>) read from the DB first, then fall back to the eval xyz files, and never run local inference.</p>
 <blockquote>
 <div><p><strong>Resuming from before v0.4.2</strong>: loops trained without the post-training eval step will not have <code class="docutils literal notranslate"><span class="pre">train_pred.xyz</span></code> / <code class="docutils literal notranslate"><span class="pre">test_pred.xyz</span></code>. The sentinel <code class="docutils literal notranslate"><span class="pre">mace_predictions.done</span></code> is written and those loops are skipped gracefully; parity plots show “No predictions available” for them. Only future loops (trained with the updated remote package) will have predictions stored.</p>
 </div></blockquote>
-<p>The stored metadata keys follow the pattern:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mace_energy_loop_</span><span class="p">{</span><span class="n">N</span><span class="p">}</span><span class="n">_fit_</span><span class="p">{</span><span class="n">i</span><span class="p">}</span>   <span class="c1"># predicted energy (eV, raw)</span>
-<span class="n">mace_forces_loop_</span><span class="p">{</span><span class="n">N</span><span class="p">}</span><span class="n">_fit_</span><span class="p">{</span><span class="n">i</span><span class="p">}</span>   <span class="c1"># predicted forces ([[fx,fy,fz], ...], eV/Å)</span>
+<p>The stored metadata keys follow the pattern (generalized to <code class="docutils literal notranslate"><span class="pre">model_*</span></code> since the trainer backend is no longer assumed to be MACE — see the module registry):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">model_energy_loop_</span><span class="p">{</span><span class="n">N</span><span class="p">}</span><span class="n">_fit_</span><span class="p">{</span><span class="n">i</span><span class="p">}</span>   <span class="c1"># predicted energy (eV, raw)</span>
+<span class="n">model_forces_loop_</span><span class="p">{</span><span class="n">N</span><span class="p">}</span><span class="n">_fit_</span><span class="p">{</span><span class="n">i</span><span class="p">}</span>   <span class="c1"># predicted forces ([[fx,fy,fz], ...], eV/Å)</span>
 </pre></div>
 </div>
 <p>You can retrieve predictions programmatically:</p>
@@ -527,7 +454,7 @@ carry a given element (e.g. <code class="docutils literal notranslate"><span cla
 
 <span class="c1"># Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)}</span>
 <span class="c1"># where each element is a numpy array; e values are per-atom (eV/atom)</span>
-<span class="n">preds</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_mace_predictions</span><span class="p">(</span><span class="n">loop_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">fit_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">preds</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_model_predictions</span><span class="p">(</span><span class="n">loop_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">fit_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 
 <span class="n">e_dft</span><span class="p">,</span> <span class="n">e_pred</span><span class="p">,</span> <span class="n">f_dft</span><span class="p">,</span> <span class="n">f_pred</span> <span class="o">=</span> <span class="n">preds</span><span class="p">[</span><span class="s2">"train"</span><span class="p">]</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Train energy MAE: </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">e_dft</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">e_pred</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> eV/atom"</span><span class="p">)</span>

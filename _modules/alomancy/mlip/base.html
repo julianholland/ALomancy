@@ -1,0 +1,671 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.mlip.base &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            ALomancy
+              <img src="../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.mlip.base</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.mlip.base</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""ALomancyTrainer: the generic base of every MLIP trainer backend.</span>
+
+<span class="sd">A backend (``mlip/mace/trainer.py``'s ``MaceTrainer``,</span>
+<span class="sd">``mlip/sevennet/trainer.py``'s ``SevenNetTrainer``) subclasses ``ALomancyTrainer``, declares its settings as class attributes</span>
+<span class="sd">and implements three methods:</span>
+
+<span class="sd">- ``fit(...)``: train one model, return the model file's path (or None);</span>
+<span class="sd">- ``model_path(fit_dir)``: where ``fit`` puts that file;</span>
+<span class="sd">- ``get_calculator(model_path)``: an ASE calculator for a trained model.</span>
+
+<span class="sd">Everything else is shared and lives here: the standard ``train`` entry</span>
+<span class="sd">point, resolving the per-element isolated-atom energies, evaluating the</span>
+<span class="sd">model on every split (``{split}_pred.xyz`` + ``evaluation_metrics.json``),</span>
+<span class="sd">restart checks and clean-up. A backend may also implement</span>
+<span class="sd">``training_history`` so its per-epoch errors reach the training-curve plots</span>
+<span class="sd">and the loop report (``TrainingHistory``).</span>
+
+<span class="sd">``train`` always takes the three split paths and the seed and returns the</span>
+<span class="sd">model's path, or None if no model was produced. Metrics are not returned:</span>
+<span class="sd">the workflow reads them back from ``evaluation_metrics.json``</span>
+<span class="sd">(``read_existing_result``), checksum-verified, on every path.</span>
+
+<span class="sd">ExPyRe pickles remote functions by reference, so the remote worker is the</span>
+<span class="sd">module-level ``run_training``, never a method: it receives only plain data</span>
+<span class="sd">(the trainer's registry name, its config dict, paths, the seed) and builds</span>
+<span class="sd">the trainer on the remote node. Register a trainer with</span>
+<span class="sd">``register("mlip_trainer", "&lt;name&gt;", "&lt;module&gt;", trainer_class="&lt;Class&gt;")``.</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">prediction_metrics</span><span class="p">,</span>
+    <span class="n">read_evaluation</span><span class="p">,</span>
+    <span class="n">save_evaluation</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">drop_unwritable_info</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="n">EVALUATION_FILENAME</span> <span class="o">=</span> <span class="s2">"evaluation_metrics.json"</span>
+<span class="n">_SPLITS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"train"</span><span class="p">,</span> <span class="s2">"valid"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="TrainingHistory">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.TrainingHistory">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TrainingHistory</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Per-epoch training errors of one fit, in one backend-independent form,</span>
+<span class="sd">    so the training-curve plots and the loop report never need to know a</span>
+<span class="sd">    backend's log file names or formats.</span>
+
+<span class="sd">    ``frame`` has one row per epoch per split: columns ``epoch``, ``split``</span>
+<span class="sd">    ("train" or "valid"), and whichever of ``loss``, ``mae_e_per_atom``</span>
+<span class="sd">    (eV/atom) and ``mae_f`` (eV/Å) the backend records. The two optional</span>
+<span class="sd">    markers are drawn as vertical lines: ``stage_two_epoch`` (e.g. MACE's</span>
+<span class="sd">    SWA start) and ``selected_epoch`` (the epoch whose weights were kept).</span>
+<span class="sd">    """</span>
+
+    <span class="n">frame</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="n">stage_two_epoch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">selected_epoch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="isolated_atom_reference_energies_by_z">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.isolated_atom_reference_energies_by_z">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">isolated_atom_reference_energies_by_z</span><span class="p">(</span>
+    <span class="n">energies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">setting_name</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""{element symbol or atomic number: energy (eV)} -&gt; {atomic number:</span>
+<span class="sd">    energy}, rejecting unknown keys and non-finite values. *setting_name*</span>
+<span class="sd">    names the config setting in error messages."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">ase.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">atomic_numbers</span>
+
+    <span class="n">converted</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">energy</span> <span class="ow">in</span> <span class="n">energies</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">atomic_numbers</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">atomic_numbers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">key</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">setting_name</span><span class="si">}</span><span class="s2"> key </span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2"> is not an element symbol or atomic number."</span>
+            <span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">energy</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">setting_name</span><span class="si">}</span><span class="s2">[</span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2">] is not finite: </span><span class="si">{</span><span class="n">energy</span><span class="si">!r}</span><span class="s2">."</span><span class="p">)</span>
+        <span class="n">converted</span><span class="p">[</span><span class="n">z</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">converted</span></div>
+
+
+
+<div class="viewcode-block" id="ALomancyTrainer">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ALomancyTrainer</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Generic MLIP trainer; see the module docstring."""</span>
+
+    <span class="c1">#: Registry name (training.trainer).</span>
+    <span class="n">NAME</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">""</span>
+    <span class="c1">#: training.&lt;KWARGS_KEY&gt; holds the backend's own settings.</span>
+    <span class="n">KWARGS_KEY</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">""</span>
+    <span class="c1">#: Defaults for training.&lt;KWARGS_KEY&gt;; shown in the config summary.</span>
+    <span class="n">KWARGS_DEFAULTS</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="c1">#: The backend setting holding the per-element isolated-atom reference</span>
+    <span class="c1">#: energies (MACE "E0s", SevenNet "isolated_atom_reference_energies");</span>
+    <span class="c1">#: None if not needed.</span>
+    <span class="n">ISOLATED_ATOM_ENERGIES_KWARG</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"training"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""*config* is the workflow's ``training`` section; *name* is the</span>
+<span class="sd">        fit directory's parent name, used by backends in file names."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">KWARGS_DEFAULTS</span><span class="p">,</span>
+            <span class="o">**</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">KWARGS_KEY</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}),</span>
+        <span class="p">}</span>
+
+    <span class="c1"># -- What a backend implements ------------------------------------------</span>
+
+<div class="viewcode-block" id="ALomancyTrainer.fit">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.fit">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">train_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">valid_path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">test_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">isolated_atom_energies</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Train one model into *fit_dir*; return the model file (or None).</span>
+
+<span class="sd">        Paths are absolute. *isolated_atom_energies* is already resolved and</span>
+<span class="sd">        formatted for the backend (see resolve_isolated_atom_energies), or</span>
+<span class="sd">        None when nothing was given and the backend should fall back to its</span>
+<span class="sd">        own behaviour."""</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.model_path">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.model_path">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Where fit() writes the model that evaluation, MD and prediction use."""</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.get_calculator">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.get_calculator">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""An ASE calculator for a trained model. Only call it inside a</span>
+<span class="sd">        remote job, never in the local driver process."""</span></div>
+
+
+    <span class="c1"># -- Overridable, with generic defaults ----------------------------------</span>
+
+<div class="viewcode-block" id="ALomancyTrainer.deployable_model_path">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.deployable_model_path">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">deployable_model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""The file copied to results/best_model/ (None: don't update it)."""</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">path</span> <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.cleanup_paths">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.cleanup_paths">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cleanup_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>  <span class="c1"># noqa: ARG002</span>
+<span class="w">        </span><span class="sd">"""Files or directories to delete once a fit is finished."""</span>
+        <span class="k">return</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.format_isolated_atom_energies">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.format_isolated_atom_energies">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format_isolated_atom_energies</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">energies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Convert a resolved {symbol or Z: eV} dict to the backend's format."""</span>
+        <span class="k">return</span> <span class="n">energies</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.report_section">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.report_section">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">report_section</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>  <span class="c1"># noqa: ARG002</span>
+<span class="w">        </span><span class="sd">"""This trainer's loop-report section (analysis/report); None = none."""</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.training_history">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.training_history">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">training_history</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>  <span class="c1"># noqa: ARG002</span>
+        <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>  <span class="c1"># noqa: ARG002</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TrainingHistory</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""The fit's per-epoch errors, read from wherever the backend logs</span>
+<span class="sd">        them; None when there is nothing to read (no training curves)."""</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.effective_kwargs">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.effective_kwargs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">effective_kwargs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""The fully resolved backend settings, for the config summary."""</span>
+        <span class="n">effective</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ISOLATED_ATOM_ENERGIES_KWARG</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">effective</span><span class="p">:</span>
+            <span class="n">effective</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"&lt;resolved at train time from IsolatedAtom structures&gt;"</span>
+        <span class="k">return</span> <span class="n">effective</span></div>
+
+
+    <span class="c1"># -- Shared behaviour ------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ALomancyTrainer.resolve_isolated_atom_energies">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.resolve_isolated_atom_energies">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve_isolated_atom_energies</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">elements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">isolated_atom_energies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""The per-element isolated-atom energies to train with.</span>
+
+<span class="sd">        1. The backend setting (``&lt;KWARGS_KEY&gt;.&lt;ISOLATED_ATOM_ENERGIES_KWARG&gt;``,</span>
+<span class="sd">           e.g. ``mace_kwargs.E0s``) wins. A string (e.g. "average", a .json</span>
+<span class="sd">           path) passes through untouched.</span>
+<span class="sd">        2. Otherwise the database's IsolatedAtom energies.</span>
+<span class="sd">        3. Neither, while *elements* is given: ValueError, before training.</span>
+<span class="sd">        A dict must cover every element in *elements* (by symbol or atomic</span>
+<span class="sd">        number). Returns None when the backend doesn't use these energies,</span>
+<span class="sd">        or when there is nothing to pass and no *elements* to check.</span>
+<span class="sd">        """</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ISOLATED_ATOM_ENERGIES_KWARG</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">energies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">energies</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">isolated_atom_energies</span><span class="p">:</span>
+                <span class="n">energies</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">isolated_atom_energies</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">elements</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">KWARGS_KEY</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> is not set, and no IsolatedAtom "</span>
+                    <span class="s2">"structures with REF_energy were found in the GlobalDatabase "</span>
+                    <span class="sa">f</span><span class="s2">"to default it from. Either set </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> explicitly in "</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">KWARGS_KEY</span><span class="si">}</span><span class="s2"> (e.g. an </span><span class="se">{{</span><span class="s2">element: energy</span><span class="se">}}</span><span class="s2"> dict), or "</span>
+                    <span class="s2">"make sure IsolatedAtom structures for every element in "</span>
+                    <span class="sa">f</span><span class="s2">"general.elements (</span><span class="si">{</span><span class="n">elements</span><span class="si">}</span><span class="s2">) have been DFT-evaluated first."</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">energies</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">energies</span>
+        <span class="k">if</span> <span class="n">elements</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">ase.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">atomic_numbers</span>
+
+            <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">el</span>
+                <span class="k">for</span> <span class="n">el</span> <span class="ow">in</span> <span class="n">elements</span>
+                <span class="k">if</span> <span class="n">el</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">energies</span> <span class="ow">and</span> <span class="n">atomic_numbers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">el</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">energies</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">KWARGS_KEY</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> is missing an entry for element(s) "</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2"> (from general.elements=</span><span class="si">{</span><span class="n">elements</span><span class="si">}</span><span class="s2">). These "</span>
+                    <span class="s2">"reference energies can't be inferred by the model -- add "</span>
+                    <span class="sa">f</span><span class="s2">"them to </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">KWARGS_KEY</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">, or make sure an "</span>
+                    <span class="s2">"IsolatedAtom structure for each element has been "</span>
+                    <span class="s2">"DFT-evaluated into the GlobalDatabase."</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">format_isolated_atom_energies</span><span class="p">(</span><span class="n">energies</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.train">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.train">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">train_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">valid_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">test_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">fit_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">elements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">isolated_atom_energies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Train, evaluate and tidy up one model. Returns the model's path,</span>
+<span class="sd">        or None if no model was produced."""</span>
+        <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+        <span class="n">fit_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">train_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">train_path</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+        <span class="n">test_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">test_path</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+        <span class="n">valid_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">valid_path</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span> <span class="k">if</span> <span class="n">valid_path</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="p">(</span><span class="n">train_file</span><span class="p">,</span> <span class="n">test_file</span><span class="p">,</span> <span class="n">valid_file</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Split file not found: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
+
+        <span class="n">energies</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolve_isolated_atom_energies</span><span class="p">(</span><span class="n">elements</span><span class="p">,</span> <span class="n">isolated_atom_energies</span><span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+            <span class="n">train_file</span><span class="p">,</span>
+            <span class="n">valid_file</span><span class="p">,</span>
+            <span class="n">test_file</span><span class="p">,</span>
+            <span class="n">seed</span><span class="p">,</span>
+            <span class="n">fit_dir</span><span class="p">,</span>
+            <span class="n">isolated_atom_energies</span><span class="o">=</span><span class="n">energies</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">Path</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No model produced in </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">splits</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"train"</span><span class="p">:</span> <span class="n">train_file</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">:</span> <span class="n">test_file</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">valid_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">splits</span><span class="p">[</span><span class="s2">"valid"</span><span class="p">]</span> <span class="o">=</span> <span class="n">valid_file</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">evaluate</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">model</span><span class="p">),</span> <span class="n">splits</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cleanup</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">model</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.evaluate">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.evaluate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">splits</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">],</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Predict every structure of every split with the trained model,</span>
+<span class="sd">        write ``{split}_pred.xyz`` (``model_energy``, ``model_forces`` and,</span>
+<span class="sd">        where DFT stress exists, ``model_stress``) and record the metrics in</span>
+<span class="sd">        evaluation_metrics.json together with the model's checksum.</span>
+
+<span class="sd">        Per-structure failures are counted, not fatal; the first one is</span>
+<span class="sd">        logged with its traceback. Returns {split: metrics}.</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">calc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_calculator</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Could not load </span><span class="si">%s</span><span class="s2"> for evaluation: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">model_path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">{}</span>
+
+        <span class="n">split_results</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">xyz_path</span> <span class="ow">in</span> <span class="n">splits</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">xyz_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Could not read </span><span class="si">%s</span><span class="s2"> for evaluation: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">xyz_path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">n_ok</span> <span class="o">=</span> <span class="n">n_failed</span> <span class="o">=</span> <span class="n">n_no_stress</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
+                <span class="c1"># Inputs written by older versions can carry an empty info</span>
+                <span class="c1"># value that would swallow model_energy in the pred file.</span>
+                <span class="n">a</span> <span class="o">=</span> <span class="n">drop_unwritable_info</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"model_energy"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"model_stress"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"model_forces"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calc</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"model_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">())</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"model_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+                    <span class="n">n_ok</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="c1"># Only where DFT stress exists, and never fatal (e.g.</span>
+                    <span class="c1"># non-periodic cells have none).</span>
+                    <span class="k">if</span> <span class="s2">"REF_stresses"</span> <span class="ow">in</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"model_stress"</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get_stress</span><span class="p">()</span>
+                        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                            <span class="n">n_no_stress</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="n">n_failed</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">if</span> <span class="n">n_failed</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                            <span class="s2">"Prediction failed for structure </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> (config_type=</span><span class="si">%s</span><span class="s2">): </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                            <span class="n">n_ok</span> <span class="o">+</span> <span class="n">n_failed</span><span class="p">,</span>
+                            <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+                            <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">),</span>
+                            <span class="n">exc</span><span class="p">,</span>
+                            <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                        <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># The same failure on every structure would flood the</span>
+                        <span class="c1"># log; the summary line below still gives the count.</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                            <span class="s2">"Prediction failed for structure </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                            <span class="n">n_ok</span> <span class="o">+</span> <span class="n">n_failed</span><span class="p">,</span>
+                            <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+                            <span class="n">exc</span><span class="p">,</span>
+                        <span class="p">)</span>
+                <span class="k">finally</span><span class="p">:</span>
+                    <span class="c1"># Keep only the explicit model_* fields: ASE would also</span>
+                    <span class="c1"># try to write the calculator's results, some of which</span>
+                    <span class="c1"># aren't per-atom and break extxyz writing.</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">n_no_stress</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">"</span><span class="si">%s</span><span class="s2"> predictions: model stress unavailable for </span><span class="si">%d</span><span class="s2"> structure(s)."</span><span class="p">,</span>
+                    <span class="n">tag</span><span class="p">,</span>
+                    <span class="n">n_no_stress</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">n_failed</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"</span><span class="si">%s</span><span class="s2"> predictions: </span><span class="si">%d</span><span class="s2"> succeeded, </span><span class="si">%d</span><span class="s2"> failed out of </span><span class="si">%d</span><span class="s2"> structures."</span><span class="p">,</span>
+                    <span class="n">tag</span><span class="p">,</span>
+                    <span class="n">n_ok</span><span class="p">,</span>
+                    <span class="n">n_failed</span><span class="p">,</span>
+                    <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">write</span><span class="p">(</span><span class="n">fit_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">_pred.xyz"</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to write </span><span class="si">%s</span><span class="s2">_pred.xyz: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">split_results</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span> <span class="o">=</span> <span class="n">prediction_metrics</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">split_results</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">"complete"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                    <span class="s2">"reason"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">),</span>
+                    <span class="s2">"n_structures"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">),</span>
+                <span class="p">}</span>
+        <span class="n">save_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="n">model_path</span><span class="p">,</span> <span class="n">split_results</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">split_results</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.cleanup">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.cleanup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cleanup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Delete cleanup_paths(fit_dir); failures are logged, never raised."""</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleanup_paths</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">is_dir</span><span class="p">():</span>
+                    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">path</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Removed </span><span class="si">%s</span><span class="s2"> after a finished fit."</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to remove </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.output_paths">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.output_paths">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">output_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Files that exist once a fit has genuinely finished: the model and</span>
+<span class="sd">        its evaluation. Used by the workflow's restart checks."""</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">),</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="n">EVALUATION_FILENAME</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="ALomancyTrainer.read_existing_result">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.read_existing_result">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_existing_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""(model_path, deployable_model_path or None, {split: metrics}) for</span>
+<span class="sd">        a finished fit, every split checksum-verified against the model</span>
+<span class="sd">        (read_evaluation). Raises ValueError if no split verifies."""</span>
+        <span class="n">metrics</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">split</span> <span class="ow">in</span> <span class="n">_SPLITS</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">metrics</span><span class="p">[</span><span class="n">split</span><span class="p">],</span> <span class="n">_</span> <span class="o">=</span> <span class="n">read_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="n">split</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="k">continue</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">metrics</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"No valid checkpoint-verified evaluation found for </span><span class="si">{</span><span class="n">fit_dir</span><span class="si">}</span><span class="s2"> -- "</span>
+                <span class="s2">"cannot reconstruct a cached result."</span>
+            <span class="p">)</span>
+        <span class="n">deployable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">deployable_model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)),</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">deployable</span><span class="p">)</span> <span class="k">if</span> <span class="n">deployable</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">metrics</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="get_trainer">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.get_trainer">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_trainer</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">fit_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"training"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ALomancyTrainer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The trainer registered as *name* (training.trainer), built for *config*."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve</span>
+
+    <span class="n">trainer_class</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">ALomancyTrainer</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolve</span><span class="p">(</span><span class="s2">"mlip_trainer"</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">trainer_class</span>
+    <span class="k">return</span> <span class="n">trainer_class</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">fit_name</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="run_training">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.run_training">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_training</span><span class="p">(</span>
+    <span class="n">trainer</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">train_atoms_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">valid_atoms_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">test_atoms_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">fit_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">fit_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"training"</span><span class="p">,</span>
+    <span class="n">elements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">isolated_atom_energies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The remote worker the workflow submits once per fit: builds the</span>
+<span class="sd">    trainer by registry name on the remote node and runs its train()."""</span>
+    <span class="k">return</span> <span class="n">get_trainer</span><span class="p">(</span><span class="n">trainer</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">fit_name</span><span class="p">)</span><span class="o">.</span><span class="n">train</span><span class="p">(</span>
+        <span class="n">train_atoms_path</span><span class="p">,</span>
+        <span class="n">valid_atoms_path</span><span class="p">,</span>
+        <span class="n">test_atoms_path</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">,</span>
+        <span class="n">fit_dir</span><span class="o">=</span><span class="n">fit_dir</span><span class="p">,</span>
+        <span class="n">elements</span><span class="o">=</span><span class="n">elements</span><span class="p">,</span>
+        <span class="n">isolated_atom_energies</span><span class="o">=</span><span class="n">isolated_atom_energies</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="read_predictions">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.read_predictions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_predictions</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Per-structure predictions from a fit's train_pred.xyz/test_pred.xyz,</span>
+<span class="sd">    as {global_db_id: {"energy": float, "forces": list}}; {} if none."""</span>
+    <span class="n">preds</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"train"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">):</span>
+        <span class="n">xyz</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">_pred.xyz"</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">xyz</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">continue</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">xyz</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to read </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">xyz</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">n_skipped</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
+            <span class="n">gid</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"global_db_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">gid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="s2">"model_energy"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+                <span class="n">n_skipped</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">continue</span>
+            <span class="n">forces</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_forces"</span><span class="p">)</span>
+            <span class="n">preds</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">gid</span><span class="p">)]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"energy"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"model_energy"</span><span class="p">]),</span>
+                <span class="s2">"forces"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">forces</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span> <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="p">}</span>
+        <span class="k">if</span> <span class="n">n_skipped</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"</span><span class="si">%d</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> structure(s) in </span><span class="si">%s</span><span class="s2"> have no model_energy or "</span>
+                <span class="s2">"global_db_id; they are left out of the parity plots."</span><span class="p">,</span>
+                <span class="n">n_skipped</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+                <span class="n">xyz</span><span class="p">,</span>
+                <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"predictions_unreadable"</span><span class="p">,</span>
+                    <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">xyz</span><span class="p">),</span> <span class="s2">"n"</span><span class="p">:</span> <span class="n">n_skipped</span><span class="p">,</span> <span class="s2">"of"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">)},</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">preds</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

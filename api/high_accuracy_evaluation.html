@@ -47,6 +47,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="core.html">Core Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
@@ -63,6 +66,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object"><code class="docutils literal notranslate"><span class="pre">create_qe_calc_object()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.find_optimal_npool"><code class="docutils literal notranslate"><span class="pre">find_optimal_npool()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data"><code class="docutils literal notranslate"><span class="pre">get_qe_input_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.report_section"><code class="docutils literal notranslate"><span class="pre">report_section()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.resolve_effective_kwargs"><code class="docutils literal notranslate"><span class="pre">resolve_effective_kwargs()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe"><code class="docutils literal notranslate"><span class="pre">run_go_qe()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.run_sp_qe"><code class="docutils literal notranslate"><span class="pre">run_sp_qe()</span></code></a></li>
 </ul>
@@ -71,6 +76,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_calc_object"><code class="docutils literal notranslate"><span class="pre">create_vasp_calc_object()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_command"><code class="docutils literal notranslate"><span class="pre">create_vasp_command()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs"><code class="docutils literal notranslate"><span class="pre">get_vasp_input_kwargs()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.report_section"><code class="docutils literal notranslate"><span class="pre">report_section()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.resolve_effective_kwargs"><code class="docutils literal notranslate"><span class="pre">resolve_effective_kwargs()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.run_go_vasp"><code class="docutils literal notranslate"><span class="pre">run_go_vasp()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.run_sp_vasp"><code class="docutils literal notranslate"><span class="pre">run_sp_vasp()</span></code></a></li>
 </ul>
@@ -150,7 +157,35 @@ that only have one calculator available.</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">
 <span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">get_qe_input_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">calculation_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">qe_input_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#get_qe_input_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Default pw.x namelists with user overrides merged in per namelist.</p>
+<p>Each namelist (<code class="docutils literal notranslate"><span class="pre">control</span></code>, <code class="docutils literal notranslate"><span class="pre">system</span></code>, …) is merged key-by-key, so
+overriding one key (e.g. <code class="docutils literal notranslate"><span class="pre">control.tstress</span></code>) keeps every other default
+in that namelist. A shallow merge used to replace the whole namelist,
+silently dropping <code class="docutils literal notranslate"><span class="pre">control.tprnfor</span></code>/<code class="docutils literal notranslate"><span class="pre">calculation</span></code> so QE never
+printed forces and every job failed with “forces not present”.
+Non-dict values (e.g. a top-level scalar) replace the default outright.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.report_section">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">report_section</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stats</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#report_section"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.report_section" title="Link to this definition"></a></dt>
+<dd><p>Loop-report section for this module (see analysis/report/sections.py).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.resolve_effective_kwargs">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_qe.</span></span><span class="sig-name descname"><span class="pre">resolve_effective_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">qe_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_qe.html#resolve_effective_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_qe.resolve_effective_kwargs" title="Link to this definition"></a></dt>
+<dd><p>The dft_evaluator registry’s uniform defaults-resolution entry point
+(see registry.py) – used only by the skeleton’s pre-run config summary
+(active_learning_workflow.py’s display_workflow_summary) to show
+the fully-resolved effective qe_kwargs, not just what the user wrote.
+get_qe_input_data (above) already merges its own defaults with
+whatever’s passed to it, per namelist – calling it directly here,
+rather than re-deriving the same defaults separately, means this
+display can never drift out of sync with the real merge. “scf” is passed as calculation_type since it doesn’t affect
+the input_data defaults shown (control.calculation itself does vary by
+scf/relax, but that distinction isn’t relevant to a settings summary).</p>
+</dd></dl>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_qe.run_go_qe">
@@ -180,6 +215,23 @@ that only have one calculator available.</p>
 <dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs">
 <span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">get_vasp_input_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vasp_input_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#get_vasp_input_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.get_vasp_input_kwargs" title="Link to this definition"></a></dt>
 <dd><p>Default INCAR parameters merged with user overrides — analogous to get_qe_input_data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.report_section">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">report_section</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stats</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#report_section"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.report_section" title="Link to this definition"></a></dt>
+<dd><p>Loop-report section for this module (see analysis/report/sections.py).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.run_vasp.resolve_effective_kwargs">
+<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.run_vasp.</span></span><span class="sig-name descname"><span class="pre">resolve_effective_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vasp_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft/run_vasp.html#resolve_effective_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.run_vasp.resolve_effective_kwargs" title="Link to this definition"></a></dt>
+<dd><p>The dft_evaluator registry’s uniform defaults-resolution entry point
+(see registry.py) – used only by the skeleton’s pre-run config summary
+(active_learning_workflow.py’s display_workflow_summary) to show
+the fully-resolved effective vasp_kwargs, not just what the user wrote.
+Thin alias for get_vasp_input_kwargs (above, unchanged) so this display
+can never drift out of sync with the real merge.</p>
 </dd></dl>
 
 <dl class="py function">

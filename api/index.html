@@ -20,7 +20,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Core Module" href="core.html" />
-    <link rel="prev" title="Quick Start" href="../quickstart.html" /> 
+    <link rel="prev" title="Writing a Workflow" href="../writing_a_workflow.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -47,6 +47,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="core.html">Core Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
@@ -91,8 +94,7 @@
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="core.html">Core Module</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="core.html#base-active-learning">Base Active Learning</a></li>
-<li class="toctree-l2"><a class="reference internal" href="core.html#standard-active-learning">Standard Active Learning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#module-alomancy.core.committee_uncertainty_workflow">Committee Uncertainty Workflow</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="database.html">Database</a><ul>
@@ -104,10 +106,23 @@
 <li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.remote_submission.submitters.ase_remote_submitter"><code class="docutils literal notranslate"><span class="pre">ase_remote_submitter()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.remote_submission.submitters.committee_remote_submitter"><code class="docutils literal notranslate"><span class="pre">committee_remote_submitter()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.remote_submission.submitters.md_remote_submitter"><code class="docutils literal notranslate"><span class="pre">md_remote_submitter()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.mace.mace_wfl.cleanup_local_committee_checkpoints"><code class="docutils literal notranslate"><span class="pre">cleanup_local_committee_checkpoints()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.mace.mace_wfl.mace_fit"><code class="docutils literal notranslate"><span class="pre">mace_fit()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.mace.get_mace_eval_info.get_mace_eval_info"><code class="docutils literal notranslate"><span class="pre">get_mace_eval_info()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.mace.get_mace_eval_info.select_best_committee_model"><code class="docutils literal notranslate"><span class="pre">select_best_committee_model()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.base.ALomancyTrainer"><code class="docutils literal notranslate"><span class="pre">ALomancyTrainer</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.base.TrainingHistory"><code class="docutils literal notranslate"><span class="pre">TrainingHistory</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.base.get_trainer"><code class="docutils literal notranslate"><span class="pre">get_trainer()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.base.isolated_atom_reference_energies_by_z"><code class="docutils literal notranslate"><span class="pre">isolated_atom_reference_energies_by_z()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.base.read_predictions"><code class="docutils literal notranslate"><span class="pre">read_predictions()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.base.run_training"><code class="docutils literal notranslate"><span class="pre">run_training()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.mace.trainer.MaceTrainer"><code class="docutils literal notranslate"><span class="pre">MaceTrainer</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.best_fit_test_metrics"><code class="docutils literal notranslate"><span class="pre">best_fit_test_metrics()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.check_quality_gate"><code class="docutils literal notranslate"><span class="pre">check_quality_gate()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.loop_metrics_frame"><code class="docutils literal notranslate"><span class="pre">loop_metrics_frame()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.metrics_by_loop"><code class="docutils literal notranslate"><span class="pre">metrics_by_loop()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.prediction_metrics"><code class="docutils literal notranslate"><span class="pre">prediction_metrics()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.rank_committee"><code class="docutils literal notranslate"><span class="pre">rank_committee()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.read_evaluation"><code class="docutils literal notranslate"><span class="pre">read_evaluation()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.mlip.evaluation.save_evaluation"><code class="docutils literal notranslate"><span class="pre">save_evaluation()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.utils.training_schedule.dynamic_epochs"><code class="docutils literal notranslate"><span class="pre">dynamic_epochs()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="mlip.html#alomancy.utils.training_schedule.resolve_epochs"><code class="docutils literal notranslate"><span class="pre">resolve_epochs()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="structure_generation.html">Structure Generation</a><ul>
@@ -117,10 +132,11 @@
 <li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.find_high_sd_structures.std_deviation_of_forces"><code class="docutils literal notranslate"><span class="pre">std_deviation_of_forces()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.select_initial_structures.mark_structures_for_dft"><code class="docutils literal notranslate"><span class="pre">mark_structures_for_dft()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.select_initial_structures.select_initial_structures"><code class="docutils literal notranslate"><span class="pre">select_initial_structures()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.flatten_array_of_forces"><code class="docutils literal notranslate"><span class="pre">flatten_array_of_forces()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.get_forces_for_all_maces"><code class="docutils literal notranslate"><span class="pre">get_forces_for_all_maces()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.generate"><code class="docutils literal notranslate"><span class="pre">generate()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.output_paths"><code class="docutils literal notranslate"><span class="pre">output_paths()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.read_existing_result"><code class="docutils literal notranslate"><span class="pre">read_existing_result()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.report_section"><code class="docutils literal notranslate"><span class="pre">report_section()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.run_md"><code class="docutils literal notranslate"><span class="pre">run_md()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="structure_generation.html#alomancy.structure_generation.md.md_wfl.std_deviation_of_forces"><code class="docutils literal notranslate"><span class="pre">std_deviation_of_forces()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="high_accuracy_evaluation.html">High-Accuracy Evaluation</a><ul>
@@ -131,11 +147,15 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="utils.html">Utilities</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.clean_structures.clean_structures"><code class="docutils literal notranslate"><span class="pre">clean_structures()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.clean_structures.drop_unwritable_info"><code class="docutils literal notranslate"><span class="pre">drop_unwritable_info()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.clean_structures.filter_structures_by_min_bond_distance"><code class="docutils literal notranslate"><span class="pre">filter_structures_by_min_bond_distance()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.clean_structures.wrap_structures_into_cell"><code class="docutils literal notranslate"><span class="pre">wrap_structures_into_cell()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.test_train_manager.add_new_training_data"><code class="docutils literal notranslate"><span class="pre">add_new_training_data()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.test_train_manager.extend_test_and_train_sets_with_extra_dataset"><code class="docutils literal notranslate"><span class="pre">extend_test_and_train_sets_with_extra_dataset()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.test_train_manager.split_atoms_list_into_test_and_train"><code class="docutils literal notranslate"><span class="pre">split_atoms_list_into_test_and_train()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.logging_config.JsonlEventHandler"><code class="docutils literal notranslate"><span class="pre">JsonlEventHandler</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.logging_config.read_events"><code class="docutils literal notranslate"><span class="pre">read_events()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.logging_config.set_current_loop"><code class="docutils literal notranslate"><span class="pre">set_current_loop()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.logging_config.setup_logging"><code class="docutils literal notranslate"><span class="pre">setup_logging()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.dft_utils.generate_kpts"><code class="docutils literal notranslate"><span class="pre">generate_kpts()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="utils.html#alomancy.utils.dft_utils.refresh_dft_labels"><code class="docutils literal notranslate"><span class="pre">refresh_dft_labels()</span></code></a></li>
@@ -155,7 +175,7 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="../quickstart.html" class="btn btn-neutral float-left" title="Quick Start" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../writing_a_workflow.html" class="btn btn-neutral float-left" title="Writing a Workflow" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="core.html" class="btn btn-neutral float-right" title="Core Module" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

@@ -47,6 +47,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Contributing</a><ul>
@@ -90,15 +93,18 @@
 <h2>Development Setup<a class="headerlink" href="#development-setup" title="Link to this heading"></a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/julianholland/ALomancy.git
 <span class="nb">cd</span><span class="w"> </span>ALomancy
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev,docs]"</span>
-pre-commit<span class="w"> </span>install
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>docs<span class="w">        </span><span class="c1"># alomancy (editable) + dev tools + docs, from uv.lock</span>
+uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>install
 </pre></div>
 </div>
+<p>Dependencies are locked in <code class="docutils literal notranslate"><span class="pre">uv.lock</span></code>. After changing <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>, run
+<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">lock</span></code> and commit the updated lockfile (CI installs with <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">sync</span> <span class="pre">--locked</span></code>).
+Build the package with <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">build</span></code> (sdist and wheel in <code class="docutils literal notranslate"><span class="pre">dist/</span></code>).</p>
 </section>
 <section id="running-tests">
 <h2>Running Tests<a class="headerlink" href="#running-tests" title="Link to this heading"></a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pytest
-pytest<span class="w"> </span>--cov<span class="o">=</span>alomancy
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>run<span class="w"> </span>pytest
+uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>--cov<span class="o">=</span>alomancy
 </pre></div>
 </div>
 </section>

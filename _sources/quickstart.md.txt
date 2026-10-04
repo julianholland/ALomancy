@@ -3,25 +3,32 @@
 ## Basic Active Learning Workflow
 
 ```python
-from alomancy.configs.config_dictionaries import load_dictionaries
-from alomancy.core.standard_active_learning import ActiveLearningStandardMACE
+from alomancy import ALomancy
 
-# Load configuration from YAML file
-jobs_dict = load_dictionaries("standard_config.yaml")
+# The config picks everything: the AL skeleton (general.al_workflow) and
+# every module (training.trainer, structure_generation.generator,
+# high_accuracy_evaluation.evaluator). Every run setting (start_from,
+# num_of_al_loops, verbose, ...) lives under the YAML's `general:` section.
+ALomancy("standard_config.yaml").run()
+```
 
-# Initialize the active learning workflow
-workflow = ActiveLearningStandardMACE(
-    initial_train_file_path="results/initialization/train_set.xyz",
-    initial_test_file_path="results/initialization/test_set.xyz",
-    jobs_dict=jobs_dict,
-    number_of_al_loops=5,
-    verbose=1,  # 0=silent, 1=INFO, 2=DEBUG
-    log_file="results/alomancy.log",  # debug logs always written here
-    db_path="results/global_database",
-)
-
-# Run the active learning workflow
-workflow.run()
+```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "O"]
+  # Optional warm start -- omit for a cold start. See starting_a_run.md.
+  # start_from:
+  #   train_xyz: "my_train.xyz"
+  #   test_xyz: "my_test.xyz"
+  num_of_al_loops: 5
+  verbose: 1  # 0=silent, 1=INFO, 2=DEBUG
+  log_file: "results/alomancy.log"  # debug logs always written here
+  db_path: "results/global_database"
+  dataset_kwargs:
+    target_config_types: ["IsolatedAtom"]
+    test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
 ```
 
 ## HPC Setup
@@ -45,24 +52,35 @@ Create a `standard_config.yaml` file with the required top-level keys.
 The `hpc:` value is the profile name written by `alomancy add-hpc`:
 
 ```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["C", "O"]   # atomic symbols, not atomic numbers
+  dataset_kwargs:
+    target_config_types: ["IsolatedAtom"]
+    test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
+
 initialization:
   name: "initialization"
   max_time: "4:00:00"
   hpc: "raven_cpu"       # profile name from ~/.alomancy/hpc_config.yaml
 
-mlip_committee:
+training:
   name: "mace_training"
+  trainer: "mace"        # selects the registered mlip_trainer backend
   max_time: "12:00:00"
   hpc: "raven_gpu"
 
 structure_generation:
   name: "md_generation"
+  generator: "md"        # "md" (default) or "ezga"
   max_time: "8:00:00"
   hpc: "raven_gpu"
 
 high_accuracy_evaluation:
   name: "high_accuracy_evaluation"
-  calculator: "qe"       # "qe" (default) or "vasp"
+  evaluator: "qe"        # "qe" (default) or "vasp"
   max_time: "24:00:00"
   hpc: "raven_cpu"
 ```
@@ -74,14 +92,17 @@ See the [examples](examples.md) for more detailed configurations.
 
 ## Initialization Behavior
 
-The workflow handles initialization in two ways:
+`general.start_from` decides where the first structures come from: a
+train/test pair of xyz files, a single xyz file, a former ALomancy
+database, or nothing (a cold start). Every mode then:
 
-- **Fast path**: If `initial_train_file_path` and `initial_test_file_path` already exist, the workflow loads them directly and begins the AL loops.
-- **Full path**: If either file is missing, the workflow automatically:
-  1. Checks the global database for existing structures
-  2. Generates missing structures via ASE MD (dimers, trimers, amorphous, Materials Project)
-  3. Evaluates them with DFT (Quantum Espresso)
-  4. Builds train/test splits from the database
+1. Imports the start data into the global database
+2. Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project)
+3. Evaluates them with DFT
+4. Builds train/test splits from the database
+
+See [Starting a run](starting_a_run.md) for each mode, label handling for
+foreign xyz files, and the split rules.
 
 ## Verbosity Levels
 

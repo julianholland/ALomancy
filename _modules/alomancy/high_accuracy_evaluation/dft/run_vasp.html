@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
@@ -79,6 +82,7 @@
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.vasp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vasp</span>
@@ -131,6 +135,20 @@
     <span class="p">}</span>
     <span class="n">defaults</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">vasp_input_kwargs</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">defaults</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_effective_kwargs">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.resolve_effective_kwargs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_effective_kwargs</span><span class="p">(</span><span class="n">vasp_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The dft_evaluator registry's uniform defaults-resolution entry point</span>
+<span class="sd">    (see registry.py) -- used only by the skeleton's pre-run config summary</span>
+<span class="sd">    (active_learning_workflow.py's display_workflow_summary) to show</span>
+<span class="sd">    the fully-resolved effective vasp_kwargs, not just what the user wrote.</span>
+<span class="sd">    Thin alias for get_vasp_input_kwargs (above, unchanged) so this display</span>
+<span class="sd">    can never drift out of sync with the real merge.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">get_vasp_input_kwargs</span><span class="p">(</span><span class="n">vasp_kwargs</span><span class="p">)</span></div>
 
 
 
@@ -198,6 +216,16 @@
         <span class="n">create_vasp_calc_go</span><span class="p">,</span>
         <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">"vasp_opt"</span><span class="p">,</span>
     <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="report_section">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.report_section">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">report_section</span><span class="p">(</span><span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Loop-report section for this module (see analysis/report/sections.py)."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.report.sections</span><span class="w"> </span><span class="kn">import</span> <span class="n">dft_section</span>
+
+    <span class="k">return</span> <span class="n">dft_section</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 </pre></div>
 

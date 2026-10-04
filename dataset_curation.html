@@ -45,6 +45,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
@@ -141,16 +144,16 @@ must not be silently reused with a changed policy.</p>
 <code class="docutils literal notranslate"><span class="pre">mlip_committee.grouped_validation:</span> <span class="pre">true</span></code>. Identical ordered geometries and
 shared <code class="docutils literal notranslate"><span class="pre">split_group</span></code> ancestry stay together; the splitter is stratified by
 domain and keeps isolated atoms in training. It does not detect arbitrary
-symmetry-equivalent geometries. <code class="docutils literal notranslate"><span class="pre">reset_extra_splits</span></code> removes obsolete operational
-split flags on import. <code class="docutils literal notranslate"><span class="pre">workflow.fixed_test</span></code> prevents later acquisition from
+symmetry-equivalent geometries. Files imported via <code class="docutils literal notranslate"><span class="pre">general.start_from</span></code> always
+drop the writing run’s split tags and flags (see starting_a_run.md). <code class="docutils literal notranslate"><span class="pre">workflow.fixed_test</span></code> prevents later acquisition from
 expanding the held-out test, and routes known held-out descendants to diagnostics.</p>
 <p><code class="docutils literal notranslate"><span class="pre">workflow.train_only:</span> <span class="pre">true</span></code> stops after the initial committee and validation
 gate, before structure generation. Exported checkpoints are evaluated on fit,
 common validation, and held-out test. <code class="docutils literal notranslate"><span class="pre">evaluation_metrics.json</span></code> records per-domain
 metrics, units, dataset identity and checkpoint SHA256. Committee selection uses
-validation force MAE and refuses missing or inconsistent validation. With
-<code class="docutils literal notranslate"><span class="pre">require_checkpoint_metrics:</span> <span class="pre">true</span></code>, historical training-log metrics cannot be
-silently presented as final-checkpoint test results. Optional <code class="docutils literal notranslate"><span class="pre">quality_gate</span></code>
+validation force MAE and refuses missing or inconsistent validation. Only these
+checkpoint evaluations are reported; MACE’s own training-log metrics are never
+presented as final test results. Optional <code class="docutils literal notranslate"><span class="pre">quality_gate</span></code>
 limits must pass for every member and required domain before exploration.</p>
 <p>Energy MAE is in eV/atom; force MAE is over Cartesian components in eV/Angstrom.
 The per-component error metric is different from the atomic-norm curation cutoff.

@@ -1,0 +1,455 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.mlip.evaluation &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            ALomancy
+              <img src="../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.mlip.evaluation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.mlip.evaluation</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Metrics for exported checkpoints, with explicit split and data identity."""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.stress</span><span class="w"> </span><span class="kn">import</span> <span class="n">full_3x3_to_voigt_6_stress</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dataset_curation</span><span class="w"> </span><span class="kn">import</span> <span class="n">geometry_digest</span><span class="p">,</span> <span class="n">structure_domain</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_voigt_stress</span><span class="p">(</span><span class="n">stress</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Stress as a Voigt 6-vector (ASE's get_stress() default), accepting a</span>
+<span class="sd">    full 3x3 tensor too; None when missing or malformed."""</span>
+    <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">stress</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">arr</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">full_3x3_to_voigt_6_stress</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">arr</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">6</span><span class="p">,)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">arr</span>
+
+
+<div class="viewcode-block" id="prediction_metrics">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.prediction_metrics">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">prediction_metrics</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Energy/force (and, where available, stress) errors for one split.</span>
+
+<span class="sd">    Reported overall, per ``structure_domain`` (``"domains"``) and per</span>
+<span class="sd">    ``config_type`` (``"config_types"``). Stress errors (eV/Angstrom^3) use</span>
+<span class="sd">    only structures carrying both ``REF_stresses`` and ``model_stress``;</span>
+<span class="sd">    stress is optional and never makes a split incomplete.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">atoms_list</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Cannot evaluate an empty split"</span><span class="p">)</span>
+    <span class="n">energy_errors</span><span class="p">,</span> <span class="n">force_errors</span><span class="p">,</span> <span class="n">identities</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="n">stress_errors</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">domains</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">config_types</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"REF_energy"</span><span class="p">)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_energy"</span><span class="p">)</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"REF_forces"</span><span class="p">)</span>
+        <span class="n">pf</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_forces"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="ow">not</span> <span class="n">n</span>
+            <span class="ow">or</span> <span class="n">e</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="n">f</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="n">pf</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="n">f</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">pf</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">([</span><span class="n">e</span><span class="p">,</span> <span class="n">p</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">pf</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Missing or invalid predictions/reference labels"</span><span class="p">)</span>
+        <span class="n">energy_errors</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="nb">float</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">e</span><span class="p">))</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">force_errors</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">pf</span> <span class="o">-</span> <span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">())</span>
+        <span class="n">ref_stress</span> <span class="o">=</span> <span class="n">_voigt_stress</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"REF_stresses"</span><span class="p">))</span>
+        <span class="n">model_stress</span> <span class="o">=</span> <span class="n">_voigt_stress</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_stress"</span><span class="p">))</span>
+        <span class="n">stress_errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">model_stress</span> <span class="o">-</span> <span class="n">ref_stress</span>
+            <span class="k">if</span> <span class="n">ref_stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">model_stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="n">identity</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">()</span>
+        <span class="n">identity</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">geometry_digest</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+        <span class="n">identity</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">e</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span><span class="o">.</span><span class="n">tobytes</span><span class="p">())</span>
+        <span class="n">identity</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span><span class="o">.</span><span class="n">tobytes</span><span class="p">())</span>
+        <span class="n">identities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">identity</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">())</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">energy_errors</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">domains</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">structure_domain</span><span class="p">(</span><span class="n">atoms</span><span class="p">),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">config_types</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)),</span> <span class="p">[]</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">aggregate</span><span class="p">(</span><span class="n">indices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">energy_errors</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">])</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">force_errors</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">])</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"n_structures"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">indices</span><span class="p">),</span>
+            <span class="s2">"mae_e_per_atom"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()),</span>
+            <span class="s2">"rmse_e_per_atom"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">e</span><span class="o">**</span><span class="mi">2</span><span class="p">))),</span>
+            <span class="s2">"mae_f"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()),</span>
+            <span class="s2">"rmse_f"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">f</span><span class="o">**</span><span class="mi">2</span><span class="p">))),</span>
+        <span class="p">}</span>
+        <span class="n">stresses</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">err</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">indices</span> <span class="k">if</span> <span class="p">(</span><span class="n">err</span> <span class="o">:=</span> <span class="n">stress_errors</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">stresses</span><span class="p">:</span>
+            <span class="n">st</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">stresses</span><span class="p">)</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"n_structures_with_stress"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">stresses</span><span class="p">),</span>
+                    <span class="s2">"mae_stress"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">st</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()),</span>
+                    <span class="s2">"rmse_stress"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">st</span><span class="o">**</span><span class="mi">2</span><span class="p">))),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="o">**</span><span class="n">aggregate</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">)))),</span>
+        <span class="s2">"complete"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">"data_id"</span><span class="p">:</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">identities</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">(),</span>
+        <span class="s2">"domains"</span><span class="p">:</span> <span class="p">{</span><span class="n">domain</span><span class="p">:</span> <span class="n">aggregate</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="k">for</span> <span class="n">domain</span><span class="p">,</span> <span class="n">ids</span> <span class="ow">in</span> <span class="n">domains</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+        <span class="s2">"config_types"</span><span class="p">:</span> <span class="p">{</span><span class="n">ct</span><span class="p">:</span> <span class="n">aggregate</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span> <span class="k">for</span> <span class="n">ct</span><span class="p">,</span> <span class="n">ids</span> <span class="ow">in</span> <span class="n">config_types</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="save_evaluation">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.save_evaluation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">save_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">model_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">splits</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"schema_version"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">"checkpoint"</span><span class="p">:</span> <span class="n">model_path</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="s2">"checkpoint_sha256"</span><span class="p">:</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">model_path</span><span class="o">.</span><span class="n">read_bytes</span><span class="p">())</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">(),</span>
+        <span class="s2">"units"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"energy"</span><span class="p">:</span> <span class="s2">"eV/atom"</span><span class="p">,</span>
+            <span class="s2">"forces"</span><span class="p">:</span> <span class="s2">"eV/Angstrom"</span><span class="p">,</span>
+            <span class="s2">"stress"</span><span class="p">:</span> <span class="s2">"eV/Angstrom^3"</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"splits"</span><span class="p">:</span> <span class="n">splits</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"evaluation_metrics.json"</span>
+    <span class="n">temporary</span> <span class="o">=</span> <span class="n">target</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">".tmp"</span><span class="p">)</span>
+    <span class="n">temporary</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">allow_nan</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">temporary</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">target</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="read_evaluation">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.read_evaluation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">split</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">Path</span><span class="p">]:</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">((</span><span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"evaluation_metrics.json"</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="n">record</span><span class="p">[</span><span class="s2">"checkpoint"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">model</span><span class="o">.</span><span class="n">parent</span> <span class="o">!=</span> <span class="n">fit_dir</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">model</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Evaluation checkpoint is missing or invalid"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">read_bytes</span><span class="p">())</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span> <span class="o">!=</span> <span class="n">record</span><span class="p">[</span><span class="s2">"checkpoint_sha256"</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Checkpoint changed after evaluation; re-evaluate it"</span><span class="p">)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">record</span><span class="p">[</span><span class="s2">"splits"</span><span class="p">][</span><span class="n">split</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"complete"</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"n_structures"</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Incomplete evaluation on </span><span class="si">{</span><span class="n">split</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">metric</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"mae_f"</span><span class="p">,</span> <span class="s2">"mae_e_per_atom"</span><span class="p">,</span> <span class="s2">"rmse_f"</span><span class="p">,</span> <span class="s2">"rmse_e_per_atom"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="n">metric</span><span class="p">]):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Non-finite </span><span class="si">{</span><span class="n">metric</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span><span class="p">,</span> <span class="n">model</span></div>
+
+
+
+<div class="viewcode-block" id="rank_committee">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.rank_committee">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rank_committee</span><span class="p">(</span>
+    <span class="n">fit_dirs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Path</span><span class="p">],</span> <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mae_f"</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"committee"</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Pick the fit with the lowest *metric* on the committee's common split.</span>
+
+<span class="sd">    Uses the shared ``"valid"`` split when every fit has one, and falls back</span>
+<span class="sd">    to ``"test"`` only when NO fit has ``"valid"`` (normal for a small</span>
+<span class="sd">    eligible pool, where no validation split is carved). Fits disagreeing on</span>
+<span class="sd">    having ``"valid"``, or missing ``"test"`` in the fallback, is a genuine</span>
+<span class="sd">    evaluation failure and raises ``RuntimeError``. *label* names the</span>
+<span class="sd">    committee in error messages.</span>
+
+<span class="sd">    Returns ``(best_fit_idx, checkpoint_path, split_used)``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_try_read</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">split</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Path</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">metrics</span><span class="p">,</span> <span class="n">model_path</span> <span class="o">=</span> <span class="n">read_evaluation</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="n">split</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">metrics</span><span class="p">[</span><span class="n">metric</span><span class="p">]),</span> <span class="n">model_path</span>
+
+    <span class="n">n_fits</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fit_dirs</span><span class="p">)</span>
+    <span class="n">valid_scores</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">test_scores</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">fit_dir</span> <span class="ow">in</span> <span class="n">fit_dirs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">valid_result</span> <span class="o">=</span> <span class="n">_try_read</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="s2">"valid"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">valid_result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">valid_scores</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">valid_result</span>
+        <span class="n">test_result</span> <span class="o">=</span> <span class="n">_try_read</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">test_result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">test_scores</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">test_result</span>
+
+    <span class="k">if</span> <span class="n">valid_scores</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">valid_scores</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_fits</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">n_fits</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">valid_scores</span><span class="p">)</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">n_fits</span><span class="si">}</span><span class="s2"> committee "</span>
+                <span class="s2">"fit(s) are missing complete checkpoint validation on the "</span>
+                <span class="s2">"'valid' split while others have it. Check remote job logs "</span>
+                <span class="s2">"for evaluation failures."</span>
+            <span class="p">)</span>
+        <span class="n">scores</span><span class="p">,</span> <span class="n">split_used</span> <span class="o">=</span> <span class="n">valid_scores</span><span class="p">,</span> <span class="s2">"valid"</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_scores</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n_fits</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">test_scores</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">n_fits</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">test_scores</span><span class="p">)</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">n_fits</span><span class="si">}</span><span class="s2"> committee "</span>
+                <span class="s2">"fit(s) are missing complete checkpoint validation (neither "</span>
+                <span class="s2">"'valid' nor 'test' evaluation is available). Check remote "</span>
+                <span class="s2">"job logs for evaluation failures."</span>
+            <span class="p">)</span>
+        <span class="n">scores</span><span class="p">,</span> <span class="n">split_used</span> <span class="o">=</span> <span class="n">test_scores</span><span class="p">,</span> <span class="s2">"test"</span>
+
+    <span class="n">best_fit</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="n">scores</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">best_fit</span><span class="p">,</span> <span class="n">scores</span><span class="p">[</span><span class="n">best_fit</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span> <span class="n">split_used</span></div>
+
+
+
+<div class="viewcode-block" id="best_fit_test_metrics">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.best_fit_test_metrics">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">best_fit_test_metrics</span><span class="p">(</span><span class="n">committee_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mae_f"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Test-split metrics of one AL loop's best committee member.</span>
+
+<span class="sd">    The best member is chosen exactly as for MD (``rank_committee``: lowest</span>
+<span class="sd">    *metric* on the common ``"valid"`` split, else ``"test"``), so the</span>
+<span class="sd">    MAE-vs-loop plot tracks the model actually carried forward. Returns</span>
+<span class="sd">    ``None`` when no fit in *committee_dir* has an evaluation; raises</span>
+<span class="sd">    ``RuntimeError`` (from ``rank_committee``) or ``ValueError`` (best fit</span>
+<span class="sd">    has no usable ``"test"`` split) when the evaluations are inconsistent.</span>
+<span class="sd">    """</span>
+    <span class="n">fit_dirs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]):</span> <span class="n">p</span><span class="o">.</span><span class="n">parent</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">committee_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"fit_*/evaluation_metrics.json"</span><span class="p">)</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">fit_dirs</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">best_fit</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">split_used</span> <span class="o">=</span> <span class="n">rank_committee</span><span class="p">(</span><span class="n">fit_dirs</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">committee_dir</span><span class="p">))</span>
+    <span class="n">record</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">read_evaluation</span><span class="p">(</span><span class="n">fit_dirs</span><span class="p">[</span><span class="n">best_fit</span><span class="p">],</span> <span class="s2">"test"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"mae_f"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">"mae_f"</span><span class="p">]),</span>
+        <span class="s2">"mae_e_per_atom"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">"mae_e_per_atom"</span><span class="p">]),</span>
+        <span class="s2">"best_fit_idx"</span><span class="p">:</span> <span class="n">best_fit</span><span class="p">,</span>
+        <span class="s2">"selection_split"</span><span class="p">:</span> <span class="n">split_used</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="loop_metrics_frame">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.loop_metrics_frame">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">loop_metrics_frame</span><span class="p">(</span><span class="n">loops</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One row per AL loop, with the loop number as the first column</span>
+<span class="sd">    ("al_loop"); rows may carry different keys (missing ones are null)."""</span>
+    <span class="k">return</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">[{</span><span class="s2">"al_loop"</span><span class="p">:</span> <span class="n">loop</span><span class="p">,</span> <span class="o">**</span><span class="n">row</span><span class="p">}</span> <span class="k">for</span> <span class="n">loop</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">loops</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)],</span>
+        <span class="n">infer_schema_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="metrics_by_loop">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.metrics_by_loop">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">metrics_by_loop</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">expected_fits</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">results_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One row per AL loop with its best model's test-split metrics</span>
+<span class="sd">    (best_fit_test_metrics), the loop number in the "al_loop" column.</span>
+
+<span class="sd">    Reads each loop's ``results/al_loop_N/&lt;name&gt;/fit_*/evaluation_metrics.json``;</span>
+<span class="sd">    loops with none are left out. With ``strict=False`` (the live run's</span>
+<span class="sd">    MAE-vs-loop plot) a loop whose evaluations are inconsistent is skipped</span>
+<span class="sd">    with a warning; with ``strict=True`` (``alomancy results --replot``) it</span>
+<span class="sd">    raises, and so does a loop where fewer than *expected_fits* fits have</span>
+<span class="sd">    an evaluation.</span>
+<span class="sd">    """</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">loops</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">loop_dirs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+        <span class="n">results_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"al_loop_*"</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">loop_dir</span> <span class="ow">in</span> <span class="n">loop_dirs</span><span class="p">:</span>
+        <span class="n">committee_dir</span> <span class="o">=</span> <span class="n">loop_dir</span> <span class="o">/</span> <span class="n">name</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">strict</span> <span class="ow">and</span> <span class="n">expected_fits</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">evaluated</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="n">p</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span>
+                    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">committee_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"fit_*/evaluation_metrics.json"</span><span class="p">)</span>
+                <span class="p">}</span>
+                <span class="k">if</span> <span class="n">evaluated</span> <span class="ow">and</span> <span class="n">evaluated</span> <span class="o">!=</span> <span class="p">{</span>
+                    <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">expected_fits</span><span class="p">)</span>
+                <span class="p">}:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">committee_dir</span><span class="si">}</span><span class="s2">: evaluations found for </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">evaluated</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+                        <span class="sa">f</span><span class="s2">"expected fit_0..fit_</span><span class="si">{</span><span class="n">expected_fits</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">."</span>
+                    <span class="p">)</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="n">best_fit_test_metrics</span><span class="p">(</span><span class="n">committee_dir</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">RuntimeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">strict</span><span class="p">:</span>
+                <span class="k">raise</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Skipping </span><span class="si">%s</span><span class="s2"> in the MAE-vs-loop metrics: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">loop_dir</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">exc</span>
+            <span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="n">loops</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">loop_dir</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="k">return</span> <span class="n">loop_metrics_frame</span><span class="p">(</span><span class="n">loops</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="check_quality_gate">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.evaluation.check_quality_gate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_quality_gate</span><span class="p">(</span><span class="n">workdir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">committee</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Require all members to pass validation limits before exploration."""</span>
+    <span class="n">gate</span> <span class="o">=</span> <span class="n">committee</span><span class="p">[</span><span class="s2">"quality_gate"</span><span class="p">]</span>
+    <span class="n">required</span> <span class="o">=</span> <span class="n">gate</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"domains"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">required</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"quality_gate requires per-domain validation limits"</span><span class="p">)</span>
+    <span class="n">identities</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">fit</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">committee</span><span class="p">[</span><span class="s2">"num_of_models_in_committee"</span><span class="p">]):</span>
+        <span class="n">metrics</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">read_evaluation</span><span class="p">(</span>
+            <span class="n">workdir</span> <span class="o">/</span> <span class="n">committee</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">fit</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"valid"</span>
+        <span class="p">)</span>
+        <span class="n">identities</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">metrics</span><span class="p">[</span><span class="s2">"data_id"</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">domain</span><span class="p">,</span> <span class="n">limits</span> <span class="ow">in</span> <span class="n">required</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">observed</span> <span class="o">=</span> <span class="n">metrics</span><span class="p">[</span><span class="s2">"domains"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">domain</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">observed</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Validation missing domain </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2"> in fit_</span><span class="si">{</span><span class="n">fit</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">limit</span> <span class="ow">in</span> <span class="n">limits</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"mae_f"</span><span class="p">,</span> <span class="s2">"mae_e_per_atom"</span><span class="p">,</span> <span class="s2">"rmse_f"</span><span class="p">,</span> <span class="s2">"rmse_e_per_atom"</span><span class="p">}:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown quality metric </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">limit</span><span class="p">)</span> <span class="ow">or</span> <span class="n">limit</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Quality limits must be finite and positive"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">observed</span><span class="p">[</span><span class="n">key</span><span class="p">]):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Non-finite </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> in fit_</span><span class="si">{</span><span class="n">fit</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">observed</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">limit</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">fit</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">domain</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">observed</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="si">:</span><span class="s2">.6g</span><span class="si">}</span><span class="s2"> exceeds </span><span class="si">{</span><span class="n">limit</span><span class="si">}</span><span class="s2">"</span>
+                    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">identities</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Committee members must share the same validation set"</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

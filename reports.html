@@ -1,0 +1,345 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loop reports &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Writing a Workflow" href="writing_a_workflow.html" />
+    <link rel="prev" title="Starting a Run" href="starting_a_run.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Loop reports</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#what-s-in-a-report">What’s in a report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#settings">Settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rebuilding-reports">Rebuilding reports</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#issues-and-suggestions-editing-them">Issues and suggestions: editing them</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#current-triggers">Current triggers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-a-trigger">Adding a trigger</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#where-the-numbers-come-from">Where the numbers come from</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-sections">Module sections</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Loop reports</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/reports.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="loop-reports">
+<h1>Loop reports<a class="headerlink" href="#loop-reports" title="Link to this heading"></a></h1>
+<p>At the end of every AL loop ALomancy writes a Markdown report on how the
+run is going:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>results/reports/
+├── latest.md                 # the newest loop's report (links into al_loop_N/)
+├── al_loop_0/
+│   ├── report.md
+│   ├── report.json           # the numbers behind the report
+│   └── plots/*.png
+└── al_loop_1/ ...
+</pre></div>
+</div>
+<p>Open <code class="docutils literal notranslate"><span class="pre">latest.md</span></code> in any Markdown viewer (VS Code preview, GitHub, GitLab).
+The report never stops a run: if part of it fails, that part is skipped
+and a warning is logged.</p>
+<section id="what-s-in-a-report">
+<h2>What’s in a report<a class="headerlink" href="#what-s-in-a-report" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Section</p></th>
+<th class="head"><p>Contents</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Status</p></td>
+<td><p>Count of issues found, by severity, and warnings logged this loop</p></td>
+</tr>
+<tr class="row-odd"><td><p>Headline</p></td>
+<td><p>Best model’s test force/energy MAE, train/test size, new structures, warnings: this loop vs the previous one</p></td>
+</tr>
+<tr class="row-even"><td><p>Issues &amp; suggestions</p></td>
+<td><p>Each problem detected, with what to change in the config (see below)</p></td>
+</tr>
+<tr class="row-odd"><td><p>Trends</p></td>
+<td><p>One row per loop: test force MAE, train size, new structures, DFT returned/submitted, GO convergence rate, new structures found redundant, warnings. Plus the MAE-vs-loop and timing plots</p></td>
+</tr>
+<tr class="row-even"><td><p>Best model</p></td>
+<td><p>Energy and force parity of this loop’s best model (train and test)</p></td>
+</tr>
+<tr class="row-odd"><td><p>Training set</p></td>
+<td><p>Structures per <code class="docutils literal notranslate"><span class="pre">config_type</span></code>: train, test, excluded as redundant, excluded by the quality filters (with reasons)</p></td>
+</tr>
+<tr class="row-even"><td><p>DFT</p></td>
+<td><p>Returned vs submitted, single points vs relaxations, how many relaxations reached the force ceiling, BFGS steps vs the step budget, average DFT time per structure, largest force after DFT, DFT phase wall-clock and queue time</p></td>
+</tr>
+<tr class="row-odd"><td><p>Module sections</p></td>
+<td><p>From the configured trainer, generator and evaluator, e.g. MD frames per run, the best fit’s training curve, GO-step and DFT-time histograms</p></td>
+</tr>
+<tr class="row-even"><td><p>Workflow section</p></td>
+<td><p>e.g. the committee’s force std-dev distribution with the selection cut, or the novelty tolerance</p></td>
+</tr>
+<tr class="row-odd"><td><p>Warnings and events</p></td>
+<td><p>Count per event code, and the most frequent other warnings</p></td>
+</tr>
+</tbody>
+</table>
+<p>Per-structure DFT step counts and wall time (<code class="docutils literal notranslate"><span class="pre">geometry_steps</span></code>,
+<code class="docutils literal notranslate"><span class="pre">dft_wall_time_s</span></code> in <code class="docutils literal notranslate"><span class="pre">atoms.info</span></code>) are recorded by the remote DFT runners
+from this version on. Run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code> after upgrading; loops
+evaluated before that show “not recorded”.</p>
+</section>
+<section id="settings">
+<h2>Settings<a class="headerlink" href="#settings" title="Link to this heading"></a></h2>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">report</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                 </span><span class="c1"># default; false turns reports off</span>
+<span class="w">  </span><span class="nt">report_suggestions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">     </span><span class="c1"># optional YAML overriding suggestions.yaml</span>
+<span class="w">  </span><span class="nt">plots</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                  </span><span class="c1"># false: reports are written without figures</span>
+</pre></div>
+</div>
+</section>
+<section id="rebuilding-reports">
+<h2>Rebuilding reports<a class="headerlink" href="#rebuilding-reports" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>alomancy<span class="w"> </span>report<span class="w">                 </span><span class="c1"># the latest completed loop</span>
+alomancy<span class="w"> </span>report<span class="w"> </span>--loop<span class="w"> </span><span class="m">3</span>
+alomancy<span class="w"> </span>report<span class="w"> </span>--all
+alomancy<span class="w"> </span>report<span class="w"> </span>--config<span class="w"> </span>my_run.yaml<span class="w">   </span><span class="c1"># runs from before reports existed</span>
+</pre></div>
+</div>
+<p>Run it from the directory holding <code class="docutils literal notranslate"><span class="pre">results/</span></code> (or pass <code class="docutils literal notranslate"><span class="pre">--results-dir</span></code>).
+The run’s config is read from <code class="docutils literal notranslate"><span class="pre">results/run_config.yaml</span></code>, which every run
+now saves at start-up.</p>
+</section>
+<section id="issues-and-suggestions-editing-them">
+<h2>Issues and suggestions: editing them<a class="headerlink" href="#issues-and-suggestions-editing-them" title="Link to this heading"></a></h2>
+<p>Detection is split in two so the advice can be tuned without touching
+code:</p>
+<ul class="simple">
+<li><p><strong>Triggers</strong> (<code class="docutils literal notranslate"><span class="pre">src/alomancy/analysis/report/triggers.py</span></code>) measure
+something about the loop, e.g. the fraction of geometry optimisations
+that hit the step budget. They change rarely.</p></li>
+<li><p><strong>Suggestions</strong> (<code class="docutils literal notranslate"><span class="pre">src/alomancy/analysis/report/suggestions.yaml</span></code>) say
+when a trigger counts as a problem and what to do about it:</p></li>
+</ul>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">go_not_converged</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.10</span><span class="w">          </span><span class="c1"># fires when the measured value is &gt;= this</span>
+<span class="w">  </span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">warning</span><span class="w">        </span><span class="c1"># info | warning | error</span>
+<span class="w">  </span><span class="nt">suggestion</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<span class="w">    </span><span class="no">{n}/{total} geometry optimisations ({value:.0%}) stopped at the step</span>
+<span class="w">    </span><span class="no">budget ({max_steps} steps). Raise</span>
+<span class="w">    </span><span class="no">high_accuracy_evaluation.max_num_of_relax_steps ...</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">{value}</span></code> and every other number the trigger reports can be used in the
+text, with Python format specs (<code class="docutils literal notranslate"><span class="pre">{value:.0%}</span></code>, <code class="docutils literal notranslate"><span class="pre">{mean_steps:.0f}</span></code>).</p>
+<p><strong>Per-project wording without editing the package:</strong> write a YAML with
+just the entries you want to change and point <code class="docutils literal notranslate"><span class="pre">general.report_suggestions</span></code>
+at it. Its entries replace the packaged ones one key at a time, so this is
+enough to raise one threshold:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">go_not_converged</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.25</span>
+</pre></div>
+</div>
+<p>Mistakes never break the report: an entry naming an unknown trigger, a
+trigger with no entry, or a <code class="docutils literal notranslate"><span class="pre">{name}</span></code> the trigger doesn’t provide are listed
+under “Suggestions file notes” in the report and logged.</p>
+<section id="current-triggers">
+<h3>Current triggers<a class="headerlink" href="#current-triggers" title="Link to this heading"></a></h3>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Trigger</p></th>
+<th class="head"><p>Measures</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">go_not_converged</span></code></p></td>
+<td><p>geometry optimisations that stopped at the step budget / all GO</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">go_steps_near_budget</span></code></p></td>
+<td><p>mean BFGS steps / step budget</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">new_structures_force_filtered</span></code></p></td>
+<td><p>new structures excluded by <code class="docutils literal notranslate"><span class="pre">train_filter.max_force</span></code> / new structures</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">short_bond_excluded</span></code></p></td>
+<td><p>structures dropped for a bond &lt; 0.5 Å / structures checked</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">md_runs_no_steps</span></code></p></td>
+<td><p>MD runs that never took a step / runs</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">remote_jobs_failed</span></code></p></td>
+<td><p>remote jobs failed or died / jobs started</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fewer_candidates</span></code></p></td>
+<td><p>shortfall of selected structures against <code class="docutils literal notranslate"><span class="pre">general.num_of_structures_per_loop</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">few_candidates_generated</span></code></p></td>
+<td><p>shortfall of generated candidates against twice <code class="docutils literal notranslate"><span class="pre">general.num_of_structures_per_loop</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">redundancy_removed_new</span></code></p></td>
+<td><p>this loop’s new structures flagged redundant / new</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">queue_dominated</span></code></p></td>
+<td><p>largest share of a phase’s time spent queued</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fit_retries</span></code></p></td>
+<td><p>model fits retried / fits</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">overfitting</span></code></p></td>
+<td><p>best model’s test force MAE / train force MAE</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dft_partial_failure</span></code></p></td>
+<td><p>structures sent to DFT with no result / submitted</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="adding-a-trigger">
+<h3>Adding a trigger<a class="headerlink" href="#adding-a-trigger" title="Link to this heading"></a></h3>
+<ol class="arabic">
+<li><p>Add a function to <code class="docutils literal notranslate"><span class="pre">triggers.py</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@trigger</span><span class="p">(</span><span class="s2">"my_trigger"</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">my_trigger</span><span class="p">(</span><span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="o">...</span>  <span class="c1"># read stats (see report.json for its layout)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"value"</span><span class="p">:</span> <span class="n">fraction</span><span class="p">,</span> <span class="s2">"n"</span><span class="p">:</span> <span class="n">n</span><span class="p">,</span> <span class="s2">"total"</span><span class="p">:</span> <span class="n">total</span><span class="p">}</span>  <span class="c1"># or None if not applicable</span>
+</pre></div>
+</div>
+</li>
+<li><p>Add a <code class="docutils literal notranslate"><span class="pre">my_trigger:</span></code> entry to <code class="docutils literal notranslate"><span class="pre">suggestions.yaml</span></code>.</p></li>
+</ol>
+<p>A test checks that every trigger has an entry and every entry a trigger.</p>
+</section>
+</section>
+<section id="where-the-numbers-come-from">
+<h2>Where the numbers come from<a class="headerlink" href="#where-the-numbers-come-from" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>The database</strong>: composition, redundancy (<code class="docutils literal notranslate"><span class="pre">is_duplicate</span></code>), quality
+filters (<code class="docutils literal notranslate"><span class="pre">is_quality_filtered</span></code>, <code class="docutils literal notranslate"><span class="pre">quality_filter_reasons</span></code>). Flags are the
+database’s current ones, so a regenerated report for an old loop counts
+structures from that loop and earlier with today’s flags.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">results/&lt;loop&gt;/high_accuracy_eval_results.xyz</span></code></strong>: per-structure DFT
+data.</p></li>
+<li><p><strong>Each fit’s <code class="docutils literal notranslate"><span class="pre">evaluation_metrics.json</span></code></strong>: model errors; the best fit is
+chosen as for MD.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">results/alomancy.log</span></code></strong>: phase timings.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">results/events.jsonl</span></code></strong>: warnings and coded events, written next to
+the log. Each line is one JSON object (<code class="docutils literal notranslate"><span class="pre">time</span></code>, <code class="docutils literal notranslate"><span class="pre">level</span></code>, <code class="docutils literal notranslate"><span class="pre">logger</span></code>,
+<code class="docutils literal notranslate"><span class="pre">message</span></code>, <code class="docutils literal notranslate"><span class="pre">event</span></code>, <code class="docutils literal notranslate"><span class="pre">loop</span></code>, <code class="docutils literal notranslate"><span class="pre">data</span></code>). Every WARNING or above is recorded;
+INFO records only when they carry an event code.</p></li>
+</ul>
+<p>To make a new situation countable, log it with an event code:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+    <span class="s2">"Something went wrong for </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span>
+    <span class="n">extra</span><span class="o">=</span><span class="p">{</span><span class="s2">"event"</span><span class="p">:</span> <span class="s2">"my_event"</span><span class="p">,</span> <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="n">n</span><span class="p">,</span> <span class="s2">"total"</span><span class="p">:</span> <span class="n">total</span><span class="p">}},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="module-sections">
+<h2>Module sections<a class="headerlink" href="#module-sections" title="Link to this heading"></a></h2>
+<p>A trainer, generator or evaluator adds its own section by defining
+<code class="docutils literal notranslate"><span class="pre">report_section(stats,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">plots_dir,</span> <span class="pre">config)</span></code> returning an
+<code class="docutils literal notranslate"><span class="pre">alomancy.analysis.report.Section</span></code> (title, Markdown lines, plot paths) or
+<code class="docutils literal notranslate"><span class="pre">None</span></code>, and registering it as the <code class="docutils literal notranslate"><span class="pre">report_section</span></code> entry point in
+<code class="docutils literal notranslate"><span class="pre">registry.py</span></code>. <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code> is <code class="docutils literal notranslate"><span class="pre">None</span></code> when plots are off. A workflow adds
+sections by overriding <code class="docutils literal notranslate"><span class="pre">ActiveLearningWorkflow.report_sections(stats,</span> <span class="pre">plots_dir)</span></code>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="starting_a_run.html" class="btn btn-neutral float-left" title="Starting a Run" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="writing_a_workflow.html" class="btn btn-neutral float-right" title="Writing a Workflow" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

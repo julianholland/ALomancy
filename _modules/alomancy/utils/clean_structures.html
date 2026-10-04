@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -81,6 +84,32 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="drop_unwritable_info">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.drop_unwritable_info">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">drop_unwritable_info</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Remove ``atoms.info`` entries extxyz can't round-trip -- empty</span>
+<span class="sd">    lists, tuples, arrays and strings -- in place, and return *atoms*.</span>
+
+<span class="sd">    ASE writes ``[]`` as ``key="_JSON []"`` but reads that back as an empty</span>
+<span class="sd">    numpy array, which it then writes as a bare ``key=``. Reading a bare</span>
+<span class="sd">    ``key=`` takes the next ``key=value`` in the header as the value, so</span>
+<span class="sd">    whichever key follows is silently lost. That is how</span>
+<span class="sd">    ``quality_filter_reasons=[]`` swallowed ``model_energy`` in every</span>
+<span class="sd">    ``test_pred.xyz`` (its second write) and so emptied the test parity</span>
+<span class="sd">    plots.</span>
+<span class="sd">    """</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">_is_empty_value</span><span class="p">(</span><span class="n">v</span><span class="p">)]:</span>
+        <span class="k">del</span> <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">atoms</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_empty_value</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
 
 
 <div class="viewcode-block" id="clean_structures">
@@ -210,6 +239,10 @@
             <span class="n">n_excluded</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
             <span class="n">min_distance</span><span class="p">,</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"short_bond_excluded"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="n">n_excluded</span><span class="p">,</span> <span class="s2">"total"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">)},</span>
+            <span class="p">},</span>
         <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">filtered</span></div>

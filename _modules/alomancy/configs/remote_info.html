@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -135,12 +138,12 @@
 <span class="sd">        specifically for a job the scheduler itself killed (OOM, walltime, node failure).</span>
 <span class="sd">        Off by default because a killed job often needs different resources to succeed on</span>
 <span class="sd">        retry, not just a second identical attempt.</span>
-<span class="sd">    max_concurrent_jobs: int, default 20</span>
+<span class="sd">    max_num_of_concurrent_jobs: int, default 20</span>
 <span class="sd">        cap on how many jobs a RemoteJobExecutor keeps started (occupying a scheduler slot)</span>
 <span class="sd">        at once; the next queued job starts the instant a running one finishes. This is a</span>
 <span class="sd">        property of the HPC system/account, sourced from the HPC profile in</span>
 <span class="sd">        ~/.alomancy/hpc_config.yaml (see get_remote_info) -- unrelated to</span>
-<span class="sd">        structure_generation's max_number_of_concurrent_jobs, which controls how many seed</span>
+<span class="sd">        structure_generation's num_of_md_starts, which controls how many seed</span>
 <span class="sd">        structures are selected for MD, not scheduler concurrency.</span>
 <span class="sd">    lock_timeout: float or None, default None</span>
 <span class="sd">        max seconds a RemoteJobExecutor worker thread will wait to acquire the</span>
@@ -173,7 +176,7 @@
         <span class="n">check_interval</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
         <span class="n">ignore_failed_jobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">resubmit_killed_jobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="n">max_concurrent_jobs</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
+        <span class="n">max_num_of_concurrent_jobs</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
         <span class="n">lock_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">hash_ignore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
@@ -208,7 +211,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">check_interval</span> <span class="o">=</span> <span class="n">check_interval</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ignore_failed_jobs</span> <span class="o">=</span> <span class="n">ignore_failed_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">resubmit_killed_jobs</span> <span class="o">=</span> <span class="n">resubmit_killed_jobs</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">max_concurrent_jobs</span> <span class="o">=</span> <span class="n">max_concurrent_jobs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_num_of_concurrent_jobs</span> <span class="o">=</span> <span class="n">max_num_of_concurrent_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lock_timeout</span> <span class="o">=</span> <span class="n">lock_timeout</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hash_ignore</span> <span class="o">=</span> <span class="n">hash_ignore</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
@@ -220,55 +223,38 @@
 
 
 
-<span class="n">_DEFAULT_MAX_CONCURRENT_JOBS</span> <span class="o">=</span> <span class="mi">20</span>
+<span class="n">_DEFAULT_MAX_NUM_OF_CONCURRENT_JOBS</span> <span class="o">=</span> <span class="mi">20</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_max_concurrent_jobs</span><span class="p">(</span><span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Resolve the concurrency cap for a job dict.</span>
 
-<span class="sd">    Precedence: an explicit ``max_concurrent_jobs`` on the HPC profile</span>
-<span class="sd">    (``job_dict["hpc"]``) always wins when present -- it is the sole</span>
-<span class="sd">    authoritative, current-format home for this setting. The legacy</span>
-<span class="sd">    job-dict-level ``max_batch_size`` key is only consulted as a fallback</span>
-<span class="sd">    when the profile doesn't define the new key, so a leftover key a user</span>
-<span class="sd">    forgot to delete can't silently override a value they've since migrated</span>
-<span class="sd">    into their HPC profile. ``max_batch_size`` is deprecated and will be</span>
-<span class="sd">    removed in ALomancy 1.0.0 -- see docs/deprecations.md.</span>
+<span class="sd">    ``max_num_of_concurrent_jobs`` on the HPC profile (``job_dict["hpc"]``) is the</span>
+<span class="sd">    sole home for this setting -- a property of the HPC system/account, not</span>
+<span class="sd">    of any one workflow phase. The legacy job-dict-level ``max_batch_size``</span>
+<span class="sd">    fallback (deprecated since v0.4.8) was removed for the 1.0.0 release --</span>
+<span class="sd">    see docs/deprecations.md.</span>
+
+<span class="sd">    Profiles written by ``alomancy add-hpc`` before the num_of_* rename use</span>
+<span class="sd">    ``max_concurrent_jobs``. Unlike run-config keys (a hard error, see</span>
+<span class="sd">    active_learning_workflow's _RENAMED_KEYS), that name is still</span>
+<span class="sd">    honoured with a warning: the profile is machine-written and shared by</span>
+<span class="sd">    every run on the machine.</span>
 <span class="sd">    """</span>
     <span class="n">hpc</span> <span class="o">=</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span>
-    <span class="n">explicit_cap</span> <span class="o">=</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_concurrent_jobs"</span><span class="p">)</span>
-    <span class="n">legacy_cap</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_batch_size"</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">legacy_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">explicit_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">"'max_batch_size' on job '</span><span class="si">%s</span><span class="s2">' is deprecated and ignored because "</span>
-                <span class="s2">"HPC profile '</span><span class="si">%s</span><span class="s2">' already defines max_concurrent_jobs=</span><span class="si">%s</span><span class="s2">. Remove "</span>
-                <span class="s2">"'max_batch_size' from your job config -- it will be removed "</span>
-                <span class="s2">"entirely in ALomancy 1.0.0. See docs/deprecations.md."</span><span class="p">,</span>
-                <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
-                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
-                <span class="n">explicit_cap</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">"'max_batch_size' on job '</span><span class="si">%s</span><span class="s2">' is deprecated. Using its value "</span>
-                <span class="s2">"(</span><span class="si">%s</span><span class="s2">) as max_concurrent_jobs because HPC profile '</span><span class="si">%s</span><span class="s2">' does not "</span>
-                <span class="s2">"define max_concurrent_jobs. Move this setting into "</span>
-                <span class="s2">"~/.alomancy/hpc_config.yaml under the '</span><span class="si">%s</span><span class="s2">' profile's hpc dict "</span>
-                <span class="s2">"instead; 'max_batch_size' will be removed entirely in "</span>
-                <span class="s2">"ALomancy 1.0.0. See docs/deprecations.md."</span><span class="p">,</span>
-                <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
-                <span class="n">legacy_cap</span><span class="p">,</span>
-                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
-                <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
-            <span class="p">)</span>
-
+    <span class="n">explicit_cap</span> <span class="o">=</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_num_of_concurrent_jobs"</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">explicit_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">explicit_cap</span>
+    <span class="n">legacy_cap</span> <span class="o">=</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_concurrent_jobs"</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">legacy_cap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">legacy_cap</span>
-    <span class="k">return</span> <span class="n">_DEFAULT_MAX_CONCURRENT_JOBS</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"HPC profile </span><span class="si">%r</span><span class="s2"> uses the old key max_concurrent_jobs; rename it "</span>
+            <span class="s2">"to max_num_of_concurrent_jobs in ~/.alomancy/hpc_config.yaml "</span>
+            <span class="s2">"(or re-run 'alomancy add-hpc')."</span><span class="p">,</span>
+            <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hpc_name"</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">legacy_cap</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_DEFAULT_MAX_NUM_OF_CONCURRENT_JOBS</span>
 
 
 <div class="viewcode-block" id="get_remote_info">
@@ -293,7 +279,7 @@
             <span class="n">num_nodes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
             <span class="n">partitions</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"partitions"</span><span class="p">],</span>
         <span class="p">),</span>
-        <span class="n">max_concurrent_jobs</span><span class="o">=</span><span class="n">_resolve_max_concurrent_jobs</span><span class="p">(</span><span class="n">job_dict</span><span class="p">),</span>
+        <span class="n">max_num_of_concurrent_jobs</span><span class="o">=</span><span class="n">_resolve_max_concurrent_jobs</span><span class="p">(</span><span class="n">job_dict</span><span class="p">),</span>
         <span class="c1"># lock_timeout intentionally left at RemoteInfo's own default (None</span>
         <span class="c1"># -- wait indefinitely for the per-host ssh-call lock). This used</span>
         <span class="c1"># to be set to time_to_sec(job_dict["max_time"]), so a job queued</span>

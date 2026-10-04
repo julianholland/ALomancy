@@ -1,0 +1,327 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.core.committee_uncertainty_workflow &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            ALomancy
+              <img src="../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.core.committee_uncertainty_workflow</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.core.committee_uncertainty_workflow</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""CommitteeUncertaintyWorkflow: train a committee, pick the structures it</span>
+<span class="sd">disagrees on most, label them with DFT, repeat.</span>
+
+<span class="sd">Each loop: train ``num_of_models_in_committee`` models on the same data</span>
+<span class="sd">(different seeds) → run the structure generator (MD/EZGA) with the best</span>
+<span class="sd">one → predict every candidate with every model → keep the candidates with</span>
+<span class="sd">the highest force standard deviation across the committee</span>
+<span class="sd">(``find_high_sd_structures``) → DFT → add to the dataset.</span>
+
+<span class="sd">Everything generic (config, cold/warm start, resume, training, prediction,</span>
+<span class="sd">DFT, dataset handling, restart sentinels) lives in</span>
+<span class="sd">``ActiveLearningWorkflow`` (core/active_learning_workflow.py); this module</span>
+<span class="sd">only declares the committee's settings, its loop order and its selection</span>
+<span class="sd">rule. See docs/writing_a_workflow.md.</span>
+
+<span class="sd">Settings: ``general.committee_uncertainty_kwargs.num_of_models_in_committee``</span>
+<span class="sd">(default 3, the minimum for a usable force std-dev).</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.plotting</span><span class="w"> </span><span class="kn">import</span> <span class="n">mae_al_loop_plot</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.active_learning_workflow</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_STRUCTURE_GENERATION_NAME</span><span class="p">,</span>
+    <span class="n">_TRAINING_NAME</span><span class="p">,</span>
+    <span class="n">ActiveLearningWorkflow</span><span class="p">,</span>
+    <span class="n">LoopContext</span><span class="p">,</span>
+    <span class="n">TrainedModel</span><span class="p">,</span>
+    <span class="n">build_workflow</span><span class="p">,</span>
+    <span class="n">phase</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.structure_generation.find_high_sd_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">find_high_sd_structures</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"CommitteeUncertaintyWorkflow"</span><span class="p">,</span> <span class="s2">"build_workflow"</span><span class="p">]</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="c1"># A force standard deviation needs at least this many models.</span>
+<span class="n">_MIN_COMMITTEE_SIZE</span> <span class="o">=</span> <span class="mi">3</span>
+
+<span class="n">_HIGH_SD_FILENAME</span> <span class="o">=</span> <span class="s2">"high_sd_structures.xyz"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_load_high_sd</span><span class="p">(</span>
+    <span class="n">_self</span><span class="p">:</span> <span class="s2">"CommitteeUncertaintyWorkflow"</span><span class="p">,</span>
+    <span class="n">ctx</span><span class="p">:</span> <span class="n">LoopContext</span><span class="p">,</span>
+    <span class="o">*</span><span class="n">_args</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_kwargs</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""generate_structures.done loader: the selection find_high_sd_structures</span>
+<span class="sd">    wrote last time."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">base_name</span><span class="p">,</span> <span class="n">_STRUCTURE_GENERATION_NAME</span><span class="p">,</span> <span class="n">_HIGH_SD_FILENAME</span><span class="p">)</span>
+    <span class="n">structures</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"</span><span class="si">%d</span><span class="s2"> High SD structures loaded from file: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span> <span class="n">path</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">structures</span>
+
+
+<div class="viewcode-block" id="CommitteeUncertaintyWorkflow">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CommitteeUncertaintyWorkflow</span><span class="p">(</span><span class="n">ActiveLearningWorkflow</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Committee force-std-dev active learning (see module docstring)."""</span>
+
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"committee_uncertainty"</span>
+    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"committee_uncertainty_kwargs"</span>
+    <span class="n">KWARGS_DEFAULTS</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"num_of_models_in_committee"</span><span class="p">:</span> <span class="n">_MIN_COMMITTEE_SIZE</span>
+    <span class="p">}</span>
+    <span class="n">NEW_STRUCTURE_CONFIG_TYPE</span> <span class="o">=</span> <span class="s2">"high_sd"</span>
+
+<div class="viewcode-block" id="CommitteeUncertaintyWorkflow.validate_settings">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.validate_settings">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_settings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">workflow_kwargs</span><span class="p">[</span><span class="s2">"num_of_models_in_committee"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="n">_MIN_COMMITTEE_SIZE</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"general.committee_uncertainty_kwargs.num_of_models_in_committee "</span>
+                <span class="sa">f</span><span class="s2">"must be an integer &gt;= </span><span class="si">{</span><span class="n">_MIN_COMMITTEE_SIZE</span><span class="si">}</span><span class="s2"> (a force standard "</span>
+                <span class="sa">f</span><span class="s2">"deviation needs at least </span><span class="si">{</span><span class="n">_MIN_COMMITTEE_SIZE</span><span class="si">}</span><span class="s2"> models), got </span><span class="si">{</span><span class="n">size</span><span class="si">!r}</span><span class="s2">."</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CommitteeUncertaintyWorkflow.run">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.run">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">committee_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">workflow_kwargs</span><span class="p">[</span><span class="s2">"num_of_models_in_committee"</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterate_loops</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prepare_run</span><span class="p">()):</span>
+            <span class="n">models</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_models</span><span class="p">(</span>
+                <span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seeds</span><span class="p">(</span><span class="n">committee_size</span><span class="p">),</span> <span class="n">min_successful</span><span class="o">=</span><span class="n">_MIN_COMMITTEE_SIZE</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">plot_loop</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">train_only</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">"Initial committee training complete; train_only stops before generation."</span>
+                <span class="p">)</span>
+                <span class="k">return</span>
+            <span class="n">selected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">select_uncertain</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">models</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_to_dataset</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_accuracy_evaluate</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">selected</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">finish_loop</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CommitteeUncertaintyWorkflow.select_uncertain">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.select_uncertain">[docs]</a>
+    <span class="nd">@phase</span><span class="p">(</span><span class="s2">"generate_structures"</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="n">_load_high_sd</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">select_uncertain</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">LoopContext</span><span class="p">,</span> <span class="n">models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TrainedModel</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Generate candidates with the best model, predict them with the</span>
+<span class="sd">        whole committee and keep the most uncertain (highest force std-dev).</span>
+<span class="sd">        find_high_sd_structures writes structure_generation/</span>
+<span class="sd">        high_sd_structures.xyz, which is what a restart reloads."""</span>
+        <span class="n">best</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">best_model</span><span class="p">(</span><span class="n">models</span><span class="p">)</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_candidates</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">best</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"Structure generation: evaluating </span><span class="si">%d</span><span class="s2"> candidate structure(s) against "</span>
+            <span class="s2">"the full </span><span class="si">%d</span><span class="s2">-member committee to select the most uncertain ones."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">candidates</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="c1"># The best model is listed first, as "base_mlip" -- the label</span>
+        <span class="c1"># find_high_sd_structures expects for the model that drove the MD.</span>
+        <span class="n">ordered</span> <span class="o">=</span> <span class="p">[</span><span class="n">best</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">models</span> <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="n">fit_idx</span> <span class="o">!=</span> <span class="n">best</span><span class="o">.</span><span class="n">fit_idx</span><span class="p">)]</span>
+        <span class="n">predictions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">ordered</span><span class="p">,</span> <span class="n">candidates</span><span class="p">)</span>
+        <span class="n">structure_forces_dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="p">(</span><span class="s2">"base_mlip"</span> <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="n">best</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">model</span><span class="o">.</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span><span class="p">):</span> <span class="p">{</span>
+                <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"forces"</span><span class="p">:</span> <span class="n">prediction</span><span class="p">[</span><span class="s2">"forces"</span><span class="p">][</span><span class="n">i</span><span class="p">],</span>
+                    <span class="s2">"energy"</span><span class="p">:</span> <span class="n">prediction</span><span class="p">[</span><span class="s2">"energies"</span><span class="p">][</span><span class="n">i</span><span class="p">],</span>
+                <span class="p">}</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">candidates</span><span class="p">))</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">model</span><span class="p">,</span> <span class="n">prediction</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ordered</span><span class="p">,</span> <span class="n">predictions</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="c1"># find_high_sd_structures reads structure_generation["name"] from the</span>
+        <span class="c1"># job dict it's given; the name is hardcoded, not config, so it's</span>
+        <span class="c1"># merged into a shallow copy here.</span>
+        <span class="n">sg_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">]</span>
+        <span class="n">selected</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">find_high_sd_structures</span><span class="p">(</span>
+            <span class="n">structure_list</span><span class="o">=</span><span class="n">candidates</span><span class="p">,</span>
+            <span class="n">base_name</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">base_name</span><span class="p">,</span>
+            <span class="n">job_dict</span><span class="o">=</span><span class="p">{</span>
+                <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">,</span>
+                <span class="s2">"structure_generation"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="o">**</span><span class="n">sg_config</span><span class="p">,</span>
+                    <span class="s2">"name"</span><span class="p">:</span> <span class="n">_STRUCTURE_GENERATION_NAME</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+            <span class="n">structure_forces_dict</span><span class="o">=</span><span class="n">structure_forces_dict</span><span class="p">,</span>
+            <span class="n">num_of_structures</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_of_structures_per_loop</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">selected</span></div>
+
+
+<div class="viewcode-block" id="CommitteeUncertaintyWorkflow.report_sections">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.report_sections">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">report_sections</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">plots_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Loop report: the candidates' committee force std dev and the</span>
+<span class="sd">        selection cut."""</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.report.sections</span><span class="w"> </span><span class="kn">import</span> <span class="n">committee_section</span>
+
+        <span class="n">section</span> <span class="o">=</span> <span class="n">committee_section</span><span class="p">(</span>
+            <span class="n">stats</span><span class="p">,</span> <span class="n">base_name</span><span class="o">=</span><span class="n">stats</span><span class="p">[</span><span class="s2">"base_name"</span><span class="p">],</span> <span class="n">plots_dir</span><span class="o">=</span><span class="n">plots_dir</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">section</span><span class="p">]</span> <span class="k">if</span> <span class="n">section</span> <span class="k">else</span> <span class="p">[]</span></div>
+
+
+<div class="viewcode-block" id="CommitteeUncertaintyWorkflow.plot_loop">
+<a class="viewcode-back" href="../../../api/core.html#alomancy.core.committee_uncertainty_workflow.CommitteeUncertaintyWorkflow.plot_loop">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot_loop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">LoopContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""This loop's training plots (unchanged from before the workflow</span>
+<span class="sd">        split; plotting will be generalised separately)."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">plots</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># The plotting functions read mlip_committee_job_dict["name"] and</span>
+        <span class="c1"># the committee size; both are merged into one dict here.</span>
+        <span class="n">training_config_with_name</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">workflow_kwargs</span><span class="p">,</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">training_config</span><span class="p">,</span>
+            <span class="s2">"name"</span><span class="p">:</span> <span class="n">_TRAINING_NAME</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">mae_al_loop_plot</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cross_loop_metrics_dataframe</span><span class="p">(</span><span class="n">_TRAINING_NAME</span><span class="p">),</span>
+            <span class="n">training_config_with_name</span><span class="p">,</span>
+            <span class="n">directory</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">plots_dir</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.mlip_plots</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+            <span class="n">plot_dft_vs_model</span><span class="p">,</span>
+            <span class="n">plot_training_curves</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">plot_training_curves</span><span class="p">(</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">base_name</span><span class="p">,</span>
+            <span class="n">training_config_with_name</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">plots_dir</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">trainer</span><span class="p">(),</span>
+        <span class="p">)</span>
+        <span class="n">plot_dft_vs_model</span><span class="p">(</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">base_name</span><span class="p">,</span>
+            <span class="n">training_config_with_name</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">plots_dir</span><span class="p">,</span>
+            <span class="n">db</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+            <span class="n">loop_idx</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">loop</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

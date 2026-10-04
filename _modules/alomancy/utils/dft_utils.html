@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
@@ -76,6 +79,7 @@
              
   <h1>Source code for alomancy.utils.dft_utils</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
@@ -164,8 +168,12 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
     <span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">create_calc_fn</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">)</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()</span>
+    <span class="n">wall_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
     <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
+    <span class="c1"># Per-structure run statistics for the loop report (analysis/report).</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"dft_wall_time_s"</span><span class="p">]</span> <span class="o">=</span> <span class="n">wall_time</span>
     <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 
@@ -185,8 +193,10 @@
         <span class="n">trajectory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">opt_prefix</span><span class="si">}</span><span class="s2">.traj"</span><span class="p">)),</span>
     <span class="p">)</span>
     <span class="n">fmax</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fmax"</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
-    <span class="n">steps</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relax_max_steps"</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_num_of_relax_steps"</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">converged</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="n">fmax</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="n">steps</span><span class="p">)</span>
+    <span class="n">wall_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
             <span class="s2">"Geometry optimization in </span><span class="si">%s</span><span class="s2"> did not reach fmax=</span><span class="si">%.4g</span><span class="s2"> eV/Angstrom "</span>
@@ -198,6 +208,11 @@
         <span class="p">)</span>
     <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_converged"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">converged</span><span class="p">)</span>
+    <span class="c1"># Per-structure run statistics for the loop report (analysis/report).</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_steps"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">opt</span><span class="o">.</span><span class="n">nsteps</span><span class="p">)</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_max_steps"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">steps</span><span class="p">)</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_fmax_target"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">fmax</span><span class="p">)</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"dft_wall_time_s"</span><span class="p">]</span> <span class="o">=</span> <span class="n">wall_time</span>
     <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 </pre></div>

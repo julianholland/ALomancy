@@ -1,0 +1,408 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>alomancy.mlip.mace.trainer &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            ALomancy
+              <img src="../../../../_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">alomancy.mlip.mace.trainer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for alomancy.mlip.mace.trainer</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""MaceTrainer: the MACE backend of ALomancyTrainer (mlip/base.py).</span>
+
+<span class="sd">Only MACE-specific work lives here: building MACE's arguments from</span>
+<span class="sd">``training.mace_kwargs``, the E0s format, stage-two (SWA) timing, stress</span>
+<span class="sd">training defaults, and which of MACE's output files is which. The standard</span>
+<span class="sd">``train`` entry point, isolated-atom-energy resolution, evaluation,</span>
+<span class="sd">restart checks and clean-up are inherited.</span>
+
+<span class="sd">MACE writes two models per fit: ``&lt;name&gt;_stagetwo.model`` (uncompiled, used</span>
+<span class="sd">for evaluation, parity plots, MD and prediction -- the TorchScript-compiled</span>
+<span class="sd">model's forces failed for every multi-atom structure on one production</span>
+<span class="sd">GPU/CUDA/PyTorch combination) and ``&lt;name&gt;_stagetwo_compiled.model``</span>
+<span class="sd">(copied to results/best_model/). MACE writes the compiled one inside a bare</span>
+<span class="sd">``except Exception: pass``, so it can be missing even after a successful fit.</span>
+<span class="sd">MACE also writes stage-one ``&lt;name&gt;.model``/``&lt;name&gt;_compiled.model``; no</span>
+<span class="sd">code reads them, so they are cleaned up with ``checkpoints/``.</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mace</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mace.calculators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MACECalculator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mace.cli.run_train</span><span class="w"> </span><span class="kn">import</span> <span class="n">run</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ALomancyTrainer</span><span class="p">,</span>
+    <span class="n">TrainingHistory</span><span class="p">,</span>
+    <span class="n">isolated_atom_reference_energies_by_z</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.training_schedule</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_epochs</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="c1"># Defaults for training.mace_kwargs, merged under the user's settings. Also</span>
+<span class="c1"># shown, fully resolved, by the workflow's config summary.</span>
+<span class="c1"># max_num_epochs: "dynamic" (utils/training_schedule.py) rather than MACE's</span>
+<span class="c1"># own 2048, which assumes separately tuned early stopping. E0s has no entry:</span>
+<span class="c1"># it defaults to the database's IsolatedAtom energies at train time.</span>
+<span class="n">_MACE_KWARGS_DEFAULTS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"energy_key"</span><span class="p">:</span> <span class="s2">"REF_energy"</span><span class="p">,</span>
+    <span class="s2">"forces_key"</span><span class="p">:</span> <span class="s2">"REF_forces"</span><span class="p">,</span>
+    <span class="s2">"max_num_epochs"</span><span class="p">:</span> <span class="s2">"dynamic"</span><span class="p">,</span>
+    <span class="s2">"compute_stress"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"MACE"</span><span class="p">,</span>
+    <span class="s2">"correlation"</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+    <span class="s2">"device"</span><span class="p">:</span> <span class="s2">"cuda"</span><span class="p">,</span>
+    <span class="s2">"ema"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">"energy_weight"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">"forces_weight"</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="s2">"error_table"</span><span class="p">:</span> <span class="s2">"PerAtomMAE"</span><span class="p">,</span>
+    <span class="s2">"eval_interval"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s2">"max_L"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s2">"num_channels"</span><span class="p">:</span> <span class="mi">128</span><span class="p">,</span>
+    <span class="s2">"num_interactions"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="s2">"patience"</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>
+    <span class="s2">"r_max"</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
+    <span class="s2">"restart_latest"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">"save_cpu"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">"scheduler_patience"</span><span class="p">:</span> <span class="mi">15</span><span class="p">,</span>
+    <span class="s2">"swa"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">"batch_size"</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+    <span class="s2">"valid_batch_size"</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+    <span class="s2">"distributed"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1"># Stage two (SWA) starts at this fraction of the epochs.</span>
+<span class="n">_STAGE_TWO_FRACTION</span> <span class="o">=</span> <span class="mf">0.8</span>
+
+<span class="k">if</span> <span class="p">(</span>
+    <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">"torch._native"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="ow">and</span> <span class="s2">"TRITON_CACHE_DIR"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
+<span class="p">):</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+        <span class="s2">"This PyTorch version uses triton for native GPU ops (torch._native). "</span>
+        <span class="s2">"On HPC nodes without python3-dev headers, triton kernel compilation will "</span>
+        <span class="s2">"fail at training time. Set TRITON_CACHE_DIR to a persistent path and "</span>
+        <span class="s2">"pre-warm the cache in an interactive GPU job. See CLAUDE.md for details."</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_write_resolved_mace_epochs</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">mace_fit_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Save the resolved max_num_epochs/start_swa to resolved_mace_epochs.json,</span>
+<span class="sd">    fixed or dynamic alike, so the training-curve plots (mlip_plots.py) can</span>
+<span class="sd">    mark the real stage-two epoch without re-deriving it."""</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"max_num_epochs"</span><span class="p">:</span> <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"max_num_epochs"</span><span class="p">],</span>
+        <span class="s2">"start_swa"</span><span class="p">:</span> <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"start_swa"</span><span class="p">],</span>
+    <span class="p">}</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"resolved_mace_epochs.json"</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">fh</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_apply_compute_stress_defaults</span><span class="p">(</span><span class="n">mace_fit_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">compute_stress</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Enable stress training when requested, in place.</span>
+
+<span class="sd">    setdefault, so a user's own loss/stress_key (e.g. "huber", "universal")</span>
+<span class="sd">    wins. A bare stress_key does nothing on its own: MACE only trains on</span>
+<span class="sd">    stress when loss is "stress"/"huber"/"universal".</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">compute_stress</span><span class="p">:</span>
+        <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"stress_key"</span><span class="p">,</span> <span class="s2">"REF_stresses"</span><span class="p">)</span>
+        <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"loss"</span><span class="p">,</span> <span class="s2">"stress"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_mace_e0s_arg</span><span class="p">(</span><span class="n">e0s</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""{element symbol or atomic number: energy (eV)} -&gt; the string MACE's</span>
+<span class="sd">    E0s argument expects: a dict literal keyed by atomic number, e.g.</span>
+<span class="sd">    ``"{1: -13.6, 8: -432.1}"``."""</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">isolated_atom_reference_energies_by_z</span><span class="p">(</span><span class="n">e0s</span><span class="p">,</span> <span class="s2">"mace_kwargs.E0s"</span><span class="p">))</span>
+
+
+<div class="viewcode-block" id="MaceTrainer">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MaceTrainer</span><span class="p">(</span><span class="n">ALomancyTrainer</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""MACE backend (training.trainer: mace, settings in training.mace_kwargs)."""</span>
+
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"mace"</span>
+    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"mace_kwargs"</span>
+    <span class="n">KWARGS_DEFAULTS</span> <span class="o">=</span> <span class="n">_MACE_KWARGS_DEFAULTS</span>
+    <span class="n">ISOLATED_ATOM_ENERGIES_KWARG</span> <span class="o">=</span> <span class="s2">"E0s"</span>
+
+<div class="viewcode-block" id="MaceTrainer.model_path">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.model_path">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo.model"</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.compiled_model_path">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.compiled_model_path">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compiled_model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_stagetwo_compiled.model"</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.deployable_model_path">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.deployable_model_path">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">deployable_model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""The compiled model, or None (best_model/ is then left as it was)."""</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compiled_model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">path</span> <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.cleanup_paths">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.cleanup_paths">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cleanup_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Once the compiled model exists: checkpoints/ (MACE only needs it to</span>
+<span class="sd">        restore its best state before writing that model) and the stage-one</span>
+<span class="sd">        models &lt;name&gt;.model / &lt;name&gt;_compiled.model (about 88 MB each),</span>
+<span class="sd">        which nothing reads -- evaluation, MD and prediction use the</span>
+<span class="sd">        uncompiled stage-two model, results/best_model/ the compiled one."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">compiled_model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"checkpoints"</span><span class="p">,</span>
+            <span class="n">fit_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.model"</span><span class="p">,</span>
+            <span class="n">fit_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_compiled.model"</span><span class="p">,</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.format_isolated_atom_energies">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.format_isolated_atom_energies">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format_isolated_atom_energies</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">energies</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_mace_e0s_arg</span><span class="p">(</span><span class="n">energies</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.get_calculator">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.get_calculator">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+        <span class="n">device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"device"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">MACECalculator</span><span class="p">(</span>
+            <span class="n">model_paths</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">)],</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">default_dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"default_dtype"</span><span class="p">,</span> <span class="s2">"float64"</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.report_section">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.report_section">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">report_section</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.report.sections</span><span class="w"> </span><span class="kn">import</span> <span class="n">trainer_section</span>
+
+        <span class="k">return</span> <span class="n">trainer_section</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="n">trainer</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.training_history">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.training_history">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">training_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TrainingHistory</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""MACE's per-epoch validation records (``results/*_train.txt``), the</span>
+<span class="sd">        stage-two start (resolved_mace_epochs.json) and the epoch MACE</span>
+<span class="sd">        restored its stage-two model from (``logs/*.log``)."""</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.mlip_plots</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+            <span class="n">_parse_training_jsonl</span><span class="p">,</span>
+            <span class="n">_parse_used_epoch</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">fit_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="n">frame</span> <span class="o">=</span> <span class="n">_parse_training_jsonl</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">stage_two</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">sidecar</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"resolved_mace_epochs.json"</span>
+        <span class="k">if</span> <span class="n">sidecar</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">stage_two</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">sidecar</span><span class="o">.</span><span class="n">read_text</span><span class="p">())[</span><span class="s2">"start_swa"</span><span class="p">])</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Could not read </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">sidecar</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">TrainingHistory</span><span class="p">(</span>
+            <span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">split</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"valid"</span><span class="p">)),</span>
+            <span class="n">stage_two_epoch</span><span class="o">=</span><span class="n">stage_two</span><span class="p">,</span>
+            <span class="n">selected_epoch</span><span class="o">=</span><span class="n">_parse_used_epoch</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">seed</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MaceTrainer.fit">
+<a class="viewcode-back" href="../../../../api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">train_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">valid_path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">test_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">isolated_atom_energies</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Run MACE's own training in *fit_dir*; return the uncompiled model."""</span>
+        <span class="n">mace_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">"seed"</span> <span class="ow">in</span> <span class="n">mace_kwargs</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"mace_kwargs must not set 'seed' -- it is derived and passed "</span>
+                <span class="s2">"separately (general.seed + fit index)."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">isolated_atom_energies</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mace_kwargs</span><span class="p">[</span><span class="s2">"E0s"</span><span class="p">]</span> <span class="o">=</span> <span class="n">isolated_atom_energies</span>
+
+        <span class="n">n_train</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">train_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+        <span class="n">n_valid</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">valid_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span> <span class="k">if</span> <span class="n">valid_path</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"Read </span><span class="si">%d</span><span class="s2"> training structure(s), </span><span class="si">%d</span><span class="s2"> validation structure(s)."</span><span class="p">,</span>
+            <span class="n">n_train</span><span class="p">,</span>
+            <span class="n">n_valid</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Control values, not MACE arguments: popped so they never reach MACE.</span>
+        <span class="c1"># Epochs count train + valid, the pool this loop trains from.</span>
+        <span class="n">epochs</span> <span class="o">=</span> <span class="n">resolve_epochs</span><span class="p">(</span>
+            <span class="n">mace_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"max_num_epochs"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="n">mace_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"batch_size"</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span>
+            <span class="n">n_train</span> <span class="o">+</span> <span class="n">n_valid</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">compute_stress</span> <span class="o">=</span> <span class="n">mace_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"compute_stress"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">mace_fit_params</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="n">mace_kwargs</span><span class="p">,</span>
+            <span class="s2">"train_file"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">train_path</span><span class="p">),</span>
+            <span class="s2">"test_file"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">test_path</span><span class="p">),</span>
+            <span class="s2">"name"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s2">"max_num_epochs"</span><span class="p">:</span> <span class="n">epochs</span><span class="p">,</span>
+            <span class="s2">"start_swa"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">epochs</span> <span class="o">*</span> <span class="n">_STAGE_TWO_FRACTION</span><span class="p">)),</span>
+            <span class="s2">"seed"</span><span class="p">:</span> <span class="n">seed</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="s2">"start_swa"</span> <span class="ow">in</span> <span class="n">mace_kwargs</span><span class="p">:</span>
+            <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"start_swa"</span><span class="p">]</span> <span class="o">=</span> <span class="n">mace_kwargs</span><span class="p">[</span><span class="s2">"start_swa"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">valid_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mace_fit_params</span><span class="p">[</span><span class="s2">"valid_file"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">valid_path</span><span class="p">)</span>
+        <span class="n">_apply_compute_stress_defaults</span><span class="p">(</span><span class="n">mace_fit_params</span><span class="p">,</span> <span class="n">compute_stress</span><span class="p">)</span>
+        <span class="n">_write_resolved_mace_epochs</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">,</span> <span class="n">mace_fit_params</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"MACE fit parameters:"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"  </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+        <span class="n">parser</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">build_default_arg_parser</span><span class="p">()</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s2">"--name"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">mace_fit_params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+        <span class="n">orig_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+            <span class="n">run</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">orig_dir</span><span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">model</span> <span class="k">if</span> <span class="n">model</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

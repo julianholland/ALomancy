@@ -46,12 +46,16 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Deprecations &amp; Planned Breaking Changes</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#targeting-1-0-0">Targeting 1.0.0</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#max-batch-size-job-dict-key-removal"><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#shipped-in-1-0-0">Shipped in 1.0.0</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#max-batch-size-job-dict-key-removed"><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removed</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#activelearningstandardmace-baseactivelearningworkflow-removed"><code class="docutils literal notranslate"><span class="pre">ActiveLearningStandardMACE</span></code> / <code class="docutils literal notranslate"><span class="pre">BaseActiveLearningWorkflow</span></code> removed</a></li>
 </ul>
 </li>
 </ul>
@@ -87,33 +91,47 @@
 <p>This page tracks deprecated features and breaking changes planned for future
 ALomancy releases, so users can migrate ahead of time. See <code class="docutils literal notranslate"><span class="pre">CHANGELOG.md</span></code> for
 changes that have already shipped.</p>
-<section id="targeting-1-0-0">
-<h2>Targeting 1.0.0<a class="headerlink" href="#targeting-1-0-0" title="Link to this heading"></a></h2>
-<section id="max-batch-size-job-dict-key-removal">
-<h3><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removal<a class="headerlink" href="#max-batch-size-job-dict-key-removal" title="Link to this heading"></a></h3>
+<section id="shipped-in-1-0-0">
+<h2>Shipped in 1.0.0<a class="headerlink" href="#shipped-in-1-0-0" title="Link to this heading"></a></h2>
+<section id="max-batch-size-job-dict-key-removed">
+<h3><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removed<a class="headerlink" href="#max-batch-size-job-dict-key-removed" title="Link to this heading"></a></h3>
 <ul class="simple">
-<li><p><strong>Status</strong>: deprecated since v0.4.8 (still works via a fallback, logs a
-warning)</p></li>
-<li><p><strong>Removal target</strong>: 1.0.0</p></li>
-<li><p><strong>What’s changing</strong>: the <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> key on <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code>
-(and any other job-dict section) will no longer be read at all.</p></li>
-<li><p><strong>Why</strong>: <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> used to control how many structures were grouped
-into one remote-submission chunk, and indirectly how much submission
-concurrency you got, with the workflow waiting for an entire chunk to
-finish before submitting the next one. Chunking has been removed entirely
-— all remaining structures are submitted in a single call (geometry
-optimisation and single-point structures share one submission queue,
-distinguished only by which function each job runs) — and concurrency is
-now governed by <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code>, which lives on the <strong>HPC profile</strong>
-(<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>), not a per-workflow-phase job dict, since
-it’s a property of the HPC system/account, not of any one phase.</p></li>
-<li><p><strong>Migrate now</strong>: re-run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code> for each profile (or hand-edit
+<li><p><strong>Status</strong>: removed in 1.0.0 (deprecated since v0.4.8)</p></li>
+<li><p><strong>What changed</strong>: the <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> key on <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation</span></code>
+(and any other job-dict section) is no longer read at all. Concurrency is
+governed entirely by <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code>, which lives on the <strong>HPC
+profile</strong> (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>), not a per-workflow-phase job
+dict, since it’s a property of the HPC system/account, not of any one
+phase.</p></li>
+<li><p><strong>Migrate</strong>: re-run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code> for each profile (or hand-edit
 <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>) to add <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs:</span> <span class="pre">&lt;N&gt;</span></code> under the
 relevant profile’s <code class="docutils literal notranslate"><span class="pre">hpc:</span></code> dict, then delete <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> from your job
-YAML. Until 1.0.0, a <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> left on a job dict is used as a
-fallback source for the concurrency cap — but <em>only</em> when the HPC profile
-doesn’t already define <code class="docutils literal notranslate"><span class="pre">max_concurrent_jobs</span></code> — with a deprecation warning
-logged either way.</p></li>
+YAML – it is now silently ignored rather than used as a fallback.</p></li>
+</ul>
+</section>
+<section id="activelearningstandardmace-baseactivelearningworkflow-removed">
+<h3><code class="docutils literal notranslate"><span class="pre">ActiveLearningStandardMACE</span></code> / <code class="docutils literal notranslate"><span class="pre">BaseActiveLearningWorkflow</span></code> removed<a class="headerlink" href="#activelearningstandardmace-baseactivelearningworkflow-removed" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Status</strong>: removed in 1.0.0</p></li>
+<li><p><strong>What changed</strong>: <code class="docutils literal notranslate"><span class="pre">src/alomancy/core/standard_active_learning.py</span></code> and
+<code class="docutils literal notranslate"><span class="pre">src/alomancy/core/base_active_learning.py</span></code> have been deleted.
+<code class="docutils literal notranslate"><span class="pre">CommitteeUncertaintyWorkflow</span></code> (<code class="docutils literal notranslate"><span class="pre">core/committee_uncertainty_workflow.py</span></code>,
+built via <code class="docutils literal notranslate"><span class="pre">build_workflow()</span></code>) is now the only workflow implementation –
+it does not subclass anything, resolving its trainer/structure-generator/
+DFT-evaluator/initialiser from config via the shared module registry
+instead of a different Python subclass per backend combination.</p></li>
+<li><p><strong>Migrate</strong>: replace <code class="docutils literal notranslate"><span class="pre">ActiveLearningStandardMACE(...)</span></code> with
+<code class="docutils literal notranslate"><span class="pre">build_workflow(jobs_dict=...,</span> <span class="pre">...)</span></code> (same constructor kwargs otherwise).
+The job-dict schema changed too: <code class="docutils literal notranslate"><span class="pre">workflow</span></code> is renamed <code class="docutils literal notranslate"><span class="pre">general</span></code> (holding
+<code class="docutils literal notranslate"><span class="pre">al_workflow</span></code>, <code class="docutils literal notranslate"><span class="pre">elements</span></code>, and a <code class="docutils literal notranslate"><span class="pre">committee_uncertainty_kwargs</span></code> dict for
+committee-specific settings like <code class="docutils literal notranslate"><span class="pre">number_models_in_committee</span></code>, renamed
+from <code class="docutils literal notranslate"><span class="pre">size_of_committee</span></code>); <code class="docutils literal notranslate"><span class="pre">mlip_committee</span></code> is renamed <code class="docutils literal notranslate"><span class="pre">training</span></code> and
+gains a <code class="docutils literal notranslate"><span class="pre">trainer</span></code> key; <code class="docutils literal notranslate"><span class="pre">initialization.creation_kwargs</span></code> is flattened –
+its sub-namespaces (<code class="docutils literal notranslate"><span class="pre">isolated_atom_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">dimer_kwargs</span></code>, etc.) are now
+direct children of <code class="docutils literal notranslate"><span class="pre">initialization</span></code>. See <code class="docutils literal notranslate"><span class="pre">examples/basic_use/</span></code> and
+<code class="docutils literal notranslate"><span class="pre">examples/ezga_use/</span></code> for complete migrated configs, and
+<code class="docutils literal notranslate"><span class="pre">committee_uncertainty_workflow.py</span></code>’s module docstring for the full
+schema reference.</p></li>
 </ul>
 </section>
 </section>

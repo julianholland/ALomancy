@@ -44,6 +44,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../contributing.html">Contributing</a></li>
@@ -77,18 +80,52 @@
   <h1>Source code for alomancy.structure_generation.md.md_wfl</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">write</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.langevin</span><span class="w"> </span><span class="kn">import</span> <span class="n">Langevin</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.langevinbaoab</span><span class="w"> </span><span class="kn">import</span> <span class="n">LangevinBAOAB</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPa</span><span class="p">,</span> <span class="n">fs</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">mace.calculators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MACECalculator</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.remote_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_remote_info</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">submit_n</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dataset_curation</span><span class="w"> </span><span class="kn">import</span> <span class="n">geometry_digest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.seed_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">mark_structures_for_dft</span><span class="p">,</span> <span class="n">select_diverse_seeds</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="n">_DEFAULT_NUM_OF_MD_STARTS</span> <span class="o">=</span> <span class="mi">10</span>
+
+<span class="c1"># Every run records its starting structure before any MD step, so a run</span>
+<span class="c1"># with fewer frames than this completed no MD step at all.</span>
+<span class="n">_MIN_FRAMES</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="c1"># The chosen MD seeds (plus any replacements, tagged info["replaces"]) for</span>
+<span class="c1"># a loop, so restarts resume the same runs.</span>
+<span class="n">_SEEDS_FILENAME</span> <span class="o">=</span> <span class="s2">"md_seeds.xyz"</span>
+
+<span class="c1"># ALomancy's own defaults for the modular structure_generator entry point</span>
+<span class="c1"># (generate(), below) -- deliberately different from run_md's own built-in</span>
+<span class="c1"># defaults (steps=100), which are far too short for real production MD.</span>
+<span class="c1"># Mirrors md_kwargs' actual runtime shape (including the two nested keys</span>
+<span class="c1"># generate() pops out before spreading the rest onto run_md's own kwargs)</span>
+<span class="c1"># so it can also be used, as-is, to display the fully-resolved effective</span>
+<span class="c1"># config (see active_learning_workflow.py's display_workflow_summary).</span>
+<span class="n">_MD_KWARGS_DEFAULTS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"steps"</span><span class="p">:</span> <span class="mi">20000</span><span class="p">,</span>
+    <span class="s2">"temperature"</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
+    <span class="s2">"timestep_fs"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="s2">"traj_interval"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">"trainer"</span><span class="p">:</span> <span class="s2">"mace"</span><span class="p">,</span>
+    <span class="s2">"trainer_config"</span><span class="p">:</span> <span class="p">{},</span>
+    <span class="s2">"structure_selection_kwargs"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"num_of_md_starts"</span><span class="p">:</span> <span class="n">_DEFAULT_NUM_OF_MD_STARTS</span><span class="p">,</span>
+        <span class="s2">"enforce_chemical_diversity"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"seed"</span><span class="p">:</span> <span class="mi">803</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">}</span>
 
 
 <div class="viewcode-block" id="run_md">
@@ -107,6 +144,8 @@
     <span class="n">pressure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="n">equilibration_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="n">equilibration_temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">300.0</span><span class="p">,</span>
+    <span class="n">calculator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    ensemble : {"nvt", "npt"}</span>
@@ -122,33 +161,62 @@
 <span class="sd">        the production trajectory. Zero disables equilibration.</span>
 <span class="sd">    equilibration_temperature : float</span>
 <span class="sd">        Temperature in K used during the initial NVT equilibration.</span>
+<span class="sd">    calculator : optional</span>
+<span class="sd">        A pre-built calculator to drive the dynamics with, instead of the</span>
+<span class="sd">        default hardcoded MACECalculator(model_paths=model_path, ...). Used</span>
+<span class="sd">        by the modular structure-generator module (structure_generation.md's</span>
+<span class="sd">        registry entry), which builds it via the trainer's own</span>
+<span class="sd">        get_calculator(model_path, config) -- see the architecture plan's</span>
+<span class="sd">        generator/calculator-coupling decision. None (the default) preserves</span>
+<span class="sd">        this function's original behavior exactly for every existing caller.</span>
+<span class="sd">    traj_interval : int, optional</span>
+<span class="sd">        When set, every ``traj_interval``-th production MD step is appended</span>
+<span class="sd">        to ``out_dir/md_trajectory.xyz`` (extxyz), a full-resolution record</span>
+<span class="sd">        alongside the subsampled candidate snapshots. ``None`` (default)</span>
+<span class="sd">        writes no trajectory file. Equilibration steps are never written.</span>
 <span class="sd">    """</span>
     <span class="k">if</span> <span class="n">ensemble</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"nvt"</span><span class="p">,</span> <span class="s2">"npt"</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown ensemble </span><span class="si">{</span><span class="n">ensemble</span><span class="si">!r}</span><span class="s2">; must be 'nvt' or 'npt'."</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">traj_interval</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">traj_interval</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">traj_interval</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">traj_interval</span> <span class="o">&lt;=</span> <span class="mi">0</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"md_kwargs.traj_interval must be a positive integer or null, got "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">traj_interval</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
 
-    <span class="k">assert</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">"desired_number_of_structures"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="p">(</span>
-        <span class="s2">"Number of structures must be greater than 0"</span>
-    <span class="p">)</span>
-    <span class="k">assert</span> <span class="p">(</span>
-        <span class="n">steps</span>
-        <span class="o">&gt;</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">"desired_number_of_structures"</span><span class="p">]</span> <span class="o">/</span> <span class="n">total_md_runs</span>
-    <span class="p">),</span> <span class="p">(</span>
-        <span class="s2">"Number of steps must be greater than the number of structures divided by the number of intended MD runs"</span>
-    <span class="p">)</span>
-    <span class="c1"># further asserting needed here to avoid:</span>
-    <span class="c1"># for i in range(steps // snapshot_interval):</span>
-    <span class="c1">#                ~~~~~~^^~~~~~~~~~~~~~~~~~~</span>
-    <span class="c1"># ZeroDivisionError: integer division or modulo by zero</span>
+    <span class="n">num_of_structures_to_generate</span> <span class="o">=</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span>
+        <span class="s2">"num_of_structures_to_generate"</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">num_of_structures_to_generate</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"structure_generation.num_of_structures_to_generate must be greater "</span>
+            <span class="sa">f</span><span class="s2">"than 0, got </span><span class="si">{</span><span class="n">num_of_structures_to_generate</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="c1"># Otherwise the snapshot interval below is 0 (ZeroDivisionError).</span>
+    <span class="k">if</span> <span class="n">steps</span> <span class="o">*</span> <span class="n">total_md_runs</span> <span class="o">&lt;</span> <span class="n">num_of_structures_to_generate</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"md_kwargs.steps (</span><span class="si">{</span><span class="n">steps</span><span class="si">}</span><span class="s2">) x </span><span class="si">{</span><span class="n">total_md_runs</span><span class="si">}</span><span class="s2"> MD run(s) is fewer "</span>
+            <span class="s2">"than structure_generation.num_of_structures_to_generate "</span>
+            <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="n">num_of_structures_to_generate</span><span class="si">}</span><span class="s2">): each candidate is one MD step "</span>
+            <span class="s2">"at least."</span>
+        <span class="p">)</span>
 
     <span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
     <span class="n">atom_traj_list</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="n">md_structure</span> <span class="o">=</span> <span class="n">initial_structure</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-    <span class="n">md_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span>
-        <span class="n">model_paths</span><span class="o">=</span><span class="n">model_path</span><span class="p">,</span>
-        <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span>
-        <span class="n">default_dtype</span><span class="o">=</span><span class="s2">"float64"</span><span class="p">,</span>
+    <span class="n">md_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">calculator</span>
+        <span class="k">if</span> <span class="n">calculator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">else</span> <span class="n">MACECalculator</span><span class="p">(</span>
+            <span class="n">model_paths</span><span class="o">=</span><span class="n">model_path</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span>
+            <span class="n">default_dtype</span><span class="o">=</span><span class="s2">"float64"</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="p">)</span>
 
     <span class="c1"># md_seed is set by select_initial_structures when a structure is reused</span>
@@ -219,11 +287,23 @@
             <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
             <span class="n">logfile</span><span class="o">=</span><span class="n">logfile</span><span class="p">,</span>
         <span class="p">)</span>
-    <span class="n">snapshot_interval</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">steps</span>
-        <span class="o">*</span> <span class="n">total_md_runs</span>
-        <span class="o">//</span> <span class="p">(</span><span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s2">"desired_number_of_structures"</span><span class="p">]</span> <span class="o">*</span> <span class="mi">10</span><span class="p">)</span>
-    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">traj_interval</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">traj_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="s2">"md_trajectory.xyz"</span><span class="p">)</span>
+        <span class="n">last_written</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"step"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_write_traj_frame</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># ASE calls observers again at the start of every dyn.run(), so</span>
+            <span class="c1"># the step closing one snapshot segment would otherwise be</span>
+            <span class="c1"># written twice.</span>
+            <span class="k">if</span> <span class="n">dyn</span><span class="o">.</span><span class="n">nsteps</span> <span class="o">==</span> <span class="n">last_written</span><span class="p">[</span><span class="s2">"step"</span><span class="p">]:</span>
+                <span class="k">return</span>
+            <span class="n">last_written</span><span class="p">[</span><span class="s2">"step"</span><span class="p">]</span> <span class="o">=</span> <span class="n">dyn</span><span class="o">.</span><span class="n">nsteps</span>
+            <span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">traj_path</span><span class="p">),</span> <span class="n">dyn</span><span class="o">.</span><span class="n">atoms</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">,</span> <span class="n">append</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">dyn</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">_write_traj_frame</span><span class="p">,</span> <span class="n">interval</span><span class="o">=</span><span class="n">traj_interval</span><span class="p">)</span>
+
+    <span class="c1"># num_of_structures_to_generate snapshots in total, across all runs.</span>
+    <span class="n">snapshot_interval</span> <span class="o">=</span> <span class="n">steps</span> <span class="o">*</span> <span class="n">total_md_runs</span> <span class="o">//</span> <span class="n">num_of_structures_to_generate</span>
 
     <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span> <span class="o">//</span> <span class="n">snapshot_interval</span><span class="p">):</span>
         <span class="c1"># recording -- happens before any force check/dynamics step below,</span>
@@ -288,164 +368,346 @@
 
 
 
-<div class="viewcode-block" id="flatten_array_of_forces">
-<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.flatten_array_of_forces">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">flatten_array_of_forces</span><span class="p">(</span><span class="n">forces</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">forces</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">forces</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span><span class="p">))</span></div>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Modular AL architecture: structure_generator registry entry points.</span>
+<span class="c1">#</span>
+<span class="c1"># generate() is a local orchestrator (see the architecture plan's</span>
+<span class="c1"># remote-submission-shape decision): called once by the skeleton with the</span>
+<span class="c1"># full eligible seed population, it selects a diversity-maximizing subset</span>
+<span class="c1"># via utils.seed_selection (population-side selection is MD's own business,</span>
+<span class="c1"># unlike EZGA which uses the population directly) and fans out one remote</span>
+<span class="c1"># MD job per selected seed via submit_n. Committee scoring of the</span>
+<span class="c1"># candidates lives in the skeleton (ActiveLearningWorkflow.predict), not</span>
+<span class="c1"># in this module.</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
 
 
-
-<div class="viewcode-block" id="std_deviation_of_forces">
-<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.std_deviation_of_forces">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">std_deviation_of_forces</span><span class="p">(</span>
-    <span class="n">structure_forces_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]],</span>
-    <span class="n">md_dir</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""</span>
-<span class="sd">    Calculate the standard deviation of forces for each structure in the dictionary.</span>
-
-<span class="sd">    Parameters</span>
-<span class="sd">    ----------</span>
-<span class="sd">    structure_force_dict : dict</span>
-<span class="sd">        A dictionary where keys are fit names and values are dictionaries with structure names as keys and forces as values.</span>
-
-<span class="sd">        e.g.:</span>
-<span class="sd">        {</span>
-<span class="sd">            'base_mace': {</span>
-<span class="sd">                'structure_0': {'forces': np.ndarray, 'energy': float},</span>
-<span class="sd">                'structure_1': {'forces': np.ndarray, 'energy': float},</span>
-<span class="sd">                ...</span>
-<span class="sd">            },</span>
-<span class="sd">            'fit_1': {</span>
-<span class="sd">                ...</span>
-<span class="sd">            },</span>
-<span class="sd">        }</span>
-
-<span class="sd">    Returns</span>
-<span class="sd">    -------</span>
-<span class="sd">    list</span>
-<span class="sd">        A list of standard deviations of forces for each structure.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_md_via_trainer</span><span class="p">(</span>
+    <span class="n">structure_generation_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">initial_structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span>
+    <span class="n">total_md_runs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">trainer</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">trainer_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">run_md_kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Per-seed remote worker for generate() below. Builds its calculator</span>
+<span class="sd">    via the named trainer's get_calculator(model_path) (mlip/base.get_trainer),</span>
+<span class="sd">    resolved through the shared registry -- never a hardcoded MACECalculator</span>
+<span class="sd">    -- then delegates to run_md's unchanged dynamics loop. Must only run</span>
+<span class="sd">    inside a remote job: a live calculator must never cross the ExPyRe</span>
+<span class="sd">    boundary (see the architecture plan's generator/calculator-coupling</span>
+<span class="sd">    decision).</span>
 <span class="sd">    """</span>
-    <span class="n">number_of_structures</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_forces_dict</span><span class="p">[</span><span class="s2">"base_mace"</span><span class="p">])</span>
-    <span class="n">std_dev_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">number_of_structures</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
-    <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">number_of_structures</span><span class="p">):</span>
-        <span class="n">forces_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
-            <span class="p">[</span>
-                <span class="n">structure_forces_dict</span><span class="p">[</span><span class="n">fit</span><span class="p">][</span><span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">"</span><span class="p">][</span><span class="s2">"forces"</span><span class="p">]</span>
-                <span class="k">for</span> <span class="n">fit</span> <span class="ow">in</span> <span class="n">structure_forces_dict</span>
-            <span class="p">],</span>
-            <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">std_dev_per_force_fragment</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">forces_array</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-        <span class="n">energy_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-            <span class="p">[</span>
-                <span class="n">structure_forces_dict</span><span class="p">[</span><span class="n">fit</span><span class="p">][</span><span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">"</span><span class="p">][</span><span class="s2">"energy"</span><span class="p">]</span>
-                <span class="k">for</span> <span class="n">fit</span> <span class="ow">in</span> <span class="n">structure_forces_dict</span>
-            <span class="p">]</span>
-        <span class="p">)</span>
-        <span class="n">std_dev_per_energy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">energy_array</span><span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_trainer</span>
 
-        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">"Structure </span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">, max std dev: </span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)</span><span class="si">}</span><span class="s2">, mean std dev: </span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">)</span><span class="si">}</span><span class="s2">, std dev of energy: </span><span class="si">{</span><span class="n">std_dev_per_energy</span><span class="si">}</span><span class="s2">, energies: </span><span class="si">{</span><span class="n">energy_array</span><span class="si">}</span><span class="s2">"</span>
-        <span class="p">)</span>
+    <span class="n">calc</span> <span class="o">=</span> <span class="n">get_trainer</span><span class="p">(</span><span class="n">trainer</span><span class="p">,</span> <span class="n">trainer_config</span><span class="p">)</span><span class="o">.</span><span class="n">get_calculator</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+    <span class="n">run_md</span><span class="p">(</span>
+        <span class="n">structure_generation_job_dict</span><span class="o">=</span><span class="n">structure_generation_job_dict</span><span class="p">,</span>
+        <span class="n">initial_structure</span><span class="o">=</span><span class="n">initial_structure</span><span class="p">,</span>
+        <span class="n">total_md_runs</span><span class="o">=</span><span class="n">total_md_runs</span><span class="p">,</span>
+        <span class="n">out_dir</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
+        <span class="n">model_path</span><span class="o">=</span><span class="n">model_path</span><span class="p">,</span>
+        <span class="n">calculator</span><span class="o">=</span><span class="n">calc</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">run_md_kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
 
-        <span class="n">std_dev_array</span><span class="p">[</span><span class="n">structure</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-            <span class="p">[</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">),</span>
-                <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">std_dev_per_force_fragment</span><span class="p">),</span>
-                <span class="n">std_dev_per_energy</span><span class="p">,</span>
-            <span class="p">]</span>
-        <span class="p">)</span>
 
-    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
-        <span class="n">std_dev_array</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">"max_std_dev"</span><span class="p">,</span> <span class="s2">"mean_std_dev"</span><span class="p">,</span> <span class="s2">"std_dev_energy"</span><span class="p">]</span>
-    <span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">"max_std_dev"</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_candidates_path</span><span class="p">(</span><span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">Path</span><span class="p">(</span>
+        <span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">"structure_generation"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_generated_candidates.xyz"</span>
+    <span class="p">)</span>
 
-    <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">md_dir</span><span class="p">,</span> <span class="s2">"std_dev_forces.csv"</span><span class="p">)),</span> <span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">df</span></div>
+<div class="viewcode-block" id="output_paths">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.output_paths">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">output_paths</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>  <span class="c1"># noqa: ARG001</span>
+<span class="w">    </span><span class="sd">"""Coarse restart check, mirroring the DFT evaluator's pattern: the one</span>
+<span class="sd">    consolidated candidates file generate() writes once every selected seed</span>
+<span class="sd">    has produced a trajectory. Fine-grained, per-seed reuse (n_existing) is</span>
+<span class="sd">    already handled internally by generate() itself.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">_candidates_path</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)]</span></div>
 
 
 
-<div class="viewcode-block" id="get_forces_for_all_maces">
-<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.get_forces_for_all_maces">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">get_forces_for_all_maces</span><span class="p">(</span>
-    <span class="n">structure_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
+<div class="viewcode-block" id="read_existing_result">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.read_existing_result">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_existing_result</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>  <span class="c1"># noqa: ARG001</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">_candidates_path</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"No cached structure-generation result at </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="generate">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.generate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+    <span class="n">seed_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
+    <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
-    <span class="n">base_mlip</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">fits_to_use</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]]:</span>
-<span class="w">    </span><span class="sd">"""</span>
-<span class="sd">    Get forces for all MACE models specified in fits_to_use.</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">hpc</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">max_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Local orchestrator: select a diversity-maximizing subset of</span>
+<span class="sd">    seed_atoms (via utils.seed_selection.select_diverse_seeds), then fan</span>
+<span class="sd">    out one remote MD job per selected seed through the generic submit_n</span>
+<span class="sd">    mechanism -- mirroring today's md_remote_submitter, generalized to</span>
+<span class="sd">    resolve its calculator through the trainer registry instead of a</span>
+<span class="sd">    hardcoded MACECalculator.</span>
+
+<span class="sd">    config carries only generator-specific settings (md_kwargs);</span>
+<span class="sd">    name/hpc/max_time are explicit kwargs. md_kwargs holds run_md's own</span>
+<span class="sd">    direct kwargs (steps, temperature, ensemble, pressure, ...) -- defaults</span>
+<span class="sd">    to _MD_KWARGS_DEFAULTS (steps=20000, temperature=300, timestep_fs=0.5)</span>
+<span class="sd">    rather than run_md's own far-shorter defaults, merged with whatever the</span>
+<span class="sd">    config overrides -- plus two nested keys: structure_selection_kwargs</span>
+<span class="sd">    (select_diverse_seeds' own params -- num_of_md_starts,</span>
+<span class="sd">    defaulting here to 10, enforce_chemical_diversity, seed) and</span>
+<span class="sd">    trainer/trainer_config (which trainer registry entry built the model</span>
+<span class="sd">    this MD run's calculator should use). Both live under md_kwargs rather</span>
+<span class="sd">    than the top structure_generation level since they're genuinely</span>
+<span class="sd">    MD-specific -- EZGA never calls select_diverse_seeds or the trainer</span>
+<span class="sd">    registry (it loads its model directly, always assuming MACE).</span>
+<span class="sd">    structure_generation's own top-level structure_selection_kwargs is</span>
+<span class="sd">    unrelated and generator-agnostic (filter_eligible_structures, called</span>
+<span class="sd">    once by the skeleton before any generator dispatch).</span>
 <span class="sd">    """</span>
-
-    <span class="k">if</span> <span class="n">fits_to_use</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">fits_to_use</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">"MACE evaluation: scoring </span><span class="si">%d</span><span class="s2"> structure(s) against the base model plus "</span>
-        <span class="s2">"</span><span class="si">%d</span><span class="s2"> committee fit(s) </span><span class="si">%s</span><span class="s2"> to compute per-structure force std dev."</span><span class="p">,</span>
-        <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
-        <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
-        <span class="n">fits_to_use</span><span class="p">,</span>
-    <span class="p">)</span>
-
-    <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span><span class="n">model_paths</span><span class="o">=</span><span class="n">base_mlip</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">default_dtype</span><span class="o">=</span><span class="s2">"float64"</span><span class="p">)</span>
-
-    <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">structure_list</span><span class="p">:</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calc</span>
-    <span class="n">structure_forces_dict</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">"base_mlip"</span><span class="p">:</span> <span class="p">{</span>
-            <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">"forces"</span><span class="p">:</span> <span class="n">flatten_array_of_forces</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()),</span>
-                <span class="s2">"energy"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">()),</span>
-            <span class="p">}</span>
-            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
-        <span class="p">}</span>
-    <span class="p">}</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">"MACE evaluation: base model done (</span><span class="si">%d</span><span class="s2"> structures)."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">)</span>
-    <span class="p">)</span>
-
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">fits_to_use</span><span class="p">:</span>
-        <span class="n">calc</span> <span class="o">=</span> <span class="n">MACECalculator</span><span class="p">(</span>
-            <span class="n">model_paths</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span>
-                <span class="n">Path</span><span class="p">(</span>
-                    <span class="s2">"results"</span><span class="p">,</span>
-                    <span class="n">base_name</span><span class="p">,</span>
-                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">'mlip_committee'</span><span class="p">][</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">/fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">job_dict</span><span class="p">[</span><span class="s1">'mlip_committee'</span><span class="p">][</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">_stagetwo.model"</span><span class="p">,</span>
-                <span class="p">)</span>
-            <span class="p">),</span>
-            <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span>
-            <span class="n">default_dtype</span><span class="o">=</span><span class="s2">"float64"</span><span class="p">,</span>
-        <span class="p">)</span>
-
-        <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">structure_list</span><span class="p">):</span>
-            <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calc</span>
-
-        <span class="n">structure_forces_dict</span><span class="p">[</span><span class="sa">f</span><span class="s2">"fit_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">"forces"</span><span class="p">:</span> <span class="n">flatten_array_of_forces</span><span class="p">(</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()),</span>
-                <span class="s2">"energy"</span><span class="p">:</span> <span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">get_potential_energy</span><span class="p">(),</span>
-            <span class="p">}</span>
-            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">))</span>
-        <span class="p">}</span>
+    <span class="n">candidates_path</span> <span class="o">=</span> <span class="n">_candidates_path</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">candidates_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-            <span class="s2">"MACE evaluation: fit_</span><span class="si">%d</span><span class="s2"> done (</span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> committee fit(s) complete)."</span><span class="p">,</span>
-            <span class="n">i</span><span class="p">,</span>
-            <span class="n">fits_to_use</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
+            <span class="s2">"Structure generation already done for </span><span class="si">%s</span><span class="s2">/</span><span class="si">%s</span><span class="s2">, loading cached candidates."</span><span class="p">,</span>
+            <span class="n">base_name</span><span class="p">,</span>
+            <span class="n">name</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">candidates_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+
+    <span class="n">md_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"md_kwargs"</span><span class="p">,</span> <span class="p">{}))</span>
+    <span class="n">selection_kwargs</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"structure_selection_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">trainer</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"trainer"</span><span class="p">,</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="p">[</span><span class="s2">"trainer"</span><span class="p">])</span>
+    <span class="n">trainer_config</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span>
+        <span class="s2">"trainer_config"</span><span class="p">,</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="p">[</span><span class="s2">"trainer_config"</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="c1"># Only run_md's own flat kwargs (steps, temperature, ...) get</span>
+    <span class="c1"># ALomancy's defaults merged in here (deliberately different from</span>
+    <span class="c1"># run_md's own steps=100 default, far too short for real production</span>
+    <span class="c1"># MD) -- structure_selection_kwargs/trainer/trainer_config above</span>
+    <span class="c1"># already have their own dedicated defaults, resolved separately, and</span>
+    <span class="c1"># must not leak back in via this merge: **md_kwargs is spread after</span>
+    <span class="c1"># the explicit "trainer"/"trainer_config" function_kwargs below, so a</span>
+    <span class="c1"># leaked-back default would silently clobber an explicit user value.</span>
+    <span class="n">_run_md_kwargs_defaults</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"structure_selection_kwargs"</span><span class="p">,</span> <span class="s2">"trainer"</span><span class="p">,</span> <span class="s2">"trainer_config"</span><span class="p">)</span>
+    <span class="p">}</span>
+    <span class="n">md_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">_run_md_kwargs_defaults</span><span class="p">,</span> <span class="o">**</span><span class="n">md_kwargs</span><span class="p">}</span>
+    <span class="n">md_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">"structure_generation"</span><span class="p">)</span>
+    <span class="n">seeds_path</span> <span class="o">=</span> <span class="n">md_dir</span> <span class="o">/</span> <span class="n">_SEEDS_FILENAME</span>
+    <span class="n">target_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.xyz"</span>
+    <span class="n">selection_seed</span> <span class="o">=</span> <span class="n">selection_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"seed"</span><span class="p">,</span> <span class="mi">803</span><span class="p">)</span>
+
+    <span class="c1"># The chosen seeds are saved so a restart resumes the same MD runs</span>
+    <span class="c1"># (run i always lives in md_output_i) instead of drawing new ones.</span>
+    <span class="k">if</span> <span class="n">seeds_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">seeds</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">seeds_path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">seeds</span> <span class="o">=</span> <span class="n">select_diverse_seeds</span><span class="p">(</span>
+            <span class="n">base_name</span><span class="o">=</span><span class="n">base_name</span><span class="p">,</span>
+            <span class="n">job_name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">eligible_structures</span><span class="o">=</span><span class="n">seed_atoms</span><span class="p">,</span>
+            <span class="n">num_of_md_starts</span><span class="o">=</span><span class="n">selection_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"num_of_md_starts"</span><span class="p">,</span> <span class="n">_DEFAULT_NUM_OF_MD_STARTS</span>
+            <span class="p">),</span>
+            <span class="n">enforce_chemical_diversity</span><span class="o">=</span><span class="n">selection_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"enforce_chemical_diversity"</span><span class="p">,</span> <span class="kc">False</span>
+            <span class="p">),</span>
+            <span class="n">seed</span><span class="o">=</span><span class="n">selection_seed</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">md_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">seeds_path</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+    <span class="c1"># Replacement seeds don't change the sampling stride: run_md spaces its</span>
+    <span class="c1"># snapshots by the number of MD runs originally planned.</span>
+    <span class="n">total_md_runs</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">seeds</span> <span class="k">if</span> <span class="s2">"replaces"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">md_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"md_output_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">n_frames</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">/</span> <span class="n">target_file</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+    <span class="n">remote_info</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">submit</span><span class="p">(</span><span class="n">indices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">nonlocal</span> <span class="n">remote_info</span>
+        <span class="k">if</span> <span class="n">remote_info</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">remote_info</span> <span class="o">=</span> <span class="n">get_remote_info</span><span class="p">(</span>
+                <span class="p">{</span><span class="s2">"hpc"</span><span class="p">:</span> <span class="n">hpc</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span> <span class="s2">"max_time"</span><span class="p">:</span> <span class="n">max_time</span><span class="p">},</span>
+                <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">)],</span>
+            <span class="p">)</span>
+        <span class="c1"># run_md (unchanged, shared with the old production path) still</span>
+        <span class="c1"># reads its own "name" out of structure_generation_job_dict rather</span>
+        <span class="c1"># than taking it as an explicit kwarg -- config itself no longer</span>
+        <span class="c1"># carries "name" (it's hardcoded by the skeleton, not user config),</span>
+        <span class="c1"># so it's merged in here rather than changing run_md.</span>
+        <span class="n">structure_generation_job_dict</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">config</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">:</span> <span class="n">name</span><span class="p">}</span>
+        <span class="c1"># output_files is set explicitly per job (keyed by the run's own</span>
+        <span class="c1"># index), since submit_n derives its positional job_id from the</span>
+        <span class="c1"># position within job_configs, not from the run index.</span>
+        <span class="n">job_configs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">"function_kwargs"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"structure_generation_job_dict"</span><span class="p">:</span> <span class="n">structure_generation_job_dict</span><span class="p">,</span>
+                    <span class="s2">"initial_structure"</span><span class="p">:</span> <span class="n">seeds</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
+                    <span class="s2">"total_md_runs"</span><span class="p">:</span> <span class="n">total_md_runs</span><span class="p">,</span>
+                    <span class="s2">"out_dir"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)),</span>
+                    <span class="s2">"model_path"</span><span class="p">:</span> <span class="n">model_path</span><span class="p">,</span>
+                    <span class="s2">"trainer"</span><span class="p">:</span> <span class="n">trainer</span><span class="p">,</span>
+                    <span class="s2">"trainer_config"</span><span class="p">:</span> <span class="n">trainer_config</span><span class="p">,</span>
+                    <span class="o">**</span><span class="n">md_kwargs</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">"output_files"</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">))],</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">indices</span>
+        <span class="p">]</span>
+        <span class="n">submit_n</span><span class="p">(</span><span class="n">_run_md_via_trainer</span><span class="p">,</span> <span class="n">job_configs</span><span class="p">,</span> <span class="n">remote_info</span><span class="p">)</span>
+
+    <span class="c1"># First pass: every run with no output directory yet (a fresh start, or</span>
+    <span class="c1"># runs never submitted before an interruption).</span>
+    <span class="n">unsubmitted</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">))</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()]</span>
+    <span class="k">if</span> <span class="n">unsubmitted</span><span class="p">:</span>
+        <span class="n">submit</span><span class="p">(</span><span class="n">unsubmitted</span><span class="p">)</span>
+
+    <span class="c1"># One replacement round: a run that recorded only its starting</span>
+    <span class="c1"># structure (or nothing) never completed an MD step, so its seed is</span>
+    <span class="c1"># replaced once by a structure not used yet. Runs that did step are</span>
+    <span class="c1"># kept, however short -- their frames are real candidates.</span>
+    <span class="n">replaced</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"replaces"</span><span class="p">]</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">seeds</span> <span class="k">if</span> <span class="s2">"replaces"</span> <span class="ow">in</span> <span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="p">}</span>
+    <span class="n">not_started</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">i</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">n_frames</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">_MIN_FRAMES</span>
+        <span class="ow">and</span> <span class="s2">"replaces"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seeds</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span>
+        <span class="ow">and</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">replaced</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">not_started</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"MD run(s) </span><span class="si">%s</span><span class="s2"> for </span><span class="si">%s</span><span class="s2"> completed no MD step; replacing their seeds once."</span><span class="p">,</span>
+            <span class="n">not_started</span><span class="p">,</span>
+            <span class="n">base_name</span><span class="p">,</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_no_steps"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span> <span class="s2">"total"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">)},</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
+        <span class="n">replacements</span> <span class="o">=</span> <span class="n">_replacement_seeds</span><span class="p">(</span>
+            <span class="n">seed_atoms</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span> <span class="n">seed</span><span class="o">=</span><span class="n">selection_seed</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">new_indices</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">failed_index</span><span class="p">,</span> <span class="n">replacement</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">not_started</span><span class="p">,</span> <span class="n">replacements</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <span class="n">replacement</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"replaces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">failed_index</span>
+            <span class="n">seeds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">replacement</span><span class="p">)</span>
+            <span class="n">new_indices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">mark_structures_for_dft</span><span class="p">(</span><span class="n">replacements</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">write</span><span class="p">(</span><span class="n">seeds_path</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+        <span class="n">submit</span><span class="p">(</span><span class="n">new_indices</span><span class="p">)</span>
+
+    <span class="n">completed</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">))</span> <span class="k">if</span> <span class="n">n_frames</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">_MIN_FRAMES</span><span class="p">]</span>
+    <span class="n">unfinished</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">i</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">completed</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"replaces"</span><span class="p">)</span> <span class="o">==</span> <span class="n">i</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">seeds</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">unfinished</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"MD run(s) </span><span class="si">%s</span><span class="s2"> for </span><span class="si">%s</span><span class="s2"> still completed no MD step after replacement; "</span>
+            <span class="s2">"continuing with the </span><span class="si">%d</span><span class="s2"> run(s) that did."</span><span class="p">,</span>
+            <span class="n">unfinished</span><span class="p">,</span>
+            <span class="n">base_name</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">completed</span><span class="p">),</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span><span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_unfinished"</span><span class="p">,</span> <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">unfinished</span><span class="p">)}},</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">completed</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"No MD run for </span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2"> completed a single MD step (seeds and "</span>
+            <span class="sa">f</span><span class="s2">"replacements all failed). Check the MD logs in </span><span class="si">{</span><span class="n">md_dir</span><span class="si">}</span><span class="s2">/md_output_*. "</span>
+            <span class="s2">"Nothing was cached, so a restart will retry."</span>
         <span class="p">)</span>
 
+    <span class="n">structure_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">frames_per_run</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completed</span><span class="p">:</span>
+        <span class="n">frames</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">/</span> <span class="n">target_file</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+        <span class="n">frames_per_run</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">))</span>
+        <span class="n">structure_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">"MACE evaluation complete: forces collected from </span><span class="si">%d</span><span class="s2"> model(s) for </span><span class="si">%d</span><span class="s2"> "</span>
-        <span class="s2">"structure(s)."</span><span class="p">,</span>
-        <span class="mi">1</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">fits_to_use</span><span class="p">),</span>
+        <span class="s2">"MD for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%d</span><span class="s2"> run(s) completed, </span><span class="si">%d</span><span class="s2"> candidate frame(s)."</span><span class="p">,</span>
+        <span class="n">base_name</span><span class="p">,</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">completed</span><span class="p">),</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+        <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_summary"</span><span class="p">,</span>
+            <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"runs"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">),</span>
+                <span class="s2">"completed"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">completed</span><span class="p">),</span>
+                <span class="s2">"replaced"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">replaced</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span>
+                <span class="s2">"frames_per_run"</span><span class="p">:</span> <span class="n">frames_per_run</span><span class="p">,</span>
+                <span class="s2">"candidates"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
     <span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">structure_forces_dict</span></div>
+    <span class="n">candidates_path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">write</span><span class="p">(</span><span class="n">candidates_path</span><span class="p">,</span> <span class="n">structure_list</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">structure_list</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_replacement_seeds</span><span class="p">(</span>
+    <span class="n">eligible</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">used</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""*n* new MD seeds, preferring eligible structures not used yet (by</span>
+<span class="sd">    geometry). If too few are unused, fills up by reusing structures; every</span>
+<span class="sd">    replacement gets a fresh md_seed so repeats still diverge."""</span>
+    <span class="n">used_digests</span> <span class="o">=</span> <span class="p">{</span><span class="n">geometry_digest</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">used</span><span class="p">}</span>
+    <span class="n">unused</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">eligible</span> <span class="k">if</span> <span class="n">geometry_digest</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">used_digests</span><span class="p">]</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unused</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">picks</span> <span class="o">=</span> <span class="p">[</span><span class="n">unused</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">unused</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="n">n</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="n">unused</span> <span class="ow">or</span> <span class="n">eligible</span>
+        <span class="n">picks</span> <span class="o">=</span> <span class="n">unused</span> <span class="o">+</span> <span class="p">[</span>
+            <span class="n">pool</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">pool</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="n">n</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">unused</span><span class="p">),</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">]</span>
+    <span class="n">next_md_seed</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">max</span><span class="p">((</span><span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"md_seed"</span><span class="p">,</span> <span class="n">seed</span><span class="p">))</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">used</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="p">)</span>
+    <span class="n">replacements</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">picks</span><span class="p">):</span>
+        <span class="n">copy</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"md_seed"</span><span class="p">]</span> <span class="o">=</span> <span class="n">next_md_seed</span> <span class="o">+</span> <span class="n">k</span>
+        <span class="n">replacements</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">copy</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">replacements</span>
+
+
+<div class="viewcode-block" id="report_section">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.report_section">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">report_section</span><span class="p">(</span><span class="n">stats</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Loop-report section for this module (see analysis/report/sections.py)."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.analysis.report.sections</span><span class="w"> </span><span class="kn">import</span> <span class="n">md_section</span>
+
+    <span class="k">return</span> <span class="n">md_section</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 </pre></div>
 

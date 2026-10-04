@@ -1,0 +1,359 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Writing a Workflow &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api/index.html" />
+    <link rel="prev" title="Loop reports" href="reports.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Writing a Workflow</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#what-the-parent-provides">What the parent provides</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#what-a-workflow-declares">What a workflow declares</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#restarts-the-phase-decorator">Restarts: the <code class="docutils literal notranslate"><span class="pre">phase</span></code> decorator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rules-that-are-easy-to-break">Rules that are easy to break</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#adding-an-mlip-trainer">Adding an MLIP trainer</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Writing a Workflow</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/writing_a_workflow.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="writing-a-workflow">
+<h1>Writing a Workflow<a class="headerlink" href="#writing-a-workflow" title="Link to this heading"></a></h1>
+<p>An ALomancy <em>workflow</em> decides how each active-learning loop chooses which
+new structures to label with DFT. Two ship with ALomancy:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">general.al_workflow</span></code></p></th>
+<th class="head"><p>Class</p></th>
+<th class="head"><p>Strategy</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">committee_uncertainty</span></code> (default)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CommitteeUncertaintyWorkflow</span></code></p></td>
+<td><p>Train a committee; keep the candidates the committee disagrees on most (force standard deviation).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">random_selection</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RandomSelectionWorkflow</span></code></p></td>
+<td><p>Train one model; keep candidates chosen uniformly at random. A baseline for comparing strategies.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Every workflow is a subclass of <code class="docutils literal notranslate"><span class="pre">ActiveLearningWorkflow</span></code>
+(<code class="docutils literal notranslate"><span class="pre">src/alomancy/core/active_learning_workflow.py</span></code>). The parent does
+everything that is the same for every strategy. A new workflow only has to
+declare its settings and write a short <code class="docutils literal notranslate"><span class="pre">run()</span></code>.</p>
+<section id="what-the-parent-provides">
+<h2>What the parent provides<a class="headerlink" href="#what-the-parent-provides" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Helper</p></th>
+<th class="head"><p>What it does</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">prepare_run()</span></code></p></td>
+<td><p>Everything before the first loop: config and HPC checks, then either resume from the database or build the initial dataset (see <a class="reference internal" href="starting_a_run.html"><span class="std std-doc">Starting a run</span></a>), then redundancy removal and the train/test filters. Returns the first loop to run.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">iterate_loops(start)</span></code></p></td>
+<td><p>Yields a <code class="docutils literal notranslate"><span class="pre">LoopContext</span></code> for each loop still to run: <code class="docutils literal notranslate"><span class="pre">loop</span></code>, <code class="docutils literal notranslate"><span class="pre">base_name</span></code> (<code class="docutils literal notranslate"><span class="pre">al_loop_N</span></code>), <code class="docutils literal notranslate"><span class="pre">workdir</span></code>, the current <code class="docutils literal notranslate"><span class="pre">train</span></code>/<code class="docutils literal notranslate"><span class="pre">test</span></code> structures, <code class="docutils literal notranslate"><span class="pre">train_only</span></code>, <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code>. Writes <code class="docutils literal notranslate"><span class="pre">train_set.xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">train_models(ctx,</span> <span class="pre">seeds,</span> <span class="pre">*,</span> <span class="pre">min_successful=1)</span></code></p></td>
+<td><p>Trains one model per seed on this loop’s shared train/validation/test split, <strong>all in one parallel remote batch</strong>. Returns a list of <code class="docutils literal notranslate"><span class="pre">TrainedModel</span></code> (<code class="docutils literal notranslate"><span class="pre">fit_idx</span></code>, <code class="docutils literal notranslate"><span class="pre">seed</span></code>, <code class="docutils literal notranslate"><span class="pre">model_path</span></code>, <code class="docutils literal notranslate"><span class="pre">compiled_model_path</span></code>, <code class="docutils literal notranslate"><span class="pre">metrics</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_dir</span></code>), updates <code class="docutils literal notranslate"><span class="pre">results/best_model/</span></code>, and raises if fewer than <code class="docutils literal notranslate"><span class="pre">min_successful</span></code> succeed.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">seeds(n)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">[general.seed,</span> <span class="pre">general.seed</span> <span class="pre">+</span> <span class="pre">1,</span> <span class="pre">...]</span></code>, the standard per-model seeds.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">best_model(models)</span></code></p></td>
+<td><p>The model with the lowest force error on the shared validation split (test split if there is none).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">generate_candidates(ctx,</span> <span class="pre">model)</span></code></p></td>
+<td><p>Runs the configured structure generator (MD, EZGA, …) with <code class="docutils literal notranslate"><span class="pre">model</span></code>, starting from this loop’s eligible training structures. Drops unphysical candidates.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">predict(ctx,</span> <span class="pre">models,</span> <span class="pre">structures)</span></code></p></td>
+<td><p>Energies and forces of <code class="docutils literal notranslate"><span class="pre">structures</span></code> from every model, as one parallel remote batch. One <code class="docutils literal notranslate"><span class="pre">{&quot;forces&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;energies&quot;:</span> <span class="pre">[...]}</span></code> per model.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluate(ctx,</span> <span class="pre">structures)</span></code></p></td>
+<td><p>DFT-labels the chosen structures (relaxed up to <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.force_ceiling</span></code>), tagging them with your <code class="docutils literal notranslate"><span class="pre">NEW_STRUCTURE_CONFIG_TYPE</span></code> and the loop number.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">add_to_dataset(ctx,</span> <span class="pre">structures)</span></code></p></td>
+<td><p>Adds labelled structures to the database, split by <code class="docutils literal notranslate"><span class="pre">dataset_kwargs.test_ratio</span></code> (or <code class="docutils literal notranslate"><span class="pre">fixed_test</span></code> rules).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">finish_loop(ctx)</span></code></p></td>
+<td><p>Redundancy removal, train/test filters and curation on the grown dataset; marks the loop done.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="what-a-workflow-declares">
+<h2>What a workflow declares<a class="headerlink" href="#what-a-workflow-declares" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ClassVar</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.core.active_learning_workflow</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ActiveLearningWorkflow</span><span class="p">,</span>
+    <span class="n">LoopContext</span><span class="p">,</span>
+    <span class="n">TrainedModel</span><span class="p">,</span>
+    <span class="n">phase</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyWorkflow</span><span class="p">(</span><span class="n">ActiveLearningWorkflow</span><span class="p">):</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"my_workflow"</span>                       <span class="c1"># general.al_workflow value</span>
+    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"my_workflow_kwargs"</span>          <span class="c1"># general.&lt;key&gt;; None if no settings</span>
+    <span class="n">KWARGS_DEFAULTS</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"num_to_pick"</span><span class="p">:</span> <span class="mi">20</span><span class="p">}</span>
+    <span class="n">NEW_STRUCTURE_CONFIG_TYPE</span> <span class="o">=</span> <span class="s2">"my_selection"</span> <span class="c1"># config_type of structures it adds</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_settings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>       <span class="c1"># optional</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">workflow_kwargs</span><span class="p">[</span><span class="s2">"num_to_pick"</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"general.my_workflow_kwargs.num_to_pick must be &gt;= 1"</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>                     <span class="c1"># the only required method</span>
+        <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterate_loops</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prepare_run</span><span class="p">()):</span>
+            <span class="p">(</span><span class="n">model</span><span class="p">,)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_models</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seeds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">train_only</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="n">selected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_to_dataset</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_accuracy_evaluate</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">selected</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">finish_loop</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+
+    <span class="nd">@phase</span><span class="p">(</span><span class="s2">"generate_structures"</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="n">load_my_selection</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">select</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">LoopContext</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">TrainedModel</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_candidates</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+        <span class="o">...</span>  <span class="c1"># choose, save to a file load_my_selection can read back</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">self.workflow_kwargs</span></code> holds <code class="docutils literal notranslate"><span class="pre">KWARGS_DEFAULTS</span></code> merged with the user’s
+<code class="docutils literal notranslate"><span class="pre">general.&lt;KWARGS_KEY&gt;</span></code> block. Unknown keys in that block log a warning.
+Generic settings live elsewhere and are available on <code class="docutils literal notranslate"><span class="pre">self</span></code>:
+<code class="docutils literal notranslate"><span class="pre">self.dataset_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">self.training_config</span></code>, <code class="docutils literal notranslate"><span class="pre">self.seed</span></code>,
+<code class="docutils literal notranslate"><span class="pre">self.force_ceiling</span></code>, <code class="docutils literal notranslate"><span class="pre">self.db</span></code>.</p>
+<p>Register the class so <code class="docutils literal notranslate"><span class="pre">general.al_workflow</span></code> can select it, in
+<code class="docutils literal notranslate"><span class="pre">src/alomancy/registry.py</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">register</span><span class="p">(</span>
+    <span class="s2">"al_workflow"</span><span class="p">,</span>
+    <span class="s2">"my_workflow"</span><span class="p">,</span>
+    <span class="s2">"alomancy.core.my_workflow"</span><span class="p">,</span>
+    <span class="n">workflow_class</span><span class="o">=</span><span class="s2">"MyWorkflow"</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Users then select it from the config alone, with <code class="docutils literal notranslate"><span class="pre">al_workflow:</span> <span class="pre">my_workflow</span></code>
+under <code class="docutils literal notranslate"><span class="pre">general</span></code>, and run it with <code class="docutils literal notranslate"><span class="pre">ALomancy(&quot;config.yaml&quot;).run()</span></code> (or
+<code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">run</span> <span class="pre">config.yaml</span></code>). They never import <code class="docutils literal notranslate"><span class="pre">MyWorkflow</span></code>. Constructing
+<code class="docutils literal notranslate"><span class="pre">MyWorkflow</span></code> directly with a config that names a different <code class="docutils literal notranslate"><span class="pre">al_workflow</span></code>
+raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">RandomSelectionWorkflow</span></code> (<code class="docutils literal notranslate"><span class="pre">src/alomancy/core/random_selection_workflow.py</span></code>)
+is a complete example in under 100 lines.</p>
+</section>
+<section id="restarts-the-phase-decorator">
+<h2>Restarts: the <code class="docutils literal notranslate"><span class="pre">phase</span></code> decorator<a class="headerlink" href="#restarts-the-phase-decorator" title="Link to this heading"></a></h2>
+<p>A run can stop at any point (a crashed job, a full disk, a queue limit)
+and is restarted by running it again. Each step inside a loop that is
+expensive to redo should be a <code class="docutils literal notranslate"><span class="pre">&#64;phase(name,</span> <span class="pre">load=...)</span></code> method:</p>
+<ul class="simple">
+<li><p>When the step finishes, <code class="docutils literal notranslate"><span class="pre">results/&lt;al_loop_N&gt;/&lt;name&gt;.done</span></code> is written.</p></li>
+<li><p>On a restart, if that file exists, the step is skipped, and
+<code class="docutils literal notranslate"><span class="pre">load(self,</span> <span class="pre">ctx,</span> <span class="pre">*args,</span> <span class="pre">**kwargs)</span></code> returns its result from whatever the
+step saved. <strong>Your step must save its result to a file its loader can
+read</strong>; the decorator does not store return values itself.</p></li>
+<li><p>Each phase name may run once per loop. Calling the same phase twice in a
+loop raises, because both calls would share one sentinel. Pass
+<code class="docutils literal notranslate"><span class="pre">phase_name=&quot;...&quot;</span></code> to give a second call its own.</p></li>
+</ul>
+<p>The parent’s steps are already phases: <code class="docutils literal notranslate"><span class="pre">train_models</span></code> (sentinel
+<code class="docutils literal notranslate"><span class="pre">train_mlip</span></code>) and <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluate</span></code> (sentinel <code class="docutils literal notranslate"><span class="pre">high_accuracy_eval</span></code>,
+reloading <code class="docutils literal notranslate"><span class="pre">high_accuracy_eval_results.xyz</span></code>). <code class="docutils literal notranslate"><span class="pre">generate_candidates</span></code> is
+cached by the generator itself. Wrap your own <em>selection</em> step, as above,
+typically with the name <code class="docutils literal notranslate"><span class="pre">generate_structures</span></code>. Together with <code class="docutils literal notranslate"><span class="pre">loop.done</span></code>
+(written by <code class="docutils literal notranslate"><span class="pre">finish_loop</span></code>), that gives every loop four restart points:
+after training, after selection, after DFT, and at the end.</p>
+<p>Within <code class="docutils literal notranslate"><span class="pre">train_models</span></code>, individual models are also cached. If a loop dies
+after three of five models finished, a restart only trains the other two.
+Each model’s seed is recorded (<code class="docutils literal notranslate"><span class="pre">training/fit_i/fit_seed.json</span></code>). If the seed
+it was trained with differs from the one requested (e.g. <code class="docutils literal notranslate"><span class="pre">general.seed</span></code>
+changed mid-training), the model is reused and a warning is logged.</p>
+</section>
+<section id="rules-that-are-easy-to-break">
+<h2>Rules that are easy to break<a class="headerlink" href="#rules-that-are-easy-to-break" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Remote functions must be module-level.</strong> Anything submitted to an HPC
+node (a trainer’s <code class="docutils literal notranslate"><span class="pre">train</span></code>, <code class="docutils literal notranslate"><span class="pre">mlip/predict.predict_with_model</span></code>, generator
+and DFT workers) is pickled <em>by reference</em> by ExPyRe and re-imported on
+the remote node. Never submit a method, a lambda or a nested function,
+and reinstall ALomancy on every HPC host after moving or renaming one.</p></li>
+<li><p><strong>Keep results file names stable.</strong> Restarts find finished work by file
+name, so renaming a saved file or a phase makes old runs redo that step.</p></li>
+<li><p><strong>Set <code class="docutils literal notranslate"><span class="pre">NEW_STRUCTURE_CONFIG_TYPE</span></code>.</strong> It labels the structures your
+workflow adds, and it’s used for redundancy removal and validation-split
+eligibility. Reusing another workflow’s label (e.g. <code class="docutils literal notranslate"><span class="pre">high_sd</span></code>) mixes the
+two in those steps.</p></li>
+<li><p><strong>Plots are committee-shaped.</strong> The per-loop training plots were written
+for a committee. <code class="docutils literal notranslate"><span class="pre">CommitteeUncertaintyWorkflow.plot_loop</span></code> calls them; a
+new workflow can call the same functions or skip plotting. Plotting will
+be generalised separately.</p></li>
+</ul>
+</section>
+<section id="adding-an-mlip-trainer">
+<h2>Adding an MLIP trainer<a class="headerlink" href="#adding-an-mlip-trainer" title="Link to this heading"></a></h2>
+<p>Trainers are separate from workflows: any workflow trains through
+<code class="docutils literal notranslate"><span class="pre">train_models</span></code>, which runs whichever trainer <code class="docutils literal notranslate"><span class="pre">training.trainer</span></code> names. A
+trainer subclasses <code class="docutils literal notranslate"><span class="pre">ALomancyTrainer</span></code> (<code class="docutils literal notranslate"><span class="pre">src/alomancy/mlip/base.py</span></code>) and
+implements three methods; evaluation, restart checks, isolated-atom
+energies and clean-up are inherited.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># src/alomancy/mlip/sevennet/trainer.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">ALomancyTrainer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.training_schedule</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_epochs</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SevenNetTrainer</span><span class="p">(</span><span class="n">ALomancyTrainer</span><span class="p">):</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">"sevennet"</span>                          <span class="c1"># training.trainer value</span>
+    <span class="n">KWARGS_KEY</span> <span class="o">=</span> <span class="s2">"sevennet_kwargs"</span>             <span class="c1"># its settings: training.sevennet_kwargs</span>
+    <span class="n">KWARGS_DEFAULTS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"epoch"</span><span class="p">:</span> <span class="s2">"dynamic"</span><span class="p">,</span> <span class="s2">"batch_size"</span><span class="p">:</span> <span class="mi">8</span><span class="p">}</span>
+    <span class="c1"># The backend's name for per-element isolated-atom energies. ALomancy</span>
+    <span class="c1"># fills it from the database's IsolatedAtom energies unless the user</span>
+    <span class="c1"># sets it; None if the backend doesn't use them.</span>
+    <span class="n">ISOLATED_ATOM_ENERGIES_KWARG</span> <span class="o">=</span> <span class="s2">"elemwise_reference_energies"</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"checkpoint_best.pth"</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">sevenn.calculator</span><span class="w"> </span><span class="kn">import</span> <span class="n">SevenNetCalculator</span>
+        <span class="k">return</span> <span class="n">SevenNetCalculator</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">train_path</span><span class="p">,</span> <span class="n">valid_path</span><span class="p">,</span> <span class="n">test_path</span><span class="p">,</span> <span class="n">seed</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
+            <span class="n">isolated_atom_energies</span><span class="p">):</span>
+        <span class="n">epochs</span> <span class="o">=</span> <span class="n">resolve_epochs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"epoch"</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"batch_size"</span><span class="p">],</span> <span class="n">n_structures</span><span class="p">)</span>
+        <span class="o">...</span>  <span class="c1"># run SevenNet in fit_dir with self.kwargs, epochs and seed</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">)</span>   <span class="c1"># or None if no model was produced</span>
+</pre></div>
+</div>
+<p>Then register it in <code class="docutils literal notranslate"><span class="pre">src/alomancy/registry.py</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">register</span><span class="p">(</span>
+    <span class="s2">"mlip_trainer"</span><span class="p">,</span>
+    <span class="s2">"sevennet"</span><span class="p">,</span>
+    <span class="s2">"alomancy.mlip.sevennet.trainer"</span><span class="p">,</span>
+    <span class="n">trainer_class</span><span class="o">=</span><span class="s2">"SevenNetTrainer"</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">train</span></code> is the same for every backend:</strong> split paths and a seed in, the
+model’s path (or <code class="docutils literal notranslate"><span class="pre">None</span></code>) out. Metrics are read back from the
+<code class="docutils literal notranslate"><span class="pre">evaluation_metrics.json</span></code> that <code class="docutils literal notranslate"><span class="pre">evaluate()</span></code> writes, never returned.</p></li>
+<li><p><strong>Override only what differs:</strong> <code class="docutils literal notranslate"><span class="pre">format_isolated_atom_energies</span></code> (MACE
+converts the dict to its own string), <code class="docutils literal notranslate"><span class="pre">deployable_model_path</span></code> (what
+<code class="docutils literal notranslate"><span class="pre">results/best_model/</span></code> gets; MACE uses its compiled model),
+<code class="docutils literal notranslate"><span class="pre">cleanup_paths</span></code> (files to delete after a fit), <code class="docutils literal notranslate"><span class="pre">report_section</span></code> (the
+loop report).</p></li>
+<li><p>Training runs remotely through the module-level <code class="docutils literal notranslate"><span class="pre">run_training</span></code>, which
+builds the trainer on the HPC node from its registry name, so changes
+to a trainer need <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code> before the next run.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="reports.html" class="btn btn-neutral float-left" title="Loop reports" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
