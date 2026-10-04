@@ -150,7 +150,8 @@ To make a new situation countable, log it with an event code:
 
 ```python
 logger.warning(
-    "Something went wrong for %s.", base_name,
+    "Something went wrong for %s.",
+    base_name,
     extra={"event": "my_event", "data": {"n": n, "total": total}},
 )
 ```
