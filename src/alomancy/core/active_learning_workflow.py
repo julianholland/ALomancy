@@ -121,11 +121,9 @@ dispatch) stay at the top `structure_generation` level rather than being
 duplicated per-generator; MD-specific settings that would make no sense
 for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
 `num_of_md_starts`/`enforce_chemical_diversity`/`seed`) live
-nested inside `md_kwargs` instead. `structure_generation.trainer`/
-`trainer_config` (which trainer registry entry built the model MD's own
-dynamics calculator should use) are the same story -- MD-only, since EZGA
-loads its model directly rather than through the trainer registry -- so
-they live nested inside `md_kwargs` too. `training.max_num_epochs`
+nested inside `md_kwargs` instead. Which calculator drives MD or EZGA
+is not a generator setting at all: generators get a `CalculatorSpec` for
+the model `training.trainer` trained (`calculator_spec`). `training.max_num_epochs`
 likewise moves inside `mace_kwargs`: it's a MACE-specific training
 control (not every trainer backend would necessarily have "epochs" at
 all), kept at the top level only incidentally because MACE is the only
@@ -204,6 +202,7 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 )
 from alomancy.mlip.base import (
     ALomancyTrainer,
+    CalculatorSpec,
     get_trainer,
     read_predictions,
     run_training,
@@ -275,7 +274,9 @@ _SUMMARY_HPC_COLUMNS = (
     "ranks_per_node",
     "max_mem_per_node",
 )
-_BEST_MODEL_FILENAME = "ALomancy_best_model.model"
+# The best model keeps its trainer's own extension (.model for MACE, .pth
+# for SevenNet), so a loader chosen by extension gets the right format.
+_BEST_MODEL_STEM = "ALomancy_best_model"
 _STRUCTURE_GENERATION_NAME = "structure_generation"
 _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 
@@ -508,6 +509,16 @@ _REMOVED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
         ("initialization",),
         "reset_extra_splits",
         "nothing (imported files always drop the old run's splits and flags)",
+    ),
+    # MD used to pick its own calculator backend, defaulting to MACE, so a
+    # SevenNet model was loaded with MACE and every MD job failed.
+    *(
+        (
+            ("structure_generation", "md_kwargs"),
+            key,
+            "nothing: MD now always uses the model trained by training.trainer",
+        )
+        for key in ("trainer", "trainer_config")
     ),
 )
 
@@ -1532,7 +1543,7 @@ class ActiveLearningWorkflow(ABC):
 
     def _update_best_model(self, base_name: str, num_of_models: int) -> None:
         """Copy this loop's best model (chosen as for structure generation,
-        see rank_committee) to results/best_model/ALomancy_best_model.model,
+        see rank_committee) to results/best_model/ALomancy_best_model.<its own suffix>,
         replacing the previous loop's, with model_metadata.json alongside
         holding its errors per split and per config_type.
 
@@ -1573,13 +1584,14 @@ class ActiveLearningWorkflow(ABC):
 
         best_dir = Path("results", _BEST_MODEL_DIR)
         best_dir.mkdir(parents=True, exist_ok=True)
-        target = best_dir / _BEST_MODEL_FILENAME
-        tmp = best_dir / f".{_BEST_MODEL_FILENAME}.tmp"
+        target = best_dir / f"{_BEST_MODEL_STEM}{Path(compiled_path).suffix}"
+        tmp = best_dir / f".{target.name}.tmp"
         shutil.copy2(compiled_path, tmp)
         os.replace(tmp, target)
-        for stale in best_dir.glob("*.model"):
-            if stale != target:
-                stale.unlink()
+        # Older models, including another trainer's (another suffix).
+        stale = {*best_dir.glob("*.model"), *best_dir.glob(f"{_BEST_MODEL_STEM}.*")}
+        for path in stale - {target}:
+            path.unlink()
 
         record = json.loads(
             (fit_dirs[best_fit] / "evaluation_metrics.json").read_text()
@@ -1607,6 +1619,8 @@ class ActiveLearningWorkflow(ABC):
             "al_loop": int(base_name.rsplit("_", 1)[-1]),
             "fit_idx": best_fit,
             "selected_on_split": split_used,
+            "model_file": target.name,
+            "trainer": self.training_config.get("trainer", "mace"),
             "source_model": str(compiled_path),
             "model_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
             "updated": datetime.now().isoformat(timespec="seconds"),
@@ -2044,6 +2058,15 @@ class ActiveLearningWorkflow(ABC):
         )
         return next(m for m in models if m.fit_idx == best_idx)
 
+    def calculator_spec(self, model: TrainedModel) -> CalculatorSpec:
+        """How to build *model*'s calculator: through the trainer that
+        trained it (training.trainer), never a generator's own choice."""
+        return CalculatorSpec(
+            trainer=self.training_config.get("trainer", "mace"),
+            trainer_config=self.training_config,
+            model_path=str(model.model_path),
+        )
+
     def generate_candidates(self, ctx: LoopContext, model: TrainedModel) -> list[Atoms]:
         """Run the configured structure generator (MD, EZGA, ...) with
         *model*, seeded from this loop's eligible training structures, and
@@ -2062,7 +2085,7 @@ class ActiveLearningWorkflow(ABC):
         )
         candidates = generator_entry.generate(
             eligible,
-            model.model_path,
+            self.calculator_spec(model),
             sg_config,
             base_name=ctx.base_name,
             name=_STRUCTURE_GENERATION_NAME,

@@ -154,11 +154,15 @@ class MaceTrainer(ALomancyTrainer):
     def format_isolated_atom_energies(self, energies: dict) -> str:
         return _mace_e0s_arg(energies)
 
-    def get_calculator(self, model_path: str | Path) -> Any:
+    def get_calculator(
+        self, model_path: str | Path, *, device: str | None = None
+    ) -> Any:
         import torch
 
-        device = self.config.get("device") or (
-            "cuda" if torch.cuda.is_available() else "cpu"
+        device = (
+            device
+            or self.config.get("device")
+            or ("cuda" if torch.cuda.is_available() else "cpu")
         )
         return MACECalculator(
             model_paths=[str(model_path)],

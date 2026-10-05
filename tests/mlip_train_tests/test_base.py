@@ -34,7 +34,10 @@ class EMTTrainer(ALomancyTrainer):
     def model_path(self, fit_dir: Path) -> Path:
         return Path(fit_dir) / f"{self.name}.model"
 
-    def get_calculator(self, model_path):
+    calculator_devices: ClassVar[list] = []
+
+    def get_calculator(self, model_path, *, device=None):
+        type(self).calculator_devices.append(device)
         return EMT()
 
     def cleanup_paths(self, fit_dir: Path) -> list[Path]:
@@ -353,3 +356,23 @@ def test_read_predictions_warns_about_structures_it_cannot_use(tmp_path):
     assert "1 of 2" in warning.getMessage()
     assert "test_pred.xyz" in warning.getMessage()
     assert warning.event == "predictions_unreadable"
+
+
+@pytest.mark.unit
+def test_calculator_spec_survives_pickling_and_builds_its_trainers_calculator(
+    emt_registered,
+):
+    """ExPyRe pickles the spec into each remote MD job; build() there must
+    ask the spec's own trainer for the calculator."""
+    import pickle
+
+    from alomancy.mlip.base import CalculatorSpec
+
+    spec = CalculatorSpec(trainer="emt_test", trainer_config={}, model_path="m.model")
+    copy = pickle.loads(pickle.dumps(spec))
+    EMTTrainer.calculator_devices = []
+
+    assert copy == spec
+    assert isinstance(copy.build(), EMT)
+    assert isinstance(copy.build(device="cpu"), EMT)
+    assert EMTTrainer.calculator_devices == [None, "cpu"]

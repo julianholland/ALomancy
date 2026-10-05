@@ -14,6 +14,7 @@ scoring, and cross-loop metrics aggregation.
 import json
 import logging
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -34,7 +35,7 @@ from alomancy.core.active_learning_workflow import (
     phase,
 )
 from alomancy.core.committee_uncertainty_workflow import CommitteeUncertaintyWorkflow
-from alomancy.mlip.base import ALomancyTrainer, run_training
+from alomancy.mlip.base import ALomancyTrainer, CalculatorSpec, run_training
 from alomancy.mlip.evaluation import prediction_metrics, save_evaluation
 from alomancy.mlip.predict import predict_with_model
 
@@ -575,6 +576,32 @@ class TestUpdateBestModel:
         )
         assert "mae_e_per_atom" in test_errors
 
+    def test_best_model_keeps_its_trainers_file_extension(
+        self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
+    ):
+        """A SevenNet-style .pth model is saved as ALomancy_best_model.pth,
+        not as a .model a MACE loader would pick up; an earlier loop's
+        .model (another trainer) is removed."""
+        monkeypatch.chdir(tmp_path)
+        fit_dir = self._write_fit(0, 0, 0.1, compiled=False)
+        (fit_dir / "model.pth").write_bytes(b"sevennet checkpoint")
+        best_dir = Path("results/best_model")
+        best_dir.mkdir(parents=True)
+        (best_dir / "ALomancy_best_model.model").write_bytes(b"older mace model")
+
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = MagicMock(deployable_model_path=lambda d: Path(d) / "model.pth")
+        with patch.object(wf, "trainer", return_value=trainer):
+            wf._update_best_model("al_loop_0", 1)
+
+        assert sorted(p.name for p in best_dir.iterdir()) == [
+            "ALomancy_best_model.pth",
+            "model_metadata.json",
+        ]
+        metadata = json.loads((best_dir / "model_metadata.json").read_text())
+        assert metadata["model_file"] == "ALomancy_best_model.pth"
+        assert metadata["trainer"] == "mace"
+
     def test_later_loop_replaces_previous_best_model(
         self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
     ):
@@ -1059,7 +1086,14 @@ class TestGenerateCandidates:
         with patch(f"{_MODULE}.resolve", return_value=fake_generator):
             result = wf.generate_candidates(_ctx(0, train=[_atoms()]), _model(1))
 
-        assert fake_generator.generate.call_args.args[1] == "model_1.pt"
+        spec = fake_generator.generate.call_args.args[1]
+        # The generator builds the trained model's calculator through the
+        # trainer that trained it (training.trainer), not one of its own.
+        assert spec == CalculatorSpec(
+            trainer=wf.training_config.get("trainer", "mace"),
+            trainer_config=wf.training_config,
+            model_path="model_1.pt",
+        )
         assert len(result) == 1
 
 
@@ -2367,3 +2401,93 @@ def test_every_split_keeps_its_predictions_through_the_training_chain(
         loop_idx=0,
     )
     assert (plots_dir / "fit_parity_test_al_loop_0.png").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("key", ["trainer", "trainer_config"])
+def test_md_kwargs_trainer_keys_are_rejected(
+    tmp_path, workflow_jobs_dict, shared_db, key
+):
+    """MD used to choose its own calculator backend (default MACE), which
+    loaded a SevenNet model with MACE; it now always uses training.trainer."""
+    workflow_jobs_dict["structure_generation"]["md_kwargs"] = {key: "mace"}
+    with pytest.raises(ValueError, match=f"md_kwargs.{key}.*training.trainer"):
+        _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+
+class _NotMaceTrainer(_EMTTrainer):
+    """A non-MACE backend whose model file MACE cannot load."""
+
+    NAME = "not_mace"
+    KWARGS_KEY = "not_mace_kwargs"
+    built_on: ClassVar[list] = []
+
+    def get_calculator(self, model_path, *, device=None):
+        from ase.calculators.emt import EMT
+
+        type(self).built_on.append(str(model_path))
+        return EMT()
+
+
+@pytest.mark.unit
+def test_md_explores_with_the_calculator_of_the_trained_mlip(
+    tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+):
+    """Regression: MD built its calculator from md_kwargs.trainer (default
+    "mace") instead of training.trainer, so a SevenNet run handed its .pth
+    checkpoint to MACE and every MD job failed with "'dict' object has no
+    attribute 'to'". Runs the real MD generator (jobs in-process) with a
+    non-MACE trainer: the dynamics must use that trainer's calculator."""
+    from alomancy.registry import _REGISTRY, register
+
+    monkeypatch.chdir(tmp_path)
+    register("mlip_trainer", "not_mace", __name__, trainer_class="_NotMaceTrainer")
+    _NotMaceTrainer.built_on = []
+    try:
+        workflow_jobs_dict["training"]["trainer"] = "not_mace"
+        workflow_jobs_dict["structure_generation"].update(
+            generator="md",
+            md_kwargs={
+                "steps": 20,
+                "temperature": 300,
+                "structure_selection_kwargs": {"num_of_md_starts": 2},
+            },
+        )
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, num_of_structures_per_loop=2
+        )
+        model_file = tmp_path / "not_mace.pth"
+        model_file.write_bytes(b"not a MACE model")
+        model = TrainedModel(
+            fit_idx=0,
+            seed=803,
+            model_path=str(model_file),
+            compiled_model_path=None,
+            metrics={},
+            fit_dir=tmp_path,
+        )
+        train = [
+            Atoms(
+                "Cu2",
+                positions=[[0, 0, 0], [2.4 + 0.05 * i, 0, 0]],
+                cell=[8] * 3,
+                pbc=True,
+                info={"config_type": "init_dimer"},
+            )
+            for i in range(4)
+        ]
+
+        def in_process(function, job_configs, remote_info, **kwargs):
+            return [function(**jc["function_kwargs"]) for jc in job_configs]
+
+        md_module = "alomancy.structure_generation.md.md_wfl"
+        with (
+            patch(f"{md_module}.submit_n", side_effect=in_process),
+            patch(f"{md_module}.get_remote_info"),
+        ):
+            candidates = wf.generate_candidates(_ctx(0, train=train), model)
+    finally:
+        del _REGISTRY["mlip_trainer"]["not_mace"]
+
+    assert _NotMaceTrainer.built_on == [str(model_file)] * 2  # once per MD run
+    assert len(candidates) > 0

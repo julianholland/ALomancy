@@ -6,7 +6,11 @@ and implements three methods:
 
 - ``fit(...)``: train one model, return the model file's path (or None);
 - ``model_path(fit_dir)``: where ``fit`` puts that file;
-- ``get_calculator(model_path)``: an ASE calculator for a trained model.
+- ``get_calculator(model_path, *, device=None)``: an ASE calculator for a
+  trained model. Structure generators never call it directly: they get a
+  ``CalculatorSpec`` (trainer name, config, model path) and ``build()`` it
+  where the calculator is needed, so exploration always uses the MLIP that
+  ``training.trainer`` trained.
 
 Everything else is shared and lives here: the standard ``train`` entry
 point, resolving the per-element isolated-atom energies, evaluating the
@@ -145,9 +149,12 @@ class ALomancyTrainer(ABC):
         """Where fit() writes the model that evaluation, MD and prediction use."""
 
     @abstractmethod
-    def get_calculator(self, model_path: str | Path) -> Any:
-        """An ASE calculator for a trained model. Only call it inside a
-        remote job, never in the local driver process."""
+    def get_calculator(
+        self, model_path: str | Path, *, device: str | None = None
+    ) -> Any:
+        """An ASE calculator for a trained model, on *device* (None: the
+        backend's own choice). Called in remote jobs (evaluation, MD,
+        prediction) and, on the CPU, in the driver process by EZGA."""
 
     # -- Overridable, with generic defaults ----------------------------------
 
@@ -423,6 +430,24 @@ class ALomancyTrainer(ABC):
             str(deployable) if deployable is not None else None,
             metrics,
         )
+
+
+@dataclass(frozen=True)
+class CalculatorSpec:
+    """How to build the calculator of one trained model: which trainer
+    (registry name and config) and which model file. Plain data, so it can
+    be pickled into a remote job (a live, possibly GPU-resident calculator
+    can't); ``build()`` there asks the trainer for the calculator."""
+
+    trainer: str
+    trainer_config: dict
+    model_path: str
+
+    def build(self, device: str | None = None) -> Any:
+        trainer = get_trainer(self.trainer, self.trainer_config)
+        if device is None:
+            return trainer.get_calculator(self.model_path)
+        return trainer.get_calculator(self.model_path, device=device)
 
 
 def get_trainer(name: str, config: dict, fit_name: str = "training") -> ALomancyTrainer:

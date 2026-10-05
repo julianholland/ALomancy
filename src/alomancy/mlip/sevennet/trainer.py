@@ -297,11 +297,14 @@ class SevenNetTrainer(ALomancyTrainer):
             energies, f"sevennet_kwargs.{_REFERENCE_ENERGIES_KEY}"
         )
 
-    def get_calculator(self, model_path: str | Path) -> Any:
+    def get_calculator(
+        self, model_path: str | Path, *, device: str | None = None
+    ) -> Any:
         from sevenn.calculator import SevenNetCalculator
 
         return SevenNetCalculator(
-            str(model_path), device=_resolve_device(self.kwargs["train"]["device"])
+            str(model_path),
+            device=device or _resolve_device(self.kwargs["train"]["device"]),
         )
 
     def report_section(self, stats: dict, **kwargs: Any) -> Any:

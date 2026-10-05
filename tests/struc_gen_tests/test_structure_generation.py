@@ -1101,7 +1101,6 @@ class TestMolecularDynamics:
             initial_structure=atoms,
             total_md_runs=total_md_runs,
             out_dir=str(tmp_path),
-            model_path=None,
             steps=steps,
             calculator=EMT(),
         )
@@ -1134,17 +1133,13 @@ class TestMolecularDynamics:
             self._run_emt_md(tmp_path, 41, steps=40)
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
-    def test_run_md_passes_seeded_rng_to_langevin(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_passes_seeded_rng_to_langevin(self, mock_langevin_cls, tmp_path):
         """A structure carrying atoms.info['md_seed'] (set by select_initial_
         structures when reusing structures) must produce a seeded np.random.Generator
         passed as Langevin's rng, so duplicate starting structures diverge."""
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        mock_mace_calc_cls.return_value = MagicMock()
         mock_langevin_cls.side_effect = RuntimeError("stop after Langevin call")
 
         initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
@@ -1160,7 +1155,7 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
             )
 
@@ -1168,16 +1163,12 @@ class TestMolecularDynamics:
         assert isinstance(kwargs["rng"], np.random.Generator)
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
-    def test_run_md_no_seed_passes_none_rng(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_no_seed_passes_none_rng(self, mock_langevin_cls, tmp_path):
         """Without md_seed (e.g. a structure not selected via select_initial_
         structures), fall back to ASE's own default rng behavior."""
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        mock_mace_calc_cls.return_value = MagicMock()
         mock_langevin_cls.side_effect = RuntimeError("stop after Langevin call")
 
         initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
@@ -1192,7 +1183,7 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
             )
 
@@ -1200,10 +1191,9 @@ class TestMolecularDynamics:
         assert kwargs["rng"] is None
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
     def test_run_md_survives_force_evaluation_exception(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
+        self, mock_langevin_cls, tmp_path
     ):
         """A crash while evaluating forces (e.g. MACE raising on a
         numerically unstable structure -- exactly what a gap in the
@@ -1215,8 +1205,6 @@ class TestMolecularDynamics:
         from ase.io import read
 
         from alomancy.structure_generation.md.md_wfl import run_md
-
-        mock_mace_calc_cls.return_value = MagicMock()
 
         atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10, 10, 10])
         mock_dyn = MagicMock()
@@ -1236,7 +1224,7 @@ class TestMolecularDynamics:
             initial_structure=initial_structure,
             total_md_runs=1,
             out_dir=str(tmp_path),
-            model_path=["fake.pt"],
+            calculator=MagicMock(),
             steps=10,
         )
 
@@ -1245,11 +1233,8 @@ class TestMolecularDynamics:
         assert len(traj) == 1
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
-    def test_run_md_survives_dynamics_step_exception(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_survives_dynamics_step_exception(self, mock_langevin_cls, tmp_path):
         """An exception raised mid-integration (dyn.run(), e.g. the
         integrator numerically diverging between recorded snapshots) must
         also be caught, not just a force-evaluation exception -- the
@@ -1257,8 +1242,6 @@ class TestMolecularDynamics:
         from ase.io import read
 
         from alomancy.structure_generation.md.md_wfl import run_md
-
-        mock_mace_calc_cls.return_value = MagicMock()
 
         atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10, 10, 10])
         mock_dyn = MagicMock()
@@ -1279,7 +1262,7 @@ class TestMolecularDynamics:
             initial_structure=initial_structure,
             total_md_runs=1,
             out_dir=str(tmp_path),
-            model_path=["fake.pt"],
+            calculator=MagicMock(),
             steps=10,
         )
 
@@ -1288,11 +1271,8 @@ class TestMolecularDynamics:
         assert len(traj) == 1
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
-    def test_run_md_stops_on_nan_forces(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_stops_on_nan_forces(self, mock_langevin_cls, tmp_path):
         """NaN forces must stop the run just like forces > 1000 eV/A do --
         `np.nan > 1000` is False, so a bare ">" comparison would silently
         let a numerically unstable run keep going and pollute the
@@ -1300,8 +1280,6 @@ class TestMolecularDynamics:
         from ase.io import read
 
         from alomancy.structure_generation.md.md_wfl import run_md
-
-        mock_mace_calc_cls.return_value = MagicMock()
 
         atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10, 10, 10])
         mock_dyn = MagicMock()
@@ -1320,7 +1298,7 @@ class TestMolecularDynamics:
             initial_structure=initial_structure,
             total_md_runs=1,
             out_dir=str(tmp_path),
-            model_path=["fake.pt"],
+            calculator=MagicMock(),
             steps=10,
         )
 
@@ -1329,16 +1307,12 @@ class TestMolecularDynamics:
         assert len(traj) == 1
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.Langevin")
-    def test_run_md_default_ensemble_uses_langevin(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_default_ensemble_uses_langevin(self, mock_langevin_cls, tmp_path):
         """ensemble defaults to 'nvt', which must still dispatch to the
         plain fixed-cell Langevin integrator (pre-existing behavior)."""
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        mock_mace_calc_cls.return_value = MagicMock()
         mock_langevin_cls.side_effect = RuntimeError("stop after Langevin call")
 
         initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
@@ -1353,22 +1327,18 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
             )
 
         mock_langevin_cls.assert_called_once()
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.LangevinBAOAB")
-    def test_run_md_npt_dispatches_to_langevin_baoab(
-        self, mock_baoab_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_npt_dispatches_to_langevin_baoab(self, mock_baoab_cls, tmp_path):
         """ensemble='npt' must run LangevinBAOAB rather than plain Langevin."""
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        mock_mace_calc_cls.return_value = MagicMock()
         mock_baoab_cls.side_effect = RuntimeError("stop after LangevinBAOAB call")
 
         initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
@@ -1383,7 +1353,7 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
                 ensemble="npt",
             )
@@ -1391,11 +1361,8 @@ class TestMolecularDynamics:
         mock_baoab_cls.assert_called_once()
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.LangevinBAOAB")
-    def test_run_md_npt_externalstress_never_none(
-        self, mock_baoab_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_run_md_npt_externalstress_never_none(self, mock_baoab_cls, tmp_path):
         """LangevinBAOAB only activates its barostat when externalstress is
         not None (see ase.md.langevinbaoab.LangevinBAOAB.step, gated on
         `self.externalstress is not None`). Passing None here would silently
@@ -1403,7 +1370,6 @@ class TestMolecularDynamics:
         at the default pressure=0.0."""
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        mock_mace_calc_cls.return_value = MagicMock()
         mock_baoab_cls.side_effect = RuntimeError("stop after LangevinBAOAB call")
 
         initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
@@ -1418,7 +1384,7 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
                 ensemble="npt",
             )
@@ -1428,10 +1394,9 @@ class TestMolecularDynamics:
         assert kwargs["externalstress"] == pytest.approx(0.0)
 
     @pytest.mark.unit
-    @patch("alomancy.structure_generation.md.md_wfl.MACECalculator")
     @patch("alomancy.structure_generation.md.md_wfl.LangevinBAOAB")
     def test_run_md_npt_pressure_maps_to_negative_externalstress(
-        self, mock_baoab_cls, mock_mace_calc_cls, tmp_path
+        self, mock_baoab_cls, tmp_path
     ):
         """ASE's externalstress convention is the negative of pressure
         (positive pressure -> compression), so a positive `pressure` kwarg
@@ -1440,7 +1405,6 @@ class TestMolecularDynamics:
 
         from alomancy.structure_generation.md.md_wfl import run_md
 
-        mock_mace_calc_cls.return_value = MagicMock()
         mock_baoab_cls.side_effect = RuntimeError("stop after LangevinBAOAB call")
 
         initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
@@ -1455,7 +1419,7 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
                 ensemble="npt",
                 pressure=2.0,
@@ -1483,7 +1447,7 @@ class TestMolecularDynamics:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["fake.pt"],
+                calculator=MagicMock(),
                 steps=10,
                 ensemble="nph",
             )
@@ -1605,7 +1569,6 @@ class TestMdTrajectoryOutput:
             initial_structure=atoms,
             total_md_runs=1,
             out_dir=str(tmp_path),
-            model_path=None,
             steps=40,
             calculator=EMT(),
             **kwargs,

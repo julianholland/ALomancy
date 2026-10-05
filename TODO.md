@@ -7,6 +7,8 @@
 - [x] add gold star watermark to top left of the subplot that has the lowest energy and lowest forces of the parity plots 
 - [ ] fix timings plot: only DFT plus queue time visible 1.0
 - [ ] no test parity plots 1.0
+- [ ] plot for the distribution of uncertainty of committee
+- [ ] title of bond distribution can overlap with the subtitles
 - [x] fix the mlip_committee_al_loop_mae_plot this shouldn't be inside the loop folders but in the parent dir updated after each loop
 
 

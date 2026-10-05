@@ -43,7 +43,7 @@ def test_ezga_config_uses_bounded_mutations_and_per_atom_energy():
     config = build_ezga_config(
         dataset_path=Path("initial.xyz"),
         output_path=Path("output"),
-        model_path="model.model",
+        calculator_spec_path=Path("output/calculator_spec.json"),
         min_atoms=3,
         max_atoms=40,
         mutation_operators={
@@ -79,6 +79,13 @@ def test_ezga_config_uses_bounded_mutations_and_per_atom_energy():
     assert config["evaluator"]["objectives_funcs"][0]["type"].endswith(
         "objective_energy_per_atom"
     )
+    # The trained model's own calculator, never EZGA's built-in MACE one.
+    calculator = config["simulator"]["calculator"]
+    assert calculator["type"].endswith("generate_structures.trained_model_calculator")
+    assert calculator["calculator_spec_path"] == str(
+        Path("output/calculator_spec.json")
+    )
+    assert calculator["device"] == "cpu"
 
 
 @pytest.mark.unit
@@ -91,7 +98,38 @@ def test_ezga_config_rejects_invalid_atom_limits(min_atoms, max_atoms):
         build_ezga_config(
             dataset_path=Path("initial.xyz"),
             output_path=Path("output"),
-            model_path="model.model",
+            calculator_spec_path=Path("output/calculator_spec.json"),
             min_atoms=min_atoms,
             max_atoms=max_atoms,
         )
+
+
+@pytest.mark.unit
+def test_ezga_relaxes_with_the_trained_models_own_calculator(tmp_path):
+    """The factory named in ezga_config.yaml builds the calculator of the
+    trainer that trained the model (on the CPU), wrapped in EZGA's ASE
+    adapter -- not EZGA's built-in MACE calculator."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from ase.calculators.emt import EMT
+
+    from alomancy.structure_generation.ezga.generate_structures import (
+        trained_model_calculator,
+    )
+
+    spec_path = tmp_path / "calculator_spec.json"
+    spec_path.write_text(
+        json.dumps(
+            {"trainer": "sevennet", "trainer_config": {"a": 1}, "model_path": "m.pth"}
+        )
+    )
+    trainer = MagicMock()
+    trainer.get_calculator.return_value = EMT()
+
+    with patch("alomancy.mlip.base.get_trainer", return_value=trainer) as get_trainer:
+        wrapped = trained_model_calculator(str(spec_path), steps_max=5)
+
+    get_trainer.assert_called_once_with("sevennet", {"a": 1})
+    trainer.get_calculator.assert_called_once_with("m.pth", device="cpu")
+    assert callable(wrapped)
