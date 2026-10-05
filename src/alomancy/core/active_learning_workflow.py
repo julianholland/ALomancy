@@ -190,6 +190,7 @@ from ase.io import read, write
 
 from alomancy.configs.hpc_profiles import format_table, hpc_profile_row
 from alomancy.configs.remote_info import get_remote_info
+from alomancy.configs.schema import check_config_keys, format_misplaced
 from alomancy.database.global_database import (
     _DEFAULT_DEDUP_CONFIG_TYPES,
     GlobalDatabase,
@@ -1082,25 +1083,47 @@ class ActiveLearningWorkflow(ABC):
                 },
             )
         # After setup_logging so the warnings reach the console/log file.
-        known = _GENERAL_KNOWN_KEYS | ({self.KWARGS_KEY} if self.KWARGS_KEY else set())
-        unknown = sorted(set(general_config) - known)
-        if unknown:
-            logger.warning(
-                "Ignoring unrecognised general key(s) %s -- check for typos. "
-                "Known keys: %s",
-                unknown,
-                sorted(known),
-            )
-        unknown_workflow = sorted(set(workflow_config) - set(self.KWARGS_DEFAULTS))
-        if unknown_workflow:
-            logger.warning(
-                "Ignoring unrecognised general.%s key(s) %s -- check for typos. "
-                "Known keys: %s",
-                self.KWARGS_KEY,
-                unknown_workflow,
-                sorted(self.KWARGS_DEFAULTS),
-            )
+        self._warn_about_unread_keys()
         self.validate_settings()
+
+    def _warn_about_unread_keys(self) -> None:
+        """Warn about every config key the run will never read (configs/
+        schema.py): one warning per misplaced key, naming where it is read;
+        one for settings of modules the config doesn't select; one listing
+        everything else."""
+        report = check_config_keys(
+            self.jobs_dict, _GENERAL_KNOWN_KEYS, set(_DATASET_KWARGS_KEYS)
+        )
+        for path, key, elsewhere in report.misplaced:
+            logger.warning(
+                format_misplaced(path, key, elsewhere),
+                extra={
+                    "event": "config_key_misplaced",
+                    "data": {
+                        "key": ".".join((*path, key)),
+                        "belongs_in": ".".join(elsewhere[0]),
+                    },
+                },
+            )
+        if report.unused:
+            logger.warning(
+                "Ignoring settings for module(s) this run doesn't use: %s",
+                "; ".join(
+                    f"{'.'.join((*path, key))} ({why})"
+                    for path, key, why in report.unused
+                ),
+                extra={
+                    "event": "config_key_unused",
+                    "data": {"keys": [".".join((*p, k)) for p, k, _ in report.unused]},
+                },
+            )
+        if report.unrecognised:
+            keys = [".".join((*path, key)) for path, key in report.unrecognised]
+            logger.warning(
+                "Ignoring unrecognised config key(s) %s -- check for typos.",
+                ", ".join(keys),
+                extra={"event": "config_key_unrecognised", "data": {"keys": keys}},
+            )
 
     @property
     def db(self) -> GlobalDatabase:

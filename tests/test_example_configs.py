@@ -39,8 +39,10 @@ def _with_inline_hpc(config: dict) -> dict:
     return config
 
 
-def _config_warnings(config: dict) -> list[str]:
-    """Build the workflow and its settings summary; return the warnings."""
+def _config_warnings(config: dict, allow_unused: bool = False) -> list[str]:
+    """Build the workflow and its settings summary; return the warnings.
+    *allow_unused*: accept the warning about settings of modules the config
+    doesn't select, which a one-line module swap leaves behind."""
     records: list[logging.LogRecord] = []
     handler = logging.Handler(level=logging.WARNING)
     handler.emit = records.append  # type: ignore[method-assign]
@@ -60,7 +62,12 @@ def _config_warnings(config: dict) -> list[str]:
         for logger in loggers:
             logger.removeHandler(handler)
     # The triton notice is about the local PyTorch install, not the config.
-    return [r.getMessage() for r in records if "triton" not in r.getMessage().lower()]
+    return [
+        r.getMessage()
+        for r in records
+        if "triton" not in r.getMessage().lower()
+        and not (allow_unused and getattr(r, "event", None) == "config_key_unused")
+    ]
 
 
 # -- README.md ---------------------------------------------------------------
@@ -87,11 +94,7 @@ def _deep_merge(base: dict, snippet: dict) -> dict:
 
 def _merged(base: dict, snippet: dict) -> dict:
     """*snippet* applied over *base*, as the README's "one line" edits are."""
-    out = _deep_merge(base, snippet)
-    if out["general"].get("al_workflow") != "committee_uncertainty":
-        # The README says to drop it: only the committee workflow reads it.
-        out["general"].pop("committee_uncertainty_kwargs", None)
-    return out
+    return _deep_merge(base, snippet)
 
 
 @pytest.mark.unit
@@ -122,7 +125,7 @@ def test_readme_config_builds_and_resolves(tmp_path, monkeypatch):
 )
 def test_readme_snippet_applied_to_its_config_builds(snippet, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    assert _config_warnings(_merged(_README_FULL[0], snippet)) == []
+    assert _config_warnings(_merged(_README_FULL[0], snippet), allow_unused=True) == []
 
 
 @pytest.mark.unit

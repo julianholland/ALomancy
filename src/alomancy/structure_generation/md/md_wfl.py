@@ -1,3 +1,4 @@
+import inspect
 import logging
 from pathlib import Path
 from typing import Any
@@ -282,6 +283,28 @@ def run_md(
 # candidates lives in the skeleton (ActiveLearningWorkflow.predict), not
 # in this module.
 # ---------------------------------------------------------------------------
+
+
+# The keys structure_generation.md_kwargs may hold (configs/schema.py):
+# run_md's own settings, taken from its signature so a new one is known
+# automatically, plus MD's seed selection block.
+_RUN_MD_INTERNAL_PARAMS = {
+    "structure_generation_job_dict",
+    "initial_structure",
+    "total_md_runs",
+    "out_dir",
+    "calculator",
+}
+_MD_KWARGS_SCHEMA: dict[str, Any] = {
+    **dict.fromkeys(
+        p
+        for p in inspect.signature(run_md).parameters
+        if p not in _RUN_MD_INTERNAL_PARAMS
+    ),
+    "structure_selection_kwargs": dict.fromkeys(
+        ("num_of_md_starts", "enforce_chemical_diversity", "seed")
+    ),
+}
 
 
 def _run_md_with_spec(

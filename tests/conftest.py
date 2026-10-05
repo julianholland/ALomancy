@@ -187,9 +187,6 @@ def minimal_jobs_dict():
         "initialization": {
             "name": "initialization",
             "max_time": "1H",
-            "test_to_train_ratio": 0.1,
-            "test_config_types": ["IsolatedAtom"],
-            "creation_kwargs": {"elements": ["H", "O"]},
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
         "mlip_committee": {

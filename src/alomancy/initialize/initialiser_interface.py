@@ -118,6 +118,15 @@ _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
+# The keys each structure-type block may hold (configs/schema.py): its
+# defaults, plus settings that deliberately have none.
+_CREATION_KWARGS_SCHEMA: dict[str, list[str]] = {
+    namespace: list(defaults)
+    for namespace, defaults in _CREATION_KWARGS_DEFAULTS.items()
+}
+_CREATION_KWARGS_SCHEMA["rattle_target_structures"].append("rattle_standard_deviation")
+
+
 def _resolve_kwargs(config: dict, namespace: str) -> dict:
     """config[namespace] (a direct child of the initialization section --
     see module docstring), with _CREATION_KWARGS_DEFAULTS[namespace] filled

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Config keys the run won't read are now reported at start-up**, instead of being silently ignored. A key written in the wrong block gets its own warning naming where it belongs, e.g. `num_of_md_starts` in `structure_generation.structure_selection_kwargs` (the generic seed filter, where it fell back to the default of 10) belongs in `structure_generation.md_kwargs.structure_selection_kwargs`. Settings for a module the config doesn't select (`mace_kwargs` while `trainer: sevennet`) and unrecognised keys (typos) each get one combined warning. Settings passed to external packages (`mace_kwargs`, `sevennet_kwargs`, `ezga_kwargs`, `qe_kwargs`, `vasp_kwargs`) aren't checked.
+
 ### Fixed
 - **MD (and EZGA) used MACE whatever `training.trainer` was.** MD built its calculator from `md_kwargs.trainer`, which defaulted to `"mace"`, so a SevenNet run handed its `.pth` checkpoint to MACE and every MD job failed with `AttributeError: 'dict' object has no attribute 'to'`. EZGA's config hardcoded EZGA's own MACE calculator. Structure generators now receive a `CalculatorSpec` (trainer, training config, model path) for the model that `training.trainer` trained and build its calculator through that trainer's `get_calculator`: on the HPC node for MD, on the CPU in the driver for EZGA. Any registered trainer now works with MD and EZGA. **Remote reinstall needed** (`alomancy upgrade-hpc`).
 - **The best model keeps its own file extension**: `results/best_model/ALomancy_best_model.pth` for SevenNet instead of a `.pth` checkpoint named `.model`. `model_metadata.json` also records `model_file` and `trainer`.
