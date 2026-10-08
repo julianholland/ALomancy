@@ -1,11 +1,13 @@
 """Tests for alomancy/__init__.py's per-run ExPyRe isolation setup."""
 
 import json
+import os
+import sys
 import warnings
 
 import pytest
 
-from alomancy import _seed_local_expyre_root
+from alomancy import _pin_local_expyre_root, _seed_local_expyre_root
 
 
 @pytest.mark.unit
@@ -126,6 +128,106 @@ class TestSeedLocalExpyreRoot:
         run_dir.mkdir()
 
         _seed_local_expyre_root(run_dir)  # must not raise
+
+
+def _write_config(directory, systems, **extra):
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.json").write_text(json.dumps({"systems": systems, **extra}))
+
+
+def _no_partition_system(host):
+    return {"host": host, "partitions": None, "scheduler": "slurm"}
+
+
+class TestPinLocalExpyreRoot:
+    """The run's ExPyRe directory is the only one expyre reads: EXPYRE_ROOT
+    points at it, so parent ".expyre" configs are never merged in."""
+
+    @pytest.fixture(autouse=True)
+    def _no_expyre_root(self, monkeypatch):
+        monkeypatch.delenv("EXPYRE_ROOT", raising=False)
+
+    @pytest.mark.unit
+    def test_parent_expyre_config_is_not_merged(self, tmp_path, monkeypatch):
+        from expyre.config import _get_config
+
+        import alomancy as alomancy_module
+
+        # A shared parent .expyre with an extra system and its own
+        # local_stage_dir: the walk would merge both into the run.
+        _write_config(
+            tmp_path / ".expyre",
+            {"shared_only": _no_partition_system("shared")},
+            local_stage_dir=str(tmp_path / ".expyre"),
+        )
+        master = tmp_path / "master" / "expyre_config.json"
+        master.parent.mkdir()
+        master.write_text(
+            json.dumps({"systems": {"raven": _no_partition_system("raven")}})
+        )
+        monkeypatch.setattr(alomancy_module, "EXPYRE_CONFIG", master)
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        _pin_local_expyre_root(run_dir)
+
+        assert os.environ["EXPYRE_ROOT"] == str(run_dir / ".expyre")
+        stage_dir, config = _get_config(os.environ["EXPYRE_ROOT"])
+        assert stage_dir == run_dir / ".expyre"
+        assert set(config["systems"]) == {"raven"}
+        assert "local_stage_dir" not in config
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("name", [".expyre", "_expyre"])
+    def test_existing_run_expyre_is_pinned(self, tmp_path, name):
+        run_dir = tmp_path / "run"
+        _write_config(run_dir / name, {"raven": _no_partition_system("raven")})
+
+        _pin_local_expyre_root(run_dir)
+
+        assert os.environ["EXPYRE_ROOT"] == str(run_dir / name)
+
+    @pytest.mark.unit
+    def test_stub_without_config_is_not_pinned(self, tmp_path):
+        """A hand-made .expyre with no config.json relies on merging the
+        parents' systems; pinning it would leave it with none."""
+        run_dir = tmp_path / "run"
+        (run_dir / ".expyre").mkdir(parents=True)
+
+        _pin_local_expyre_root(run_dir)
+
+        assert "EXPYRE_ROOT" not in os.environ
+
+    @pytest.mark.unit
+    def test_nothing_to_pin_without_a_config_source(self, tmp_path, monkeypatch):
+        import alomancy as alomancy_module
+
+        monkeypatch.setattr(alomancy_module, "EXPYRE_CONFIG", tmp_path / "nope.json")
+        monkeypatch.setattr(
+            alomancy_module, "LEGACY_EXPYRE_CONFIG", tmp_path / "no.json"
+        )
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        _pin_local_expyre_root(run_dir)
+
+        assert "EXPYRE_ROOT" not in os.environ
+
+    @pytest.mark.unit
+    def test_user_set_expyre_root_is_left_alone(self, tmp_path, monkeypatch):
+        """_ensure_local_expyre_root (the import-time entry point) never
+        touches an EXPYRE_ROOT the user set."""
+        import alomancy as alomancy_module
+
+        monkeypatch.setenv("EXPYRE_ROOT", "/user/choice")
+        monkeypatch.chdir(tmp_path)
+        # Past the pytest guard; monkeypatch puts the module back.
+        monkeypatch.delitem(sys.modules, "pytest")
+
+        alomancy_module._ensure_local_expyre_root()
+
+        assert os.environ["EXPYRE_ROOT"] == "/user/choice"
+        assert not (tmp_path / ".expyre").exists()
 
 
 @pytest.mark.unit

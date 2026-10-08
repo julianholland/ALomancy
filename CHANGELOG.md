@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Breaking: `structure_generation.md_kwargs.trainer` / `trainer_config` are removed** and raise a `ValueError`: MD always uses the model trained by `training.trainer`.
 - `ALomancyTrainer.get_calculator` takes an optional `device` keyword.
+- **Each run reads only its own `.expyre`.** ALomancy now sets `EXPYRE_ROOT` to the run's `.expyre` at import, so ExPyRe no longer walks up the directory tree merging every parent `.expyre/config.json` under the run's copy. A parent config could add systems, override settings, or set `local_stage_dir` and move the run's `jobs.db` and stage directories into itself. The walk only stops at a directory equal to `$HOME`, so with a run path that doesn't start with `$HOME` literally (`$HOME=/home/u`, run under `/work/home/u/...`) it also picked up the old shared `~/.expyre`. A user-set `EXPYRE_ROOT`, and a hand-made `.expyre` without a `config.json`, are left as they were.
 
 ## [1.0.1] - 2026-10-04
 
