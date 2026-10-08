@@ -80,6 +80,7 @@
   <h1>Source code for alomancy.utils.logging_config</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
@@ -103,6 +104,25 @@
 
 
 
+<span class="c1"># The step (@phase name, e.g. "generate_structures") currently running, None</span>
+<span class="c1"># outside one; a module global for the same reason as _current_loop.</span>
+<span class="n">_current_phase</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="c1"># One per process: every event this run attempt logs carries it, so the loop</span>
+<span class="c1"># report can keep only a step's latest attempt (analysis/report/</span>
+<span class="c1"># current_events.py) instead of counting failures a restart already fixed.</span>
+<span class="n">ATTEMPT_ID</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="si">:</span><span class="s2">%Y-%m-%dT%H:%M:%S</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span>
+
+
+<div class="viewcode-block" id="set_current_phase">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.logging_config.set_current_phase">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">set_current_phase</span><span class="p">(</span><span class="n">phase</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Tag every event logged from now on with *phase* (see JsonlEventHandler)."""</span>
+    <span class="k">global</span> <span class="n">_current_phase</span>
+    <span class="n">_current_phase</span> <span class="o">=</span> <span class="n">phase</span></div>
+
+
+
 <div class="viewcode-block" id="JsonlEventHandler">
 <a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.logging_config.JsonlEventHandler">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">JsonlEventHandler</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Handler</span><span class="p">):</span>
@@ -111,8 +131,9 @@
 <span class="sd">    A record is written when its level is WARNING or above, or when it</span>
 <span class="sd">    carries an ``event`` code (``logger.info(..., extra={"event": "x",</span>
 <span class="sd">    "data": {...}})``). Each line holds time, level, logger, message,</span>
-<span class="sd">    event (None if uncoded), loop (see set_current_loop) and data. The loop</span>
-<span class="sd">    report (analysis/report) counts these instead of parsing log text.</span>
+<span class="sd">    event (None if uncoded), loop (see set_current_loop), phase (see</span>
+<span class="sd">    set_current_phase), attempt (ATTEMPT_ID) and data. The loop report</span>
+<span class="sd">    (analysis/report) counts these instead of parsing log text.</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -136,6 +157,8 @@
                 <span class="s2">"message"</span><span class="p">:</span> <span class="n">record</span><span class="o">.</span><span class="n">getMessage</span><span class="p">(),</span>
                 <span class="s2">"event"</span><span class="p">:</span> <span class="n">event</span><span class="p">,</span>
                 <span class="s2">"loop"</span><span class="p">:</span> <span class="n">_current_loop</span><span class="p">,</span>
+                <span class="s2">"phase"</span><span class="p">:</span> <span class="n">_current_phase</span><span class="p">,</span>
+                <span class="s2">"attempt"</span><span class="p">:</span> <span class="n">ATTEMPT_ID</span><span class="p">,</span>
                 <span class="s2">"data"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"data"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
             <span class="p">}</span>
             <span class="n">text</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>

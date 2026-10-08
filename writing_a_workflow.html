@@ -138,7 +138,7 @@ declare its settings and write a short <code class="docutils literal notranslate
 <td><p>The model with the lowest force error on the shared validation split (test split if there is none).</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">generate_candidates(ctx,</span> <span class="pre">model)</span></code></p></td>
-<td><p>Runs the configured structure generator (MD, EZGA, …) with <code class="docutils literal notranslate"><span class="pre">model</span></code>, starting from this loop’s eligible training structures. Drops unphysical candidates.</p></td>
+<td><p>Runs the configured structure generator (MD, EZGA, …) with <code class="docutils literal notranslate"><span class="pre">model</span></code>’s own calculator, starting from this loop’s eligible training structures. Drops unphysical candidates.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">predict(ctx,</span> <span class="pre">models,</span> <span class="pre">structures)</span></code></p></td>
 <td><p>Energies and forces of <code class="docutils literal notranslate"><span class="pre">structures</span></code> from every model, as one parallel remote batch. One <code class="docutils literal notranslate"><span class="pre">{&quot;forces&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;energies&quot;:</span> <span class="pre">[...]}</span></code> per model.</p></td>
@@ -289,10 +289,10 @@ energies and clean-up are inherited.</p>
     <span class="k">def</span><span class="w"> </span><span class="nf">model_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="s2">"checkpoint_best.pth"</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">sevenn.calculator</span><span class="w"> </span><span class="kn">import</span> <span class="n">SevenNetCalculator</span>
 
-        <span class="k">return</span> <span class="n">SevenNetCalculator</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">SevenNetCalculator</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span> <span class="ow">or</span> <span class="s2">"auto"</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -329,6 +329,11 @@ converts the dict to its own string), <code class="docutils literal notranslate"
 <code class="docutils literal notranslate"><span class="pre">results/best_model/</span></code> gets; MACE uses its compiled model),
 <code class="docutils literal notranslate"><span class="pre">cleanup_paths</span></code> (files to delete after a fit), <code class="docutils literal notranslate"><span class="pre">report_section</span></code> (the
 loop report).</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">get_calculator</span></code> is how every other part of ALomancy uses your model</strong>:
+evaluation, committee prediction and structure generation. Generators get
+a <code class="docutils literal notranslate"><span class="pre">CalculatorSpec</span></code> (trainer name, config, model path) and call
+<code class="docutils literal notranslate"><span class="pre">spec.build()</span></code> on the HPC node (MD) or with <code class="docutils literal notranslate"><span class="pre">device=&quot;cpu&quot;</span></code> in the driver
+(EZGA), so MD and EZGA work with any registered trainer without changes.</p></li>
 <li><p>Training runs remotely through the module-level <code class="docutils literal notranslate"><span class="pre">run_training</span></code>, which
 builds the trainer on the HPC node from its registry name, so changes
 to a trainer need <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code> before the next run.</p></li>

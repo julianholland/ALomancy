@@ -140,7 +140,10 @@
                 <span class="s2">"input_structure"</span><span class="p">:</span> <span class="n">atoms</span><span class="p">,</span>
                 <span class="s2">"out_dir"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">ase_dir</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">ASE_OUTPUT_PREFIX</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">)),</span>
                 <span class="o">**</span><span class="p">(</span><span class="n">function_kwargs</span> <span class="ow">or</span> <span class="p">{}),</span>
-            <span class="p">}</span>
+            <span class="p">},</span>
+            <span class="c1"># The structure this job labels, for the loop report's retry</span>
+            <span class="c1"># bookkeeping (analysis/report/current_events.py).</span>
+            <span class="s2">"item"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'job_id'</span><span class="p">,</span><span class="w"> </span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s1">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
         <span class="p">}</span>
         <span class="k">if</span> <span class="n">per_structure_function</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">job_function</span> <span class="o">=</span> <span class="n">per_structure_function</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>

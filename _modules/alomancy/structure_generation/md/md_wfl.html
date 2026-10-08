@@ -78,7 +78,8 @@
            <div itemprop="articleBody">
              
   <h1>Source code for alomancy.structure_generation.md.md_wfl</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
 
@@ -88,9 +89,9 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.langevin</span><span class="w"> </span><span class="kn">import</span> <span class="n">Langevin</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.langevinbaoab</span><span class="w"> </span><span class="kn">import</span> <span class="n">LangevinBAOAB</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.units</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPa</span><span class="p">,</span> <span class="n">fs</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">mace.calculators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MACECalculator</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.remote_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_remote_info</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CalculatorSpec</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">submit_n</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dataset_curation</span><span class="w"> </span><span class="kn">import</span> <span class="n">geometry_digest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.seed_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">mark_structures_for_dft</span><span class="p">,</span> <span class="n">select_diverse_seeds</span>
@@ -118,8 +119,6 @@
     <span class="s2">"temperature"</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
     <span class="s2">"timestep_fs"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
     <span class="s2">"traj_interval"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="s2">"trainer"</span><span class="p">:</span> <span class="s2">"mace"</span><span class="p">,</span>
-    <span class="s2">"trainer_config"</span><span class="p">:</span> <span class="p">{},</span>
     <span class="s2">"structure_selection_kwargs"</span><span class="p">:</span> <span class="p">{</span>
         <span class="s2">"num_of_md_starts"</span><span class="p">:</span> <span class="n">_DEFAULT_NUM_OF_MD_STARTS</span><span class="p">,</span>
         <span class="s2">"enforce_chemical_diversity"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
@@ -135,7 +134,7 @@
     <span class="n">initial_structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span>
     <span class="n">total_md_runs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">out_dir</span><span class="p">,</span>
-    <span class="n">model_path</span><span class="p">,</span>
+    <span class="n">calculator</span><span class="p">,</span>
     <span class="n">steps</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
     <span class="n">temperature</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
     <span class="n">timestep_fs</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
@@ -144,7 +143,6 @@
     <span class="n">pressure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="n">equilibration_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="n">equilibration_temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">300.0</span><span class="p">,</span>
-    <span class="n">calculator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">traj_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">"""</span>
@@ -161,14 +159,10 @@
 <span class="sd">        the production trajectory. Zero disables equilibration.</span>
 <span class="sd">    equilibration_temperature : float</span>
 <span class="sd">        Temperature in K used during the initial NVT equilibration.</span>
-<span class="sd">    calculator : optional</span>
-<span class="sd">        A pre-built calculator to drive the dynamics with, instead of the</span>
-<span class="sd">        default hardcoded MACECalculator(model_paths=model_path, ...). Used</span>
-<span class="sd">        by the modular structure-generator module (structure_generation.md's</span>
-<span class="sd">        registry entry), which builds it via the trainer's own</span>
-<span class="sd">        get_calculator(model_path, config) -- see the architecture plan's</span>
-<span class="sd">        generator/calculator-coupling decision. None (the default) preserves</span>
-<span class="sd">        this function's original behavior exactly for every existing caller.</span>
+<span class="sd">    calculator :</span>
+<span class="sd">        The ASE calculator that drives the dynamics: the trained model's own</span>
+<span class="sd">        calculator, built on the remote node by ``_run_md_with_spec`` from a</span>
+<span class="sd">        ``CalculatorSpec``.</span>
 <span class="sd">    traj_interval : int, optional</span>
 <span class="sd">        When set, every ``traj_interval``-th production MD step is appended</span>
 <span class="sd">        to ``out_dir/md_trajectory.xyz`` (extxyz), a full-resolution record</span>
@@ -209,15 +203,7 @@
     <span class="n">atom_traj_list</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="n">md_structure</span> <span class="o">=</span> <span class="n">initial_structure</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-    <span class="n">md_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">calculator</span>
-        <span class="k">if</span> <span class="n">calculator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="k">else</span> <span class="n">MACECalculator</span><span class="p">(</span>
-            <span class="n">model_paths</span><span class="o">=</span><span class="n">model_path</span><span class="p">,</span>
-            <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span>
-            <span class="n">default_dtype</span><span class="o">=</span><span class="s2">"float64"</span><span class="p">,</span>
-        <span class="p">)</span>
-    <span class="p">)</span>
+    <span class="n">md_structure</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">calculator</span>
 
     <span class="c1"># md_seed is set by select_initial_structures when a structure is reused</span>
     <span class="c1"># across more than one concurrent job (not enough selectable structures</span>
@@ -382,34 +368,46 @@
 <span class="c1"># ---------------------------------------------------------------------------</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_run_md_via_trainer</span><span class="p">(</span>
+<span class="c1"># The keys structure_generation.md_kwargs may hold (configs/schema.py):</span>
+<span class="c1"># run_md's own settings, taken from its signature so a new one is known</span>
+<span class="c1"># automatically, plus MD's seed selection block.</span>
+<span class="n">_RUN_MD_INTERNAL_PARAMS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"structure_generation_job_dict"</span><span class="p">,</span>
+    <span class="s2">"initial_structure"</span><span class="p">,</span>
+    <span class="s2">"total_md_runs"</span><span class="p">,</span>
+    <span class="s2">"out_dir"</span><span class="p">,</span>
+    <span class="s2">"calculator"</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">_MD_KWARGS_SCHEMA</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="o">**</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+        <span class="n">p</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">run_md</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span>
+        <span class="k">if</span> <span class="n">p</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_RUN_MD_INTERNAL_PARAMS</span>
+    <span class="p">),</span>
+    <span class="s2">"structure_selection_kwargs"</span><span class="p">:</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+        <span class="p">(</span><span class="s2">"num_of_md_starts"</span><span class="p">,</span> <span class="s2">"enforce_chemical_diversity"</span><span class="p">,</span> <span class="s2">"seed"</span><span class="p">)</span>
+    <span class="p">),</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_md_with_spec</span><span class="p">(</span>
     <span class="n">structure_generation_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">initial_structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span>
     <span class="n">total_md_runs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">trainer</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">trainer_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">calculator_spec</span><span class="p">:</span> <span class="n">CalculatorSpec</span><span class="p">,</span>
     <span class="o">**</span><span class="n">run_md_kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Per-seed remote worker for generate() below. Builds its calculator</span>
-<span class="sd">    via the named trainer's get_calculator(model_path) (mlip/base.get_trainer),</span>
-<span class="sd">    resolved through the shared registry -- never a hardcoded MACECalculator</span>
-<span class="sd">    -- then delegates to run_md's unchanged dynamics loop. Must only run</span>
-<span class="sd">    inside a remote job: a live calculator must never cross the ExPyRe</span>
-<span class="sd">    boundary (see the architecture plan's generator/calculator-coupling</span>
-<span class="sd">    decision).</span>
-<span class="sd">    """</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_trainer</span>
-
-    <span class="n">calc</span> <span class="o">=</span> <span class="n">get_trainer</span><span class="p">(</span><span class="n">trainer</span><span class="p">,</span> <span class="n">trainer_config</span><span class="p">)</span><span class="o">.</span><span class="n">get_calculator</span><span class="p">(</span><span class="n">model_path</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">"""Per-seed remote worker for generate() below: builds the trained</span>
+<span class="sd">    model's calculator on the node, through the trainer that trained it</span>
+<span class="sd">    (``calculator_spec.build()``), then runs the dynamics. Only the spec</span>
+<span class="sd">    crosses the ExPyRe boundary, never a live calculator."""</span>
     <span class="n">run_md</span><span class="p">(</span>
         <span class="n">structure_generation_job_dict</span><span class="o">=</span><span class="n">structure_generation_job_dict</span><span class="p">,</span>
         <span class="n">initial_structure</span><span class="o">=</span><span class="n">initial_structure</span><span class="p">,</span>
         <span class="n">total_md_runs</span><span class="o">=</span><span class="n">total_md_runs</span><span class="p">,</span>
         <span class="n">out_dir</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
-        <span class="n">model_path</span><span class="o">=</span><span class="n">model_path</span><span class="p">,</span>
-        <span class="n">calculator</span><span class="o">=</span><span class="n">calc</span><span class="p">,</span>
+        <span class="n">calculator</span><span class="o">=</span><span class="n">calculator_spec</span><span class="o">.</span><span class="n">build</span><span class="p">(),</span>
         <span class="o">**</span><span class="n">run_md_kwargs</span><span class="p">,</span>
     <span class="p">)</span>
 
@@ -446,7 +444,7 @@
 <a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.generate">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
     <span class="n">seed_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
-    <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">calculator_spec</span><span class="p">:</span> <span class="n">CalculatorSpec</span><span class="p">,</span>
     <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>
     <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -457,23 +455,18 @@
 <span class="w">    </span><span class="sd">"""Local orchestrator: select a diversity-maximizing subset of</span>
 <span class="sd">    seed_atoms (via utils.seed_selection.select_diverse_seeds), then fan</span>
 <span class="sd">    out one remote MD job per selected seed through the generic submit_n</span>
-<span class="sd">    mechanism -- mirroring today's md_remote_submitter, generalized to</span>
-<span class="sd">    resolve its calculator through the trainer registry instead of a</span>
-<span class="sd">    hardcoded MACECalculator.</span>
+<span class="sd">    mechanism. Each job builds the trained model's calculator from</span>
+<span class="sd">    *calculator_spec* (the trainer that trained it, training.trainer).</span>
 
 <span class="sd">    config carries only generator-specific settings (md_kwargs);</span>
 <span class="sd">    name/hpc/max_time are explicit kwargs. md_kwargs holds run_md's own</span>
 <span class="sd">    direct kwargs (steps, temperature, ensemble, pressure, ...) -- defaults</span>
 <span class="sd">    to _MD_KWARGS_DEFAULTS (steps=20000, temperature=300, timestep_fs=0.5)</span>
 <span class="sd">    rather than run_md's own far-shorter defaults, merged with whatever the</span>
-<span class="sd">    config overrides -- plus two nested keys: structure_selection_kwargs</span>
-<span class="sd">    (select_diverse_seeds' own params -- num_of_md_starts,</span>
-<span class="sd">    defaulting here to 10, enforce_chemical_diversity, seed) and</span>
-<span class="sd">    trainer/trainer_config (which trainer registry entry built the model</span>
-<span class="sd">    this MD run's calculator should use). Both live under md_kwargs rather</span>
-<span class="sd">    than the top structure_generation level since they're genuinely</span>
-<span class="sd">    MD-specific -- EZGA never calls select_diverse_seeds or the trainer</span>
-<span class="sd">    registry (it loads its model directly, always assuming MACE).</span>
+<span class="sd">    config overrides -- plus structure_selection_kwargs (select_diverse_</span>
+<span class="sd">    seeds' own params -- num_of_md_starts, defaulting here to 10,</span>
+<span class="sd">    enforce_chemical_diversity, seed), MD-specific so it lives under</span>
+<span class="sd">    md_kwargs.</span>
 <span class="sd">    structure_generation's own top-level structure_selection_kwargs is</span>
 <span class="sd">    unrelated and generator-agnostic (filter_eligible_structures, called</span>
 <span class="sd">    once by the skeleton before any generator dispatch).</span>
@@ -489,22 +482,15 @@
 
     <span class="n">md_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"md_kwargs"</span><span class="p">,</span> <span class="p">{}))</span>
     <span class="n">selection_kwargs</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"structure_selection_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
-    <span class="n">trainer</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"trainer"</span><span class="p">,</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="p">[</span><span class="s2">"trainer"</span><span class="p">])</span>
-    <span class="n">trainer_config</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span>
-        <span class="s2">"trainer_config"</span><span class="p">,</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="p">[</span><span class="s2">"trainer_config"</span><span class="p">]</span>
-    <span class="p">)</span>
     <span class="c1"># Only run_md's own flat kwargs (steps, temperature, ...) get</span>
     <span class="c1"># ALomancy's defaults merged in here (deliberately different from</span>
     <span class="c1"># run_md's own steps=100 default, far too short for real production</span>
-    <span class="c1"># MD) -- structure_selection_kwargs/trainer/trainer_config above</span>
-    <span class="c1"># already have their own dedicated defaults, resolved separately, and</span>
-    <span class="c1"># must not leak back in via this merge: **md_kwargs is spread after</span>
-    <span class="c1"># the explicit "trainer"/"trainer_config" function_kwargs below, so a</span>
-    <span class="c1"># leaked-back default would silently clobber an explicit user value.</span>
+    <span class="c1"># MD); structure_selection_kwargs has its own defaults, resolved</span>
+    <span class="c1"># separately.</span>
     <span class="n">_run_md_kwargs_defaults</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
         <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"structure_selection_kwargs"</span><span class="p">,</span> <span class="s2">"trainer"</span><span class="p">,</span> <span class="s2">"trainer_config"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">"structure_selection_kwargs"</span>
     <span class="p">}</span>
     <span class="n">md_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">_run_md_kwargs_defaults</span><span class="p">,</span> <span class="o">**</span><span class="n">md_kwargs</span><span class="p">}</span>
     <span class="n">md_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">"structure_generation"</span><span class="p">)</span>
@@ -538,6 +524,11 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">md_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"md_output_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">item</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="c1"># A replacement fills its original's slot, so the report sees one</span>
+        <span class="c1"># item whose retry succeeded (analysis/report/current_events.py).</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"md_run_</span><span class="si">{</span><span class="n">seeds</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'replaces'</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">n_frames</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="n">path</span> <span class="o">=</span> <span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">/</span> <span class="n">target_file</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
@@ -554,7 +545,7 @@
         <span class="k">if</span> <span class="n">remote_info</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">remote_info</span> <span class="o">=</span> <span class="n">get_remote_info</span><span class="p">(</span>
                 <span class="p">{</span><span class="s2">"hpc"</span><span class="p">:</span> <span class="n">hpc</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span> <span class="s2">"max_time"</span><span class="p">:</span> <span class="n">max_time</span><span class="p">},</span>
-                <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">model_path</span><span class="p">)],</span>
+                <span class="n">input_files</span><span class="o">=</span><span class="p">[</span><span class="n">calculator_spec</span><span class="o">.</span><span class="n">model_path</span><span class="p">],</span>
             <span class="p">)</span>
         <span class="c1"># run_md (unchanged, shared with the old production path) still</span>
         <span class="c1"># reads its own "name" out of structure_generation_job_dict rather</span>
@@ -572,16 +563,15 @@
                     <span class="s2">"initial_structure"</span><span class="p">:</span> <span class="n">seeds</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
                     <span class="s2">"total_md_runs"</span><span class="p">:</span> <span class="n">total_md_runs</span><span class="p">,</span>
                     <span class="s2">"out_dir"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)),</span>
-                    <span class="s2">"model_path"</span><span class="p">:</span> <span class="n">model_path</span><span class="p">,</span>
-                    <span class="s2">"trainer"</span><span class="p">:</span> <span class="n">trainer</span><span class="p">,</span>
-                    <span class="s2">"trainer_config"</span><span class="p">:</span> <span class="n">trainer_config</span><span class="p">,</span>
+                    <span class="s2">"calculator_spec"</span><span class="p">:</span> <span class="n">calculator_spec</span><span class="p">,</span>
                     <span class="o">**</span><span class="n">md_kwargs</span><span class="p">,</span>
                 <span class="p">},</span>
                 <span class="s2">"output_files"</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">))],</span>
+                <span class="s2">"item"</span><span class="p">:</span> <span class="n">item</span><span class="p">(</span><span class="n">i</span><span class="p">),</span>
             <span class="p">}</span>
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">indices</span>
         <span class="p">]</span>
-        <span class="n">submit_n</span><span class="p">(</span><span class="n">_run_md_via_trainer</span><span class="p">,</span> <span class="n">job_configs</span><span class="p">,</span> <span class="n">remote_info</span><span class="p">)</span>
+        <span class="n">submit_n</span><span class="p">(</span><span class="n">_run_md_with_spec</span><span class="p">,</span> <span class="n">job_configs</span><span class="p">,</span> <span class="n">remote_info</span><span class="p">)</span>
 
     <span class="c1"># First pass: every run with no output directory yet (a fresh start, or</span>
     <span class="c1"># runs never submitted before an interruption).</span>
@@ -608,7 +598,11 @@
             <span class="n">base_name</span><span class="p">,</span>
             <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
                 <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_no_steps"</span><span class="p">,</span>
-                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span> <span class="s2">"total"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">)},</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span>
+                    <span class="s2">"total"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">seeds</span><span class="p">),</span>
+                    <span class="s2">"items"</span><span class="p">:</span> <span class="p">[</span><span class="n">item</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">not_started</span><span class="p">],</span>
+                <span class="p">},</span>
             <span class="p">},</span>
         <span class="p">)</span>
         <span class="n">replacements</span> <span class="o">=</span> <span class="n">_replacement_seeds</span><span class="p">(</span>
@@ -636,7 +630,10 @@
             <span class="n">unfinished</span><span class="p">,</span>
             <span class="n">base_name</span><span class="p">,</span>
             <span class="nb">len</span><span class="p">(</span><span class="n">completed</span><span class="p">),</span>
-            <span class="n">extra</span><span class="o">=</span><span class="p">{</span><span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_unfinished"</span><span class="p">,</span> <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">unfinished</span><span class="p">)}},</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_unfinished"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">unfinished</span><span class="p">),</span> <span class="s2">"items"</span><span class="p">:</span> <span class="p">[</span><span class="n">item</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">unfinished</span><span class="p">]},</span>
+            <span class="p">},</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">completed</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>

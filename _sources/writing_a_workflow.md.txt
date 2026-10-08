@@ -22,7 +22,7 @@ declare its settings and write a short `run()`.
 | `train_models(ctx, seeds, *, min_successful=1)` | Trains one model per seed on this loop's shared train/validation/test split, **all in one parallel remote batch**. Returns a list of `TrainedModel` (`fit_idx`, `seed`, `model_path`, `compiled_model_path`, `metrics`, `fit_dir`), updates `results/best_model/`, and raises if fewer than `min_successful` succeed. |
 | `seeds(n)` | `[general.seed, general.seed + 1, ...]`, the standard per-model seeds. |
 | `best_model(models)` | The model with the lowest force error on the shared validation split (test split if there is none). |
-| `generate_candidates(ctx, model)` | Runs the configured structure generator (MD, EZGA, ...) with `model`, starting from this loop's eligible training structures. Drops unphysical candidates. |
+| `generate_candidates(ctx, model)` | Runs the configured structure generator (MD, EZGA, ...) with `model`'s own calculator, starting from this loop's eligible training structures. Drops unphysical candidates. |
 | `predict(ctx, models, structures)` | Energies and forces of `structures` from every model, as one parallel remote batch. One `{"forces": [...], "energies": [...]}` per model. |
 | `high_accuracy_evaluate(ctx, structures)` | DFT-labels the chosen structures (relaxed up to `high_accuracy_evaluation.force_ceiling`), tagging them with your `NEW_STRUCTURE_CONFIG_TYPE` and the loop number. |
 | `add_to_dataset(ctx, structures)` | Adds labelled structures to the database, split by `dataset_kwargs.test_ratio` (or `fixed_test` rules). |
@@ -168,10 +168,10 @@ class SevenNetTrainer(ALomancyTrainer):
     def model_path(self, fit_dir: Path) -> Path:
         return fit_dir / "checkpoint_best.pth"
 
-    def get_calculator(self, model_path):
+    def get_calculator(self, model_path, *, device=None):
         from sevenn.calculator import SevenNetCalculator
 
-        return SevenNetCalculator(str(model_path))
+        return SevenNetCalculator(str(model_path), device=device or "auto")
 
     def fit(
         self,
@@ -209,6 +209,11 @@ register(
   `results/best_model/` gets; MACE uses its compiled model),
   `cleanup_paths` (files to delete after a fit), `report_section` (the
   loop report).
+- **`get_calculator` is how every other part of ALomancy uses your model**:
+  evaluation, committee prediction and structure generation. Generators get
+  a `CalculatorSpec` (trainer name, config, model path) and call
+  `spec.build()` on the HPC node (MD) or with `device="cpu"` in the driver
+  (EZGA), so MD and EZGA work with any registered trainer without changes.
 - Training runs remotely through the module-level `run_training`, which
   builds the trainer on the HPC node from its registry name, so changes
   to a trainer need `alomancy upgrade-hpc` before the next run.

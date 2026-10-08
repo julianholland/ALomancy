@@ -133,13 +133,13 @@ and a warning is logged.</p>
 <td><p>Energy and force parity of this loop’s best model (train and test)</p></td>
 </tr>
 <tr class="row-odd"><td><p>Training set</p></td>
-<td><p>Structures per <code class="docutils literal notranslate"><span class="pre">config_type</span></code>: train, test, excluded as redundant, excluded by the quality filters (with reasons)</p></td>
+<td><p>Structures per <code class="docutils literal notranslate"><span class="pre">config_type</span></code>: train, test, excluded as redundant, excluded by the quality filters (with reasons). Plus the redundancy tolerance probe: unique structures against the duplicate tolerance (<code class="docutils literal notranslate"><span class="pre">char_vec_128</span></code> descriptor, Euclidean distance), with the plateaus it looks for shaded, the tolerance it chose marked and the structures removed per step (the gradient) on a second axis, from <code class="docutils literal notranslate"><span class="pre">results/&lt;loop&gt;/redundancy_probe.json</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p>DFT</p></td>
 <td><p>Returned vs submitted, single points vs relaxations, how many relaxations reached the force ceiling, BFGS steps vs the step budget, average DFT time per structure, largest force after DFT, DFT phase wall-clock and queue time</p></td>
 </tr>
 <tr class="row-odd"><td><p>Module sections</p></td>
-<td><p>From the configured trainer, generator and evaluator, e.g. MD frames per run, the best fit’s training curve, GO-step and DFT-time histograms</p></td>
+<td><p>From the configured trainer, generator and evaluator, e.g. MD frames per run and every MD run’s temperature against step (overlaid), the best fit’s training curve, GO-step and DFT-time histograms</p></td>
 </tr>
 <tr class="row-even"><td><p>Workflow section</p></td>
 <td><p>e.g. the committee’s force std-dev distribution with the selection cut, or the novelty tolerance</p></td>
@@ -289,8 +289,15 @@ chosen as for MD.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">results/alomancy.log</span></code></strong>: phase timings.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">results/events.jsonl</span></code></strong>: warnings and coded events, written next to
 the log. Each line is one JSON object (<code class="docutils literal notranslate"><span class="pre">time</span></code>, <code class="docutils literal notranslate"><span class="pre">level</span></code>, <code class="docutils literal notranslate"><span class="pre">logger</span></code>,
-<code class="docutils literal notranslate"><span class="pre">message</span></code>, <code class="docutils literal notranslate"><span class="pre">event</span></code>, <code class="docutils literal notranslate"><span class="pre">loop</span></code>, <code class="docutils literal notranslate"><span class="pre">data</span></code>). Every WARNING or above is recorded;
-INFO records only when they carry an event code.</p></li>
+<code class="docutils literal notranslate"><span class="pre">message</span></code>, <code class="docutils literal notranslate"><span class="pre">event</span></code>, <code class="docutils literal notranslate"><span class="pre">loop</span></code>, <code class="docutils literal notranslate"><span class="pre">phase</span></code>, <code class="docutils literal notranslate"><span class="pre">attempt</span></code>, <code class="docutils literal notranslate"><span class="pre">data</span></code>). Every WARNING
+or above is recorded; INFO records only when they carry an event code.
+<strong>The report counts only what still stands</strong>: for each step (training,
+structure generation, DFT) the events of its latest run attempt, so a
+step that failed and then succeeded after a restart doesn’t report the
+old failures; and within that attempt, a failed job whose retry of the
+same fit, MD run or structure succeeded is left out. A step finished in
+an earlier attempt keeps its warnings. Event files from versions without
+<code class="docutils literal notranslate"><span class="pre">phase</span></code>/<code class="docutils literal notranslate"><span class="pre">attempt</span></code> are sorted into attempts and steps from <code class="docutils literal notranslate"><span class="pre">alomancy.log</span></code>.</p></li>
 </ul>
 <p>To make a new situation countable, log it with an event code:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>

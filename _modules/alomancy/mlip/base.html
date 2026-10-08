@@ -86,7 +86,11 @@
 
 <span class="sd">- ``fit(...)``: train one model, return the model file's path (or None);</span>
 <span class="sd">- ``model_path(fit_dir)``: where ``fit`` puts that file;</span>
-<span class="sd">- ``get_calculator(model_path)``: an ASE calculator for a trained model.</span>
+<span class="sd">- ``get_calculator(model_path, *, device=None)``: an ASE calculator for a</span>
+<span class="sd">  trained model. Structure generators never call it directly: they get a</span>
+<span class="sd">  ``CalculatorSpec`` (trainer name, config, model path) and ``build()`` it</span>
+<span class="sd">  where the calculator is needed, so exploration always uses the MLIP that</span>
+<span class="sd">  ``training.trainer`` trained.</span>
 
 <span class="sd">Everything else is shared and lives here: the standard ``train`` entry</span>
 <span class="sd">point, resolving the per-element isolated-atom energies, evaluating the</span>
@@ -116,6 +120,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -123,7 +128,10 @@
     <span class="n">read_evaluation</span><span class="p">,</span>
     <span class="n">save_evaluation</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">drop_unwritable_info</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">drop_unwritable_info</span><span class="p">,</span>
+    <span class="n">recover_swallowed_model_energy</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
@@ -241,9 +249,12 @@
 <div class="viewcode-block" id="ALomancyTrainer.get_calculator">
 <a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.ALomancyTrainer.get_calculator">[docs]</a>
     <span class="nd">@abstractmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""An ASE calculator for a trained model. Only call it inside a</span>
-<span class="sd">        remote job, never in the local driver process."""</span></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_calculator</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""An ASE calculator for a trained model, on *device* (None: the</span>
+<span class="sd">        backend's own choice). Called in remote jobs (evaluation, MD,</span>
+<span class="sd">        prediction) and, on the CPU, in the driver process by EZGA."""</span></div>
 
 
     <span class="c1"># -- Overridable, with generic defaults ----------------------------------</span>
@@ -559,6 +570,30 @@
 
 
 
+<div class="viewcode-block" id="CalculatorSpec">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.CalculatorSpec">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CalculatorSpec</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""How to build the calculator of one trained model: which trainer</span>
+<span class="sd">    (registry name and config) and which model file. Plain data, so it can</span>
+<span class="sd">    be pickled into a remote job (a live, possibly GPU-resident calculator</span>
+<span class="sd">    can't); ``build()`` there asks the trainer for the calculator."""</span>
+
+    <span class="n">trainer</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">trainer_config</span><span class="p">:</span> <span class="nb">dict</span>
+    <span class="n">model_path</span><span class="p">:</span> <span class="nb">str</span>
+
+<div class="viewcode-block" id="CalculatorSpec.build">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.CalculatorSpec.build">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">trainer</span> <span class="o">=</span> <span class="n">get_trainer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trainer</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">trainer_config</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">trainer</span><span class="o">.</span><span class="n">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">trainer</span><span class="o">.</span><span class="n">get_calculator</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_path</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span></div>
+</div>
+
+
+
 <div class="viewcode-block" id="get_trainer">
 <a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.get_trainer">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_trainer</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">fit_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"training"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ALomancyTrainer</span><span class="p">:</span>
@@ -599,6 +634,30 @@
 
 
 
+<div class="viewcode-block" id="read_prediction_file">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.read_prediction_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_prediction_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Every structure of a ``{split}_pred.xyz``, with model energies that</span>
+<span class="sd">    older files lost to the empty-value extxyz bug recovered (one warning</span>
+<span class="sd">    per file). Raises what ``ase.io.read`` raises."""</span>
+    <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+    <span class="n">recovered</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">recover_swallowed_model_energy</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">recovered</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Recovered model_energy for </span><span class="si">%d</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> structure(s) in </span><span class="si">%s</span><span class="s2"> (a file "</span>
+            <span class="s2">"written before ALomancy 1.0.2, whose extxyz header had swallowed it)."</span><span class="p">,</span>
+            <span class="n">recovered</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">),</span>
+            <span class="n">path</span><span class="p">,</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"predictions_recovered"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="s2">"n"</span><span class="p">:</span> <span class="n">recovered</span><span class="p">,</span> <span class="s2">"of"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">)},</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">atoms_list</span></div>
+
+
+
 <div class="viewcode-block" id="read_predictions">
 <a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.read_predictions">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">read_predictions</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
@@ -610,7 +669,7 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">xyz</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
             <span class="k">continue</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">atoms_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">xyz</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
+            <span class="n">atoms_list</span> <span class="o">=</span> <span class="n">read_prediction_file</span><span class="p">(</span><span class="n">xyz</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Failed to read </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">xyz</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
             <span class="k">continue</span>
