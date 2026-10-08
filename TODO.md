@@ -8,7 +8,7 @@
 - [ ] plotting overhaul each plot should be associated with the correct level of depth, i.e. plots that are always true like timings should be associated at teh highest level, plug in specific plots should be associated with only that plug in. plot = True then calls all plotting for each of the relevant modules 
 - [ ] fix timings plot: only DFT plus queue time visible 1.0
 - [x] no test parity plots 1.0
-- [ ] plot for the distribution of uncertainty of committee
+- [x] plot for the distribution of uncertainty of committee
 - [ ] title of bond distribution can overlap with the subtitles
 - [ ] add stresses to parity plot if they are present 
 - [x] fix the mlip_committee_al_loop_mae_plot this shouldn't be inside the loop folders but in the parent dir updated after each loop
