@@ -376,3 +376,41 @@ def test_calculator_spec_survives_pickling_and_builds_its_trainers_calculator(
     assert isinstance(copy.build(), EMT)
     assert isinstance(copy.build(device="cpu"), EMT)
     assert EMTTrainer.calculator_devices == [None, "cpu"]
+
+
+@pytest.mark.unit
+def test_read_predictions_recovers_energies_lost_by_older_files(
+    tmp_path, write_pred_file_like_before_fix
+):
+    import logging
+
+    frames = []
+    for gid in range(3):
+        a = Atoms("H", cell=[3.0] * 3, pbc=True)
+        a.info.update(global_db_id=gid, model_energy=-1.0 - gid)
+        a.set_array("model_forces", np.zeros((1, 3)))
+        frames.append(a)
+    write_pred_file_like_before_fix(tmp_path / "test_pred.xyz", frames)
+    assert all(
+        "model_energy" not in a.info
+        for a in read(tmp_path / "test_pred.xyz", ":", format="extxyz")
+    )
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    module_logger = logging.getLogger("alomancy.mlip.base")
+    module_logger.addHandler(handler)
+    try:
+        preds = read_predictions(tmp_path)
+    finally:
+        module_logger.removeHandler(handler)
+
+    assert {gid: p["energy"] for gid, p in preds.items()} == {
+        0: -1.0,
+        1: -2.0,
+        2: -3.0,
+    }
+    (warning,) = [r for r in records if r.levelno == logging.WARNING]
+    assert warning.event == "predictions_recovered"
+    assert "3 of 3" in warning.getMessage()

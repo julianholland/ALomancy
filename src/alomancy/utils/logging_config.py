@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sys
 import threading
 from datetime import datetime
@@ -20,14 +21,31 @@ def set_current_loop(loop: int | None) -> None:
     _current_loop = loop
 
 
+# The step (@phase name, e.g. "generate_structures") currently running, None
+# outside one; a module global for the same reason as _current_loop.
+_current_phase: str | None = None
+
+# One per process: every event this run attempt logs carries it, so the loop
+# report can keep only a step's latest attempt (analysis/report/
+# current_events.py) instead of counting failures a restart already fixed.
+ATTEMPT_ID = f"{datetime.now():%Y-%m-%dT%H:%M:%S}-{os.getpid()}"
+
+
+def set_current_phase(phase: str | None) -> None:
+    """Tag every event logged from now on with *phase* (see JsonlEventHandler)."""
+    global _current_phase
+    _current_phase = phase
+
+
 class JsonlEventHandler(logging.Handler):
     """Append warnings, errors and coded events to a JSON-lines file.
 
     A record is written when its level is WARNING or above, or when it
     carries an ``event`` code (``logger.info(..., extra={"event": "x",
     "data": {...}})``). Each line holds time, level, logger, message,
-    event (None if uncoded), loop (see set_current_loop) and data. The loop
-    report (analysis/report) counts these instead of parsing log text.
+    event (None if uncoded), loop (see set_current_loop), phase (see
+    set_current_phase), attempt (ATTEMPT_ID) and data. The loop report
+    (analysis/report) counts these instead of parsing log text.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -49,6 +67,8 @@ class JsonlEventHandler(logging.Handler):
                 "message": record.getMessage(),
                 "event": event,
                 "loop": _current_loop,
+                "phase": _current_phase,
+                "attempt": ATTEMPT_ID,
                 "data": getattr(record, "data", None),
             }
             text = json.dumps(line, default=str)

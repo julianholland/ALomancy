@@ -26,7 +26,9 @@ EVENT_DESCRIPTIONS = {
     "fit_missing": "model fits missing after retry",
     "fewer_candidates": "fewer candidates than requested",
     "predictions_unreadable": "prediction files with unreadable structures",
+    "predictions_recovered": "model energies recovered from pre-1.0.2 files",
     "config_key_misplaced": "config keys in the wrong block (ignored)",
+    "fit_not_evaluated": "fits that finished without an evaluation",
     "config_key_unused": "settings for modules this run doesn't use",
     "config_key_unrecognised": "unrecognised config keys (ignored)",
     "few_candidates_generated": "fewer than 2x per-loop candidates generated",
@@ -61,8 +63,14 @@ def _warnings(stats: dict) -> int:
     return sum(levels.get(k, 0) for k in ("WARNING", "ERROR", "CRITICAL"))
 
 
+# Kept upper case in image alt text built from a file name.
+_ACRONYMS = {"md": "MD", "dft": "DFT", "mae": "MAE", "go": "GO"}
+
+
 def _image(path: Path, alt: str | None = None) -> str:
-    alt = alt or path.stem.replace("_", " ").capitalize()
+    if not alt:
+        words = path.stem.replace("_", " ").capitalize().split()
+        alt = " ".join(_ACRONYMS.get(w.lower(), w) for w in words)
     return f"![{alt}](plots/{path.name})"
 
 
@@ -171,6 +179,51 @@ def _dataset(stats: dict) -> list[str]:
             f"{k}: {v}" for k, v in dataset["quality_filter_reasons"].items()
         )
         lines.append(f"- Quality filters: {reasons}.")
+    return lines
+
+
+def _redundancy(stats: dict, core_plots: dict) -> list[str]:
+    """What redundancy removal's tolerance probe shows, with this loop's
+    numbers and plot; nothing for loops that saved no probe."""
+    probe = stats.get("redundancy_probe")
+    if not probe:
+        return []
+    descriptor = probe.get("descriptor") or {}
+    key = descriptor.get("key", "char_vec_128")
+    dimensions = descriptor.get("dimensions", 128)
+    lines = [
+        "### Redundancy removal",
+        "",
+        "Redundancy removal flags near-duplicate training structures, so the "
+        f"model isn't trained on many copies of the same geometry. Each structure "
+        f"is described by `{key}`: all of its interatomic distances, sorted and "
+        f"resampled to {dimensions} values "
+        "(`global_descriptor/atomic_distance_descriptor.make_char_vec`). Two "
+        "structures count as duplicates when the Euclidean distance between "
+        "their descriptors is below a tolerance. The plot sweeps that tolerance "
+        "and counts how many structures stay unique at each value. **We are "
+        "looking for plateaus** (shaded): ranges where the count barely changes, "
+        "so the result doesn't depend on the exact tolerance. The orange line "
+        "(right axis) is the number of structures removed between consecutive "
+        "tolerance steps, the gradient of the count: on a plateau it stays near "
+        "zero. The start of the lowest plateau is used (dashed line); if no "
+        "plateau is found, nothing is flagged.",
+        "",
+    ]
+    n = probe.get("n_structures")
+    if probe.get("chosen_tolerance") is not None:
+        lines.append(
+            f"- This loop: {n:,} structures probed, tolerance "
+            f"{probe['chosen_tolerance']:.4f}, {probe.get('n_flagged', 0):,} flagged "
+            f"as duplicates ({len(probe.get('plateaus') or [])} plateau(s) found)."
+        )
+    else:
+        lines.append(
+            f"- This loop: {n:,} structures probed; no plateau, nothing flagged."
+        )
+    lines.append("")
+    if "redundancy" in core_plots:
+        lines += [_image(core_plots["redundancy"], "Redundancy tolerance probe"), ""]
     return lines
 
 
@@ -307,11 +360,19 @@ def render_markdown(
     out += ["## Best model", ""]
     if "parity" in core_plots:
         out += [_image(core_plots["parity"], "Best model parity"), ""]
+        model = stats.get("model") or {}
+        if "test" not in model.get("parity_splits", ["test"]):
+            out += [
+                f"No test-set predictions for fit_{model.get('best_fit_idx')}; "
+                "the plot shows the training set only.",
+                "",
+            ]
     else:
         out += ["No predictions stored for this loop's best model.", ""]
     out += ["## Training set", "", *_dataset(stats), ""]
     if "composition" in core_plots:
         out += [_image(core_plots["composition"], "Training set composition"), ""]
+    out += _redundancy(stats, core_plots)
     out += ["## DFT", "", *_dft(stats), ""]
     for section in sections:
         out += [f"## {section.title}", ""]

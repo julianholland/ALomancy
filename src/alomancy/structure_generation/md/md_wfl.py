@@ -433,6 +433,11 @@ def generate(
     def out_dir(i: int) -> Path:
         return md_dir / f"md_output_{i}"
 
+    def item(i: int) -> str:
+        # A replacement fills its original's slot, so the report sees one
+        # item whose retry succeeded (analysis/report/current_events.py).
+        return f"md_run_{seeds[i].info.get('replaces', i)}"
+
     def n_frames(i: int) -> int:
         path = out_dir(i) / target_file
         if not path.exists():
@@ -471,6 +476,7 @@ def generate(
                     **md_kwargs,
                 },
                 "output_files": [str(out_dir(i))],
+                "item": item(i),
             }
             for i in indices
         ]
@@ -501,7 +507,11 @@ def generate(
             base_name,
             extra={
                 "event": "md_no_steps",
-                "data": {"n": len(not_started), "total": len(seeds)},
+                "data": {
+                    "n": len(not_started),
+                    "total": len(seeds),
+                    "items": [item(i) for i in not_started],
+                },
             },
         )
         replacements = _replacement_seeds(
@@ -529,7 +539,10 @@ def generate(
             unfinished,
             base_name,
             len(completed),
-            extra={"event": "md_unfinished", "data": {"n": len(unfinished)}},
+            extra={
+                "event": "md_unfinished",
+                "data": {"n": len(unfinished), "items": [item(i) for i in unfinished]},
+            },
         )
     if not completed:
         raise RuntimeError(

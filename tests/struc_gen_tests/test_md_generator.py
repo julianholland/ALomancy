@@ -372,7 +372,7 @@ def _distinct_seeds(n: int) -> list[Atoms]:
     return out
 
 
-def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None):
+def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None, items=None):
     """Run generate() with a fake submit_n. `outcome(run_index, seed_atoms)`
     returns the number of frames that run writes (0 = no output at all).
     Returns (result, submitted run indices per submit_n call)."""
@@ -380,6 +380,8 @@ def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None):
 
     def fake_submit_n(function, job_configs, remote_info, **kwargs):
         indices = []
+        if items is not None:
+            items.append([jc.get("item") for jc in job_configs])
         for jc in job_configs:
             out_dir = Path(jc["function_kwargs"]["out_dir"])
             index = int(out_dir.name.rsplit("_", 1)[1])
@@ -439,6 +441,17 @@ class TestGenerateFailedRuns:
         assert not original_sources & {a.info["source"] for a in seeds[3:]}
         assert len({a.info["md_seed"] for a in seeds}) == 5
         assert len(result) == 2 + 2 + 2  # runs 0, 3 and 4
+
+    def test_replacements_carry_the_item_of_the_run_they_replace(
+        self, tmp_path, monkeypatch
+    ):
+        """So the loop report can tell that run 1's replacement succeeded
+        and hide run 1's failure (analysis/report/current_events.py)."""
+        monkeypatch.chdir(tmp_path)
+        items: list[list[str]] = []
+        _md_generate(tmp_path, lambda i, a: {1: 0}.get(i, 2), items=items)
+
+        assert items == [["md_run_0", "md_run_1", "md_run_2"], ["md_run_1"]]
 
     def test_replacement_that_also_fails_is_not_replaced_again(
         self, tmp_path, monkeypatch, caplog

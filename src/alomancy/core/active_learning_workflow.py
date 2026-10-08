@@ -235,7 +235,11 @@ from alomancy.utils.import_structures import (
     normalize_metadata,
     read_structures,
 )
-from alomancy.utils.logging_config import set_current_loop, setup_logging
+from alomancy.utils.logging_config import (
+    set_current_loop,
+    set_current_phase,
+    setup_logging,
+)
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
 )
@@ -267,6 +271,8 @@ _PHASE_LABELS: dict[str, str] = {
 _INITIALIZATION_NAME = "initialization"
 _TRAINING_NAME = "training"
 _BEST_MODEL_DIR = "best_model"
+# results/<loop>/redundancy_probe.json: that loop's redundancy tolerance probe.
+_REDUNDANCY_PROBE_FILENAME = "redundancy_probe.json"
 _SUMMARY_HPC_COLUMNS = (
     "hpc_name",
     "alomancy_version",
@@ -897,9 +903,27 @@ def phase(
                 return load(self, ctx, *args, **kwargs)
             # Parsed by analysis/timing_plots as phase boundaries, together
             # with _mark_phase_done's "marked complete" line.
-            logger.debug("Phase %s started for %s.", phase_name, ctx.base_name)
-            result = fn(self, ctx, *args, **kwargs)
-            self._mark_phase_done(ctx.base_name, phase_name)
+            # The coded events let the loop report keep only this step's
+            # latest attempt (analysis/report/current_events.py), even when
+            # the step logs nothing else.
+            set_current_phase(phase_name)
+            logger.debug(
+                "Phase %s started for %s.",
+                phase_name,
+                ctx.base_name,
+                extra={"event": "phase_started", "data": {"phase": phase_name}},
+            )
+            try:
+                result = fn(self, ctx, *args, **kwargs)
+                self._mark_phase_done(ctx.base_name, phase_name)
+                logger.debug(
+                    "Phase %s finished for %s.",
+                    phase_name,
+                    ctx.base_name,
+                    extra={"event": "phase_completed", "data": {"phase": phase_name}},
+                )
+            finally:
+                set_current_phase(None)
             return result
 
         return cast(_StepT, wrapper)
@@ -1753,15 +1777,17 @@ class ActiveLearningWorkflow(ABC):
         self._curate_dataset()
         return int(effective_start)
 
-    def _curate_dataset(self) -> None:
+    def _curate_dataset(self, base_name: str = _INITIALIZATION_NAME) -> None:
         """Redundancy removal, train/test quality filters and (if
         configured) dataset curation -- run before the first loop and at
-        the end of every loop."""
+        the end of every loop. The redundancy tolerance probe is saved to
+        results/<base_name>/redundancy_probe.json for the loop report."""
         if self.remove_redundancy:
             remove_redundancy_from_partition(
                 self.db,
                 config_list=self.dataset_kwargs["target_config_types"]
                 + [self.NEW_STRUCTURE_CONFIG_TYPE],
+                probe_path=Path("results", base_name, _REDUNDANCY_PROBE_FILENAME),
             )
         self._apply_split_filters()
         if self.jobs_dict.get("dataset_curation"):
@@ -1938,6 +1964,7 @@ class ActiveLearningWorkflow(ABC):
                             "isolated_atom_energies": isolated_atom_energies,
                         },
                         "output_files": [str(workdir / name / f"fit_{fit_idx}")],
+                        "item": f"fit_{fit_idx}",
                     }
                     for fit_idx in fit_indices
                 ]
@@ -1955,6 +1982,10 @@ class ActiveLearningWorkflow(ABC):
                             "(outputs missing or invalid); counting it as failed.",
                             fit_idx,
                             base_name,
+                            extra={
+                                "event": "fit_not_evaluated",
+                                "data": {"item": f"fit_{fit_idx}"},
+                            },
                         )
                         continue
                     results[fit_idx] = collected
@@ -1971,7 +2002,11 @@ class ActiveLearningWorkflow(ABC):
                     failed,
                     extra={
                         "event": "fit_retry",
-                        "data": {"n": len(failed), "total": num_of_models},
+                        "data": {
+                            "n": len(failed),
+                            "total": num_of_models,
+                            "items": [f"fit_{i}" for i in failed],
+                        },
                     },
                 )
                 submit(failed)
@@ -1995,6 +2030,9 @@ class ActiveLearningWorkflow(ABC):
                     "data": {
                         "n": num_of_models - len(results),
                         "total": num_of_models,
+                        "items": [
+                            f"fit_{i}" for i in range(num_of_models) if i not in results
+                        ],
                     },
                 },
             )
@@ -2269,7 +2307,7 @@ class ActiveLearningWorkflow(ABC):
     def finish_loop(self, ctx: LoopContext) -> None:
         """End of a loop: redundancy removal, train/test filters and
         curation on the grown database, then mark the loop done."""
-        self._curate_dataset()
+        self._curate_dataset(ctx.base_name)
         self._mark_phase_done(ctx.base_name, "loop")
         if self.report:
             try:

@@ -40,6 +40,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 import polars as pl
+from ase import Atoms
 from ase.io import read, write
 
 from alomancy.mlip.evaluation import (
@@ -47,7 +48,10 @@ from alomancy.mlip.evaluation import (
     read_evaluation,
     save_evaluation,
 )
-from alomancy.utils.clean_structures import drop_unwritable_info
+from alomancy.utils.clean_structures import (
+    drop_unwritable_info,
+    recover_swallowed_model_energy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -484,6 +488,27 @@ def run_training(
     )
 
 
+def read_prediction_file(path: Path) -> list[Atoms]:
+    """Every structure of a ``{split}_pred.xyz``, with model energies that
+    older files lost to the empty-value extxyz bug recovered (one warning
+    per file). Raises what ``ase.io.read`` raises."""
+    atoms_list = list(read(path, ":", format="extxyz"))
+    recovered = sum(recover_swallowed_model_energy(a) for a in atoms_list)
+    if recovered:
+        logger.warning(
+            "Recovered model_energy for %d of %d structure(s) in %s (a file "
+            "written before ALomancy 1.0.2, whose extxyz header had swallowed it).",
+            recovered,
+            len(atoms_list),
+            path,
+            extra={
+                "event": "predictions_recovered",
+                "data": {"file": str(path), "n": recovered, "of": len(atoms_list)},
+            },
+        )
+    return atoms_list
+
+
 def read_predictions(fit_dir: Path) -> dict[int, dict]:
     """Per-structure predictions from a fit's train_pred.xyz/test_pred.xyz,
     as {global_db_id: {"energy": float, "forces": list}}; {} if none."""
@@ -493,7 +518,7 @@ def read_predictions(fit_dir: Path) -> dict[int, dict]:
         if not xyz.exists():
             continue
         try:
-            atoms_list = list(read(xyz, ":", format="extxyz"))
+            atoms_list = read_prediction_file(xyz)
         except Exception as exc:
             logger.warning("Failed to read %s: %s", xyz, exc)
             continue

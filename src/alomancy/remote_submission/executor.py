@@ -427,9 +427,16 @@ def _get_results_with_resume(
                 retry_limit,
                 status,
                 backoff,
-                extra={"event": "job_resumed"},
+                extra={"event": "job_resumed", "data": _item_data(job)},
             )
             time.sleep(backoff)
+
+
+def _item_data(job: Any) -> dict[str, Any]:
+    """Event data naming the job's item (the fit, MD run or structure it
+    computes), so the loop report can tell when a failed job's retry of the
+    same item succeeded (analysis/report/current_events.py)."""
+    return {"item": getattr(job, "_alomancy_item", None)}
 
 
 class RemoteJobExecutor:
@@ -451,6 +458,7 @@ class RemoteJobExecutor:
         input_files: list[Union[str, Path]] | None = None,
         output_files: list[Union[str, Path]] | None = None,
         job_name: str | None | None = None,
+        item: str | None = None,
         **expyre_kwargs,
     ) -> ExPyRe:
         if input_files is None:
@@ -479,6 +487,9 @@ class RemoteJobExecutor:
             **expyre_kwargs,
         )
 
+        # What the job computes ("fit_0", "md_run_3", ...); a retry of the
+        # same thing carries the same item. See _item_data.
+        job._alomancy_item = item
         self.jobs.append(job)
         return job
 
@@ -520,6 +531,7 @@ class RemoteJobExecutor:
                 input_files=job_input_files,
                 output_files=job_output_files,
                 job_name=job_name,
+                item=config.get("item"),
             )
             jobs.append(job)
 
@@ -616,7 +628,7 @@ class RemoteJobExecutor:
                     "gone). resubmit_killed_jobs is enabled -- submitting "
                     "one fresh replacement instead of giving up.",
                     index + 1,
-                    extra={"event": "job_resubmitted"},
+                    extra={"event": "job_resubmitted", "data": _item_data(job)},
                 )
                 # Salvage whatever the dead attempt already produced BEFORE
                 # resubmitting: force_rerun=True only wipes the *remote*
@@ -628,7 +640,11 @@ class RemoteJobExecutor:
                 self._salvage_partial_output(index, job)
                 result, stdout, stderr = _start_and_wait(force_rerun=True)
 
-            logger.info("Job %d completed successfully.", index + 1)
+            logger.info(
+                "Job %d completed successfully.",
+                index + 1,
+                extra={"event": "job_succeeded", "data": _item_data(job)},
+            )
             # A job "succeeding" only means the remote function returned
             # without raising -- it can still have logged warnings (e.g. a
             # near-total silent prediction-failure rate, previously
@@ -650,7 +666,8 @@ class RemoteJobExecutor:
                 extra={
                     "event": "job_died"
                     if isinstance(exc, ExPyReJobDiedError)
-                    else "job_failed"
+                    else "job_failed",
+                    "data": _item_data(job),
                 },
             )
             logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)

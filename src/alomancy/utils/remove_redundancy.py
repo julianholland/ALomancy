@@ -1,7 +1,12 @@
 """Flag near-duplicate structures in the training split of the GlobalDatabase."""
 
+import contextlib
+import io
+import json
 import logging
+import os
 import warnings
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -65,8 +70,106 @@ def descriptors_for_atoms(atoms_list: list, dimensions: int = 128) -> np.ndarray
     return np.array(vectors)
 
 
+def probe_redundancy_tolerance(
+    descriptor_array: np.ndarray, dimensions: int = 128
+) -> tuple[float | None, dict[str, Any] | None]:
+    """The duplicate tolerance for *descriptor_array* from deduplicate_lib's
+    NaturalTolerancePlateauProbe, and the record of the probe behind it.
+
+    The probe sweeps the tolerance (Euclidean distance in descriptor space
+    below which two structures are duplicates) between "everything is one
+    structure" and "everything is unique", counts the unique structures at
+    each step, and finds plateaus: stretches where that count barely
+    changes. The start of the lowest plateau is the tolerance. Returns
+    (None, record) when no plateau is found -- nothing should be flagged
+    then -- and (None, None) when there are too few structures to probe.
+    """
+    from deduplicate_lib.plugins.duplicate_detection_algorithms.distance_matrix import (
+        DistanceMatrix,
+    )
+    from deduplicate_lib.plugins.tolerance_calculators.natural_tolerance_plateau_probe import (
+        NaturalTolerancePlateauProbe,
+    )
+
+    class _RecordingProbe(NaturalTolerancePlateauProbe):
+        """Keeps the full sweep and the plateaus it found (the library's own
+        plateau_data drops the last points)."""
+
+        sweep: dict[float, int]
+        plateaus: list[tuple[float, float, int]]
+
+        def tolerance_probe(self, *args: Any, **kwargs: Any) -> dict:
+            self.sweep = super().tolerance_probe(*args, **kwargs)
+            return self.sweep
+
+        def find_plateaus(self, *args: Any, **kwargs: Any) -> list:
+            self.plateaus = super().find_plateaus(*args, **kwargs)
+            return self.plateaus
+
+    dda = DistanceMatrix(
+        dataset_array=descriptor_array, max_vector_array_size=len(descriptor_array)
+    )
+    probe = _RecordingProbe(
+        duplicate_detection_algorithm_object=dda,
+        tolerance_dataset_array=descriptor_array,
+        probe_steps=len(descriptor_array),
+        probe_buffer_fraction=0.01,
+    )
+    # calculate_tolerance fails two ways when the data can't support a
+    # plateau: ValueError (too few probe steps for a gradient) and a "No
+    # plateaus found" warning with an arbitrary midpoint fallback. The
+    # library also prints its whole plateau log to stdout.
+    with (
+        warnings.catch_warnings(record=True) as caught,
+        contextlib.redirect_stdout(io.StringIO()),
+    ):
+        warnings.simplefilter("always")
+        try:
+            tolerance: float | None = probe.calculate_tolerance(condition="minimum")
+        except ValueError as exc:
+            logger.info(
+                "Not enough structures (%d) to probe a natural tolerance plateau (%s).",
+                len(descriptor_array),
+                exc,
+            )
+            return None, None
+    found = not any("No plateaus found" in str(w.message) for w in caught)
+    if not found:
+        tolerance = None
+    sweep = getattr(probe, "sweep", {})
+    tolerances = sorted(sweep)
+    record = {
+        "tolerances": [float(t) for t in tolerances],
+        "unique_counts": [int(sweep[t]) for t in tolerances],
+        "plateaus": [
+            [float(a), float(b)] for a, b, _ in getattr(probe, "plateaus", [])
+        ],
+        "chosen_tolerance": None if tolerance is None else float(tolerance),
+        "outcome": "applied" if found else "no_plateau",
+        "n_structures": len(descriptor_array),
+        "descriptor": {
+            "key": descriptor_key(dimensions),
+            "dimensions": dimensions,
+            "metric": "euclidean",
+        },
+    }
+    return tolerance, record
+
+
+def _write_probe_record(path: Path, record: dict[str, Any]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(record))
+    os.replace(tmp, path)
+
+
 def remove_redundancy_from_partition(
-    db, config_list: list, tolerance: float = 0.01, dimensions: int = 128
+    db,
+    config_list: list,
+    tolerance: float = 0.01,
+    dimensions: int = 128,
+    probe_path: Path | None = None,
 ) -> None:
     """Flag near-duplicate structures in the training split of *db*.
 
@@ -86,12 +189,12 @@ def remove_redundancy_from_partition(
         dimensions: descriptor length. Descriptors are cached in the DB
             (``descriptor_key(dimensions)``) and only computed for structures
             that don't have one yet.
+        probe_path: where to save the tolerance probe (JSON: the sweep of
+            unique structures against tolerance, the plateaus, the chosen
+            tolerance and how many were flagged), for the loop report.
     """
     from deduplicate_lib.plugins.duplicate_detection_algorithms.distance_matrix import (
         DistanceMatrix,
-    )
-    from deduplicate_lib.plugins.tolerance_calculators.natural_tolerance_plateau_probe import (
-        NaturalTolerancePlateauProbe,
     )
 
     all_containers = list(db.partition.list_containers())
@@ -121,47 +224,25 @@ def remove_redundancy_from_partition(
         db, all_containers, dedup_global_indices, dimensions
     )
 
+    tolerance, record = probe_redundancy_tolerance(descriptor_array, dimensions)
+    if tolerance is None:
+        # Too few structures, or no stable plateau: flag nothing rather
+        # than apply a tolerance with no real relationship to the data.
+        if record is not None:
+            logger.info(
+                "No tolerance plateau isolated among %d structures -- skipping "
+                "redundancy removal for this call rather than using an "
+                "arbitrary fallback tolerance.",
+                len(descriptor_array),
+            )
+            if probe_path is not None:
+                _write_probe_record(probe_path, {**record, "n_flagged": 0})
+        return
+
     dm_dda = DistanceMatrix(
         dataset_array=descriptor_array,
         max_vector_array_size=len(descriptor_array),
     )
-
-    # calculate_tolerance can fail two distinct ways when the data doesn't
-    # support a confident plateau: it raises ValueError outright when there
-    # are too few probe steps to even attempt gradient detection (small
-    # config_list-matching subsets), or it emits a "No plateaus found"
-    # warning and returns an arbitrary fallback tolerance (midpoint of the
-    # all-same/all-different bounds) when the probe ran but found nothing
-    # stable. Neither case should flag any structure as a duplicate --
-    # skip redundancy removal for this call rather than crashing or
-    # applying a tolerance with no real relationship to the data.
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            tolerance = NaturalTolerancePlateauProbe(
-                duplicate_detection_algorithm_object=dm_dda,
-                tolerance_dataset_array=descriptor_array,
-                probe_steps=len(descriptor_array),
-                probe_buffer_fraction=0.01,
-            ).calculate_tolerance(condition="minimum")
-        except ValueError as exc:
-            logger.info(
-                "Not enough structures (%d) to probe a natural tolerance "
-                "plateau (%s) — skipping redundancy removal for this call.",
-                len(descriptor_array),
-                exc,
-            )
-            return
-
-    if any("No plateaus found" in str(w.message) for w in caught):
-        logger.info(
-            "No tolerance plateau isolated among %d structures — skipping "
-            "redundancy removal for this call rather than using an "
-            "arbitrary fallback tolerance.",
-            len(descriptor_array),
-        )
-        return
-
     dm_dda.tolerance = tolerance
     dm_dda.get_dataset_unique_structures()
     unique_local = set(map(int, dm_dda.get_unique_vector_indices()))
@@ -186,5 +267,7 @@ def remove_redundancy_from_partition(
             },
         },
     )
+    if probe_path is not None and record is not None:
+        _write_probe_record(probe_path, {**record, "n_flagged": len(duplicate_global)})
     if duplicate_global:
         db.flag_as_duplicates(duplicate_global)

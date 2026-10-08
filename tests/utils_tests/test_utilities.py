@@ -961,6 +961,65 @@ class TestSalvagePartialOutput:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("should_fail", "event"), [(False, "job_succeeded"), (True, "job_failed")]
+)
+def test_job_outcome_events_name_the_jobs_item(
+    tmp_path, monkeypatch, should_fail, event
+):
+    """The loop report hides a failure whose retry of the same item
+    succeeded; both outcomes must carry the item the job config named."""
+    import logging
+
+    monkeypatch.chdir(tmp_path)
+    job = _FakeExPyReJob("job0", tmp_path / "stage" / "job0", should_fail=should_fail)
+    job._alomancy_item = "fit_2"
+    executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    executor_logger = logging.getLogger("alomancy.remote_submission.executor")
+    executor_logger.addHandler(handler)
+    # job_succeeded is logged at INFO, below what setup_logging may have
+    # left on the parent logger.
+    monkeypatch.setattr(executor_logger, "level", logging.DEBUG)
+    try:
+        executor._run_single_job(0, job)
+    finally:
+        executor_logger.removeHandler(handler)
+
+    (outcome,) = [r for r in records if getattr(r, "event", None) == event]
+    assert outcome.data == {"item": "fit_2"}
+
+
+@pytest.mark.unit
+def test_submit_job_records_the_config_item(monkeypatch):
+    created = []
+
+    class _Job:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+    monkeypatch.setattr("alomancy.remote_submission.executor.ExPyRe", _Job)
+    executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[])
+    executor.remote_info.job_name = "j"
+    executor.remote_info.pre_cmds = []
+    executor.remote_info.input_files = []
+    executor.submit_multiple_jobs(
+        function=print,
+        job_configs=[
+            {"function_kwargs": {}, "item": "md_run_4"},
+            {"function_kwargs": {}},
+        ],
+    )
+    assert [getattr(j, "_alomancy_item", "unset") for j in executor.jobs] == [
+        "md_run_4",
+        None,
+    ]
+
+
+@pytest.mark.unit
 class TestAcquireLocalExpyreLock:
     """acquire_local_expyre_lock guards against two separate alomancy
     *processes* racing the same resolved ExPyRe local_stage_dir -- the

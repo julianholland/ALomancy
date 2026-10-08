@@ -77,22 +77,19 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
                 made["timing"] = plots_dir / "timing_combined.png"
 
     def parity() -> None:
-        from alomancy.analysis.mlip_plots import _parse_eval_xyz
+        from alomancy.analysis.mlip_plots import parity_predictions
 
         model = stats.get("model") or {}
         fit_idx = model.get("best_fit_idx")
         if fit_idx is None:
             return
         e0 = workflow.db.get_isolated_atom_energies() or None
-        predictions = workflow.db.get_model_predictions(stats["loop"], fit_idx, e0=e0)
-        if not predictions:
-            fit_dir = Path("results", stats["base_name"], "training", f"fit_{fit_idx}")
-            predictions = {
-                split: parsed
-                for split in ("train", "test")
-                if (fit_dir / f"{split}_pred.xyz").exists()
-                and (parsed := _parse_eval_xyz(fit_dir / f"{split}_pred.xyz", e0=e0))
-            }
+        fit_dir = Path("results", stats["base_name"], "training", f"fit_{fit_idx}")
+        predictions = parity_predictions(
+            workflow.db, stats["loop"], fit_idx, fit_dir, e0=e0
+        )
+        # Read by render_markdown, to say when the test set is missing.
+        model["parity_splits"] = sorted(predictions)
         if not predictions:
             return
         path = plots_dir / "best_model_parity.png"
@@ -103,6 +100,20 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
             energy_label="formation energy" if e0 else "energy",
         )
         made["parity"] = path
+
+    def redundancy() -> None:
+        from alomancy.analysis.report.stats import read_redundancy_probe
+
+        record = read_redundancy_probe(stats["base_name"])
+        if not record or not record.get("tolerances"):
+            return
+        path = plots_dir / "redundancy_tolerance_probe.png"
+        plots.redundancy_probe(
+            record,
+            path,
+            title=f"Redundancy tolerance probe [{stats['base_name']}]",
+        )
+        made["redundancy"] = path
 
     def composition() -> None:
         if not stats["dataset"]["composition"]:
@@ -119,6 +130,7 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
         ("MAE plot", mae),
         ("timing plot", timing),
         ("best-model parity plot", parity),
+        ("redundancy probe plot", redundancy),
         ("composition plot", composition),
     ):
         _attempt(name, fn)
