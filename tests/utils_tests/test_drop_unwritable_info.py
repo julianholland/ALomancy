@@ -5,7 +5,10 @@ import pytest
 from ase import Atoms
 from ase.io import read, write
 
-from alomancy.utils.clean_structures import drop_unwritable_info
+from alomancy.utils.clean_structures import (
+    drop_unwritable_info,
+    recover_swallowed_model_energy,
+)
 
 _EMPTY_VALUES = {
     "empty_list": [],
@@ -68,3 +71,23 @@ def test_keeps_non_empty_values():
         "flag": False,
         "name": "x",
     }
+
+
+@pytest.mark.unit
+def test_swallowed_model_energy_is_recovered_exactly(tmp_path):
+    """Files written before the fix still hold the value, inside the key
+    before it; reading it back needs no re-evaluation."""
+    damaged = _twice_through_extxyz(_atoms("reasons", []), tmp_path, clean=False)
+    assert "model_energy" not in damaged.info
+
+    assert recover_swallowed_model_energy(damaged) is True
+    assert damaged.info["model_energy"] == pytest.approx(-1.5)
+    assert "reasons" not in damaged.info
+
+
+@pytest.mark.unit
+def test_intact_structures_are_left_alone():
+    atoms = Atoms("H")
+    atoms.info.update(model_energy=-2.0, note="model_energy=-9")
+    assert recover_swallowed_model_energy(atoms) is False
+    assert atoms.info == {"model_energy": -2.0, "note": "model_energy=-9"}

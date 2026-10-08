@@ -267,3 +267,48 @@ def test_descriptor_cache_is_dimension_specific(tmp_path, monkeypatch):
     calls = _count_descriptor_calls(monkeypatch)
     remove_redundancy_from_partition(db, config_list=["init_amorphous"], dimensions=64)
     assert len(calls) == 3
+
+
+@pytest.mark.unit
+def test_probe_record_is_saved_for_the_report(tmp_path, capsys):
+    """probe_path gets the full sweep of unique structures against
+    tolerance, the plateaus and the outcome; the library's plateau-log
+    print no longer reaches stdout."""
+    import json
+
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+    near1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
+    near2 = [[0.0002, 0.0, 0.0], [2.0002, 0.0, 0.0]]
+    dist1 = [[0.0, 0.0, 0.0], [3.5, 0.0, 0.0]]
+    dist2 = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(
+        [_make_s2(p) for p in (base, near1, near2, dist1, dist2)],
+        split="train",
+        skip_duplicates=False,
+    )
+    probe_path = tmp_path / "al_loop_0" / "redundancy_probe.json"
+
+    remove_redundancy_from_partition(
+        db, config_list=["init_amorphous"], probe_path=probe_path
+    )
+
+    record = json.loads(probe_path.read_text())
+    assert record["n_structures"] == 5
+    assert record["tolerances"] == sorted(record["tolerances"])
+    assert len(record["tolerances"]) == len(record["unique_counts"]) > 1
+    assert record["descriptor"] == {
+        "key": "char_vec_128",
+        "dimensions": 128,
+        "metric": "euclidean",
+    }
+    if record["outcome"] == "applied":
+        assert record["plateaus"]
+        assert record["chosen_tolerance"] is not None
+        assert record["n_flagged"] == 5 - len(db.get_train_atoms())
+    else:
+        assert record["chosen_tolerance"] is None
+        assert record["n_flagged"] == 0
+    assert "plateau log" not in capsys.readouterr().out

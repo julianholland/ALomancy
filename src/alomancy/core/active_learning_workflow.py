@@ -121,11 +121,9 @@ dispatch) stay at the top `structure_generation` level rather than being
 duplicated per-generator; MD-specific settings that would make no sense
 for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
 `num_of_md_starts`/`enforce_chemical_diversity`/`seed`) live
-nested inside `md_kwargs` instead. `structure_generation.trainer`/
-`trainer_config` (which trainer registry entry built the model MD's own
-dynamics calculator should use) are the same story -- MD-only, since EZGA
-loads its model directly rather than through the trainer registry -- so
-they live nested inside `md_kwargs` too. `training.max_num_epochs`
+nested inside `md_kwargs` instead. Which calculator drives MD or EZGA
+is not a generator setting at all: generators get a `CalculatorSpec` for
+the model `training.trainer` trained (`calculator_spec`). `training.max_num_epochs`
 likewise moves inside `mace_kwargs`: it's a MACE-specific training
 control (not every trainer backend would necessarily have "epochs" at
 all), kept at the top level only incidentally because MACE is the only
@@ -192,6 +190,7 @@ from ase.io import read, write
 
 from alomancy.configs.hpc_profiles import format_table, hpc_profile_row
 from alomancy.configs.remote_info import get_remote_info
+from alomancy.configs.schema import check_config_keys, format_misplaced
 from alomancy.database.global_database import (
     _DEFAULT_DEDUP_CONFIG_TYPES,
     GlobalDatabase,
@@ -204,6 +203,7 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 )
 from alomancy.mlip.base import (
     ALomancyTrainer,
+    CalculatorSpec,
     get_trainer,
     read_predictions,
     run_training,
@@ -235,7 +235,11 @@ from alomancy.utils.import_structures import (
     normalize_metadata,
     read_structures,
 )
-from alomancy.utils.logging_config import set_current_loop, setup_logging
+from alomancy.utils.logging_config import (
+    set_current_loop,
+    set_current_phase,
+    setup_logging,
+)
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
 )
@@ -267,6 +271,8 @@ _PHASE_LABELS: dict[str, str] = {
 _INITIALIZATION_NAME = "initialization"
 _TRAINING_NAME = "training"
 _BEST_MODEL_DIR = "best_model"
+# results/<loop>/redundancy_probe.json: that loop's redundancy tolerance probe.
+_REDUNDANCY_PROBE_FILENAME = "redundancy_probe.json"
 _SUMMARY_HPC_COLUMNS = (
     "hpc_name",
     "alomancy_version",
@@ -275,7 +281,9 @@ _SUMMARY_HPC_COLUMNS = (
     "ranks_per_node",
     "max_mem_per_node",
 )
-_BEST_MODEL_FILENAME = "ALomancy_best_model.model"
+# The best model keeps its trainer's own extension (.model for MACE, .pth
+# for SevenNet), so a loader chosen by extension gets the right format.
+_BEST_MODEL_STEM = "ALomancy_best_model"
 _STRUCTURE_GENERATION_NAME = "structure_generation"
 _HIGH_ACCURACY_EVALUATION_NAME = "high_accuracy_evaluation"
 
@@ -508,6 +516,16 @@ _REMOVED_KEYS: tuple[tuple[tuple[str, ...], str, str], ...] = (
         ("initialization",),
         "reset_extra_splits",
         "nothing (imported files always drop the old run's splits and flags)",
+    ),
+    # MD used to pick its own calculator backend, defaulting to MACE, so a
+    # SevenNet model was loaded with MACE and every MD job failed.
+    *(
+        (
+            ("structure_generation", "md_kwargs"),
+            key,
+            "nothing: MD now always uses the model trained by training.trainer",
+        )
+        for key in ("trainer", "trainer_config")
     ),
 )
 
@@ -885,9 +903,27 @@ def phase(
                 return load(self, ctx, *args, **kwargs)
             # Parsed by analysis/timing_plots as phase boundaries, together
             # with _mark_phase_done's "marked complete" line.
-            logger.debug("Phase %s started for %s.", phase_name, ctx.base_name)
-            result = fn(self, ctx, *args, **kwargs)
-            self._mark_phase_done(ctx.base_name, phase_name)
+            # The coded events let the loop report keep only this step's
+            # latest attempt (analysis/report/current_events.py), even when
+            # the step logs nothing else.
+            set_current_phase(phase_name)
+            logger.debug(
+                "Phase %s started for %s.",
+                phase_name,
+                ctx.base_name,
+                extra={"event": "phase_started", "data": {"phase": phase_name}},
+            )
+            try:
+                result = fn(self, ctx, *args, **kwargs)
+                self._mark_phase_done(ctx.base_name, phase_name)
+                logger.debug(
+                    "Phase %s finished for %s.",
+                    phase_name,
+                    ctx.base_name,
+                    extra={"event": "phase_completed", "data": {"phase": phase_name}},
+                )
+            finally:
+                set_current_phase(None)
             return result
 
         return cast(_StepT, wrapper)
@@ -1071,25 +1107,47 @@ class ActiveLearningWorkflow(ABC):
                 },
             )
         # After setup_logging so the warnings reach the console/log file.
-        known = _GENERAL_KNOWN_KEYS | ({self.KWARGS_KEY} if self.KWARGS_KEY else set())
-        unknown = sorted(set(general_config) - known)
-        if unknown:
-            logger.warning(
-                "Ignoring unrecognised general key(s) %s -- check for typos. "
-                "Known keys: %s",
-                unknown,
-                sorted(known),
-            )
-        unknown_workflow = sorted(set(workflow_config) - set(self.KWARGS_DEFAULTS))
-        if unknown_workflow:
-            logger.warning(
-                "Ignoring unrecognised general.%s key(s) %s -- check for typos. "
-                "Known keys: %s",
-                self.KWARGS_KEY,
-                unknown_workflow,
-                sorted(self.KWARGS_DEFAULTS),
-            )
+        self._warn_about_unread_keys()
         self.validate_settings()
+
+    def _warn_about_unread_keys(self) -> None:
+        """Warn about every config key the run will never read (configs/
+        schema.py): one warning per misplaced key, naming where it is read;
+        one for settings of modules the config doesn't select; one listing
+        everything else."""
+        report = check_config_keys(
+            self.jobs_dict, _GENERAL_KNOWN_KEYS, set(_DATASET_KWARGS_KEYS)
+        )
+        for path, key, elsewhere in report.misplaced:
+            logger.warning(
+                format_misplaced(path, key, elsewhere),
+                extra={
+                    "event": "config_key_misplaced",
+                    "data": {
+                        "key": ".".join((*path, key)),
+                        "belongs_in": ".".join(elsewhere[0]),
+                    },
+                },
+            )
+        if report.unused:
+            logger.warning(
+                "Ignoring settings for module(s) this run doesn't use: %s",
+                "; ".join(
+                    f"{'.'.join((*path, key))} ({why})"
+                    for path, key, why in report.unused
+                ),
+                extra={
+                    "event": "config_key_unused",
+                    "data": {"keys": [".".join((*p, k)) for p, k, _ in report.unused]},
+                },
+            )
+        if report.unrecognised:
+            keys = [".".join((*path, key)) for path, key in report.unrecognised]
+            logger.warning(
+                "Ignoring unrecognised config key(s) %s -- check for typos.",
+                ", ".join(keys),
+                extra={"event": "config_key_unrecognised", "data": {"keys": keys}},
+            )
 
     @property
     def db(self) -> GlobalDatabase:
@@ -1532,7 +1590,7 @@ class ActiveLearningWorkflow(ABC):
 
     def _update_best_model(self, base_name: str, num_of_models: int) -> None:
         """Copy this loop's best model (chosen as for structure generation,
-        see rank_committee) to results/best_model/ALomancy_best_model.model,
+        see rank_committee) to results/best_model/ALomancy_best_model.<its own suffix>,
         replacing the previous loop's, with model_metadata.json alongside
         holding its errors per split and per config_type.
 
@@ -1573,13 +1631,14 @@ class ActiveLearningWorkflow(ABC):
 
         best_dir = Path("results", _BEST_MODEL_DIR)
         best_dir.mkdir(parents=True, exist_ok=True)
-        target = best_dir / _BEST_MODEL_FILENAME
-        tmp = best_dir / f".{_BEST_MODEL_FILENAME}.tmp"
+        target = best_dir / f"{_BEST_MODEL_STEM}{Path(compiled_path).suffix}"
+        tmp = best_dir / f".{target.name}.tmp"
         shutil.copy2(compiled_path, tmp)
         os.replace(tmp, target)
-        for stale in best_dir.glob("*.model"):
-            if stale != target:
-                stale.unlink()
+        # Older models, including another trainer's (another suffix).
+        stale = {*best_dir.glob("*.model"), *best_dir.glob(f"{_BEST_MODEL_STEM}.*")}
+        for path in stale - {target}:
+            path.unlink()
 
         record = json.loads(
             (fit_dirs[best_fit] / "evaluation_metrics.json").read_text()
@@ -1607,6 +1666,8 @@ class ActiveLearningWorkflow(ABC):
             "al_loop": int(base_name.rsplit("_", 1)[-1]),
             "fit_idx": best_fit,
             "selected_on_split": split_used,
+            "model_file": target.name,
+            "trainer": self.training_config.get("trainer", "mace"),
             "source_model": str(compiled_path),
             "model_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
             "updated": datetime.now().isoformat(timespec="seconds"),
@@ -1716,15 +1777,17 @@ class ActiveLearningWorkflow(ABC):
         self._curate_dataset()
         return int(effective_start)
 
-    def _curate_dataset(self) -> None:
+    def _curate_dataset(self, base_name: str = _INITIALIZATION_NAME) -> None:
         """Redundancy removal, train/test quality filters and (if
         configured) dataset curation -- run before the first loop and at
-        the end of every loop."""
+        the end of every loop. The redundancy tolerance probe is saved to
+        results/<base_name>/redundancy_probe.json for the loop report."""
         if self.remove_redundancy:
             remove_redundancy_from_partition(
                 self.db,
                 config_list=self.dataset_kwargs["target_config_types"]
                 + [self.NEW_STRUCTURE_CONFIG_TYPE],
+                probe_path=Path("results", base_name, _REDUNDANCY_PROBE_FILENAME),
             )
         self._apply_split_filters()
         if self.jobs_dict.get("dataset_curation"):
@@ -1901,6 +1964,7 @@ class ActiveLearningWorkflow(ABC):
                             "isolated_atom_energies": isolated_atom_energies,
                         },
                         "output_files": [str(workdir / name / f"fit_{fit_idx}")],
+                        "item": f"fit_{fit_idx}",
                     }
                     for fit_idx in fit_indices
                 ]
@@ -1918,6 +1982,10 @@ class ActiveLearningWorkflow(ABC):
                             "(outputs missing or invalid); counting it as failed.",
                             fit_idx,
                             base_name,
+                            extra={
+                                "event": "fit_not_evaluated",
+                                "data": {"item": f"fit_{fit_idx}"},
+                            },
                         )
                         continue
                     results[fit_idx] = collected
@@ -1934,7 +2002,11 @@ class ActiveLearningWorkflow(ABC):
                     failed,
                     extra={
                         "event": "fit_retry",
-                        "data": {"n": len(failed), "total": num_of_models},
+                        "data": {
+                            "n": len(failed),
+                            "total": num_of_models,
+                            "items": [f"fit_{i}" for i in failed],
+                        },
                     },
                 )
                 submit(failed)
@@ -1958,6 +2030,9 @@ class ActiveLearningWorkflow(ABC):
                     "data": {
                         "n": num_of_models - len(results),
                         "total": num_of_models,
+                        "items": [
+                            f"fit_{i}" for i in range(num_of_models) if i not in results
+                        ],
                     },
                 },
             )
@@ -2044,6 +2119,15 @@ class ActiveLearningWorkflow(ABC):
         )
         return next(m for m in models if m.fit_idx == best_idx)
 
+    def calculator_spec(self, model: TrainedModel) -> CalculatorSpec:
+        """How to build *model*'s calculator: through the trainer that
+        trained it (training.trainer), never a generator's own choice."""
+        return CalculatorSpec(
+            trainer=self.training_config.get("trainer", "mace"),
+            trainer_config=self.training_config,
+            model_path=str(model.model_path),
+        )
+
     def generate_candidates(self, ctx: LoopContext, model: TrainedModel) -> list[Atoms]:
         """Run the configured structure generator (MD, EZGA, ...) with
         *model*, seeded from this loop's eligible training structures, and
@@ -2062,7 +2146,7 @@ class ActiveLearningWorkflow(ABC):
         )
         candidates = generator_entry.generate(
             eligible,
-            model.model_path,
+            self.calculator_spec(model),
             sg_config,
             base_name=ctx.base_name,
             name=_STRUCTURE_GENERATION_NAME,
@@ -2223,7 +2307,7 @@ class ActiveLearningWorkflow(ABC):
     def finish_loop(self, ctx: LoopContext) -> None:
         """End of a loop: redundancy removal, train/test filters and
         curation on the grown database, then mark the loop done."""
-        self._curate_dataset()
+        self._curate_dataset(ctx.base_name)
         self._mark_phase_done(ctx.base_name, "loop")
         if self.report:
             try:

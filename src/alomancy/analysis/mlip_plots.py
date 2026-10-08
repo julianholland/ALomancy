@@ -230,10 +230,10 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
     the whole file falls back to raw per-atom energy (logging one warning)
     rather than mixing formation- and raw-energy points in one figure.
     """
-    from ase.io import read as ase_read
+    from alomancy.mlip.base import read_prediction_file
 
     try:
-        atoms_list = list(ase_read(str(path), ":", format="extxyz"))
+        atoms_list = read_prediction_file(Path(path))
     except Exception as exc:
         logger.warning("Failed to read eval xyz %s: %s", path, exc)
         return None
@@ -395,6 +395,42 @@ def _draw_parity_figure(
     logger.info("Saved %s parity plot to %s", set_label.lower(), path)
 
 
+_PARITY_SPLITS = ("train", "test")
+
+
+def parity_predictions(
+    db: Any,
+    loop_idx: int | None,
+    fit_idx: int,
+    fit_dir: Path,
+    e0: dict[str, float] | None = None,
+) -> dict[str, tuple]:
+    """One fit's parity data, {split: (e_ref, e_pred, f_ref, f_pred)} for
+    "train"/"test": from the database's stored predictions, and for every
+    split the database lacks, from the fit's own {split}_pred.xyz. A split
+    is never dropped just because the other one is in the database."""
+    found: dict[str, tuple] = {}
+    if db is not None and loop_idx is not None:
+        stored = db.get_model_predictions(loop_idx, fit_idx, e0=e0) or {}
+        found = {s: stored[s] for s in _PARITY_SPLITS if stored.get(s) is not None}
+        if found:
+            logger.info(
+                "Using stored DB predictions (%s) for loop %d fit %d.",
+                ", ".join(found),
+                loop_idx,
+                fit_idx,
+            )
+    for split in _PARITY_SPLITS:
+        path = Path(fit_dir) / f"{split}_pred.xyz"
+        if split in found or not path.exists():
+            continue
+        parsed = _parse_eval_xyz(path, e0=e0)
+        if parsed is not None:
+            found[split] = parsed
+            logger.info("Using %s for the %s parity points.", path, split)
+    return found
+
+
 def plot_dft_vs_model(
     base_name: str,
     mlip_committee_job_dict: dict,
@@ -426,44 +462,18 @@ def plot_dft_vs_model(
     test_results: list = []
 
     for i in range(n_fits):
-        # Primary: use stored DB predictions — no model load or GPU needed.
-        if db is not None and loop_idx is not None:
-            stored = db.get_model_predictions(loop_idx, i, e0=e0)
-            if stored is not None:
-                train_results.append(stored.get("train"))
-                test_results.append(stored.get("test"))
-                logger.info(
-                    "Using stored DB predictions for loop %d fit %d.", loop_idx, i
-                )
-                continue
-
-        # Secondary: read from eval xyz files written by ALomancyTrainer.evaluate on the remote node.
         fit_dir = Path("results", base_name, name, f"fit_{i}")
-        train_xyz = fit_dir / "train_pred.xyz"
-        test_xyz = fit_dir / "test_pred.xyz"
-        if train_xyz.exists() or test_xyz.exists():
-            train_results.append(
-                _parse_eval_xyz(train_xyz, e0=e0) if train_xyz.exists() else None
-            )
-            test_results.append(
-                _parse_eval_xyz(test_xyz, e0=e0) if test_xyz.exists() else None
-            )
+        predictions = parity_predictions(db, loop_idx, i, fit_dir, e0=e0)
+        if not predictions:
+            # No local inference: predictions come from training's evaluate.
             logger.info(
-                "Using eval xyz files for parity plot, loop %s fit %d.",
-                loop_idx if loop_idx is not None else "?",
+                "No predictions available for fit_%d (loop %s) -- parity plot "
+                "will be blank.",
                 i,
+                loop_idx if loop_idx is not None else "?",
             )
-            continue
-
-        # No predictions available — skip this fit rather than running local inference.
-        logger.info(
-            "No predictions available for fit_%d (loop %s) — parity plot will be blank. "
-            "Predictions are written during remote training from alomancy v0.4.2 onwards.",
-            i,
-            loop_idx if loop_idx is not None else "?",
-        )
-        train_results.append(None)
-        test_results.append(None)
+        train_results.append(predictions.get("train"))
+        test_results.append(predictions.get("test"))
 
     if not train_results and not test_results:
         return

@@ -70,7 +70,58 @@ def md_section(
             ylabel="Frames",
         )
         section.plots.append(path)
+    if plots_dir is not None:
+        temperature_plot = _md_temperature_plot(base_name, plots_dir, md_kwargs)
+        if temperature_plot is not None:
+            section.plots.append(temperature_plot)
     return section
+
+
+def _md_temperature_plot(
+    base_name: str, plots_dir: Path, md_kwargs: dict
+) -> Path | None:
+    """Temperature against step for every MD run, one panel each, from the
+    runs' own ASE MD logs (``md_output_<i>/*.log``: one
+    row per step, ``T[K]`` last). Runs without a log are skipped."""
+    from alomancy.analysis.report.plots import md_runs
+    from alomancy.structure_generation.md.md_wfl import _MD_KWARGS_DEFAULTS
+
+    settings = {**_MD_KWARGS_DEFAULTS, **md_kwargs}
+    equilibration = int(settings.get("equilibration_steps") or 0)
+    md_dir = Path("results", base_name, "structure_generation")
+    temperatures, completed, labels = [], [], []
+    for run_dir in sorted(
+        md_dir.glob("md_output_*"), key=lambda p: int(p.name.rsplit("_", 1)[1])
+    ):
+        logs = sorted(run_dir.glob("*.log"))
+        if not logs:
+            continue
+        try:
+            temps = np.atleast_1d(np.loadtxt(logs[0], skiprows=1, usecols=-1))
+        except (ValueError, OSError) as exc:
+            logger.debug("Could not read MD log %s: %s", logs[0], exc)
+            continue
+        if not len(temps):
+            continue
+        temperatures.append(temps)
+        labels.append(f"run {run_dir.name.rsplit('_', 1)[1]}")
+        # Equilibration (if any) and production each log their step 0.
+        logged_before = equilibration + 1 if equilibration else 0
+        completed.append(max(0, len(temps) - 1 - logged_before))
+    if not temperatures:
+        return None
+    path = plots_dir / "md_temperature.png"
+    md_runs(
+        temperatures,
+        completed,
+        path,
+        run_labels=labels,
+        title=f"MD temperature per run [{base_name}]",
+        target_temperature=float(settings["temperature"]),
+        requested_steps=int(settings["steps"]),
+        equilibration_steps=equilibration,
+    )
+    return path
 
 
 def ezga_section(

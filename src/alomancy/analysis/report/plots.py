@@ -108,6 +108,166 @@ def bar_per_item(
     _save(fig, path)
 
 
+# Points drawn per MD run; logs have one row per step (tens of thousands).
+_MD_MAX_POINTS = 2000
+
+
+def md_runs(
+    temperatures: list[np.ndarray],
+    completed_steps: list[int],
+    path: Path,
+    *,
+    run_labels: list[str],
+    title: str,
+    target_temperature: float,
+    requested_steps: int,
+    equilibration_steps: int = 0,
+) -> None:
+    """Temperature against MD step for every run on one axis, one thin
+    line and colour per run, with the target temperature as a black dashed
+    line and the end of equilibration dotted. A run that stopped early says
+    where in the legend."""
+    setup_alomancy_style()
+    n = len(temperatures)
+    # The brand palette in its fixed order; beyond it, evenly spaced colours
+    # from one perceptual map so every run still has its own.
+    colors = (
+        PALETTE[:n]
+        if n <= len(PALETTE)
+        else [plt.get_cmap("turbo")(x) for x in np.linspace(0.05, 0.95, n)]
+    )
+    fig, ax = plt.subplots(figsize=(10, 4.8))
+    for temps, steps, label, color in zip(
+        temperatures, completed_steps, run_labels, colors, strict=True
+    ):
+        stride = max(1, len(temps) // _MD_MAX_POINTS)
+        stopped = f" (stopped at {steps:,})" if steps < requested_steps else ""
+        ax.plot(
+            np.arange(len(temps))[::stride],
+            temps[::stride],
+            color=color,
+            lw=0.7,
+            alpha=0.85,
+            label=f"{label}{stopped}",
+        )
+    ax.axhline(
+        target_temperature,
+        color="black",
+        ls="--",
+        lw=1.2,
+        label=f"target {target_temperature:g} K",
+        zorder=5,
+    )
+    if equilibration_steps:
+        ax.axvline(
+            equilibration_steps,
+            color="black",
+            ls=":",
+            lw=1,
+            label="end of equilibration",
+            zorder=5,
+        )
+    ax.set_xlim(0, equilibration_steps + requested_steps)
+    ax.set_xlabel("MD step")
+    ax.set_ylabel("Temperature (K)")
+    ax.set_title(title)
+    ax.grid(True)
+    # Below the plot: the top-right corner holds the logo watermark.
+    legend = ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.14),
+        fontsize=8,
+        ncol=min(6, n + 1 + bool(equilibration_steps)),
+        frameon=False,
+    )
+    for handle in legend.get_lines():
+        handle.set_linewidth(2)
+    _save(fig, path)
+
+
+def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
+    """Unique structures against the duplicate tolerance, from redundancy
+    removal's tolerance probe: the plateaus it found shaded, the tolerance
+    it chose as a black dashed line, and on a right-hand axis the number of
+    structures removed between consecutive tolerance steps (the negative
+    gradient of the unique count: near zero on a plateau)."""
+    setup_alomancy_style()
+    tolerances = np.asarray(record["tolerances"], dtype=float)
+    counts = np.asarray(record["unique_counts"], dtype=float)
+    n = int(record.get("n_structures") or counts.max())
+    fig, ax = plt.subplots(figsize=(9, 5.2))
+    for i, (start, end) in enumerate(record.get("plateaus") or []):
+        ax.axvspan(
+            start,
+            end,
+            color=PALETTE[1],
+            alpha=0.15,
+            lw=0,
+            label="plateau" if i == 0 else None,
+        )
+    ax.plot(tolerances, counts, color=PALETTE[0], lw=1.2, label="unique structures")
+    ax.axhline(n, color="#9CA3AF", ls=":", lw=1, label=f"all {n:,} structures")
+    chosen = record.get("chosen_tolerance")
+    if chosen is not None:
+        flagged = int(record.get("n_flagged") or 0)
+        ax.axvline(
+            chosen,
+            color="black",
+            ls="--",
+            lw=1.2,
+            label=(
+                f"chosen tolerance {chosen:.4f}: {n - flagged:,} unique "
+                f"({flagged:,} flagged)"
+            ),
+        )
+    else:
+        ax.text(
+            0.98,
+            0.05,
+            "no plateau found: nothing flagged",
+            transform=ax.transAxes,
+            ha="right",
+            fontsize=9,
+        )
+    descriptor = (record.get("descriptor") or {}).get("key", "descriptor")
+    ax.set_xlabel(f"Tolerance (Euclidean distance between {descriptor} descriptors)")
+    ax.set_ylabel("Unique structures")
+    ax.set_title(title)
+    ax.grid(True)
+
+    ax_removed = ax.twinx()
+    if len(counts) > 1:
+        removed = -np.diff(counts)
+        ax_removed.plot(
+            tolerances[1:],
+            removed,
+            color=PALETTE[3],
+            lw=0.6,
+            alpha=0.8,
+            label="structures removed per step",
+        )
+    ax_removed.set_ylabel("Structures removed per step", color=PALETTE[3])
+    ax_removed.tick_params(axis="y", colors=PALETTE[3])
+    ax_removed.set_ylim(bottom=0)
+    ax_removed.grid(False)
+    # One legend for both axes; a bare legend() after twinx() drops the
+    # second axis's line.
+    lines, labels = ax.get_legend_handles_labels()
+    removed_lines, removed_labels = ax_removed.get_legend_handles_labels()
+    # Below the plot: the curve crosses most of the axes, and the top-right
+    # corner holds the logo watermark.
+    ax.legend(
+        lines + removed_lines,
+        labels + removed_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=3,
+        fontsize=8,
+        frameon=False,
+    )
+    _save(fig, path)
+
+
 def composition(
     composition: dict[str, dict[str, int]], path: Path, *, title: str
 ) -> None:

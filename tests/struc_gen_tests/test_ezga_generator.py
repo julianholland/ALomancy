@@ -12,6 +12,7 @@ import pytest
 from ase import Atoms
 from ase.io import write
 
+from alomancy.mlip.base import CalculatorSpec
 from alomancy.structure_generation.ezga.generate_structures import (
     generate,
     output_paths,
@@ -19,6 +20,7 @@ from alomancy.structure_generation.ezga.generate_structures import (
 )
 
 _MODULE = "alomancy.structure_generation.ezga.generate_structures"
+_SPEC = CalculatorSpec(trainer="sevennet", trainer_config={}, model_path="model.pth")
 
 
 def _atoms(n=2):
@@ -55,7 +57,7 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestGenerate:
-    def test_calls_run_ezga_with_full_population_and_model_path(
+    def test_calls_run_ezga_with_full_population_and_calculator_spec(
         self, tmp_path, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
@@ -65,7 +67,7 @@ class TestGenerate:
             mock_run_ezga.return_value = _atoms(2)
             result = generate(
                 seed_atoms=seeds,
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={"ezga_kwargs": {"max_generations": 4}},
                 base_name="al_loop_0",
                 name="structure_generation",
@@ -76,7 +78,7 @@ class TestGenerate:
         mock_run_ezga.assert_called_once()
         call_kwargs = mock_run_ezga.call_args.kwargs
         assert call_kwargs["initial_structures"] is seeds
-        assert call_kwargs["model_path"] == "model.pt"
+        assert call_kwargs["calculator_spec"] is _SPEC
         assert call_kwargs["max_generations"] == 4
         assert len(result) == 2
 
@@ -91,7 +93,7 @@ class TestGenerate:
         with patch(f"{_MODULE}.run_ezga") as mock_run_ezga:
             result = generate(
                 seed_atoms=_atoms(5),
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={},
                 base_name="al_loop_0",
                 name="structure_generation",

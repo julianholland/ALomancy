@@ -229,8 +229,8 @@ structure_generation:
 - **Plots**: parity plots per committee member, error per loop, training
   curves and a timing breakdown of every phase.
 - **The current best model**, always at
-  `results/best_model/ALomancy_best_model.model`, with its metadata and
-  errors.
+  `results/best_model/ALomancy_best_model.model` (`.pth` for SevenNet),
+  with its metadata and errors.
 - **A single database** of every DFT-labelled structure, with
   near-duplicates and low-quality structures flagged rather than deleted, so
   any filter can be loosened later.

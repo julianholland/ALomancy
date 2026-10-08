@@ -129,6 +129,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_MD_KWARGS_DEFAULTS",
+    kwargs_schema="_MD_KWARGS_SCHEMA",
     report_section="report_section",
 )
 register(
@@ -151,6 +152,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_CREATION_KWARGS_DEFAULTS",
+    kwargs_schema="_CREATION_KWARGS_SCHEMA",
 )
 
 # AL workflows (general.al_workflow): each entry's workflow_class is an

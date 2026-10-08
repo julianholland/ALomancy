@@ -1,12 +1,10 @@
-"""Tests for the modular AL architecture's structure_generator entry
-points added to structure_generation/md/md_wfl.py (generate, output_paths,
-read_existing_result, _run_md_via_trainer) and the new calculator=
-parameter on run_md itself.
+"""Tests for structure_generation/md/md_wfl.py's structure_generator
+entry points (generate, output_paths, read_existing_result) and its remote
+worker _run_md_with_spec, which builds the trained model's calculator from
+a CalculatorSpec on the node.
 
-run_md's own dynamics-loop behavior is still covered by
-TestMolecularDynamics in test_structure_generation.py (calculator=None,
-the default, preserves that behavior exactly, unchanged) -- these tests
-cover only the new pieces.
+run_md's own dynamics-loop behavior is covered by TestMolecularDynamics in
+test_structure_generation.py.
 """
 
 from pathlib import Path
@@ -16,8 +14,9 @@ import pytest
 from ase import Atoms
 from ase.io import read, write
 
+from alomancy.mlip.base import CalculatorSpec
 from alomancy.structure_generation.md.md_wfl import (
-    _run_md_via_trainer,
+    _run_md_with_spec,
     generate,
     output_paths,
     read_existing_result,
@@ -25,6 +24,7 @@ from alomancy.structure_generation.md.md_wfl import (
 )
 
 _MODULE = "alomancy.structure_generation.md.md_wfl"
+_SPEC = CalculatorSpec(trainer="sevennet", trainer_config={}, model_path="model.pth")
 
 
 def _seed_atoms(n=5, config_type="init_amorphous"):
@@ -37,38 +37,9 @@ def _seed_atoms(n=5, config_type="init_amorphous"):
 
 
 @pytest.mark.unit
-class TestRunMdCalculatorParameter:
-    @patch(f"{_MODULE}.MACECalculator")
+class TestRunMdCalculator:
     @patch(f"{_MODULE}.Langevin")
-    def test_default_none_still_builds_mace_calculator(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
-        mock_mace_calc_cls.return_value = MagicMock()
-        mock_langevin_cls.side_effect = RuntimeError("stop")
-
-        initial_structure = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]])
-        initial_structure.info["job_id"] = 0
-        with pytest.raises(RuntimeError, match="stop"):
-            run_md(
-                structure_generation_job_dict={
-                    "name": "t",
-                    "num_of_structures_to_generate": 1,
-                },
-                initial_structure=initial_structure,
-                total_md_runs=1,
-                out_dir=str(tmp_path),
-                model_path=["model.pt"],
-                steps=10,
-            )
-        mock_mace_calc_cls.assert_called_once_with(
-            model_paths=["model.pt"], device="cuda", default_dtype="float64"
-        )
-
-    @patch(f"{_MODULE}.MACECalculator")
-    @patch(f"{_MODULE}.Langevin")
-    def test_explicit_calculator_bypasses_mace_calculator_construction(
-        self, mock_langevin_cls, mock_mace_calc_cls, tmp_path
-    ):
+    def test_given_calculator_drives_the_dynamics(self, mock_langevin_cls, tmp_path):
         mock_langevin_cls.side_effect = RuntimeError("stop")
         explicit_calc = MagicMock(name="explicit_calc")
 
@@ -83,19 +54,18 @@ class TestRunMdCalculatorParameter:
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path=["model.pt"],
-                steps=10,
                 calculator=explicit_calc,
+                steps=10,
             )
-        mock_mace_calc_cls.assert_not_called()
-        # atoms passed to Langevin carry the explicit calculator.
         passed_atoms = mock_langevin_cls.call_args.kwargs["atoms"]
         assert passed_atoms.calc is explicit_calc
 
 
 @pytest.mark.unit
-class TestRunMdViaTrainer:
-    def test_resolves_trainer_and_delegates_to_run_md(self, tmp_path):
+class TestRunMdWithSpec:
+    def test_builds_the_spec_calculator_on_the_node(self, tmp_path):
+        """The worker asks the spec's own trainer for the calculator --
+        the trainer that trained the model, never a hardcoded one."""
         fake_calc = MagicMock(name="fake_calc")
         fake_get_calculator = MagicMock(return_value=fake_calc)
 
@@ -109,19 +79,17 @@ class TestRunMdViaTrainer:
             mock_get_trainer.return_value = MagicMock(
                 get_calculator=fake_get_calculator
             )
-            _run_md_via_trainer(
+            _run_md_with_spec(
                 structure_generation_job_dict={"name": "t"},
                 initial_structure=initial_structure,
                 total_md_runs=1,
                 out_dir=str(tmp_path),
-                model_path="model.pt",
-                trainer="mace",
-                trainer_config={"device": "cpu"},
+                calculator_spec=_SPEC,
                 steps=10,
             )
 
-        mock_get_trainer.assert_called_once_with("mace", {"device": "cpu"})
-        fake_get_calculator.assert_called_once_with("model.pt")
+        mock_get_trainer.assert_called_once_with("sevennet", {})
+        fake_get_calculator.assert_called_once_with("model.pth")
         assert mock_run_md.call_args.kwargs["calculator"] is fake_calc
         assert mock_run_md.call_args.kwargs["steps"] == 10
 
@@ -169,7 +137,7 @@ class TestGenerate:
         ):
             generate(
                 seed_atoms=seeds,
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={},
                 base_name="al_loop_0",
                 name="md",
@@ -198,7 +166,7 @@ class TestGenerate:
         ):
             result = generate(
                 seed_atoms=seeds,
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={
                     "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 3}}
                 },
@@ -244,14 +212,12 @@ class TestGenerate:
         ):
             generate(
                 seed_atoms=_seed_atoms(3),
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={
                     "md_kwargs": {
                         "steps": 2000,
                         "temperature": 1000,
                         "structure_selection_kwargs": {"num_of_md_starts": 3},
-                        "trainer": "mace",
-                        "trainer_config": {"device": "cpu"},
                     }
                 },
                 base_name="al_loop_0",
@@ -264,16 +230,11 @@ class TestGenerate:
         function_kwargs = job_configs[0]["function_kwargs"]
         assert function_kwargs["steps"] == 2000
         assert function_kwargs["temperature"] == 1000
-        assert function_kwargs["trainer"] == "mace"
-        assert function_kwargs["trainer_config"] == {"device": "cpu"}
-        # structure_selection_kwargs/trainer/trainer_config are consumed
-        # inside generate() itself (the first for select_diverse_seeds, the
-        # rest passed as their own explicit function_kwargs above) -- they
-        # must not also be forwarded a second time via **md_kwargs, which
-        # run_md has no matching parameters for.
+        # structure_selection_kwargs is consumed by select_diverse_seeds
+        # inside generate() itself; run_md has no matching parameter.
         assert "structure_selection_kwargs" not in function_kwargs
 
-    def test_trainer_defaults_to_mace_when_absent_from_md_kwargs(
+    def test_jobs_get_the_calculator_spec_and_alomancy_defaults(
         self, tmp_path, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
@@ -291,7 +252,7 @@ class TestGenerate:
         ):
             generate(
                 seed_atoms=_seed_atoms(3),
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={},
                 base_name="al_loop_0",
                 name="md",
@@ -301,8 +262,7 @@ class TestGenerate:
 
         job_configs = mock_submit_n.call_args.args[1]
         function_kwargs = job_configs[0]["function_kwargs"]
-        assert function_kwargs["trainer"] == "mace"
-        assert function_kwargs["trainer_config"] == {}
+        assert function_kwargs["calculator_spec"] is _SPEC
         # ALomancy's own defaults, not run_md's far-shorter built-in ones.
         assert function_kwargs["steps"] == 20000
         assert function_kwargs["temperature"] == 300
@@ -324,7 +284,7 @@ class TestGenerate:
         ):
             generate(
                 seed_atoms=_seed_atoms(3),
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={"md_kwargs": {"steps": 500, "temperature": 1200}},
                 base_name="al_loop_0",
                 name="md",
@@ -349,7 +309,7 @@ class TestGenerate:
         with patch(f"{_MODULE}.submit_n") as mock_submit_n:
             result = generate(
                 seed_atoms=_seed_atoms(10),
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={},
                 base_name="al_loop_0",
                 name="md",
@@ -380,7 +340,7 @@ class TestGenerate:
         ):
             generate(
                 seed_atoms=_seed_atoms(10),
-                model_path="model.pt",
+                calculator_spec=_SPEC,
                 config={
                     "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 3}}
                 },
@@ -412,7 +372,7 @@ def _distinct_seeds(n: int) -> list[Atoms]:
     return out
 
 
-def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None):
+def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None, items=None):
     """Run generate() with a fake submit_n. `outcome(run_index, seed_atoms)`
     returns the number of frames that run writes (0 = no output at all).
     Returns (result, submitted run indices per submit_n call)."""
@@ -420,6 +380,8 @@ def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None):
 
     def fake_submit_n(function, job_configs, remote_info, **kwargs):
         indices = []
+        if items is not None:
+            items.append([jc.get("item") for jc in job_configs])
         for jc in job_configs:
             out_dir = Path(jc["function_kwargs"]["out_dir"])
             index = int(out_dir.name.rsplit("_", 1)[1])
@@ -437,7 +399,7 @@ def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None):
     ):
         result = generate(
             seed_atoms=eligible if eligible is not None else _distinct_seeds(10),
-            model_path="model.pt",
+            calculator_spec=_SPEC,
             config={
                 "md_kwargs": {
                     "structure_selection_kwargs": {"num_of_md_starts": n_seeds}
@@ -479,6 +441,17 @@ class TestGenerateFailedRuns:
         assert not original_sources & {a.info["source"] for a in seeds[3:]}
         assert len({a.info["md_seed"] for a in seeds}) == 5
         assert len(result) == 2 + 2 + 2  # runs 0, 3 and 4
+
+    def test_replacements_carry_the_item_of_the_run_they_replace(
+        self, tmp_path, monkeypatch
+    ):
+        """So the loop report can tell that run 1's replacement succeeded
+        and hide run 1's failure (analysis/report/current_events.py)."""
+        monkeypatch.chdir(tmp_path)
+        items: list[list[str]] = []
+        _md_generate(tmp_path, lambda i, a: {1: 0}.get(i, 2), items=items)
+
+        assert items == [["md_run_0", "md_run_1", "md_run_2"], ["md_run_1"]]
 
     def test_replacement_that_also_fails_is_not_replaced_again(
         self, tmp_path, monkeypatch, caplog

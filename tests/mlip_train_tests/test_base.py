@@ -34,7 +34,10 @@ class EMTTrainer(ALomancyTrainer):
     def model_path(self, fit_dir: Path) -> Path:
         return Path(fit_dir) / f"{self.name}.model"
 
-    def get_calculator(self, model_path):
+    calculator_devices: ClassVar[list] = []
+
+    def get_calculator(self, model_path, *, device=None):
+        type(self).calculator_devices.append(device)
         return EMT()
 
     def cleanup_paths(self, fit_dir: Path) -> list[Path]:
@@ -353,3 +356,61 @@ def test_read_predictions_warns_about_structures_it_cannot_use(tmp_path):
     assert "1 of 2" in warning.getMessage()
     assert "test_pred.xyz" in warning.getMessage()
     assert warning.event == "predictions_unreadable"
+
+
+@pytest.mark.unit
+def test_calculator_spec_survives_pickling_and_builds_its_trainers_calculator(
+    emt_registered,
+):
+    """ExPyRe pickles the spec into each remote MD job; build() there must
+    ask the spec's own trainer for the calculator."""
+    import pickle
+
+    from alomancy.mlip.base import CalculatorSpec
+
+    spec = CalculatorSpec(trainer="emt_test", trainer_config={}, model_path="m.model")
+    copy = pickle.loads(pickle.dumps(spec))
+    EMTTrainer.calculator_devices = []
+
+    assert copy == spec
+    assert isinstance(copy.build(), EMT)
+    assert isinstance(copy.build(device="cpu"), EMT)
+    assert EMTTrainer.calculator_devices == [None, "cpu"]
+
+
+@pytest.mark.unit
+def test_read_predictions_recovers_energies_lost_by_older_files(
+    tmp_path, write_pred_file_like_before_fix
+):
+    import logging
+
+    frames = []
+    for gid in range(3):
+        a = Atoms("H", cell=[3.0] * 3, pbc=True)
+        a.info.update(global_db_id=gid, model_energy=-1.0 - gid)
+        a.set_array("model_forces", np.zeros((1, 3)))
+        frames.append(a)
+    write_pred_file_like_before_fix(tmp_path / "test_pred.xyz", frames)
+    assert all(
+        "model_energy" not in a.info
+        for a in read(tmp_path / "test_pred.xyz", ":", format="extxyz")
+    )
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    module_logger = logging.getLogger("alomancy.mlip.base")
+    module_logger.addHandler(handler)
+    try:
+        preds = read_predictions(tmp_path)
+    finally:
+        module_logger.removeHandler(handler)
+
+    assert {gid: p["energy"] for gid, p in preds.items()} == {
+        0: -1.0,
+        1: -2.0,
+        2: -3.0,
+    }
+    (warning,) = [r for r in records if r.levelno == logging.WARNING]
+    assert warning.event == "predictions_recovered"
+    assert "3 of 3" in warning.getMessage()

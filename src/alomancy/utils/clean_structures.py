@@ -29,6 +29,27 @@ def _is_empty_value(value: object) -> bool:
     return isinstance(value, list | tuple | str) and len(value) == 0
 
 
+def recover_swallowed_model_energy(atoms: Atoms) -> bool:
+    """Undo the empty-value bug in prediction files written before
+    drop_unwritable_info existed (ALomancy < 1.0.2): a bare
+    ``quality_filter_reasons=`` swallowed the following ``model_energy=<x>``,
+    which ASE then read as ``info["quality_filter_reasons"] ==
+    "model_energy=<x>"``. Moves the value back into ``info["model_energy"]``
+    (dropping the damaged key) and returns True if it did; the value is
+    exact, so nothing needs re-evaluating."""
+    if "model_energy" in atoms.info:
+        return False
+    for key, value in list(atoms.info.items()):
+        if isinstance(value, str) and value.startswith("model_energy="):
+            try:
+                atoms.info["model_energy"] = float(value.split("=", 1)[1])
+            except ValueError:
+                return False
+            del atoms.info[key]
+            return True
+    return False
+
+
 def clean_structures(
     structures: list[Atoms],
     config_type: str,

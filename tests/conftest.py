@@ -187,9 +187,6 @@ def minimal_jobs_dict():
         "initialization": {
             "name": "initialization",
             "max_time": "1H",
-            "test_to_train_ratio": 0.1,
-            "test_config_types": ["IsolatedAtom"],
-            "creation_kwargs": {"elements": ["H", "O"]},
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
         "mlip_committee": {
@@ -209,6 +206,32 @@ def minimal_jobs_dict():
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
     }
+
+
+@pytest.fixture
+def write_pred_file_like_before_fix():
+    """Write a {split}_pred.xyz the way ALomancy < 1.0.2 did: a
+    quality_filter_reasons=[] that had already been through one read and
+    write sat right before model_energy, so the header holds a bare
+    "quality_filter_reasons=" that swallows model_energy on read."""
+    from ase.io import read
+
+    def write_file(path, frames):
+        staged = []
+        for atoms in frames:
+            a = atoms.copy()
+            a.info = {k: v for k, v in a.info.items() if k != "model_energy"}
+            a.info["quality_filter_reasons"] = []
+            staged.append(a)
+        first = path.with_suffix(".stage.xyz")
+        write(first, staged, format="extxyz")
+        reread = list(read(first, ":", format="extxyz"))
+        for a, original in zip(reread, frames, strict=True):
+            a.info["model_energy"] = original.info["model_energy"]
+        write(path, reread, format="extxyz")
+        first.unlink()
+
+    return write_file
 
 
 @pytest.fixture

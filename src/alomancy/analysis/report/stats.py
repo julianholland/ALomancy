@@ -20,6 +20,7 @@ import numpy as np
 from ase import Atoms
 from ase.io import read
 
+from alomancy.analysis.report.current_events import current_events
 from alomancy.utils.logging_config import EVENTS_FILENAME, read_events
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,41 @@ def _max_force(atoms: Atoms) -> float | None:
     if forces is None:
         return None
     return float(np.linalg.norm(np.asarray(forces), axis=1).max())
+
+
+REDUNDANCY_PROBE_FILENAME = "redundancy_probe.json"
+
+
+def read_redundancy_probe(base_name: str) -> dict[str, Any] | None:
+    """The loop's saved redundancy tolerance probe (utils/remove_redundancy
+    .probe_redundancy_tolerance), or None if this loop didn't save one."""
+    path = Path("results", base_name, REDUNDANCY_PROBE_FILENAME)
+    if not path.exists():
+        return None
+    try:
+        return dict(json.loads(path.read_text()))
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not read %s: %s", path, exc)
+        return None
+
+
+def _redundancy_probe_stats(base_name: str) -> dict[str, Any] | None:
+    """The probe's outcome, without the sweep itself (that only feeds the
+    plot)."""
+    record = read_redundancy_probe(base_name)
+    if record is None:
+        return None
+    return {
+        key: record.get(key)
+        for key in (
+            "n_structures",
+            "n_flagged",
+            "chosen_tolerance",
+            "outcome",
+            "plateaus",
+            "descriptor",
+        )
+    }
 
 
 def _model_stats(base_name: str) -> dict[str, Any] | None:
@@ -175,9 +211,10 @@ def _events_for_loop(log_file: str | None, loop: int) -> dict[str, Any]:
     by_level: Counter = Counter()
     data: dict[str, list] = defaultdict(list)
     uncoded: Counter = Counter()
-    for event in read_events(events_path):
-        if event.get("loop") != loop:
-            continue
+    # Only what still stands: a step's latest attempt, minus failures whose
+    # retry succeeded (current_events.py).
+    log_path = Path(log_file) if log_file else Path("results", "alomancy.log")
+    for event in current_events(read_events(events_path), loop, log_path):
         by_level[event.get("level", "?")] += 1
         code = event.get("event")
         if code:
@@ -239,6 +276,7 @@ def collect_loop_stats(workflow: Any, loop: int) -> dict[str, Any]:
         "train_filter": workflow.train_filter,
         "model": _model_stats(base_name),
         "dataset": _dataset_stats(workflow.db, loop),
+        "redundancy_probe": _redundancy_probe_stats(base_name),
         "dft": _dft_stats(base_name, events, workflow.force_ceiling),
         "timing": _timing_for_loop(workflow.log_file, loop),
         "events": events,

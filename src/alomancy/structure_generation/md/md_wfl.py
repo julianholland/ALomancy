@@ -1,3 +1,4 @@
+import inspect
 import logging
 from pathlib import Path
 from typing import Any
@@ -8,9 +9,9 @@ from ase.io import read, write
 from ase.md.langevin import Langevin
 from ase.md.langevinbaoab import LangevinBAOAB
 from ase.units import GPa, fs
-from mace.calculators import MACECalculator
 
 from alomancy.configs.remote_info import get_remote_info
+from alomancy.mlip.base import CalculatorSpec
 from alomancy.remote_submission.executor import submit_n
 from alomancy.utils.dataset_curation import geometry_digest
 from alomancy.utils.seed_selection import mark_structures_for_dft, select_diverse_seeds
@@ -38,8 +39,6 @@ _MD_KWARGS_DEFAULTS: dict[str, Any] = {
     "temperature": 300,
     "timestep_fs": 0.5,
     "traj_interval": None,
-    "trainer": "mace",
-    "trainer_config": {},
     "structure_selection_kwargs": {
         "num_of_md_starts": _DEFAULT_NUM_OF_MD_STARTS,
         "enforce_chemical_diversity": False,
@@ -53,7 +52,7 @@ def run_md(
     initial_structure: Atoms,
     total_md_runs: int,
     out_dir,
-    model_path,
+    calculator,
     steps=100,
     temperature=300,
     timestep_fs: float = 0.5,
@@ -62,7 +61,6 @@ def run_md(
     pressure: float = 0.0,
     equilibration_steps: int = 0,
     equilibration_temperature: float = 300.0,
-    calculator=None,
     traj_interval: int | None = None,
 ):
     """
@@ -79,14 +77,10 @@ def run_md(
         the production trajectory. Zero disables equilibration.
     equilibration_temperature : float
         Temperature in K used during the initial NVT equilibration.
-    calculator : optional
-        A pre-built calculator to drive the dynamics with, instead of the
-        default hardcoded MACECalculator(model_paths=model_path, ...). Used
-        by the modular structure-generator module (structure_generation.md's
-        registry entry), which builds it via the trainer's own
-        get_calculator(model_path, config) -- see the architecture plan's
-        generator/calculator-coupling decision. None (the default) preserves
-        this function's original behavior exactly for every existing caller.
+    calculator :
+        The ASE calculator that drives the dynamics: the trained model's own
+        calculator, built on the remote node by ``_run_md_with_spec`` from a
+        ``CalculatorSpec``.
     traj_interval : int, optional
         When set, every ``traj_interval``-th production MD step is appended
         to ``out_dir/md_trajectory.xyz`` (extxyz), a full-resolution record
@@ -127,15 +121,7 @@ def run_md(
     atom_traj_list = []
 
     md_structure = initial_structure.copy()
-    md_structure.calc = (
-        calculator
-        if calculator is not None
-        else MACECalculator(
-            model_paths=model_path,
-            device="cuda",
-            default_dtype="float64",
-        )
-    )
+    md_structure.calc = calculator
 
     # md_seed is set by select_initial_structures when a structure is reused
     # across more than one concurrent job (not enough selectable structures
@@ -299,34 +285,46 @@ def run_md(
 # ---------------------------------------------------------------------------
 
 
-def _run_md_via_trainer(
+# The keys structure_generation.md_kwargs may hold (configs/schema.py):
+# run_md's own settings, taken from its signature so a new one is known
+# automatically, plus MD's seed selection block.
+_RUN_MD_INTERNAL_PARAMS = {
+    "structure_generation_job_dict",
+    "initial_structure",
+    "total_md_runs",
+    "out_dir",
+    "calculator",
+}
+_MD_KWARGS_SCHEMA: dict[str, Any] = {
+    **dict.fromkeys(
+        p
+        for p in inspect.signature(run_md).parameters
+        if p not in _RUN_MD_INTERNAL_PARAMS
+    ),
+    "structure_selection_kwargs": dict.fromkeys(
+        ("num_of_md_starts", "enforce_chemical_diversity", "seed")
+    ),
+}
+
+
+def _run_md_with_spec(
     structure_generation_job_dict: dict,
     initial_structure: Atoms,
     total_md_runs: int,
     out_dir: str,
-    model_path: str,
-    trainer: str,
-    trainer_config: dict,
+    calculator_spec: CalculatorSpec,
     **run_md_kwargs: Any,
 ) -> None:
-    """Per-seed remote worker for generate() below. Builds its calculator
-    via the named trainer's get_calculator(model_path) (mlip/base.get_trainer),
-    resolved through the shared registry -- never a hardcoded MACECalculator
-    -- then delegates to run_md's unchanged dynamics loop. Must only run
-    inside a remote job: a live calculator must never cross the ExPyRe
-    boundary (see the architecture plan's generator/calculator-coupling
-    decision).
-    """
-    from alomancy.mlip.base import get_trainer
-
-    calc = get_trainer(trainer, trainer_config).get_calculator(model_path)
+    """Per-seed remote worker for generate() below: builds the trained
+    model's calculator on the node, through the trainer that trained it
+    (``calculator_spec.build()``), then runs the dynamics. Only the spec
+    crosses the ExPyRe boundary, never a live calculator."""
     run_md(
         structure_generation_job_dict=structure_generation_job_dict,
         initial_structure=initial_structure,
         total_md_runs=total_md_runs,
         out_dir=out_dir,
-        model_path=model_path,
-        calculator=calc,
+        calculator=calculator_spec.build(),
         **run_md_kwargs,
     )
 
@@ -355,7 +353,7 @@ def read_existing_result(config: dict, *, base_name: str, name: str) -> list[Ato
 
 def generate(
     seed_atoms: list[Atoms],
-    model_path: str,
+    calculator_spec: CalculatorSpec,
     config: dict,
     *,
     base_name: str,
@@ -366,23 +364,18 @@ def generate(
     """Local orchestrator: select a diversity-maximizing subset of
     seed_atoms (via utils.seed_selection.select_diverse_seeds), then fan
     out one remote MD job per selected seed through the generic submit_n
-    mechanism -- mirroring today's md_remote_submitter, generalized to
-    resolve its calculator through the trainer registry instead of a
-    hardcoded MACECalculator.
+    mechanism. Each job builds the trained model's calculator from
+    *calculator_spec* (the trainer that trained it, training.trainer).
 
     config carries only generator-specific settings (md_kwargs);
     name/hpc/max_time are explicit kwargs. md_kwargs holds run_md's own
     direct kwargs (steps, temperature, ensemble, pressure, ...) -- defaults
     to _MD_KWARGS_DEFAULTS (steps=20000, temperature=300, timestep_fs=0.5)
     rather than run_md's own far-shorter defaults, merged with whatever the
-    config overrides -- plus two nested keys: structure_selection_kwargs
-    (select_diverse_seeds' own params -- num_of_md_starts,
-    defaulting here to 10, enforce_chemical_diversity, seed) and
-    trainer/trainer_config (which trainer registry entry built the model
-    this MD run's calculator should use). Both live under md_kwargs rather
-    than the top structure_generation level since they're genuinely
-    MD-specific -- EZGA never calls select_diverse_seeds or the trainer
-    registry (it loads its model directly, always assuming MACE).
+    config overrides -- plus structure_selection_kwargs (select_diverse_
+    seeds' own params -- num_of_md_starts, defaulting here to 10,
+    enforce_chemical_diversity, seed), MD-specific so it lives under
+    md_kwargs.
     structure_generation's own top-level structure_selection_kwargs is
     unrelated and generator-agnostic (filter_eligible_structures, called
     once by the skeleton before any generator dispatch).
@@ -398,22 +391,15 @@ def generate(
 
     md_kwargs = dict(config.get("md_kwargs", {}))
     selection_kwargs = md_kwargs.pop("structure_selection_kwargs", {})
-    trainer = md_kwargs.pop("trainer", _MD_KWARGS_DEFAULTS["trainer"])
-    trainer_config = md_kwargs.pop(
-        "trainer_config", _MD_KWARGS_DEFAULTS["trainer_config"]
-    )
     # Only run_md's own flat kwargs (steps, temperature, ...) get
     # ALomancy's defaults merged in here (deliberately different from
     # run_md's own steps=100 default, far too short for real production
-    # MD) -- structure_selection_kwargs/trainer/trainer_config above
-    # already have their own dedicated defaults, resolved separately, and
-    # must not leak back in via this merge: **md_kwargs is spread after
-    # the explicit "trainer"/"trainer_config" function_kwargs below, so a
-    # leaked-back default would silently clobber an explicit user value.
+    # MD); structure_selection_kwargs has its own defaults, resolved
+    # separately.
     _run_md_kwargs_defaults = {
         k: v
         for k, v in _MD_KWARGS_DEFAULTS.items()
-        if k not in ("structure_selection_kwargs", "trainer", "trainer_config")
+        if k != "structure_selection_kwargs"
     }
     md_kwargs = {**_run_md_kwargs_defaults, **md_kwargs}
     md_dir = Path("results", base_name, "structure_generation")
@@ -447,6 +433,11 @@ def generate(
     def out_dir(i: int) -> Path:
         return md_dir / f"md_output_{i}"
 
+    def item(i: int) -> str:
+        # A replacement fills its original's slot, so the report sees one
+        # item whose retry succeeded (analysis/report/current_events.py).
+        return f"md_run_{seeds[i].info.get('replaces', i)}"
+
     def n_frames(i: int) -> int:
         path = out_dir(i) / target_file
         if not path.exists():
@@ -463,7 +454,7 @@ def generate(
         if remote_info is None:
             remote_info = get_remote_info(
                 {"hpc": hpc, "name": name, "max_time": max_time},
-                input_files=[str(model_path)],
+                input_files=[calculator_spec.model_path],
             )
         # run_md (unchanged, shared with the old production path) still
         # reads its own "name" out of structure_generation_job_dict rather
@@ -481,16 +472,15 @@ def generate(
                     "initial_structure": seeds[i],
                     "total_md_runs": total_md_runs,
                     "out_dir": str(out_dir(i)),
-                    "model_path": model_path,
-                    "trainer": trainer,
-                    "trainer_config": trainer_config,
+                    "calculator_spec": calculator_spec,
                     **md_kwargs,
                 },
                 "output_files": [str(out_dir(i))],
+                "item": item(i),
             }
             for i in indices
         ]
-        submit_n(_run_md_via_trainer, job_configs, remote_info)
+        submit_n(_run_md_with_spec, job_configs, remote_info)
 
     # First pass: every run with no output directory yet (a fresh start, or
     # runs never submitted before an interruption).
@@ -517,7 +507,11 @@ def generate(
             base_name,
             extra={
                 "event": "md_no_steps",
-                "data": {"n": len(not_started), "total": len(seeds)},
+                "data": {
+                    "n": len(not_started),
+                    "total": len(seeds),
+                    "items": [item(i) for i in not_started],
+                },
             },
         )
         replacements = _replacement_seeds(
@@ -545,7 +539,10 @@ def generate(
             unfinished,
             base_name,
             len(completed),
-            extra={"event": "md_unfinished", "data": {"n": len(unfinished)}},
+            extra={
+                "event": "md_unfinished",
+                "data": {"n": len(unfinished), "items": [item(i) for i in unfinished]},
+            },
         )
     if not completed:
         raise RuntimeError(

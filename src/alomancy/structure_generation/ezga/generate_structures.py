@@ -1,4 +1,6 @@
+import json
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +9,12 @@ import yaml
 from ase import Atoms
 from ase.io import read, write
 from ezga.factory import build_default_engine, load_config
+
+from alomancy.mlip.base import CalculatorSpec
+
+# EZGA relaxes candidates in the driver process, so on the CPU.
+_EZGA_DEVICE = "cpu"
+_CALCULATOR_SPEC_FILENAME = "calculator_spec.json"
 
 # run_ezga's own signature defaults, mirrored here (rather than
 # introspected via inspect.signature, which this codebase doesn't use
@@ -38,7 +46,7 @@ def objective_energy_per_atom(scale: float = 1.0) -> Callable[[Any], np.ndarray]
             )
         if np.any(atom_counts < 1):
             raise ValueError("Cannot compute energy per atom for an empty structure.")
-        # Initial EZGA seeds have not been evaluated by MACE yet and therefore
+        # Initial EZGA seeds have not been evaluated by the model yet and therefore
         # carry NaN energies.  Match EZGA objective_energy semantics by using a
         # neutral zero until the simulator populates their energies.
         clean_energies = np.nan_to_num(energies, nan=0.0)
@@ -181,10 +189,25 @@ def build_mutation_configs(
     return mutations
 
 
+def trained_model_calculator(
+    calculator_spec_path: str, device: str = _EZGA_DEVICE, **ezga_kwargs: Any
+) -> Any:
+    """EZGA calculator factory (referenced by string from the generated
+    ezga_config.yaml): the trained model's own calculator, built by the
+    trainer that trained it, wrapped in EZGA's generic ASE adapter.
+
+    The spec is read from a JSON file because EZGA imports any config string
+    containing ":" or a dotted name, so the trainer config can't be inlined."""
+    from ezga.simulator.ase_calculator import ase_calculator
+
+    spec = CalculatorSpec(**json.loads(Path(calculator_spec_path).read_text()))
+    return ase_calculator(calculator=spec.build(device), device=device, **ezga_kwargs)
+
+
 def build_ezga_config(
     dataset_path: Path,
     output_path: Path,
-    model_path: str,
+    calculator_spec_path: Path,
     max_generations: int = 2,
     population_size: int = 2,
     min_atoms: int = 2,
@@ -252,9 +275,12 @@ def build_ezga_config(
         "simulator": {
             "mode": "sampling",
             "calculator": {
-                "type": "ezga.simulator.mace_calculator.mace_calculator",
-                "calc_path": model_path,
-                "device": "cpu",
+                "type": (
+                    "alomancy.structure_generation.ezga."
+                    "generate_structures.trained_model_calculator"
+                ),
+                "calculator_spec_path": str(calculator_spec_path),
+                "device": _EZGA_DEVICE,
                 "default_dtype": "float64",
                 "nvt_steps": None,
                 "fmax": 0.05,
@@ -267,7 +293,7 @@ def build_ezga_config(
 
 def run_ezga(
     initial_structures: list[Atoms],
-    model_path: str,
+    calculator_spec: CalculatorSpec,
     output_dir: Path,
     max_generations: int = 2,
     population_size: int = 2,
@@ -309,10 +335,14 @@ def run_ezga(
     # 2. Build EZGA configuration
     # ------------------------------------------------------------------
 
+    calculator_spec_path = output_dir / _CALCULATOR_SPEC_FILENAME
+    calculator_spec_path.write_text(
+        json.dumps(asdict(calculator_spec), indent=2, default=str)
+    )
     config = build_ezga_config(
         dataset_path=initial_population_path,
         output_path=output_dir,
-        model_path=model_path,
+        calculator_spec_path=calculator_spec_path,
         max_generations=max_generations,
         population_size=population_size,
         min_atoms=min_atoms,
@@ -324,7 +354,7 @@ def run_ezga(
     # 3. Write YAML config
     #
     # EZGA's YAML loader performs the post-processing required to
-    # materialize strings such as the MACE calculator into real callables.
+    # materialize strings such as the calculator factory into real callables.
     # ------------------------------------------------------------------
 
     config_path = output_dir / "ezga_config.yaml"
@@ -390,9 +420,8 @@ def run_ezga(
 # wrapper: it uses the full eligible seed population directly (a
 # population-based genetic search, unlike MD, needs no per-seed diversity
 # selection via utils.seed_selection -- see the architecture plan's
-# structure-generation decision), and run_ezga already receives model_path
-# as a plain string (it loads the model itself via its own YAML-driven
-# config, never a live calculator object).
+# structure-generation decision). Its calculator is the trained model's
+# own, built from the CalculatorSpec by trained_model_calculator.
 # ---------------------------------------------------------------------------
 
 
@@ -412,7 +441,7 @@ def read_existing_result(config: dict, *, base_name: str, name: str) -> list[Ato
 
 def generate(
     seed_atoms: list[Atoms],
-    model_path: str,
+    calculator_spec: CalculatorSpec,
     config: dict,
     *,
     base_name: str,
@@ -436,7 +465,7 @@ def generate(
     ezga_kwargs = config.get("ezga_kwargs", {})
     return run_ezga(
         initial_structures=seed_atoms,
-        model_path=model_path,
+        calculator_spec=calculator_spec,
         output_dir=output_dir,
         **ezga_kwargs,
     )

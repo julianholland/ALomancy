@@ -966,3 +966,59 @@ def test_plot_dft_vs_model_e0_computed_once_per_call(tmp_path, monkeypatch, h_at
     )
 
     assert call_count["n"] == 1
+
+
+@pytest.mark.unit
+def test_test_parity_comes_from_the_files_when_the_db_has_train_only(
+    tmp_path, monkeypatch, shared_db, write_pred_file_like_before_fix
+):
+    """The buggy runs stored train predictions only; the test split must
+    still be read (and recovered) from test_pred.xyz rather than dropped
+    because the database had something."""
+    from ase import Atoms
+
+    from alomancy.analysis import mlip_plots
+
+    monkeypatch.chdir(tmp_path)
+
+    def dimer(d: float) -> Atoms:
+        a = Atoms("H2", positions=[[0, 0, 0], [d, 0, 0]], cell=[8] * 3, pbc=True)
+        a.info.update(config_type="init_dimer", REF_energy=-1.0 - d)
+        a.arrays["REF_forces"] = np.zeros((2, 3))
+        return a
+
+    shared_db.add_structures(
+        [dimer(0.7), dimer(0.8)], split="train", skip_duplicates=False
+    )
+    shared_db.assign_global_db_ids()
+    shared_db.store_model_predictions(
+        0,
+        0,
+        {gid: {"energy": -2.0, "forces": np.zeros((2, 3)).tolist()} for gid in (0, 1)},
+    )
+    fit_dir = Path("results/al_loop_0/training/fit_0")
+    fit_dir.mkdir(parents=True)
+    test_frames = []
+    for d in (0.9, 1.0):
+        a = dimer(d)
+        a.info["model_energy"] = a.info["REF_energy"] + 0.1
+        a.set_array("model_forces", np.full((2, 3), 0.1))
+        test_frames.append(a)
+    write_pred_file_like_before_fix(fit_dir / "test_pred.xyz", test_frames)
+
+    predictions = mlip_plots.parity_predictions(shared_db, 0, 0, fit_dir)
+    assert sorted(predictions) == ["test", "train"]
+    assert len(predictions["test"][0]) == 2
+
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    mlip_plots.plot_dft_vs_model(
+        "al_loop_0",
+        {"name": "training", "num_of_models_in_committee": 1},
+        seed=803,
+        plots_dir=plots_dir,
+        db=shared_db,
+        loop_idx=0,
+    )
+    assert (plots_dir / "fit_parity_test_al_loop_0.png").exists()
+    assert (plots_dir / "fit_parity_train_al_loop_0.png").exists()

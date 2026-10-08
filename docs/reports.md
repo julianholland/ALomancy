@@ -26,9 +26,9 @@ and a warning is logged.
 | Issues & suggestions | Each problem detected, with what to change in the config (see below) |
 | Trends | One row per loop: test force MAE, train size, new structures, DFT returned/submitted, GO convergence rate, new structures found redundant, warnings. Plus the MAE-vs-loop and timing plots |
 | Best model | Energy and force parity of this loop's best model (train and test) |
-| Training set | Structures per `config_type`: train, test, excluded as redundant, excluded by the quality filters (with reasons) |
+| Training set | Structures per `config_type`: train, test, excluded as redundant, excluded by the quality filters (with reasons). Plus the redundancy tolerance probe: unique structures against the duplicate tolerance (`char_vec_128` descriptor, Euclidean distance), with the plateaus it looks for shaded, the tolerance it chose marked and the structures removed per step (the gradient) on a second axis, from `results/<loop>/redundancy_probe.json` |
 | DFT | Returned vs submitted, single points vs relaxations, how many relaxations reached the force ceiling, BFGS steps vs the step budget, average DFT time per structure, largest force after DFT, DFT phase wall-clock and queue time |
-| Module sections | From the configured trainer, generator and evaluator, e.g. MD frames per run, the best fit's training curve, GO-step and DFT-time histograms |
+| Module sections | From the configured trainer, generator and evaluator, e.g. MD frames per run and every MD run's temperature against step (overlaid), the best fit's training curve, GO-step and DFT-time histograms |
 | Workflow section | e.g. the committee's force std-dev distribution with the selection cut, or the novelty tolerance |
 | Warnings and events | Count per event code, and the most frequent other warnings |
 
@@ -143,8 +143,15 @@ A test checks that every trigger has an entry and every entry a trigger.
 - **`results/alomancy.log`**: phase timings.
 - **`results/events.jsonl`**: warnings and coded events, written next to
   the log. Each line is one JSON object (`time`, `level`, `logger`,
-  `message`, `event`, `loop`, `data`). Every WARNING or above is recorded;
-  INFO records only when they carry an event code.
+  `message`, `event`, `loop`, `phase`, `attempt`, `data`). Every WARNING
+  or above is recorded; INFO records only when they carry an event code.
+  **The report counts only what still stands**: for each step (training,
+  structure generation, DFT) the events of its latest run attempt, so a
+  step that failed and then succeeded after a restart doesn't report the
+  old failures; and within that attempt, a failed job whose retry of the
+  same fit, MD run or structure succeeded is left out. A step finished in
+  an earlier attempt keeps its warnings. Event files from versions without
+  `phase`/`attempt` are sorted into attempts and steps from `alomancy.log`.
 
 To make a new situation countable, log it with an event code:
 

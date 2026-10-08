@@ -58,7 +58,10 @@ def ase_remote_submitter(
                 "input_structure": atoms,
                 "out_dir": str(Path(f"{ase_dir}/{ASE_OUTPUT_PREFIX}_{i}")),
                 **(function_kwargs or {}),
-            }
+            },
+            # The structure this job labels, for the loop report's retry
+            # bookkeeping (analysis/report/current_events.py).
+            "item": f"structure_{atoms.info.get('job_id', f'{batch}_{i}')}",
         }
         if per_structure_function is not None:
             job_function = per_structure_function[i]
