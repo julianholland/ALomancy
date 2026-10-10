@@ -81,7 +81,7 @@ general:
 After the import, all four modes follow the same path:
 
 1. **Import into this run's database** (`results/global_database`). Imports are idempotent. Each xyz file's SHA-256 (and a database's path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in `general.elements` are dropped at import, with one warning per source giving the count (event `start_from_elements_excluded`). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to `general.elements` later does not bring back structures that an earlier import excluded. To get them, start a fresh run.
-2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section.
+2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section. Leave the `initialization` section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (`initialization: {}`) to use the defaults.
 3. **Split into train/test** (next section) and write `results/initialization/train_set.xyz` / `test_set.xyz`.
 4. **Start the AL loop.**
 
@@ -146,4 +146,5 @@ Two behaviors differ from the old fast path. `initial_train_file_path`/`initial_
 | `No test set could be formed from general.start_from.xyz` | Single file, all structures `"external"` | See [Train/test split](#train-test-split). |
 | `No ALomancy database at ...` | `database` path wrong | Point at the `global_database` directory itself, e.g. `../run/results/global_database`. |
 | `... is this run's own database` | `database` is the current run's `db_path` | Point at the *former* run's database, or just restart the current run. |
+| `A cold start needs an 'initialization' section` | No `start_from` and no `initialization` section | Add `initialization: {}` (defaults) or set `general.start_from`. |
 | `Config uses removed key(s)` | Old keys | See [Migrating from the removed keys](#migrating-from-the-removed-keys). |
