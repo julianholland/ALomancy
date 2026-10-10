@@ -48,6 +48,17 @@ def _ensure_local_expyre_root() -> None:
     copy fails for any OS-level reason (e.g. a permissions issue) --
     package import must never hard-fail over this best-effort setup step.
 
+    The run's directory is then *pinned*: EXPYRE_ROOT is set to it, so
+    expyre reads that one directory only, with no walk and no merge.
+    Without the pin, every parent ".expyre" still has its config.json
+    merged in underneath the run's copy: it can add systems, override
+    settings, or set "local_stage_dir" and move the run's jobs.db and
+    stage dirs into itself. The walk only stops at a directory equal to
+    $HOME, so when the run's path doesn't literally start with $HOME
+    (e.g. $HOME=/home/u, cwd /work/home/u/run), it goes up to "/" and
+    also picks up the shared "~/.expyre". A run ".expyre" without a
+    config.json (a hand-made stub that relies on merging) is not pinned.
+
     Skipped under pytest (matches expyre's own "if 'pytest' not in
     sys.modules" guard) so test runs never litter the repo/test cwd with a
     stray directory, and skipped if EXPYRE_ROOT is set to anything other
@@ -62,24 +73,35 @@ def _ensure_local_expyre_root() -> None:
         return
     if os.environ.get("EXPYRE_ROOT", "@") != "@":
         return
-    _seed_local_expyre_root(Path.cwd())
+    _pin_local_expyre_root(Path.cwd())
 
 
-def _seed_local_expyre_root(cwd: Path) -> None:
+def _pin_local_expyre_root(cwd: Path) -> None:
+    """Seed *cwd*'s ExPyRe directory, then point EXPYRE_ROOT at it when it
+    has a config.json -- see _ensure_local_expyre_root's docstring."""
+    root = _seed_local_expyre_root(cwd)
+    if root is not None and (root / "config.json").exists():
+        os.environ["EXPYRE_ROOT"] = str(root)
+
+
+def _seed_local_expyre_root(cwd: Path) -> Path | None:
     """Core logic for _ensure_local_expyre_root, without the pytest/
-    EXPYRE_ROOT guard -- see that function's docstring."""
-    if (cwd / ".expyre").exists() or (cwd / "_expyre").exists():
-        return
+    EXPYRE_ROOT guard -- see that function's docstring. Returns the run's
+    ExPyRe directory, or None if there is none."""
+    for name in (".expyre", "_expyre"):
+        if (cwd / name).exists():
+            return cwd / name
 
     master = EXPYRE_CONFIG if EXPYRE_CONFIG.exists() else LEGACY_EXPYRE_CONFIG
     if not master.exists():
-        return
+        return None
 
     try:
         (cwd / ".expyre").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(master, cwd / ".expyre" / "config.json")
     except OSError:
-        pass
+        return None
+    return cwd / ".expyre"
 
 
 _ensure_local_expyre_root()

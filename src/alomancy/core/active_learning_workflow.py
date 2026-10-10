@@ -1026,6 +1026,16 @@ class ActiveLearningWorkflow(ABC):
         self.start_mode, self.start_from = _parse_start_from(
             general_config.get("start_from")
         )
+        # Without an initialization section nothing is generated, so a cold
+        # start would have no data at all.
+        if _INITIALIZATION_NAME not in self.jobs_dict and (
+            self.start_mode == START_MODE_COLD
+        ):
+            raise ValueError(
+                "A cold start needs an 'initialization' section to generate "
+                "the starting data; add one (it may be empty for defaults) or "
+                "set general.start_from."
+            )
         # Checked here, not at first use: test_ratio is otherwise only read
         # after an AL loop's DFT has finished, hours into a run.
         dataset_config = general_config.get("dataset_kwargs") or {}
@@ -1378,7 +1388,7 @@ class ActiveLearningWorkflow(ABC):
     ) -> tuple[list[Atoms], list[Atoms]]:
         work_dir = Path("results", base_name)
         work_dir.mkdir(exist_ok=True, parents=True)
-        init_config = self.jobs_dict["initialization"]
+        init_config = self.jobs_dict.get(_INITIALIZATION_NAME)
 
         self._import_start_data()
 
@@ -1391,9 +1401,16 @@ class ActiveLearningWorkflow(ABC):
                 self.db.size,
             )
 
-        needs = initialiser_entry.compute_needs(self.db, init_config, elements)
-
-        if _needs_anything(needs):
+        # No initialization section: use the imported data as is.
+        if init_config is None:
+            logger.info(
+                "No initialization section; skipping generation and DFT "
+                "(global DB holds %d structures).",
+                self.db.size,
+            )
+        elif _needs_anything(
+            needs := initialiser_entry.compute_needs(self.db, init_config, elements)
+        ):
             logger.info(
                 "DB check: %d structure(s) already evaluated. Generating missing "
                 "structures: %d isolated atoms, %d dimers, %d trimers, %d amorphous.",

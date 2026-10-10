@@ -1609,6 +1609,33 @@ class TestStartModes:
 
         initialiser.generate.assert_not_called()
 
+    def test_no_initialization_section_uses_imported_data_only(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        write("data.xyz", [_labelled(i) for i in range(6)], format="extxyz")
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        del workflow_jobs_dict["initialization"]
+        wf = _make_workflow(
+            tmp_path, workflow_jobs_dict, shared_db, start_from={"xyz": "data.xyz"}
+        )
+        initialiser = _no_needs_initialiser()
+
+        train, test = self._init(wf, initialiser=initialiser)
+
+        initialiser.compute_needs.assert_not_called()
+        initialiser.generate.assert_not_called()
+        assert len(train) + len(test) == 6
+
+    def test_cold_start_without_initialization_section_raises(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        del workflow_jobs_dict["initialization"]
+
+        with pytest.raises(ValueError, match="cold start needs an 'initialization'"):
+            _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
 
 # ---------------------------------------------------------------------------
 # run() -- loop control flow, originally copied from the now-removed
