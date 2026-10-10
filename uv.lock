@@ -195,6 +195,7 @@ source = { editable = "." }
 dependencies = [
     { name = "ase" },
     { name = "deduplicate-lib" },
+    { name = "e3nn" },
     { name = "expyre-wfl" },
     { name = "ezga-lib" },
     { name = "mace-torch" },
@@ -246,6 +247,7 @@ test = [
 requires-dist = [
     { name = "ase", specifier = ">=3.22.0" },
     { name = "deduplicate-lib", specifier = ">=0.1.0" },
+    { name = "e3nn", specifier = "==0.4.4" },
     { name = "expyre-wfl", specifier = ">=0.1.0" },
     { name = "ezga-lib", specifier = ">=1.2.0" },
     { name = "mace-torch", specifier = ">=0.3.0" },

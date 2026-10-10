@@ -40,6 +40,7 @@ dependencies = [
     # sevenn >= 0.11 needs e3nn >= 0.5; mace-torch pins e3nn==0.4.4, and e3nn 0.6
     # breaks MACE stage two (AveragedModel deepcopy of a jit-scripted function).
     "sevenn>=0.10.4,<0.11",
+    "e3nn==0.4.4",
 ]
 
 [project.optional-dependencies]
