@@ -186,11 +186,12 @@ def md_runs(
 
 
 def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
-    """Unique structures against the duplicate tolerance, from redundancy
-    removal's tolerance probe: the plateaus it found shaded, the tolerance
-    it chose as a black dashed line, and on a right-hand axis the number of
-    structures removed between consecutive tolerance steps (the negative
-    gradient of the unique count: near zero on a plateau)."""
+    """Structures kept against the duplicate tolerance, from redundancy
+    removal's tolerance probe: the plateaus it found shaded, the
+    flagged-fraction cap as a horizontal line, the tolerance it chose as a
+    black dashed line, and on a right-hand axis the number of structures
+    removed between consecutive tolerance steps (the negative gradient of
+    the kept count: zero on a plateau)."""
     setup_alomancy_style()
     tolerances = np.asarray(record["tolerances"], dtype=float)
     counts = np.asarray(record["unique_counts"], dtype=float)
@@ -205,8 +206,17 @@ def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
             lw=0,
             label="plateau" if i == 0 else None,
         )
-    ax.plot(tolerances, counts, color=PALETTE[0], lw=1.2, label="unique structures")
+    ax.plot(tolerances, counts, color=PALETTE[0], lw=1.2, label="structures kept")
     ax.axhline(n, color="#9CA3AF", ls=":", lw=1, label=f"all {n:,} structures")
+    cap = (record.get("settings") or {}).get("max_flagged_fraction")
+    if cap is not None and cap < 1:
+        ax.axhline(
+            n * (1 - cap),
+            color=PALETTE[2],
+            ls="-.",
+            lw=1,
+            label=f"cap: at most {cap:.0%} flagged",
+        )
     chosen = record.get("chosen_tolerance")
     if chosen is not None:
         flagged = int(record.get("n_flagged") or 0)
@@ -224,14 +234,25 @@ def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
         ax.text(
             0.98,
             0.05,
-            "no plateau found: nothing flagged",
+            "lowest plateau flags more than the cap: nothing flagged"
+            if record.get("outcome") == "cap_exceeded"
+            else "no plateau found: nothing flagged",
             transform=ax.transAxes,
             ha="right",
             fontsize=9,
         )
+    # The sweep runs until one structure is left; past the point where 95%
+    # are flagged it's a long flat tail, so it's cut there (keeping the
+    # chosen tolerance in view).
+    if len(counts) > 1:
+        tail = np.nonzero(counts <= max(1.0, 0.05 * n))[0]
+        right = tolerances[tail[0]] * 1.1 if tail.size else tolerances[-1]
+        if chosen is not None:
+            right = max(right, chosen * 1.2)
+        ax.set_xlim(tolerances[0], min(right, tolerances[-1]))
     descriptor = (record.get("descriptor") or {}).get("key", "descriptor")
     ax.set_xlabel(f"Tolerance (Euclidean distance between {descriptor} descriptors)")
-    ax.set_ylabel("Unique structures")
+    ax.set_ylabel("Structures kept")
     ax.set_title(title)
     ax.grid(True)
 

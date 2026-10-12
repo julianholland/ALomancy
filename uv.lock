@@ -246,7 +246,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "ase", specifier = ">=3.22.0" },
-    { name = "deduplicate-lib", specifier = ">=0.1.0" },
+    { name = "deduplicate-lib", specifier = ">=0.1.3" },
     { name = "e3nn", specifier = "==0.4.4" },
     { name = "expyre-wfl", specifier = ">=0.1.0" },
     { name = "ezga-lib", specifier = ">=1.2.0" },
@@ -1293,7 +1293,7 @@ wheels = [
 
 [[package]]
 name = "deduplicate-lib"
-version = "0.1.2"
+version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numba" },
@@ -1304,9 +1304,9 @@ dependencies = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/e4/581e635421848583b60f3b3d5b1b9baaeaaf2035d1532669ef790d6bb252/deduplicate_lib-0.1.2.tar.gz", hash = "sha256:c0d83405a02a88dca014389f1b4ffb32674616bdedb6fa8712b04db8c1daa10f", size = 18387, upload-time = "2026-09-23T14:15:45.274Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/d1/0f5226e29219916bbc519ace05201ec0b60e6ca54a488c598a59dca180c9/deduplicate_lib-0.1.3.tar.gz", hash = "sha256:c32255be031e620dacfe4eaf31560164191e561e002f0b5d643001172a0e6c56", size = 167021, upload-time = "2026-10-12T12:44:25.798Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/0a/01a41106c18c58b6222b77ca1206f591fba4da46ac5b98d4c0779ea484aa/deduplicate_lib-0.1.2-py3-none-any.whl", hash = "sha256:72eac29e8f75e585d58427813c8f819be996b9346deaa2af1d9c898a37ec95b5", size = 21162, upload-time = "2026-09-23T14:15:44.25Z" },
+    { url = "https://files.pythonhosted.org/packages/93/3a/7863f60516198c90fcafd260d96ecacf8a290ca1234cf5d60ba7df3165fb/deduplicate_lib-0.1.3-py3-none-any.whl", hash = "sha256:44d5928ac1254f35c6486999748867a235484dc29644276ea9df26542e28cc6d", size = 22043, upload-time = "2026-10-12T12:44:23.509Z" },
 ]
 
 [[package]]

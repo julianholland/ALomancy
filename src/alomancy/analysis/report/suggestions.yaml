@@ -91,9 +91,12 @@ redundancy_removed_new:
   severity: warning
   suggestion: >-
     {n}/{total} of this loop's new structures ({value:.0%}) were flagged as
-    redundant. Generation is revisiting known configurations: raise
-    md_kwargs.temperature, use a different generator, or a selection workflow
-    that rewards novelty (al_workflow: novelty_selection).
+    redundant. Check the redundancy tolerance probe below first: a tolerance
+    on a coarse plateau flags structures that aren't real duplicates (set
+    general.redundancy_kwargs.tolerance, or lower max_flagged_fraction). If
+    the tolerance is sensible, generation is revisiting known configurations:
+    raise md_kwargs.temperature, use a different generator, or a selection
+    workflow that rewards novelty (al_workflow: novelty_selection).
 
 queue_dominated:
   threshold: 0.50

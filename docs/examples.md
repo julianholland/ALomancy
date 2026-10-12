@@ -195,7 +195,6 @@ general:
     num_of_models_in_committee: 5
 
 initialization:
-  name: "initialization"
   max_time: "2H"
   mp_kwargs:
     max_num_of_atoms: 20
@@ -208,24 +207,21 @@ initialization:
     num_of_amorphous_structures: 300
     num_of_atoms_per_amorphous: 20
   stretch_compress_targets_kwargs:
-    num_stretch_compress_per_mp: 5
+    num_of_stretch_compress_per_target: 5
   hpc: 'my_hpc'
 
 training:
-  name: "training"
   trainer: "mace"
   max_time: "5H"
   hpc: 'my_gpu_hpc'
 
 structure_generation:
-  name: "structure_generation"
   generator: "md"   # "md" (default) or "ezga"
   num_of_structures_to_generate: 500   # candidate pool; default 10x per loop
   max_time: "10H"
   hpc: 'my_gpu_hpc'
 
 high_accuracy_evaluation:
-  name: "high_accuracy_evaluation"
   evaluator: "qe"   # "qe" (default) or "vasp"
   max_time: "30m"
   hpc: 'my_cpu_hpc'   # concurrency is set on the HPC profile, see max_num_of_concurrent_jobs above
@@ -233,17 +229,16 @@ high_accuracy_evaluation:
 
 ### Configuration Key Descriptions
 
-- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `num_of_structures_per_loop` (default 50) is how many structures the selector sends to DFT each loop. `committee_uncertainty_kwargs` holds everything specific to this AL skeleton: `num_of_models_in_committee` (how many committee members are trained in parallel), `target_config_types` (which config types count toward the train/test split), and `test_ratio` (the split between test and training data).
+- **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `num_of_structures_per_loop` (default 50) is how many structures the selector sends to DFT each loop. `dataset_kwargs` sets the train/test split for every workflow: `target_config_types` (which config types count toward the split) and `test_ratio` (the fraction that goes to test). `remove_redundancy` (default true) flags near-duplicate training structures; `redundancy_kwargs` tunes how its tolerance is chosen: `tolerance` (set it directly), `max_flagged_fraction` (default 0.5: if the automatic choice would flag more, nothing is flagged), `min_plateau_width` and `probe_steps_per_structure`. Settings specific to one AL skeleton go in its own block, e.g. `committee_uncertainty_kwargs.num_of_models_in_committee` (how many committee members are trained in parallel).
 
 - **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
 
-- **training**: Trains an ensemble (committee) of interatomic potentials. `trainer` selects the registered `mlip_trainer` backend: `"mace"` (default) or `"sevennet"`. Backend-specific settings go under `mace_kwargs` / `sevennet_kwargs` (SevenNet's own `model`/`train`/`data` input sections; requires `sevenn` on the training nodes). Complete, tested configs for each workflow and backend are in `examples/configs/`.
+- **training**: Trains the interatomic potential(s) the workflow needs (a committee for `committee_uncertainty`, one model for `random_selection` and `novelty_selection`). `trainer` selects the registered `mlip_trainer` backend: `"mace"` (default) or `"sevennet"`. Backend-specific settings go under `mace_kwargs` / `sevennet_kwargs` (SevenNet's own `model`/`train`/`data` input sections; requires `sevenn` on the training nodes). Complete, tested configs for each workflow and backend are in `examples/configs/`.
 
 - **structure_generation**: Generates candidate structures for labeling. `num_of_structures_to_generate` (default 10 × `general.num_of_structures_per_loop`) is the size of the candidate pool; it must be at least `num_of_structures_per_loop` (error) and should be at least twice it (warning). `generator` selects the registered `structure_generator` backend (`"md"`, the default, or `"ezga"` for genetic-algorithm search); uncertainty is measured as force standard deviation across the committee. MD parameters (`steps`, `temperature`, `timestep_fs`, `friction`, `ensemble`, `pressure`) go under `md_kwargs`:
 
   ```yaml
   structure_generation:
-    name: "structure_generation"
     generator: "md"
     num_of_structures_to_generate: 500   # candidate pool; default 10x per loop
     max_time: "10H"
@@ -259,7 +254,7 @@ high_accuracy_evaluation:
 
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. If QE-specific keys (e.g. `pwx_path`) appear in a VASP config or vice versa, a warning is logged and the mismatched keys are ignored.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored.
 
 ## Using VASP as the DFT Backend
 
@@ -267,7 +262,6 @@ To switch from Quantum Espresso to VASP, set `evaluator: "vasp"` in the `high_ac
 
 ```yaml
 high_accuracy_evaluation:
-  name: "high_accuracy_evaluation"
   evaluator: "vasp"
   max_time: "30m"
   vasp_kwargs:                # INCAR overrides (optional)
@@ -352,15 +346,13 @@ Excluded structures are flagged (`is_quality_filtered`, with the reason in `qual
 
 Separately, `high_accuracy_evaluation.force_ceiling` (default `100.0` eV/Å) controls how far AL-generated structures are relaxed before their DFT labels are kept: each is relaxed until its largest force is at most the ceiling. `null` means a single-point calculation with no relaxation. Initialization structures are not affected.
 
-## MACE Committee Predictions in the GlobalDatabase
+## Model Predictions in the GlobalDatabase
 
-After each AL loop's MACE committee training finishes on the remote GPU node, ALomancy evaluates every committee model on the training and test sets **before returning from the remote job** and saves the per-structure predictions to `train_pred.xyz` / `test_pred.xyz` inside each fit directory. These files are synced back to your local machine by ExPyRe alongside the model files.
+After each loop's training, every model is evaluated on its training, validation and test sets on the remote node, before the job returns, whichever trainer is configured. The predictions are written to `train_pred.xyz` / `valid_pred.xyz` / `test_pred.xyz` in each fit directory (`results/al_loop_N/training/fit_i/`) and synced back with the model files.
 
-The skeleton then reads those files locally and stores the predicted energies and forces in the GlobalDatabase via `store_model_predictions` — no model loading or local GPU required. Parity plots (`plot_dft_vs_model`) read from the DB first, then fall back to the eval xyz files, and never run local inference.
+ALomancy then reads those files locally and stores the predicted energies and forces in the GlobalDatabase (`store_model_predictions`), with no model loading or local GPU needed. Parity plots read from the database first, fall back to the prediction files, and never run local inference.
 
-> **Resuming from before v0.4.2**: loops trained without the post-training eval step will not have `train_pred.xyz` / `test_pred.xyz`. The sentinel `mace_predictions.done` is written and those loops are skipped gracefully; parity plots show "No predictions available" for them. Only future loops (trained with the updated remote package) will have predictions stored.
-
-The stored metadata keys follow the pattern (generalized to `model_*` since the trainer backend is no longer assumed to be MACE — see the module registry):
+The stored keys follow the pattern:
 ```
 model_energy_loop_{N}_fit_{i}   # predicted energy (eV, raw)
 model_forces_loop_{N}_fit_{i}   # predicted forces ([[fx,fy,fz], ...], eV/Å)
@@ -380,5 +372,3 @@ preds = db.get_model_predictions(loop_idx=0, fit_idx=0)
 e_dft, e_pred, f_dft, f_pred = preds["train"]
 print(f"Train energy MAE: {abs(e_dft - e_pred).mean():.4f} eV/atom")
 ```
-
-Predictions are guarded by a `results/al_loop_{N}/mace_predictions.done` sentinel so they are not recomputed on restart. If you need to regenerate predictions (e.g. after installing a different model), delete that sentinel file.

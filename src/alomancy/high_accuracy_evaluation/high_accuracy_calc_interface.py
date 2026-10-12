@@ -14,7 +14,7 @@ The evaluator category has two kinds of entry points:
   There is exactly one of these regardless of which DFT backend is
   configured -- it resolves the calculator-specific ``sp``/``go`` worker
   pair itself via the shared registry (``registry.resolve("dft_evaluator",
-  calculator)``), the same way ``get_dft_functions`` already does today.
+  calculator)``).
 - the low-level ``sp``/``go`` worker functions
   (``high_accuracy_evaluation.dft.run_qe``/``run_vasp``), worker-shaped and
   calculator-specific, registered under the "dft_evaluator" category.

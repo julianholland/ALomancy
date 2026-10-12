@@ -54,12 +54,21 @@ def test_lists_every_profile_with_details(hpc_config):
         "raven",
         "raven_gpu",
         "raven-host",
-        "/opt/qe/pw.x",
         "240GB",
         "30",
         "8 (old key max_concurrent_jobs)",
     ):
         assert expected in out
+    # The executable stays out of list-hpc; the run's startup table keeps it.
+    assert "executable" not in out
+    assert "/opt/qe/pw.x" not in out
+
+
+@pytest.mark.unit
+def test_startup_table_row_keeps_the_executable(hpc_config):
+    from alomancy.configs.hpc_profiles import hpc_profile_row
+
+    assert hpc_profile_row("raven", _PROFILES["raven"])["executable"] == "/opt/qe/pw.x"
 
 
 @pytest.mark.unit

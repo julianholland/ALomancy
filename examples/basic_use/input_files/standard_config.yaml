@@ -20,7 +20,6 @@ general:
     num_of_models_in_committee: 5
 
 initialization:
-  name: "initialization"
   max_time: "2H"
   mp_kwargs:
     max_num_of_atoms: 20
@@ -39,7 +38,6 @@ initialization:
   hpc: 'raven'
 
 training:
-  name: "training"
   trainer: "mace"
   max_time: "5H"
   # Every mace_kwargs field below not shown already matches trainer.py's
@@ -52,7 +50,6 @@ training:
   hpc: 'raccoon_big'
 
 structure_generation:
-  name: "structure_generation"
   generator: "md"
   num_of_structures_to_generate: 500  # candidate pool (default 10x per loop)
   max_time: "10H"
@@ -72,7 +69,6 @@ structure_generation:
   hpc: 'raccoon_small'
 
 high_accuracy_evaluation:
-  name: "high_accuracy_evaluation"
   evaluator: "qe"
   max_time: "30m"
   # Merged key by key into QE's defaults per namelist (control, system,

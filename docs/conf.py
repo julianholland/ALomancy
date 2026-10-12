@@ -52,6 +52,10 @@ source_suffix = {
 # Master document
 master_doc = "index"
 
+# docs/architecture/ holds contributor notes on each subsystem (indexed from
+# CLAUDE.md), read on GitHub rather than published.
+exclude_patterns = ["_build", "architecture"]
+
 # HTML theme
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]

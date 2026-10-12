@@ -2,13 +2,15 @@
 
 Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP.md).
 
-## 1.0.2 — patch
-- [ ] Merge #82: isolated per-run `.expyre`, e3nn/sevenn pins, optional `initialization`
-- [ ] Timings plot: only DFT plus queue time visible (queue window, uncapped queue bar, dead fallback regex)
-- [ ] Bond-distribution title overlaps the subplot titles
-- [ ] Don't include the executable in `alomancy list-hpc`
-- [ ] Coverage badge (#24): codecov `files:`, fail visibly
-- [ ] Remove dead code and stale docs (unused `RemoteInfo` fields, old `dft/__init__` registry, `remote_submission_architecture.md`)
+## 1.0.3 — patch
+- [x] Timings plot: only DFT plus queue time visible (queue window, uncapped queue bar, missing generation start)
+- [x] Bond-distribution title overlaps the subplot titles
+- [x] Don't include the executable in `alomancy list-hpc`
+- [x] Coverage badge (#24): codecov `files:`, fail visibly
+- [x] Remove dead code (unused `RemoteInfo` fields, old `dft/__init__` registry, dead submitters)
+- [x] README links go to the Read the Docs documentation, not the repo files
+- [x] Outdated examples: `name:` keys (now warned about), MACE-only predictions section generalised, docs config blocks tested
+- [x] Split CLAUDE.md into `docs/architecture/` per subsystem (replaces `remote_submission_architecture.md`), with a drift test
 
 ## 1.1 — production reliability and paper plots
 - [ ] DFT failure triage: classify, retry the retryable, report DFT yield per loop
@@ -47,6 +49,7 @@ Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP
 - `alomancy init` / HPC wizard (#48), probably an external tool
 
 ## Done
+- [x] Isolated per-run `.expyre`, e3nn/sevenn pins, optional `initialization` (#82, 1.0.2)
 - [x] Combined timings plot: integer x ticks, thinned; old timing plots removed
 - [x] MAE-vs-loop plot: best model per loop, outside the loop folders
 - [x] Gold star on the lowest-MAE energy and force parity subplots

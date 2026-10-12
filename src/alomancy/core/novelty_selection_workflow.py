@@ -69,7 +69,7 @@ class _CandidateDistanceMatrix(DistanceMatrix):
     """DistanceMatrix whose unique count covers only the candidate rows
     (``first_candidate`` onwards), so deduplicate_lib's binary search
     targets the number of novel candidates rather than all unique rows.
-    Reference rows still count as neighbours."""
+    Kept reference rows still count as neighbours."""
 
     def __init__(self, dataset_array: np.ndarray, first_candidate: int) -> None:
         super().__init__(
@@ -85,12 +85,14 @@ class _CandidateDistanceMatrix(DistanceMatrix):
 def select_novel_indices(
     reference: np.ndarray, candidates: np.ndarray, n: int
 ) -> tuple[list[int], float]:
-    """Indices of at most *n* candidate descriptors with no neighbour
-    (another candidate or a *reference* row) within the largest tolerance
-    that leaves at most *n* such candidates; returns (indices, tolerance).
+    """Indices of at most *n* candidate descriptors kept by DistanceMatrix
+    at the largest tolerance that keeps at most *n* candidates; returns
+    (indices, tolerance).
 
-    Reference rows go first: DistanceMatrix always marks row 0 unique, so
-    with any reference data that quirk lands on a row that is dropped.
+    DistanceMatrix (deduplicate_lib >= 0.1.3) keeps rows in order, each
+    unless it is within the tolerance of a row already kept. Reference rows
+    go first, so a candidate close to the database is never kept, and a
+    cluster of candidates contributes its first member.
     """
     if len(candidates) <= n:
         return list(range(len(candidates))), 0.0

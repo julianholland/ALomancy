@@ -1,6 +1,5 @@
 """Tests for alomancy/registry.py -- the generic name -> module dispatch
-mechanism replacing per-category ad-hoc registries (the precedent being
-high_accuracy_evaluation.dft._CALCULATOR_REGISTRY).
+mechanism shared by every module category.
 
 Uses synthetic categories/modules throughout (not the real production
 backends) so these tests exercise register()/resolve()'s own mechanics

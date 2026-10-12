@@ -172,7 +172,7 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
         }
 
     if updates:
-        db.partition.set_metadata_bulk(updates, use_indices=True)
+        db.set_metadata_bulk(updates)
     if n_missing_e0:
         logger.warning(
             "%s filter: %d structure(s) contain element(s) %s with no "

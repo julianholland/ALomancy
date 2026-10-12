@@ -128,6 +128,44 @@ def test_readme_snippet_applied_to_its_config_builds(snippet, tmp_path, monkeypa
     assert _config_warnings(_merged(_README_FULL[0], snippet), allow_unused=True) == []
 
 
+# -- docs/*.md --------------------------------------------------------------
+
+# Pages whose YAML blocks are run configs (whole or partial); blocks of other
+# kinds (HPC profiles, report output) don't have config sections at the top.
+_DOC_PAGES = ("examples.md", "starting_a_run.md")
+_DOC_SNIPPETS = [
+    (page, i, block)
+    for page in _DOC_PAGES
+    for i, block in enumerate(
+        yaml.safe_load(text)
+        for text in re.findall(
+            r"```yaml\n(.*?)```", (_ROOT / "docs" / page).read_text(), re.S
+        )
+    )
+    if isinstance(block, dict) and block and set(block) <= {"general", *_PHASES}
+]
+
+
+@pytest.mark.unit
+def test_doc_snippets_are_found():
+    assert {page for page, _, _ in _DOC_SNIPPETS} == set(_DOC_PAGES)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "snippet",
+    [block for _, _, block in _DOC_SNIPPETS],
+    ids=[f"{page}#{i}" for page, i, _ in _DOC_SNIPPETS],
+)
+def test_doc_snippet_applied_to_the_readme_config_builds(
+    snippet, tmp_path, monkeypatch
+):
+    """Every config block in the docs, applied over the README's config,
+    builds without warnings, so a renamed key breaks a test, not a reader."""
+    monkeypatch.chdir(tmp_path)
+    assert _config_warnings(_merged(_README_FULL[0], snippet), allow_unused=True) == []
+
+
 @pytest.mark.unit
 def test_readme_config_matches_tested_example():
     """The README's config is examples/configs/committee_mace_cold_start.yaml,

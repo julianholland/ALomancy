@@ -545,7 +545,7 @@ class TestRemoteJobExecutor:
         """A transient exception that leaves job.status in the ongoing set
         (simulating e.g. the "No space left on device" rsync failure during
         a mid-training sync -- observed in production, see
-        docs/remote_submission_architecture.md section 6) must be resumed
+        docs/architecture/remote_submission.md, History) must be resumed
         on the SAME job object, not treated as a permanent failure. Exactly
         one job.start() call proves no resubmission happened."""
         import alomancy.remote_submission.executor as executor_module

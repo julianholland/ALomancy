@@ -130,7 +130,12 @@ def test_select_uncertain_predicts_with_best_model_first(
     captured = {}
 
     def fake_find(
-        structure_list, base_name, job_dict, structure_forces_dict, num_of_structures
+        structure_list,
+        base_name,
+        job_dict,
+        structure_forces_dict,
+        num_of_structures,
+        select_indices=None,
     ):
         captured["labels"] = list(structure_forces_dict)
         captured["name"] = job_dict["structure_generation"]["name"]

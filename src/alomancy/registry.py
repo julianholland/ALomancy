@@ -1,8 +1,6 @@
 """Generic name -> module dispatch for ALomancy's pluggable module categories.
 
-Replaces per-category ad-hoc registries (the precedent being
-``high_accuracy_evaluation.dft._CALCULATOR_REGISTRY``) with one shared
-mechanism used identically for every category: MLIP trainer, structure
+One shared mechanism used identically for every category: MLIP trainer, structure
 generator, DFT evaluator, initialiser, and any future category (e.g. a
 domain-classification module) that wants the same name -> entry-points
 dispatch for free.

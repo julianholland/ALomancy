@@ -1233,3 +1233,158 @@ class TestMigrateMacePredictionKeys:
         db.add_structures([atoms], split="train", skip_duplicates=False)
         db.assign_global_db_ids()
         return db
+
+
+def _c_atoms(energy: float) -> Atoms:
+    # init_amorphous: not deduplicated by (config_type, formula) on add.
+    return make_atoms(
+        ["C", "C"],
+        config_type="init_amorphous",
+        ref_energy=energy,
+        ref_forces=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        cell=10.0 - energy,
+    )
+
+
+def _on_disk_count(db_path) -> int:
+    """Structures a fresh process would see at *db_path*, read without
+    taking a write handle."""
+    import sqlite3
+
+    sqlite = db_path / "hybrid_local" / "db_index.sqlite"
+    with sqlite3.connect(f"file:{sqlite}?mode=ro", uri=True) as conn:
+        return conn.execute("select count(*) from objects").fetchone()[0]
+
+
+def _capture(logger_name: str):
+    import logging
+
+    records: list[logging.LogRecord] = []
+
+    class _Handler(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler = _Handler()
+    logging.getLogger(logger_name).addHandler(handler)
+    return records, handler
+
+
+class TestReplacedDatabaseRecovery:
+    """sage_lib renames a live DB aside when another process opens it
+    read-write; the next write must restore it instead of writing into
+    files nobody can see."""
+
+    @staticmethod
+    def _replace_like_sage_lib(db_path, delete_backups: bool) -> None:
+        """What sage_lib's HybridStorage does on a lock error: rename the
+        live files to *.corrupted_<ts> and create empty ones."""
+        root = db_path / "hybrid_local"
+        for name in ("db_index.sqlite", "db_objects.h5"):
+            for path in root.glob(f"{name}*"):
+                path.rename(path.with_name(f"{path.name}.corrupted_1"))
+        GlobalDatabase(str(db_path)).partition.close()
+        if delete_backups:
+            for path in root.glob("*.corrupted_1*"):
+                path.unlink()
+
+    @pytest.mark.unit
+    def test_untouched_database_is_not_replaced(self, tmp_path):
+        db = GlobalDatabase(str(tmp_path / "db"))
+        db.add_structures([_c_atoms(-1.0)])
+        assert not db.db_replaced()
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("delete_backups", [False, True])
+    def test_write_after_replacement_restores_everything(
+        self, tmp_path, delete_backups
+    ):
+        import logging
+
+        db_path = tmp_path / "db"
+        db = GlobalDatabase(str(db_path))
+        db.add_structures([_c_atoms(-1.0), _c_atoms(-2.0)])
+        self._replace_like_sage_lib(db_path, delete_backups)
+        assert db.db_replaced()
+        assert _on_disk_count(db_path) == 0
+
+        records, handler = _capture("alomancy.database.global_database")
+        try:
+            db.add_structures([_c_atoms(-3.0)])
+        finally:
+            logging.getLogger("alomancy.database.global_database").removeHandler(
+                handler
+            )
+
+        assert not db.db_replaced()
+        assert db.size == 3
+        assert _on_disk_count(db_path) == 3
+        replaced = list((db_path / "hybrid_local").glob("*.replaced_*"))
+        assert {p.name.split(".replaced_")[0] for p in replaced} >= {
+            "db_index.sqlite",
+            "db_objects.h5",
+        }
+        events = [getattr(r, "event", None) for r in records]
+        assert "database_recovered" in events
+        # A fresh instance (a restart) sees every structure.
+        assert GlobalDatabase(str(db_path)).size == 3
+
+    @pytest.mark.unit
+    def test_metadata_write_after_replacement_is_kept(self, tmp_path):
+        db_path = tmp_path / "db"
+        db = GlobalDatabase(str(db_path))
+        db.add_structures([_c_atoms(-1.0)], split="train")
+        self._replace_like_sage_lib(db_path, delete_backups=True)
+        db.flag_as_duplicates([0])
+        reopened = GlobalDatabase(str(db_path))
+        assert reopened.get_train_atoms(exclude_duplicates=False)[0].info[
+            "is_duplicate"
+        ]
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_second_process_opening_the_database_is_recovered(self, tmp_path):
+        """The real failure: another process opens the DB read-write while
+        this one holds it, sage_lib replaces it with an empty one, and the
+        backups are deleted."""
+        import subprocess
+        import sys
+
+        db_path = tmp_path / "db"
+        db = GlobalDatabase(str(db_path))
+        db.add_structures([_c_atoms(-1.0)])
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from alomancy.database.global_database import "
+                "GlobalDatabase; GlobalDatabase(sys.argv[1])",
+                str(db_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        backups = list((db_path / "hybrid_local").glob("*.corrupted_*"))
+        assert backups, "sage_lib no longer renames a locked DB; test is stale"
+        for path in backups:
+            path.unlink()
+        assert _on_disk_count(db_path) == 0
+
+        db.add_structures([_c_atoms(-2.0)])
+
+        assert _on_disk_count(db_path) == 2
+
+
+class TestClearDuplicateFlags:
+    @pytest.mark.unit
+    def test_clears_only_the_given_config_types(self, tmp_path):
+        db = GlobalDatabase(str(tmp_path / "db"))
+        a, b = _c_atoms(-1.0), _c_atoms(-2.0)
+        b.info["config_type"] = "high_sd"
+        db.add_structures([a, b], split="train")
+        db.flag_as_duplicates([0, 1])
+        assert db.clear_duplicate_flags(["high_sd"]) == 1
+        kept = db.get_train_atoms()
+        assert [x.info["config_type"] for x in kept] == ["high_sd"]
+        assert db.clear_duplicate_flags() == 1
+        assert len(db.get_train_atoms()) == 2

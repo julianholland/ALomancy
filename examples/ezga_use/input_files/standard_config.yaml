@@ -20,7 +20,6 @@ general:
     num_of_models_in_committee: 5
 
 initialization:
-  name: "initialization"
   max_time: "2H"
   mp_kwargs:
     max_num_of_atoms: 20
@@ -39,7 +38,6 @@ initialization:
   hpc: 'raven'
 
 training:
-  name: "training"
   trainer: "mace"
   max_time: "5H"
   # Every mace_kwargs field below not shown already matches trainer.py's
@@ -60,7 +58,6 @@ training:
 # the single best-fit committee model (device="cpu", hardcoded) to relax
 # candidates internally, so md_kwargs is not used here.
 structure_generation:
-  name: "structure_generation"
   generator: "ezga"
   num_of_structures_to_generate: 500  # candidate pool (default 10x per loop)
   max_time: "10H"
@@ -94,7 +91,6 @@ structure_generation:
   hpc: 'raccoon_small'
 
 high_accuracy_evaluation:
-  name: "high_accuracy_evaluation"
   evaluator: "qe"
   max_time: "30m"
   qe_kwargs:

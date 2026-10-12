@@ -1,5 +1,7 @@
 """Unit tests for remove_redundancy_from_partition."""
 
+import json
+
 import numpy as np
 import pytest
 from ase import Atoms
@@ -116,49 +118,25 @@ def test_empty_train_split_no_error(tmp_path):
 
 
 @pytest.mark.unit
-def test_no_plateau_found_skips_flagging(tmp_path, monkeypatch):
-    """When the tolerance probe runs but finds no plateau, it emits a
-    "No plateaus found" warning and returns an arbitrary fallback tolerance
-    (per deduplicate_lib's own calculate_tolerance implementation) -- this
-    must not be used to flag duplicates; remove_redundancy_from_partition
-    should skip flagging entirely instead."""
-    import warnings
-
-    from deduplicate_lib.plugins.tolerance_calculators import (
-        natural_tolerance_plateau_probe,
-    )
-
+def test_no_plateau_skips_flagging(tmp_path):
+    """Every structure distinct and spread evenly: the only plateaus keep
+    everything, so no tolerance qualifies and nothing is flagged."""
     from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
 
-    base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
-    near1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
-    near2 = [[0.0002, 0.0, 0.0], [2.0002, 0.0, 0.0]]
-
-    structures = [_make_s2(base), _make_s2(near1), _make_s2(near2)]
     db = GlobalDatabase(str(tmp_path / "db"))
-    db.add_structures(structures, split="train", skip_duplicates=False)
+    db.add_structures(_distinct_s2(3), split="train", skip_duplicates=False)
+    probe_path = tmp_path / "probe.json"
 
-    def _fake_calculate_tolerance(self, condition="longest"):
-        warnings.warn(
-            "No plateaus found in tolerance probe. Consider adding in "
-            "perturbed structures and/or increasing dataset size and/or "
-            "increaseing probe steps.\nReturning average of all same and "
-            "all different tolerance as fallback.",
-            stacklevel=2,
-        )
-        return 0.5
-
-    monkeypatch.setattr(
-        natural_tolerance_plateau_probe.NaturalTolerancePlateauProbe,
-        "calculate_tolerance",
-        _fake_calculate_tolerance,
+    remove_redundancy_from_partition(
+        db,
+        config_list=["init_amorphous"],
+        probe_path=probe_path,
+        settings={"min_plateau_width": 0.9},
     )
 
-    remove_redundancy_from_partition(db, config_list=["init_amorphous"])
-
-    # Nothing flagged despite near1/near2 being near-duplicates of base --
-    # the fallback tolerance is never applied.
     assert len(db.get_train_atoms()) == 3
+    record = json.loads(probe_path.read_text())
+    assert (record["outcome"], record["n_flagged"]) == ("no_plateau", 0)
 
 
 @pytest.mark.unit
@@ -263,10 +241,12 @@ def test_descriptor_cache_is_dimension_specific(tmp_path, monkeypatch):
     db = GlobalDatabase(str(tmp_path / "db"))
     db.add_structures(_distinct_s2(3), split="train", skip_duplicates=False)
     remove_redundancy_from_partition(db, config_list=["init_amorphous"])
+    still_in_training = len(db.get_train_atoms())
 
     calls = _count_descriptor_calls(monkeypatch)
     remove_redundancy_from_partition(db, config_list=["init_amorphous"], dimensions=64)
-    assert len(calls) == 3
+    # Every structure still compared gets a fresh 64-long descriptor.
+    assert len(calls) == still_in_training
 
 
 @pytest.mark.unit
@@ -312,3 +292,177 @@ def test_probe_record_is_saved_for_the_report(tmp_path, capsys):
         assert record["chosen_tolerance"] is None
         assert record["n_flagged"] == 0
     assert "plateau log" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Choosing the tolerance (general.redundancy_kwargs)
+# ---------------------------------------------------------------------------
+
+
+def _sweep(counts, step=0.1):
+    return {round(i * step, 6): c for i, c in enumerate(counts)}
+
+
+@pytest.mark.unit
+def test_lowest_wide_enough_plateau_is_chosen():
+    from alomancy.utils.remove_redundancy import (
+        REDUNDANCY_KWARGS_DEFAULTS,
+        choose_tolerance,
+    )
+
+    # 10 structures: all kept at first (skipped: flags nothing), a 2-step
+    # flat at 8 (too short), a wide plateau at 7 from 0.6, then one at 2.
+    counts = [10] * 4 + [9, 8, 8, 7, 7, 7, 7, 7, 7] + [5, 3] + [2] * 6
+    sweep = _sweep(counts)
+    tolerance, outcome, _ = choose_tolerance(sweep, 10, REDUNDANCY_KWARGS_DEFAULTS)
+    assert (tolerance, outcome) == (0.7, "applied")
+
+
+@pytest.mark.unit
+def test_narrow_plateaus_are_skipped():
+    from alomancy.utils.remove_redundancy import (
+        REDUNDANCY_KWARGS_DEFAULTS,
+        choose_tolerance,
+    )
+
+    counts = [10, 9, 8, 8, 8, 8, 7, 6, 5, 4] + [3] * 30
+    settings = {**REDUNDANCY_KWARGS_DEFAULTS, "min_plateau_width": 0.2}
+    tolerance, outcome, _ = choose_tolerance(_sweep(counts), 10, settings)
+    # The 8-plateau is 0.3 wide (< 0.2 * 3.9); the 3-plateau qualifies but
+    # flags 70%, over the default cap.
+    assert (tolerance, outcome) == (None, "cap_exceeded")
+
+    settings["max_flagged_fraction"] = 0.8
+    tolerance, outcome, _ = choose_tolerance(_sweep(counts), 10, settings)
+    assert (tolerance, outcome) == (1.0, "applied")
+
+
+@pytest.mark.unit
+def test_cap_exceeded_flags_nothing_and_warns(tmp_path):
+    """Three near-identical structures and two distinct: the lowest
+    plateau flags 2 of 5 (40%); a 30% cap refuses it."""
+    import logging
+
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+    near1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
+    near2 = [[0.0002, 0.0, 0.0], [2.0002, 0.0, 0.0]]
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(
+        [_make_s2(p) for p in (base, near1, near2)] + _distinct_s2(4)[2:],
+        split="train",
+        skip_duplicates=False,
+    )
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger = logging.getLogger("alomancy.utils.remove_redundancy")
+    logger.addHandler(handler)
+    try:
+        remove_redundancy_from_partition(
+            db, config_list=["init_amorphous"], settings={"max_flagged_fraction": 0.3}
+        )
+    finally:
+        logger.removeHandler(handler)
+
+    assert len(db.get_train_atoms()) == 5
+    assert "redundancy_cap_hit" in [getattr(r, "event", None) for r in records]
+
+
+@pytest.mark.unit
+def test_fixed_tolerance_overrides_the_probe(tmp_path):
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(_distinct_s2(4), split="train", skip_duplicates=False)
+    probe_path = tmp_path / "probe.json"
+
+    remove_redundancy_from_partition(
+        db,
+        config_list=["init_amorphous"],
+        probe_path=probe_path,
+        settings={"tolerance": 1e9},
+    )
+
+    # Everything within the tolerance of the first: one kept.
+    assert len(db.get_train_atoms()) == 1
+    record = json.loads(probe_path.read_text())
+    assert (record["outcome"], record["chosen_tolerance"]) == ("fixed", 1e9)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"no_such_key": 1},
+        {"tolerance": -1.0},
+        {"tolerance": "0.2"},
+        {"probe_steps_per_structure": 0},
+        {"min_plateau_width": 1.0},
+        {"max_flagged_fraction": 0.0},
+        {"max_flagged_fraction": 1.5},
+    ],
+)
+def test_bad_redundancy_kwargs_are_rejected(cfg):
+    from alomancy.utils.remove_redundancy import validate_redundancy_kwargs
+
+    with pytest.raises(ValueError, match="redundancy_kwargs"):
+        validate_redundancy_kwargs(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Only structures still in the training set are compared
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "out_of_training", [{"is_duplicate": True}, {"is_quality_filtered": True}]
+)
+def test_structure_out_of_training_never_flags_another(tmp_path, out_of_training):
+    """base is already out of the training set; near1, its near-copy, is
+    now the earliest of its group and must be kept."""
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+    near1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(
+        [_make_s2(base), _make_s2(near1), *_distinct_s2(4)[2:]],
+        split="train",
+        skip_duplicates=False,
+    )
+    db.set_metadata_bulk({0: out_of_training})
+
+    remove_redundancy_from_partition(
+        db, config_list=["init_amorphous"], settings={"tolerance": 0.5}
+    )
+
+    kept = db.get_train_atoms()
+    assert len(kept) == 3
+    assert any(np.isclose(a.positions[0, 0], 0.0001) for a in kept)
+
+
+# ---------------------------------------------------------------------------
+# Replacing redundant picks before DFT
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_select_non_redundant_fills_from_further_down():
+    from alomancy.utils.remove_redundancy import select_non_redundant
+
+    reference = np.array([[0.0], [10.0]])
+    # Best first: 0.1 repeats a reference structure, 5.05 repeats the
+    # accepted 5.0, so 7.0 and 3.0 fill in.
+    ranked = np.array([[0.1], [5.0], [5.05], [7.0], [3.0], [9.0]])
+    assert select_non_redundant(ranked, reference, 0.5, 3) == [1, 3, 4]
+
+
+@pytest.mark.unit
+def test_select_non_redundant_returns_fewer_when_candidates_run_out():
+    from alomancy.utils.remove_redundancy import select_non_redundant
+
+    ranked = np.array([[0.0], [0.1], [5.0]])
+    assert select_non_redundant(ranked, np.empty((0, 1)), 0.5, 3) == [0, 2]

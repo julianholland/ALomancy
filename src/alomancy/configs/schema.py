@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from alomancy.registry import registered, resolve
+from alomancy.utils.remove_redundancy import REDUNDANCY_KWARGS_DEFAULTS
 
 #: A block whose contents aren't checked.
 OPEN: Any = object()
@@ -35,7 +36,12 @@ _PHASES = (
     "high_accuracy_evaluation",
 )
 # Read from every phase section (remote_info, the evaluator orchestrator).
-_PHASE_COMMON: dict[str, Any] = {"name": None, "max_time": None, "hpc": OPEN}
+_PHASE_COMMON: dict[str, Any] = {"max_time": None, "hpc": OPEN}
+# Keys a phase section may still carry from older configs that are no longer
+# read, with the reason given in the warning.
+_IGNORED_PHASE_KEYS = {
+    "name": "each section's name is fixed to its section key",
+}
 
 Path = tuple[str, ...]
 
@@ -50,6 +56,8 @@ class KeyReport:
     unused: list[tuple[Path, str, str]] = field(default_factory=list)
     #: (where it is, key): read nowhere.
     unrecognised: list[tuple[Path, str]] = field(default_factory=list)
+    #: (where it is, key, why): accepted from older configs but not read.
+    ignored: list[tuple[Path, str, str]] = field(default_factory=list)
 
 
 def _dotted(path: Path, key: str | None = None) -> str:
@@ -69,6 +77,7 @@ def config_schema(
     general_schema: dict[str, Any] = dict.fromkeys(general_known)
     general_schema.update(
         dataset_kwargs=dict.fromkeys(dataset_known),
+        redundancy_kwargs=dict.fromkeys(REDUNDANCY_KWARGS_DEFAULTS),
         start_from=OPEN,
         train_filter=OPEN,
         test_filter=OPEN,
@@ -199,7 +208,8 @@ def check_config_keys(
 ) -> KeyReport:
     """Every key of *jobs_dict* that its schema doesn't read: misplaced (the
     key is read somewhere else in the schema), unused (settings of a module
-    the config doesn't select) or unrecognised (read nowhere)."""
+    the config doesn't select), ignored (no longer read, e.g. a phase's
+    ``name``) or unrecognised (read nowhere)."""
     schema, unused_blocks = config_schema(jobs_dict, general_known, dataset_known)
     report = KeyReport()
 
@@ -209,6 +219,9 @@ def check_config_keys(
                 child = block[key]
                 if isinstance(child, dict) and isinstance(value, dict):
                     walk(value, child, (*path, key))
+                continue
+            if len(path) == 1 and path[0] in _PHASES and key in _IGNORED_PHASE_KEYS:
+                report.ignored.append((path, key, _IGNORED_PHASE_KEYS[key]))
                 continue
             if key in unused_blocks.get(path, {}):
                 report.unused.append((path, key, unused_blocks[path][key]))

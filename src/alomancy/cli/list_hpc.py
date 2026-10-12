@@ -17,8 +17,16 @@ def list_hpc(check_remote: bool = False) -> str:
             f"No HPC profiles found in {ALOMANCY_HPC_CONFIG}. "
             "Run 'alomancy add-hpc' to add one."
         )
+    # The executable path is long and only matters to the run itself; the
+    # run's startup HPC table (same row builder) keeps it.
     rows = [
-        hpc_profile_row(name, profile, check_remote=check_remote)
+        {
+            key: value
+            for key, value in hpc_profile_row(
+                name, profile, check_remote=check_remote
+            ).items()
+            if key != "executable"
+        }
         for name, profile in profiles.items()
     ]
     return f"{len(rows)} HPC profile(s) in {ALOMANCY_HPC_CONFIG}:\n{format_table(rows)}"

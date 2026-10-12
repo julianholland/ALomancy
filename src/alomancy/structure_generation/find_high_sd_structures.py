@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -17,10 +18,16 @@ def find_high_sd_structures(
     structure_forces_dict: dict,
     num_of_structures: int,
     read_xyz: bool = True,
+    select_indices: Callable[[list[int], int], list[int]] | None = None,
 ) -> list[Atoms]:
     """Select the *num_of_structures* candidates (general.
     num_of_structures_per_loop) with the highest committee force standard
-    deviation."""
+    deviation.
+
+    select_indices(ranked, n), given the candidate indices in descending
+    std-dev order, returns the n to keep (default: the first n); the
+    workflow passes one that skips candidates redundancy removal would flag
+    (ActiveLearningWorkflow.non_redundant_selector)."""
     desired_structures = num_of_structures
 
     if desired_structures <= 0:
@@ -73,7 +80,12 @@ def find_high_sd_structures(
                 "results", base_name, job_dict["structure_generation"]["name"]
             ),
         )
-        index_list = std_dev_df["structure_index"][:effective_structures].to_list()
+        ranked = std_dev_df["structure_index"].to_list()
+        index_list = (
+            select_indices(ranked, effective_structures)
+            if select_indices is not None
+            else ranked[:effective_structures]
+        )
         high_sd_structures = [structure_list[i] for i in index_list]
 
         for structure in high_sd_structures:

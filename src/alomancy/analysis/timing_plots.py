@@ -40,6 +40,7 @@ _LOOP_END_RE = re.compile(_TS + r".*Completed AL loop (\d+),")
 # Phase boundaries logged by the @phase decorator (core/active_learning_
 # workflow.py) for every workflow. The message regexes above are fallbacks
 # for logs written before these markers existed.
+_TRAIN_PHASE_END_RE = re.compile(_TS + r".*Phase train_mlip marked complete for ")
 _GEN_PHASE_START_RE = re.compile(_TS + r".*Phase generate_structures started for ")
 _GEN_PHASE_END_RE = re.compile(
     _TS + r".*Phase generate_structures marked complete for "
@@ -81,6 +82,7 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
         return {
             "loop_start": None,
             "n_train": None,
+            "train_end": None,
             "gen_start": None,
             "gen_end": None,
             "dft_end": None,
@@ -114,6 +116,11 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
                 )
                 continue
 
+            m = _TRAIN_PHASE_END_RE.search(line)
+            if m and loops[active_loop]["train_end"] is None:
+                loops[active_loop]["train_end"] = _ts(m.group(1))
+                continue
+
             m = _GEN_PHASE_START_RE.search(line) or _GEN_START_RE.search(line)
             if m and loops[active_loop]["gen_start"] is None:
                 loops[active_loop]["gen_start"] = _ts(m.group(1))
@@ -145,12 +152,15 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
         return float("nan") if (a is None or b is None) else (b - a).total_seconds()
 
     def _mean_q(samples: list, lo: datetime | None, hi: datetime | None) -> float:
-        if lo is None:
-            vals = [qs for _, qs in samples]
-        elif hi is None:
-            vals = [qs for ts, qs in samples if ts < lo]
-        else:
-            vals = [qs for ts, qs in samples if lo <= ts < hi]
+        # Mean queue time of the jobs that finished inside [lo, hi); a
+        # missing bound leaves that side open. A missing bound must not
+        # widen the window to the whole loop, or the training phase picks up
+        # the DFT jobs' queue times.
+        vals = [
+            qs
+            for ts, qs in samples
+            if (lo is None or ts >= lo) and (hi is None or ts < hi)
+        ]
         return float(np.mean(vals)) if vals else float("nan")
 
     rows = []
@@ -159,7 +169,9 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
         if t0 is None:
             continue
 
-        gen_start = d["gen_start"]
+        # Logs without a "generate_structures started" marker (e.g. a loop
+        # resumed after training) still mark training complete.
+        gen_start = d["gen_start"] or d["train_end"]
         gen_end = d["gen_end"]
         dft_end = d["dft_end"]
         loop_end = d["loop_end"]
@@ -172,7 +184,7 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
         total_s = _secs(t0, loop_end)
 
         # Attribute queue_samples to phases by timestamp
-        train_q = _mean_q(samples, lo=None, hi=gen_start)
+        train_q = _mean_q(samples, lo=t0, hi=gen_start)
         gen_q = _mean_q(samples, lo=gen_start, hi=gen_end)
         dft_q = _mean_q(samples, lo=gen_end, hi=dft_end)
 
@@ -195,6 +207,21 @@ def parse_timing_log(log_file: str | Path) -> pl.DataFrame:
         return pl.DataFrame()
 
     return pl.DataFrame(rows, infer_schema_length=None).sort("loop")
+
+
+def _phase_segments(
+    phase_h: np.ndarray, q_h: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Bar heights for one phase: (queued, running, total), NaN-free.
+
+    The queue estimate is a mean over the phase's jobs and can exceed the
+    phase's own wall time (jobs queued before the phase started, e.g. in an
+    earlier attempt), so it is capped at the phase length: the queued and
+    running segments always add up to the phase.
+    """
+    total = np.where(np.isnan(phase_h), 0.0, phase_h)
+    queued = np.where(np.isnan(q_h), 0.0, np.minimum(q_h, total))
+    return queued, total - queued, total
 
 
 def timing_plots(log_file: str | Path, directory: str | Path) -> None:
@@ -254,14 +281,7 @@ def timing_plots(log_file: str | Path, directory: str | Path) -> None:
             else np.full(len(loops), np.nan)
         )
 
-        # Clamp: queue cannot exceed phase
-        run_h = np.where(
-            ~np.isnan(phase_h) & ~np.isnan(q_h),
-            np.maximum(0.0, phase_h - q_h),
-            phase_h,
-        )
-        q_plot = np.where(~np.isnan(phase_h) & ~np.isnan(q_h), q_h, 0.0)
-        phase_no_nan = np.where(np.isnan(phase_h), 0.0, phase_h)
+        q_plot, run_h, phase_no_nan = _phase_segments(phase_h, q_h)
 
         # Queue sub-segment (light gray, bottom of this phase)
         if np.any(q_plot > 0):

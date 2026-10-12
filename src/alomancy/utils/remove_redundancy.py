@@ -1,11 +1,8 @@
 """Flag near-duplicate structures in the training split of the GlobalDatabase."""
 
-import contextlib
-import io
 import json
 import logging
 import os
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -70,83 +67,186 @@ def descriptors_for_atoms(atoms_list: list, dimensions: int = 128) -> np.ndarray
     return np.array(vectors)
 
 
-def probe_redundancy_tolerance(
-    descriptor_array: np.ndarray, dimensions: int = 128
-) -> tuple[float | None, dict[str, Any] | None]:
-    """The duplicate tolerance for *descriptor_array* from deduplicate_lib's
-    NaturalTolerancePlateauProbe, and the record of the probe behind it.
+# general.redundancy_kwargs. tolerance: a fixed duplicate tolerance, which
+# skips the automatic choice. Otherwise the tolerance is the start of the
+# lowest plateau of the sweep at least min_plateau_width (a fraction of the
+# swept range) wide, and nothing is flagged when that would flag more than
+# max_flagged_fraction of the pool.
+REDUNDANCY_KWARGS_DEFAULTS: dict[str, Any] = {
+    "tolerance": None,
+    "probe_steps_per_structure": 10,
+    "min_plateau_width": 0.0025,
+    "max_flagged_fraction": 0.5,
+}
+_MIN_PROBE_STEPS = 20
+_MAX_PROBE_STEPS = 2000
+# A plateau: the kept count unchanged over at least this many sweep steps.
+_PLATEAU_MIN_STEPS = 3
+_MIN_STRUCTURES_TO_PROBE = 3
 
-    The probe sweeps the tolerance (Euclidean distance in descriptor space
-    below which two structures are duplicates) between "everything is one
-    structure" and "everything is unique", counts the unique structures at
-    each step, and finds plateaus: stretches where that count barely
-    changes. The start of the lowest plateau is the tolerance. Returns
-    (None, record) when no plateau is found -- nothing should be flagged
-    then -- and (None, None) when there are too few structures to probe.
-    """
+
+def validate_redundancy_kwargs(cfg: Any) -> dict[str, Any]:
+    """general.redundancy_kwargs merged over its defaults; raises
+    ValueError on an unknown key or a bad value (checked at construction)."""
+    if cfg is None:
+        cfg = {}
+    if not isinstance(cfg, dict):
+        raise ValueError("general.redundancy_kwargs must be a mapping.")
+    unknown = sorted(set(cfg) - set(REDUNDANCY_KWARGS_DEFAULTS))
+    if unknown:
+        raise ValueError(
+            f"Unknown general.redundancy_kwargs key(s) {unknown}; "
+            f"allowed: {sorted(REDUNDANCY_KWARGS_DEFAULTS)}."
+        )
+    settings = {**REDUNDANCY_KWARGS_DEFAULTS, **cfg}
+    tolerance = settings["tolerance"]
+    if tolerance is not None and (
+        isinstance(tolerance, bool)
+        or not isinstance(tolerance, (int, float))
+        or tolerance < 0
+    ):
+        raise ValueError(
+            "general.redundancy_kwargs.tolerance must be null or a number >= 0."
+        )
+    steps = settings["probe_steps_per_structure"]
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
+        raise ValueError(
+            "general.redundancy_kwargs.probe_steps_per_structure must be an "
+            "integer >= 1."
+        )
+    width = settings["min_plateau_width"]
+    if (
+        isinstance(width, bool)
+        or not isinstance(width, (int, float))
+        or not (0 <= width < 1)
+    ):
+        raise ValueError(
+            "general.redundancy_kwargs.min_plateau_width must be a fraction of "
+            "the swept tolerance range in [0, 1)."
+        )
+    cap = settings["max_flagged_fraction"]
+    if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not (0 < cap <= 1):
+        raise ValueError(
+            "general.redundancy_kwargs.max_flagged_fraction must be in (0, 1]."
+        )
+    return settings
+
+
+def _distance_matrix(descriptor_array: np.ndarray):
     from deduplicate_lib.plugins.duplicate_detection_algorithms.distance_matrix import (
         DistanceMatrix,
     )
-    from deduplicate_lib.plugins.tolerance_calculators.natural_tolerance_plateau_probe import (
-        NaturalTolerancePlateauProbe,
-    )
-
-    class _RecordingProbe(NaturalTolerancePlateauProbe):
-        """Keeps the full sweep and the plateaus it found (the library's own
-        plateau_data drops the last points)."""
-
-        sweep: dict[float, int]
-        plateaus: list[tuple[float, float, int]]
-
-        def tolerance_probe(self, *args: Any, **kwargs: Any) -> dict:
-            self.sweep = super().tolerance_probe(*args, **kwargs)
-            return self.sweep
-
-        def find_plateaus(self, *args: Any, **kwargs: Any) -> list:
-            self.plateaus = super().find_plateaus(*args, **kwargs)
-            return self.plateaus
 
     dda = DistanceMatrix(
         dataset_array=descriptor_array, max_vector_array_size=len(descriptor_array)
     )
-    probe = _RecordingProbe(
-        duplicate_detection_algorithm_object=dda,
-        tolerance_dataset_array=descriptor_array,
-        probe_steps=len(descriptor_array),
-        probe_buffer_fraction=0.01,
+    dda.pre_dda_processing()
+    return dda
+
+
+def tolerance_sweep(descriptor_array: np.ndarray, steps: int) -> dict[float, int]:
+    """{tolerance: structures kept} for *steps* tolerances from 0 to the
+    largest distance from the first structure, where one is kept.
+
+    Counts are DistanceMatrix's (deduplicate_lib >= 0.1.3): structures in
+    order, each kept unless within the tolerance of one already kept -- the
+    same rule the flagging uses. Starts at 0, so exact duplicates (distance
+    0) are flagged from the first step above it.
+    """
+    dda = _distance_matrix(descriptor_array)
+    distances = dda.get_filled_distance_matrix()
+    top = float(distances[0].max()) * (1 + 1e-9) if len(distances) > 1 else 0.0
+    sweep: dict[float, int] = {}
+    for tolerance in np.linspace(0.0, top, steps):
+        dda.tolerance = float(tolerance)
+        sweep[float(tolerance)] = int(dda.get_dataset_unique_structures())
+    return sweep
+
+
+def find_plateaus(sweep: dict[float, int]) -> list[tuple[float, float, int]]:
+    """(start, end, kept) for every stretch of the sweep where the kept
+    count stays the same over at least _PLATEAU_MIN_STEPS steps."""
+    tolerances = sorted(sweep)
+    plateaus = []
+    start = 0
+    for i in range(1, len(tolerances) + 1):
+        if i == len(tolerances) or sweep[tolerances[i]] != sweep[tolerances[start]]:
+            if i - 1 - start >= _PLATEAU_MIN_STEPS:
+                plateaus.append(
+                    (tolerances[start], tolerances[i - 1], sweep[tolerances[start]])
+                )
+            start = i
+    return plateaus
+
+
+def choose_tolerance(
+    sweep: dict[float, int], n_structures: int, settings: dict[str, Any]
+) -> tuple[float | None, str, list[tuple[float, float, int]]]:
+    """(tolerance or None, outcome, plateaus) for a sweep.
+
+    Plateaus where every structure is kept say nothing about duplicates and
+    are skipped, as are plateaus narrower than min_plateau_width of the
+    swept range. The start of the lowest remaining plateau is the
+    tolerance, unless it would flag more than max_flagged_fraction of the
+    structures (outcome "cap_exceeded"). Outcome "no_plateau" when none
+    qualifies, "applied" otherwise.
+    """
+    plateaus = find_plateaus(sweep)
+    swept = max(sweep) - min(sweep) if sweep else 0.0
+    candidates = [
+        p
+        for p in plateaus
+        if p[2] < n_structures and p[1] - p[0] >= settings["min_plateau_width"] * swept
+    ]
+    if not candidates:
+        return None, "no_plateau", plateaus
+    start, _end, kept = min(candidates, key=lambda p: p[0])
+    if (n_structures - kept) / n_structures > settings["max_flagged_fraction"]:
+        return None, "cap_exceeded", plateaus
+    return start, "applied", plateaus
+
+
+def probe_redundancy_tolerance(
+    descriptor_array: np.ndarray,
+    dimensions: int = 128,
+    settings: dict[str, Any] | None = None,
+) -> tuple[float | None, dict[str, Any] | None]:
+    """The duplicate tolerance for *descriptor_array* and the record of the
+    probe behind it (see tolerance_sweep and choose_tolerance; with
+    settings["tolerance"] set, that value, outcome "fixed").
+
+    Returns (None, record) when no tolerance qualifies -- nothing should be
+    flagged then -- and (None, None) when there are too few structures to
+    probe.
+    """
+    settings = validate_redundancy_kwargs(settings)
+    n = len(descriptor_array)
+    if n < _MIN_STRUCTURES_TO_PROBE:
+        logger.info("Not enough structures (%d) to probe a redundancy tolerance.", n)
+        return None, None
+    steps = int(
+        np.clip(
+            settings["probe_steps_per_structure"] * n,
+            _MIN_PROBE_STEPS,
+            _MAX_PROBE_STEPS,
+        )
     )
-    # calculate_tolerance fails two ways when the data can't support a
-    # plateau: ValueError (too few probe steps for a gradient) and a "No
-    # plateaus found" warning with an arbitrary midpoint fallback. The
-    # library also prints its whole plateau log to stdout.
-    with (
-        warnings.catch_warnings(record=True) as caught,
-        contextlib.redirect_stdout(io.StringIO()),
-    ):
-        warnings.simplefilter("always")
-        try:
-            tolerance: float | None = probe.calculate_tolerance(condition="minimum")
-        except ValueError as exc:
-            logger.info(
-                "Not enough structures (%d) to probe a natural tolerance plateau (%s).",
-                len(descriptor_array),
-                exc,
-            )
-            return None, None
-    found = not any("No plateaus found" in str(w.message) for w in caught)
-    if not found:
-        tolerance = None
-    sweep = getattr(probe, "sweep", {})
+    sweep = tolerance_sweep(descriptor_array, steps)
+    if settings["tolerance"] is not None:
+        tolerance: float | None = float(settings["tolerance"])
+        outcome = "fixed"
+        plateaus = find_plateaus(sweep)
+    else:
+        tolerance, outcome, plateaus = choose_tolerance(sweep, n, settings)
     tolerances = sorted(sweep)
     record = {
-        "tolerances": [float(t) for t in tolerances],
-        "unique_counts": [int(sweep[t]) for t in tolerances],
-        "plateaus": [
-            [float(a), float(b)] for a, b, _ in getattr(probe, "plateaus", [])
-        ],
-        "chosen_tolerance": None if tolerance is None else float(tolerance),
-        "outcome": "applied" if found else "no_plateau",
-        "n_structures": len(descriptor_array),
+        "tolerances": tolerances,
+        "unique_counts": [sweep[t] for t in tolerances],
+        "plateaus": [[float(a), float(b)] for a, b, _ in plateaus],
+        "chosen_tolerance": tolerance,
+        "outcome": outcome,
+        "n_structures": n,
+        "settings": settings,
         "descriptor": {
             "key": descriptor_key(dimensions),
             "dimensions": dimensions,
@@ -164,105 +264,115 @@ def _write_probe_record(path: Path, record: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _pool_indices(all_containers: list, config_list: list[str]) -> list[int]:
+    """Positions of the structures redundancy removal compares: in the
+    training set (global_database.is_in_training_set, so never one already
+    flagged, quality-filtered or rejected by curation) and of a listed
+    config_type."""
+    from alomancy.database.global_database import is_in_training_set
+
+    return [
+        i
+        for i, c in enumerate(all_containers)
+        if is_in_training_set(c.AtomPositionManager.metadata)
+        and c.AtomPositionManager.metadata.get("config_type") in config_list
+    ]
+
+
 def remove_redundancy_from_partition(
     db,
     config_list: list,
-    tolerance: float = 0.01,
     dimensions: int = 128,
     probe_path: Path | None = None,
+    settings: dict[str, Any] | None = None,
 ) -> None:
-    """Flag near-duplicate structures in the training split of *db*.
+    """Flag near-duplicate structures in the training set of *db*.
 
-    Only structures whose config_type is in config_list are subject to dedup.
-    Near-duplicates receive is_duplicate=True in the DB metadata — they are
-    never deleted (the DB is a full DFT archive) but are excluded from
-    get_train_atoms(exclude_duplicates=True) and therefore from train XYZ files.
-
-    Structures NOT in config_list keep whatever is_duplicate state they already have.
+    Compared: the structures in the training set whose config_type is in
+    config_list (_pool_indices); anything already out of the training set
+    never counts as an original. In DB order, each is kept unless it is
+    within the tolerance of one already kept, so every group of
+    near-duplicates keeps its earliest member. Flagged structures get
+    is_duplicate=True -- never deleted (the DB is a full DFT archive), but
+    excluded from get_train_atoms() and so from the train xyz files.
+    Flags are never cleared here (GlobalDatabase.clear_duplicate_flags).
 
     Args:
         db: GlobalDatabase instance.
         config_list: config_types subject to redundancy removal
             (e.g. ["init_amorphous", "high_sd"]).
-        tolerance: Euclidean distance threshold in descriptor space. Pairs closer
-            than this are considered duplicates; the later-encountered one is flagged.
         dimensions: descriptor length. Descriptors are cached in the DB
             (``descriptor_key(dimensions)``) and only computed for structures
             that don't have one yet.
         probe_path: where to save the tolerance probe (JSON: the sweep of
-            unique structures against tolerance, the plateaus, the chosen
-            tolerance and how many were flagged), for the loop report.
+            structures kept against tolerance, the plateaus, the chosen
+            tolerance, the outcome and how many were flagged), for the loop
+            report.
+        settings: general.redundancy_kwargs (probe_redundancy_tolerance).
     """
-    from deduplicate_lib.plugins.duplicate_detection_algorithms.distance_matrix import (
-        DistanceMatrix,
-    )
-
     all_containers = list(db.partition.list_containers())
-    train_global_indices = [
-        i
-        for i, c in enumerate(all_containers)
-        if c.AtomPositionManager.metadata.get("split") == "train"
-    ]
-    if not train_global_indices:
+    if not any(
+        c.AtomPositionManager.metadata.get("split") == "train" for c in all_containers
+    ):
         logger.warning("No train-split structures in DB — skipping redundancy removal.")
         return
 
-    dedup_global_indices = [
-        i
-        for i in train_global_indices
-        if all_containers[i].AtomPositionManager.metadata.get("config_type")
-        in config_list
-    ]
-    if not dedup_global_indices:
+    pool = _pool_indices(all_containers, config_list)
+    if not pool:
         logger.info(
-            "No train structures matching config_list %s — nothing to dedup.",
+            "No training structures matching config_list %s — nothing to dedup.",
             config_list,
         )
         return
 
-    descriptor_array = _cached_descriptors(
-        db, all_containers, dedup_global_indices, dimensions
+    descriptor_array = _cached_descriptors(db, all_containers, pool, dimensions)
+    tolerance, record = probe_redundancy_tolerance(
+        descriptor_array, dimensions, settings
     )
-
-    tolerance, record = probe_redundancy_tolerance(descriptor_array, dimensions)
     if tolerance is None:
-        # Too few structures, or no stable plateau: flag nothing rather
-        # than apply a tolerance with no real relationship to the data.
         if record is not None:
-            logger.info(
-                "No tolerance plateau isolated among %d structures -- skipping "
-                "redundancy removal for this call rather than using an "
-                "arbitrary fallback tolerance.",
-                len(descriptor_array),
-            )
+            if record["outcome"] == "cap_exceeded":
+                cap = record["settings"]["max_flagged_fraction"]
+                logger.warning(
+                    "Redundancy removal: the lowest tolerance plateau among %d "
+                    "structures would flag more than %.0f%% of them "
+                    "(general.redundancy_kwargs.max_flagged_fraction); nothing "
+                    "flagged. Set general.redundancy_kwargs.tolerance to choose "
+                    "one, or remove_redundancy: false.",
+                    len(pool),
+                    100 * cap,
+                    extra={
+                        "event": "redundancy_cap_hit",
+                        "data": {"n": len(pool), "max_flagged_fraction": cap},
+                    },
+                )
+            else:
+                logger.info(
+                    "No tolerance plateau isolated among %d structures -- "
+                    "skipping redundancy removal for this call rather than "
+                    "using an arbitrary tolerance.",
+                    len(pool),
+                )
             if probe_path is not None:
                 _write_probe_record(probe_path, {**record, "n_flagged": 0})
         return
 
-    dm_dda = DistanceMatrix(
-        dataset_array=descriptor_array,
-        max_vector_array_size=len(descriptor_array),
-    )
-    dm_dda.tolerance = tolerance
-    dm_dda.get_dataset_unique_structures()
-    unique_local = set(map(int, dm_dda.get_unique_vector_indices()))
-
-    duplicate_global = [
-        dedup_global_indices[j]
-        for j in range(len(dedup_global_indices))
-        if j not in unique_local
-    ]
+    dda = _distance_matrix(descriptor_array)
+    dda.tolerance = tolerance
+    dda.get_dataset_unique_structures()
+    kept = set(map(int, dda.get_unique_vector_indices()))
+    duplicate_global = [pool[j] for j in range(len(pool)) if j not in kept]
 
     logger.info(
         "Redundancy removal: %d/%d structures flagged as duplicates (tolerance=%.4f).",
         len(duplicate_global),
-        len(dedup_global_indices),
+        len(pool),
         tolerance,
         extra={
             "event": "redundancy_flagged",
             "data": {
                 "n": len(duplicate_global),
-                "total": len(dedup_global_indices),
+                "total": len(pool),
                 "tolerance": float(tolerance),
             },
         },
@@ -271,3 +381,37 @@ def remove_redundancy_from_partition(
         _write_probe_record(probe_path, {**record, "n_flagged": len(duplicate_global)})
     if duplicate_global:
         db.flag_as_duplicates(duplicate_global)
+
+
+def training_reference(db, config_list: list[str], dimensions: int = 128) -> np.ndarray:
+    """Descriptors of the structures redundancy removal compares against
+    (_pool_indices), for checking candidates before they reach the DB."""
+    all_containers = list(db.partition.list_containers())
+    pool = _pool_indices(all_containers, config_list)
+    if not pool:
+        return np.empty((0, dimensions))
+    return _cached_descriptors(db, all_containers, pool, dimensions)
+
+
+def select_non_redundant(
+    ranked: np.ndarray, reference: np.ndarray, tolerance: float, n: int
+) -> list[int]:
+    """Positions in *ranked* (candidate descriptors, best first) of the
+    first *n* that are not within *tolerance* of a *reference* descriptor
+    or of a candidate already accepted -- what end-of-loop redundancy
+    removal would flag. Fewer than *n* if the candidates run out."""
+    accepted: list[int] = []
+    for i, vector in enumerate(ranked):
+        if len(accepted) == n:
+            break
+        if len(reference) and np.linalg.norm(reference - vector, axis=1).min() < (
+            tolerance
+        ):
+            continue
+        if (
+            accepted
+            and np.linalg.norm(ranked[accepted] - vector, axis=1).min() < tolerance
+        ):
+            continue
+        accepted.append(i)
+    return accepted

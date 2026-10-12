@@ -71,6 +71,9 @@ def workflow_jobs_dict(minimal_jobs_dict):
     minimal_jobs_dict["training"] = minimal_jobs_dict.pop("mlip_committee")
     del minimal_jobs_dict["training"]["num_of_models_in_committee"]
     minimal_jobs_dict["training"]["trainer"] = "mace"
+    # Section names are fixed to their keys; a config's `name` only warns.
+    for section in minimal_jobs_dict.values():
+        section.pop("name", None)
     return minimal_jobs_dict
 
 
