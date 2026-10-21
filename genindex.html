@@ -111,8 +111,6 @@
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.add_structures">add_structures() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      <li><a href="api/mlip.html#alomancy.remote_submission.submitters.all_maces_remote_submitter">all_maces_remote_submitter() (in module alomancy.remote_submission.submitters)</a>
-</li>
       <li>
     alomancy.configs.config_dictionaries
 
@@ -183,8 +181,6 @@
         <li><a href="api/mlip.html#module-alomancy.mlip.evaluation">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     alomancy.mlip.mace.trainer
 
@@ -192,6 +188,8 @@
         <li><a href="api/mlip.html#module-alomancy.mlip.mace.trainer">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     alomancy.remote_submission.submitters
 
@@ -299,7 +297,7 @@
       </ul></li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.clear">clear() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-      <li><a href="api/mlip.html#alomancy.remote_submission.submitters.committee_remote_submitter">committee_remote_submitter() (in module alomancy.remote_submission.submitters)</a>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags">clear_duplicate_flags() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -327,6 +325,8 @@
 <h2 id="D">D</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.db_replaced">db_replaced() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
       <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.deployable_model_path">deployable_model_path() (alomancy.mlip.base.ALomancyTrainer method)</a>
 
       <ul>
@@ -351,6 +351,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.ensure_on_disk">ensure_on_disk() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
       <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.evaluate">evaluate() (alomancy.mlip.base.ALomancyTrainer method)</a>
 </li>
       <li><a href="api/utils.html#alomancy.utils.test_train_manager.extend_test_and_train_sets_with_extra_dataset">extend_test_and_train_sets_with_extra_dataset() (in module alomancy.utils.test_train_manager)</a>
@@ -407,16 +409,14 @@
         <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer.get_calculator">(alomancy.mlip.mace.trainer.MaceTrainer method)</a>
 </li>
       </ul></li>
-      <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.get_dft_functions">get_dft_functions() (in module alomancy.high_accuracy_evaluation.dft)</a>
-</li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_isolated_atom_energies">get_isolated_atom_energies() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_model_predictions">get_model_predictions() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.get_qe_input_data">get_qe_input_data() (in module alomancy.high_accuracy_evaluation.dft.run_qe)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/configs.html#alomancy.configs.remote_info.get_remote_info">get_remote_info() (in module alomancy.configs.remote_info)</a>
 </li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.get_split_partition">get_split_partition() (alomancy.database.global_database.GlobalDatabase method)</a>
@@ -447,6 +447,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/database.html#alomancy.database.global_database.is_in_training_set">is_in_training_set() (in module alomancy.database.global_database)</a>
+</li>
       <li><a href="api/mlip.html#alomancy.mlip.base.ALomancyTrainer.ISOLATED_ATOM_ENERGIES_KWARG">ISOLATED_ATOM_ENERGIES_KWARG (alomancy.mlip.base.ALomancyTrainer attribute)</a>
 
       <ul>
@@ -508,8 +510,6 @@
       <li><a href="api/mlip.html#alomancy.mlip.mace.trainer.MaceTrainer">MaceTrainer (class in alomancy.mlip.mace.trainer)</a>
 </li>
       <li><a href="api/structure_generation.html#alomancy.structure_generation.select_initial_structures.mark_structures_for_dft">mark_structures_for_dft() (in module alomancy.structure_generation.select_initial_structures)</a>
-</li>
-      <li><a href="api/mlip.html#alomancy.remote_submission.submitters.md_remote_submitter">md_remote_submitter() (in module alomancy.remote_submission.submitters)</a>
 </li>
       <li><a href="api/mlip.html#alomancy.mlip.evaluation.metrics_by_loop">metrics_by_loop() (in module alomancy.mlip.evaluation)</a>
 </li>
@@ -632,6 +632,8 @@
 </li>
       <li><a href="api/mlip.html#alomancy.mlip.base.read_predictions">read_predictions() (in module alomancy.mlip.base)</a>
 </li>
+      <li><a href="api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.read_selection">read_selection() (in module alomancy.structure_generation.find_high_sd_structures)</a>
+</li>
       <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.record_import">record_import() (alomancy.database.global_database.GlobalDatabase method)</a>
 </li>
       <li><a href="api/utils.html#alomancy.utils.clean_structures.recover_swallowed_model_energy">recover_swallowed_model_energy() (in module alomancy.utils.clean_structures)</a>
@@ -698,6 +700,8 @@
 </li>
       <li><a href="api/utils.html#alomancy.utils.logging_config.set_current_phase">set_current_phase() (in module alomancy.utils.logging_config)</a>
 </li>
+      <li><a href="api/database.html#alomancy.database.global_database.GlobalDatabase.set_metadata_bulk">set_metadata_bulk() (alomancy.database.global_database.GlobalDatabase method)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/utils.html#alomancy.utils.logging_config.setup_logging">setup_logging() (in module alomancy.utils.logging_config)</a>
@@ -757,10 +761,6 @@
 
 <h2 id="W">W</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs">warn_mismatched_kwargs() (in module alomancy.high_accuracy_evaluation.dft)</a>
-</li>
-  </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/utils.html#alomancy.utils.clean_structures.wrap_structures_into_cell">wrap_structures_into_cell() (in module alomancy.utils.clean_structures)</a>
 </li>

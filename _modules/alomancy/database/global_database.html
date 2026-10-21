@@ -78,9 +78,11 @@
            <div itemprop="articleBody">
              
   <h1>Source code for alomancy.database.global_database</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
@@ -97,6 +99,48 @@
 <span class="n">_DEFAULT_DEDUP_CONFIG_TYPES</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"IsolatedAtom"</span><span class="p">,</span> <span class="s2">"init_MP"</span><span class="p">]</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_guarded_write</span><span class="p">(</span><span class="n">method</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Wrap a GlobalDatabase write so it never lands in a replaced DB.</span>
+
+<span class="sd">    Checks before the write that the files on disk are still the ones this</span>
+<span class="sd">    instance has open, recovering them (_recover_from_open_handles) if not.</span>
+<span class="sd">    If the write raises and the DB turns out to have been replaced, recovers</span>
+<span class="sd">    and retries once, provided the failed call added no structures.</span>
+<span class="sd">    """</span>
+
+    <span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">method</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ensure_on_disk</span><span class="p">()</span>
+        <span class="n">n_before</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">db_replaced</span><span class="p">():</span>
+                <span class="k">raise</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recover_from_open_handles</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">n_before</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span><span class="p">:</span>
+                <span class="k">raise</span>
+            <span class="k">return</span> <span class="n">method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">wrapper</span>
+
+
+<div class="viewcode-block" id="is_in_training_set">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.is_in_training_set">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_in_training_set</span><span class="p">(</span><span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Whether a container with this metadata is part of the training set:</span>
+<span class="sd">    train split, not flagged a duplicate or by the quality filter, and not</span>
+<span class="sd">    rejected by dataset curation. GlobalDatabase.get_train_atoms and</span>
+<span class="sd">    redundancy removal share this rule."""</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"split"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"train"</span>
+        <span class="ow">and</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_training_eligible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_duplicate"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_quality_filtered"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="p">)</span></div>
+
 
 
 <div class="viewcode-block" id="GlobalDatabase">
@@ -117,7 +161,114 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"results/global_database"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">Path</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">db_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span> <span class="o">=</span> <span class="n">Partition</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">db_path</span><span class="p">,</span> <span class="n">storage</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_open</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_open</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span> <span class="o">=</span> <span class="n">Partition</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_path</span><span class="p">),</span> <span class="n">storage</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span> <span class="o">=</span> <span class="p">{</span><span class="n">path</span><span class="p">:</span> <span class="n">_inode</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store_paths</span><span class="p">()}</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Replaced-DB detection and recovery</span>
+    <span class="c1">#</span>
+    <span class="c1"># When another process opens this DB read-write while we hold it,</span>
+    <span class="c1"># sage_lib's HybridStorage takes HDF5's lock error for corruption: it</span>
+    <span class="c1"># renames our live files to *.corrupted_&lt;ts&gt; and creates empty ones.</span>
+    <span class="c1"># Our handles still point at the renamed (possibly since deleted)</span>
+    <span class="c1"># files, so every later write succeeds but is invisible on disk and is</span>
+    <span class="c1"># lost when the process exits. Touches sage_lib internals (_store,</span>
+    <span class="c1"># _h5, _conn, h5_path, sqlite_path), kept to these methods.</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_store_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">store</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="p">,</span> <span class="s2">"_store"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">path</span>
+            <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="p">(</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="s2">"sqlite_path"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="s2">"h5_path"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">path</span>
+        <span class="p">]</span>
+
+<div class="viewcode-block" id="GlobalDatabase.db_replaced">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.db_replaced">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">db_replaced</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Whether the DB files on disk are no longer the ones this</span>
+<span class="sd">        instance has open (renamed, deleted or replaced by another</span>
+<span class="sd">        process)."""</span>
+        <span class="k">return</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">opened</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_inode</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">!=</span> <span class="n">opened</span>
+            <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">opened</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.ensure_on_disk">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.ensure_on_disk">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ensure_on_disk</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Recover the DB files from this instance's open handles if they</span>
+<span class="sd">        were replaced on disk; a no-op otherwise."""</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">db_replaced</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recover_from_open_handles</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_recover_from_open_handles</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Put the data this instance has open back at the DB's paths.</span>
+
+<span class="sd">        Commits and checkpoints SQLite so its main file holds everything,</span>
+<span class="sd">        moves whatever now sits at the paths aside to *.replaced_&lt;ts&gt;</span>
+<span class="sd">        (never deleted: it may be another process's data), copies the open</span>
+<span class="sd">        files back through their descriptors (found via /proc/self/fd or</span>
+<span class="sd">        /dev/fd), and reopens. Raises RuntimeError when the open files can't</span>
+<span class="sd">        be reached, rather than keep writing where nothing will be saved.</span>
+<span class="sd">        """</span>
+        <span class="n">store</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">_store</span>
+        <span class="n">n_before</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span>
+        <span class="n">store</span><span class="o">.</span><span class="n">_h5</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="n">store</span><span class="o">.</span><span class="n">_conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">store</span><span class="o">.</span><span class="n">_conn</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">"PRAGMA wal_checkpoint(TRUNCATE)"</span><span class="p">)</span>
+
+        <span class="n">fds</span> <span class="o">=</span> <span class="n">_fds_by_inode</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">-</span> <span class="p">{</span><span class="kc">None</span><span class="p">})</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">path</span> <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">ino</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">ino</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fds</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"The database at </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">db_path</span><span class="si">}</span><span class="s2"> was replaced on disk while this "</span>
+                <span class="sa">f</span><span class="s2">"run had it open, and the open files can't be reached to "</span>
+                <span class="sa">f</span><span class="s2">"recover it (</span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing</span><span class="p">)</span><span class="si">}</span><span class="s2">). Before this process exits, "</span>
+                <span class="sa">f</span><span class="s2">"copy its open database files (ls -l /proc/</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span><span class="si">}</span><span class="s2">/fd/ "</span>
+                <span class="sa">f</span><span class="s2">"on Linux, lsof -p </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span><span class="si">}</span><span class="s2"> elsewhere, shows which) back into "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">Path</span><span class="p">(</span><span class="n">missing</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">parent</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+
+        <span class="n">stamp</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
+        <span class="n">moved</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">sidecar</span> <span class="ow">in</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">-wal"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">-shm"</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">sidecar</span><span class="p">):</span>
+                    <span class="n">target</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">sidecar</span><span class="si">}</span><span class="s2">.replaced_</span><span class="si">{</span><span class="n">stamp</span><span class="si">}</span><span class="s2">"</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">sidecar</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+                    <span class="n">moved</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">ino</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">_copy_fd</span><span class="p">(</span><span class="n">fds</span><span class="p">[</span><span class="n">ino</span><span class="p">],</span> <span class="n">path</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_open</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">n_before</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Recovered database at </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">db_path</span><span class="si">}</span><span class="s2"> holds </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span><span class="si">}</span><span class="s2"> "</span>
+                <span class="sa">f</span><span class="s2">"structures, expected </span><span class="si">{</span><span class="n">n_before</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">"The database at </span><span class="si">%s</span><span class="s2"> was replaced on disk while this run had it open "</span>
+            <span class="s2">"(another process opened it read-write). Restored its </span><span class="si">%d</span><span class="s2"> structures "</span>
+            <span class="s2">"from the open files; the files found in its place were moved to </span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db_path</span><span class="p">,</span>
+            <span class="n">n_before</span><span class="p">,</span>
+            <span class="n">moved</span> <span class="ow">or</span> <span class="s2">"nowhere (none were left)"</span><span class="p">,</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"database_recovered"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="n">n_before</span><span class="p">,</span> <span class="s2">"moved_aside"</span><span class="p">:</span> <span class="n">moved</span><span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
 
 <div class="viewcode-block" id="GlobalDatabase.clear">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.clear">[docs]</a>
@@ -198,6 +349,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.add_structures">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.add_structures">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">add_structures</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">atoms_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
@@ -391,21 +543,20 @@
 <span class="sd">        containers. ``is_quality_filtered`` is set by utils/split_filter.py</span>
 <span class="sd">        (general.train_filter). The legacy ``is_high_force`` flag written by</span>
 <span class="sd">        older versions is ignored."""</span>
+        <span class="n">ignored</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"is_training_eligible"</span><span class="p">:</span> <span class="ow">not</span> <span class="n">exclude_ineligible</span><span class="p">,</span>
+            <span class="s2">"is_duplicate"</span><span class="p">:</span> <span class="ow">not</span> <span class="n">exclude_duplicates</span><span class="p">,</span>
+            <span class="s2">"is_quality_filtered"</span><span class="p">:</span> <span class="ow">not</span> <span class="n">exclude_quality_filtered</span><span class="p">,</span>
+        <span class="p">}</span>
         <span class="k">return</span> <span class="p">[</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"split"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"train"</span>
-            <span class="ow">and</span> <span class="p">(</span>
-                <span class="ow">not</span> <span class="n">exclude_ineligible</span>
-                <span class="ow">or</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_training_eligible"</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-            <span class="p">)</span>
-            <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
-                <span class="n">exclude_duplicates</span>
-                <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_duplicate"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-            <span class="p">)</span>
-            <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
-                <span class="n">exclude_quality_filtered</span>
-                <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_quality_filtered"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">is_in_training_set</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">ignored</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+                <span class="p">}</span>
             <span class="p">)</span>
         <span class="p">]</span></div>
 
@@ -456,6 +607,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.store_model_predictions">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.store_model_predictions">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">store_model_predictions</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">loop_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -598,8 +750,41 @@
         <span class="p">}</span></div>
 
 
+<div class="viewcode-block" id="GlobalDatabase.set_metadata_bulk">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.set_metadata_bulk">[docs]</a>
+    <span class="nd">@_guarded_write</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_metadata_bulk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">updates</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Merge *updates* ({positional index: {key: value}}) into container</span>
+<span class="sd">        metadata. Callers outside this class write metadata through this,</span>
+<span class="sd">        so the write is guarded like every other."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">updates</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GlobalDatabase.clear_duplicate_flags">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags">[docs]</a>
+    <span class="nd">@_guarded_write</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear_duplicate_flags</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_types</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Set is_duplicate=False on every flagged container (only those of</span>
+<span class="sd">        *config_types*, if given). Never called by the workflow: for undoing</span>
+<span class="sd">        flags set under older redundancy rules. Returns the number cleared."""</span>
+        <span class="n">updates</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">"is_duplicate"</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_duplicate"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="p">(</span>
+                <span class="n">config_types</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">or</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">config_types</span>
+            <span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">updates</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">updates</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Cleared </span><span class="si">%d</span><span class="s2"> duplicate flag(s)."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">updates</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="GlobalDatabase.flag_as_duplicates">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">flag_as_duplicates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">positional_indices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Set is_duplicate=True on containers at the given positional indices.</span>
 
@@ -612,6 +797,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.store_descriptors">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.store_descriptors">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">store_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptors</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]],</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Cache structure descriptors (e.g. redundancy removal's char_vec)</span>
 <span class="sd">        in container metadata, keyed by positional index, so they are</span>
@@ -624,6 +810,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.assign_global_db_ids">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">assign_global_db_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Assign global_db_id to any container that does not already have one.</span>
 
@@ -692,6 +879,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.apply_train_test_split">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.apply_train_test_split">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_train_test_split</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">test_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>
@@ -767,6 +955,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.update_splits_post_hoc">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_splits_post_hoc</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">train_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">test_atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
@@ -921,6 +1110,52 @@
         <span class="n">drop_unwritable_info</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">atoms</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_inode</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""(device, inode) of *path*, or None if it doesn't exist."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">st</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">st</span><span class="o">.</span><span class="n">st_dev</span><span class="p">,</span> <span class="n">st</span><span class="o">.</span><span class="n">st_ino</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_fds_by_inode</span><span class="p">(</span><span class="n">inodes</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""This process's open file descriptors for *inodes*: listed from</span>
+<span class="sd">    /proc/self/fd on Linux, /dev/fd elsewhere (macOS)."""</span>
+    <span class="n">found</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">fd_dir</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"/proc/self/fd"</span><span class="p">,</span> <span class="s2">"/dev/fd"</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">names</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">fd_dir</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">break</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">found</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># fstat, not stat of the link: /dev/fd entries aren't symlinks,</span>
+            <span class="c1"># and the descriptor listdir itself used is closed by now.</span>
+            <span class="n">st</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">fstat</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">st_dev</span><span class="p">,</span> <span class="n">st</span><span class="o">.</span><span class="n">st_ino</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">inodes</span><span class="p">:</span>
+            <span class="n">found</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">found</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_copy_fd</span><span class="p">(</span><span class="n">fd</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Copy the whole file open as *fd* to *path*. pread reads from offset</span>
+<span class="sd">    0 without moving the descriptor's own position, which the open</span>
+<span class="sd">    database still uses."""</span>
+    <span class="n">chunk</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span>
+    <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">out</span><span class="p">:</span>
+        <span class="k">while</span> <span class="n">data</span> <span class="o">:=</span> <span class="n">os</span><span class="o">.</span><span class="n">pread</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">chunk</span><span class="p">,</span> <span class="n">offset</span><span class="p">):</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 
            </div>

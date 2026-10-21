@@ -56,11 +56,7 @@
 <li class="toctree-l2"><a class="reference internal" href="mlip.html">MLIP Training</a></li>
 <li class="toctree-l2"><a class="reference internal" href="structure_generation.html">Structure Generation</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">High-Accuracy Evaluation</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#module-alomancy.high_accuracy_evaluation.dft">Calculator Registry</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.get_dft_functions"><code class="docutils literal notranslate"><span class="pre">get_dft_functions()</span></code></a></li>
-<li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs"><code class="docutils literal notranslate"><span class="pre">warn_mismatched_kwargs()</span></code></a></li>
-</ul>
-</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-alomancy.high_accuracy_evaluation.dft">Calculator Registry</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#module-alomancy.high_accuracy_evaluation.dft.run_qe">Quantum Espresso Backend</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_espresso_profile"><code class="docutils literal notranslate"><span class="pre">create_espresso_profile()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.high_accuracy_evaluation.dft.run_qe.create_qe_calc_object"><code class="docutils literal notranslate"><span class="pre">create_qe_calc_object()</span></code></a></li>
@@ -122,20 +118,8 @@
 <h1>High-Accuracy Evaluation<a class="headerlink" href="#high-accuracy-evaluation" title="Link to this heading"></a></h1>
 <section id="module-alomancy.high_accuracy_evaluation.dft">
 <span id="calculator-registry"></span><h2>Calculator Registry<a class="headerlink" href="#module-alomancy.high_accuracy_evaluation.dft" title="Link to this heading"></a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.get_dft_functions">
-<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.</span></span><span class="sig-name descname"><span class="pre">get_dft_functions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">calculator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.15)"><span class="pre">Callable</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.15)"><span class="pre">Callable</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft.html#get_dft_functions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.get_dft_functions" title="Link to this definition"></a></dt>
-<dd><p>Return (run_sp_fn, run_go_fn) for the requested calculator.</p>
-<p>Lazy imports keep optional heavy dependencies from breaking installs
-that only have one calculator available.</p>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs">
-<span class="sig-prename descclassname"><span class="pre">alomancy.high_accuracy_evaluation.dft.</span></span><span class="sig-name descname"><span class="pre">warn_mismatched_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">calculator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/high_accuracy_evaluation/dft.html#warn_mismatched_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.high_accuracy_evaluation.dft.warn_mismatched_kwargs" title="Link to this definition"></a></dt>
-<dd><p>Warn when kwargs that belong to a different calculator are present in the config.</p>
-</dd></dl>
-
+<p>DFT backends: QE (<code class="docutils literal notranslate"><span class="pre">run_qe</span></code>) and VASP (<code class="docutils literal notranslate"><span class="pre">run_vasp</span></code>), registered under the
+<code class="docutils literal notranslate"><span class="pre">dft_evaluator</span></code> category in <code class="docutils literal notranslate"><span class="pre">alomancy/registry.py</span></code>.</p>
 </section>
 <section id="module-alomancy.high_accuracy_evaluation.dft.run_qe">
 <span id="quantum-espresso-backend"></span><h2>Quantum Espresso Backend<a class="headerlink" href="#module-alomancy.high_accuracy_evaluation.dft.run_qe" title="Link to this heading"></a></h2>

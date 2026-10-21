@@ -58,9 +58,12 @@
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.apply_train_test_split"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.apply_train_test_split()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.assign_global_db_ids"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.assign_global_db_ids()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.clear"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.clear()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.clear_duplicate_flags()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_all_by_config_type_and_formula()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type_and_formula()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.db_replaced"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.db_replaced()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.ensure_on_disk"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.ensure_on_disk()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.flag_as_duplicates()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_all_as_atoms"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_all_as_atoms()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.get_isolated_atom_energies"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.get_isolated_atom_energies()</span></code></a></li>
@@ -74,12 +77,14 @@
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.is_imported"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.is_imported()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.migrate_mace_prediction_keys"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.migrate_mace_prediction_keys()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.record_import"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.record_import()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.set_metadata_bulk"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.set_metadata_bulk()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.size"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.size</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.store_descriptors"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.store_descriptors()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.store_model_predictions"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.store_model_predictions()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.update_splits_post_hoc"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.update_splits_post_hoc()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.database.global_database.is_in_training_set"><code class="docutils literal notranslate"><span class="pre">is_in_training_set()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="mlip.html">MLIP Training</a></li>
@@ -209,6 +214,14 @@ instance – no stale-counter risk.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags">
+<span class="sig-name descname"><span class="pre">clear_duplicate_flags</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_types</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.15)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.clear_duplicate_flags"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags" title="Link to this definition"></a></dt>
+<dd><p>Set is_duplicate=False on every flagged container (only those of
+<em>config_types</em>, if given). Never called by the workflow: for undoing
+flags set under older redundancy rules. Returns the number cleared.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula">
 <span class="sig-name descname"><span class="pre">count_all_by_config_type_and_formula</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.count_all_by_config_type_and_formula"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula" title="Link to this definition"></a></dt>
 <dd><p>Single-pass scan returning {config_type: {formula: count}} for all structures.</p>
@@ -227,6 +240,21 @@ when several config_types need to be queried at once.</p>
 <span class="sig-name descname"><span class="pre">count_by_config_type_and_formula</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.count_by_config_type_and_formula"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula" title="Link to this definition"></a></dt>
 <dd><p>Return {formula: count} for all structures with the given config_type.
 Used by compute_initialization_needs for per-element-combo checking.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.db_replaced">
+<span class="sig-name descname"><span class="pre">db_replaced</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.db_replaced"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.db_replaced" title="Link to this definition"></a></dt>
+<dd><p>Whether the DB files on disk are no longer the ones this
+instance has open (renamed, deleted or replaced by another
+process).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.ensure_on_disk">
+<span class="sig-name descname"><span class="pre">ensure_on_disk</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.ensure_on_disk"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.ensure_on_disk" title="Link to this definition"></a></dt>
+<dd><p>Recover the DB files from this instance’s open handles if they
+were replaced on disk; a no-op otherwise.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -365,6 +393,14 @@ skipped. Returns the number of containers updated.</p>
 <dd><p>Record <em>marker</em> as imported, even when it added nothing.</p>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.set_metadata_bulk">
+<span class="sig-name descname"><span class="pre">set_metadata_bulk</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">updates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.set_metadata_bulk"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.set_metadata_bulk" title="Link to this definition"></a></dt>
+<dd><p>Merge <em>updates</em> ({positional index: {key: value}}) into container
+metadata. Callers outside this class write metadata through this,
+so the write is guarded like every other.</p>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.size">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></em><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.size" title="Link to this definition"></a></dt>
@@ -401,6 +437,15 @@ is unique for initialization structures by design.</p>
 <p>Returns the number of containers whose split tag was updated.</p>
 </dd></dl>
 
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.database.global_database.is_in_training_set">
+<span class="sig-prename descclassname"><span class="pre">alomancy.database.global_database.</span></span><span class="sig-name descname"><span class="pre">is_in_training_set</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metadata</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#is_in_training_set"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.is_in_training_set" title="Link to this definition"></a></dt>
+<dd><p>Whether a container with this metadata is part of the training set:
+train split, not flagged a duplicate or by the quality filter, and not
+rejected by dataset curation. GlobalDatabase.get_train_atoms and
+redundancy removal share this rule.</p>
 </dd></dl>
 
 </section>

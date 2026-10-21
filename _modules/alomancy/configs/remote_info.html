@@ -104,9 +104,6 @@
 <span class="sd">        name for job (unique within this project)</span>
 <span class="sd">    resources: dict or Resources</span>
 <span class="sd">        expyre.resources.Resources or kwargs for its constructor</span>
-<span class="sd">    num_inputs_per_queued_job: int, default -100</span>
-<span class="sd">        num_inputs_per_python_subprocess for each job. If negative will be multiplied by iterable_autopara_wrappable</span>
-<span class="sd">        num_inputs_per_python_subprocess</span>
 <span class="sd">    pre_cmds: list(str)</span>
 <span class="sd">        commands to run before starting job</span>
 <span class="sd">    post_cmds: list(str)</span>
@@ -127,8 +124,6 @@
 <span class="sd">        time to wait in get_results before giving up</span>
 <span class="sd">    check_interval: int</span>
 <span class="sd">        check_interval arg to pass to get_results</span>
-<span class="sd">    ignore_failed_jobs: bool, default False</span>
-<span class="sd">        currently unused by RemoteJobExecutor -- accepted for backwards compatibility</span>
 <span class="sd">    resubmit_killed_jobs: bool, default False</span>
 <span class="sd">        when a RemoteJobExecutor job is declared definitively dead (ExPyReJobDiedError --</span>
 <span class="sd">        no _succeeded/_error file and the remote scheduler no longer shows it queued/held/</span>
@@ -154,8 +149,6 @@
 <span class="sd">        entire expected walltime just for a turn to touch ssh, something is</span>
 <span class="sd">        stuck (e.g. the shared control connection died and a fresh connection</span>
 <span class="sd">        needs interactive auth nobody can provide), not merely busy.</span>
-<span class="sd">    hash_ignore: list(str), default []</span>
-<span class="sd">        list of arguments to ignore when doing hash of remote function arguments to determine if it's already been done</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
@@ -163,7 +156,6 @@
         <span class="n">sys_name</span><span class="p">,</span>
         <span class="n">job_name</span><span class="p">,</span>
         <span class="n">resources</span><span class="p">,</span>
-        <span class="n">num_inputs_per_queued_job</span><span class="o">=-</span><span class="mi">100</span><span class="p">,</span>
         <span class="n">pre_cmds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">post_cmds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
         <span class="n">env_vars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -174,14 +166,10 @@
         <span class="n">partial_node</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">timeout</span><span class="o">=</span><span class="mi">3600</span><span class="p">,</span>
         <span class="n">check_interval</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
-        <span class="n">ignore_failed_jobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">resubmit_killed_jobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">max_num_of_concurrent_jobs</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>
         <span class="n">lock_timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">hash_ignore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-        <span class="k">if</span> <span class="n">hash_ignore</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">hash_ignore</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="n">header_extra</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">header_extra</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="n">output_files</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -197,7 +185,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">sys_name</span> <span class="o">=</span> <span class="n">sys_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">job_name</span> <span class="o">=</span> <span class="n">job_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">resources</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">resources</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">num_inputs_per_queued_job</span> <span class="o">=</span> <span class="n">num_inputs_per_queued_job</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">pre_cmds</span> <span class="o">=</span> <span class="n">pre_cmds</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">post_cmds</span> <span class="o">=</span> <span class="n">post_cmds</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">env_vars</span> <span class="o">=</span> <span class="n">env_vars</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -209,15 +196,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">partial_node</span> <span class="o">=</span> <span class="n">partial_node</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">check_interval</span> <span class="o">=</span> <span class="n">check_interval</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ignore_failed_jobs</span> <span class="o">=</span> <span class="n">ignore_failed_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">resubmit_killed_jobs</span> <span class="o">=</span> <span class="n">resubmit_killed_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">max_num_of_concurrent_jobs</span> <span class="o">=</span> <span class="n">max_num_of_concurrent_jobs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lock_timeout</span> <span class="o">=</span> <span class="n">lock_timeout</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">hash_ignore</span> <span class="o">=</span> <span class="n">hash_ignore</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sys_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">resources</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">num_inputs_per_queued_job</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exact_fit</span><span class="si">}</span><span class="s2"> "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sys_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">resources</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exact_fit</span><span class="si">}</span><span class="s2"> "</span>
             <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">partial_node</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">check_interval</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span></div>
 
@@ -270,7 +255,6 @@
     <span class="k">return</span> <span class="n">RemoteInfo</span><span class="p">(</span>
         <span class="n">sys_name</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"hpc_name"</span><span class="p">],</span>
         <span class="n">job_name</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span>
-        <span class="n">num_inputs_per_queued_job</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
         <span class="n">timeout</span><span class="o">=</span><span class="mi">36000</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>
         <span class="n">input_files</span><span class="o">=</span><span class="n">input_files</span><span class="p">,</span>
         <span class="n">pre_cmds</span><span class="o">=</span><span class="n">job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pre_cmds"</span><span class="p">,</span> <span class="p">[]),</span>

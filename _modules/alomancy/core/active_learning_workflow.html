@@ -323,7 +323,15 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remote_ssh</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">ensure_ssh_connectivity</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_redundancy</span><span class="w"> </span><span class="kn">import</span> <span class="n">remove_redundancy_from_partition</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_redundancy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">REDUNDANCY_KWARGS_DEFAULTS</span><span class="p">,</span>
+    <span class="n">descriptors_for_atoms</span><span class="p">,</span>
+    <span class="n">probe_redundancy_tolerance</span><span class="p">,</span>
+    <span class="n">remove_redundancy_from_partition</span><span class="p">,</span>
+    <span class="n">select_non_redundant</span><span class="p">,</span>
+    <span class="n">training_reference</span><span class="p">,</span>
+    <span class="n">validate_redundancy_kwargs</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.seed_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">filter_eligible_structures</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.split_filter</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">apply_split_filter</span><span class="p">,</span>
@@ -698,6 +706,7 @@
     <span class="s2">"train_filter"</span><span class="p">,</span>
     <span class="s2">"test_filter"</span><span class="p">,</span>
     <span class="s2">"dataset_kwargs"</span><span class="p">,</span>
+    <span class="s2">"redundancy_kwargs"</span><span class="p">,</span>
 <span class="p">}</span>
 
 
@@ -789,6 +798,10 @@
         <span class="n">effective</span><span class="p">[</span><span class="s2">"dataset_kwargs"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
             <span class="o">**</span><span class="n">_DATASET_KWARGS_DEFAULTS</span><span class="p">,</span>
             <span class="o">**</span><span class="n">effective</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dataset_kwargs"</span><span class="p">,</span> <span class="p">{}),</span>
+        <span class="p">}</span>
+        <span class="n">effective</span><span class="p">[</span><span class="s2">"redundancy_kwargs"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="n">REDUNDANCY_KWARGS_DEFAULTS</span><span class="p">,</span>
+            <span class="o">**</span><span class="p">(</span><span class="n">effective</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"redundancy_kwargs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}),</span>
         <span class="p">}</span>
         <span class="n">al_workflow</span> <span class="o">=</span> <span class="n">effective</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"al_workflow"</span><span class="p">,</span> <span class="n">_DEFAULT_AL_WORKFLOW</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
@@ -1147,6 +1160,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_db</span><span class="p">:</span> <span class="n">GlobalDatabase</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_db_path</span> <span class="o">=</span> <span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"db_path"</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span> <span class="o">=</span> <span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"remove_redundancy"</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span> <span class="o">=</span> <span class="n">validate_redundancy_kwargs</span><span class="p">(</span>
+            <span class="n">general_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"redundancy_kwargs"</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">train_only</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"train_only"</span><span class="p">])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">report</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"report"</span><span class="p">])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">report_suggestions</span> <span class="o">=</span> <span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"report_suggestions"</span><span class="p">]</span>
@@ -1230,6 +1246,16 @@
                     <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"config_key_unused"</span><span class="p">,</span>
                     <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"keys"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"."</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="o">*</span><span class="n">p</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">report</span><span class="o">.</span><span class="n">unused</span><span class="p">]},</span>
                 <span class="p">},</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">report</span><span class="o">.</span><span class="n">ignored</span><span class="p">:</span>
+            <span class="n">keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"."</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="o">*</span><span class="n">path</span><span class="p">,</span> <span class="n">key</span><span class="p">))</span> <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">report</span><span class="o">.</span><span class="n">ignored</span><span class="p">]</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Ignoring config key(s) no longer read: </span><span class="si">%s</span><span class="s2">; remove them."</span><span class="p">,</span>
+                <span class="s2">"; "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'.'</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="o">*</span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">))</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">why</span><span class="si">}</span><span class="s2">)"</span>
+                    <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">why</span> <span class="ow">in</span> <span class="n">report</span><span class="o">.</span><span class="n">ignored</span>
+                <span class="p">),</span>
+                <span class="n">extra</span><span class="o">=</span><span class="p">{</span><span class="s2">"event"</span><span class="p">:</span> <span class="s2">"config_key_ignored"</span><span class="p">,</span> <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"keys"</span><span class="p">:</span> <span class="n">keys</span><span class="p">}},</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">report</span><span class="o">.</span><span class="n">unrecognised</span><span class="p">:</span>
             <span class="n">keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"."</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="o">*</span><span class="n">path</span><span class="p">,</span> <span class="n">key</span><span class="p">))</span> <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">report</span><span class="o">.</span><span class="n">unrecognised</span><span class="p">]</span>
@@ -1875,20 +1901,68 @@
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">effective_start</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_curate_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">_INITIALIZATION_NAME</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Redundancy removal, train/test quality filters and (if</span>
-<span class="sd">        configured) dataset curation -- run before the first loop and at</span>
-<span class="sd">        the end of every loop. The redundancy tolerance probe is saved to</span>
-<span class="sd">        results/&lt;base_name&gt;/redundancy_probe.json for the loop report."""</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
-            <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
-                <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">dataset_kwargs</span><span class="p">[</span><span class="s2">"target_config_types"</span><span class="p">]</span>
-                <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">NEW_STRUCTURE_CONFIG_TYPE</span><span class="p">],</span>
-                <span class="n">probe_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">_REDUNDANCY_PROBE_FILENAME</span><span class="p">),</span>
-            <span class="p">)</span>
+<span class="w">        </span><span class="sd">"""Train/test quality filters, (if configured) dataset curation,</span>
+<span class="sd">        then redundancy removal -- run before the first loop and at the end</span>
+<span class="sd">        of every loop. Redundancy removal goes last so it only compares</span>
+<span class="sd">        structures still in the training set. The redundancy tolerance</span>
+<span class="sd">        probe is saved to results/&lt;base_name&gt;/redundancy_probe.json for the</span>
+<span class="sd">        loop report."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_apply_split_filters</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dataset_curation"</span><span class="p">):</span>
             <span class="n">curate_database</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"dataset_curation"</span><span class="p">])</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
+            <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+                <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_config_types</span><span class="p">(),</span>
+                <span class="n">probe_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">_REDUNDANCY_PROBE_FILENAME</span><span class="p">),</span>
+                <span class="n">settings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_redundancy_config_types</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""config_types redundancy removal deduplicates."""</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset_kwargs</span><span class="p">[</span><span class="s2">"target_config_types"</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">NEW_STRUCTURE_CONFIG_TYPE</span>
+        <span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">non_redundant_selector</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""A selector for *candidates* that, given their indices best</span>
+<span class="sd">        first and a count n, returns the first n that redundancy removal</span>
+<span class="sd">        wouldn't flag at the end of the loop (select_non_redundant), so no</span>
+<span class="sd">        DFT is spent on them. None when redundancy removal is off or no</span>
+<span class="sd">        tolerance qualifies on the current training set."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">reference</span> <span class="o">=</span> <span class="n">training_reference</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_config_types</span><span class="p">())</span>
+        <span class="n">tolerance</span><span class="p">,</span> <span class="n">_record</span> <span class="o">=</span> <span class="n">probe_redundancy_tolerance</span><span class="p">(</span>
+            <span class="n">reference</span><span class="p">,</span> <span class="n">settings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"No redundancy tolerance on the current training set; "</span>
+                <span class="s2">"selection is not checked for redundancy."</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">descriptors</span> <span class="o">=</span> <span class="n">descriptors_for_atoms</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">select</span><span class="p">(</span><span class="n">ranked</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+            <span class="n">chosen</span> <span class="o">=</span> <span class="n">select_non_redundant</span><span class="p">(</span><span class="n">descriptors</span><span class="p">[</span><span class="n">ranked</span><span class="p">],</span> <span class="n">reference</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+            <span class="n">replaced</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">chosen</span><span class="p">))</span> <span class="k">if</span> <span class="n">chosen</span> <span class="k">else</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">replaced</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">"Replaced </span><span class="si">%d</span><span class="s2"> redundant pick(s) with the next candidates in "</span>
+                    <span class="s2">"the ranking (tolerance=</span><span class="si">%.4f</span><span class="s2">)."</span><span class="p">,</span>
+                    <span class="n">replaced</span><span class="p">,</span>
+                    <span class="n">tolerance</span><span class="p">,</span>
+                    <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                        <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"selection_redundant_replaced"</span><span class="p">,</span>
+                        <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="n">replaced</span><span class="p">,</span> <span class="s2">"tolerance"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">tolerance</span><span class="p">)},</span>
+                    <span class="p">},</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">ranked</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">chosen</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">select</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">iterate_loops</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">start</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">LoopContext</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Yield one LoopContext per loop from *start* to num_of_al_loops,</span>

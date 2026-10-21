@@ -1,0 +1,374 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Config file advice &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            ALomancy
+              <img src="../_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Config file advice</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/general_reports/config_file_advice.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="config-file-advice">
+<h1>Config file advice<a class="headerlink" href="#config-file-advice" title="Link to this heading"></a></h1>
+<p>Notes from checking real run configs: what went wrong, why, and the pairings between
+keys that the schema can’t check. This started with yun_an
+(<code class="docutils literal notranslate"><span class="pre">~/alomancy_runs/yun_an/standard_config.yaml</span></code>).</p>
+<section id="general-rules-of-thumb">
+<h2>General rules of thumb<a class="headerlink" href="#general-rules-of-thumb" title="Link to this heading"></a></h2>
+<section id="pairings-the-validator-doesn-t-check">
+<h3>Pairings the validator doesn’t check<a class="headerlink" href="#pairings-the-validator-doesn-t-check" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">force_ceiling</span></code> &lt; <code class="docutils literal notranslate"><span class="pre">train_filter.max_force</span></code>.</strong> Both measure the largest per-atom
+force norm.</p>
+<ul>
+<li><p>A ceiling above the filter pays for DFT on structures the filter then throws away.</p></li>
+<li><p>A ceiling far below it (0.05) fully relaxes every AL structure. That is about
+15× the DFT cost, and it moves the structures to minima, away from the
+high-uncertainty geometry the committee picked.</p></li>
+<li><p>Good value: just below the filter, e.g. 4.5 with <code class="docutils literal notranslate"><span class="pre">max_force:</span> <span class="pre">5</span></code>.</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">max_go_time</span></code> ≥ <code class="docutils literal notranslate"><span class="pre">max_num_of_relax_steps</span></code> (default 200) × seconds per BFGS step.</strong></p>
+<ul>
+<li><p>On raven for 20-atom Li–B–I–P–S cells, a step takes 90–170 s. Relaxing from MD
+frames to 0.05 eV/Å takes about 100–130 steps.</p></li>
+<li><p>A job that hits the Slurm limit is lost completely, partial relaxation included.</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">md_kwargs.steps</span> <span class="pre">×</span> <span class="pre">timestep_fs</span></code> must fit in <code class="docutils literal notranslate"><span class="pre">structure_generation.max_time</span></code>.</strong></p>
+<ul>
+<li><p>A run cut short by the time limit gives fewer candidates than
+<code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code>.</p></li>
+<li><p>Snapshots are taken every <code class="docutils literal notranslate"><span class="pre">steps</span> <span class="pre">×</span> <span class="pre">num_of_md_starts</span> <span class="pre">//</span> <span class="pre">num_of_structures_to_generate</span></code>
+steps, so the frames a run never reaches are simply missing.</p></li>
+<li><p>NPT is much slower per step than NVT.</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">npt</span></code> needs a model that has learned stress.</strong></p>
+<ul>
+<li><p>The barostat is driven by the committee’s predicted stress. With
+<code class="docutils literal notranslate"><span class="pre">mace_kwargs.compute_stress</span></code> off, that stress is untrained.</p></li>
+<li><p>Harvesting stress (<code class="docutils literal notranslate"><span class="pre">qe_kwargs.control.tstress:</span> <span class="pre">true</span></code>) only records it; it doesn’t
+train it.</p></li>
+<li><p>Collect stress for a few loops first, then turn on <code class="docutils literal notranslate"><span class="pre">compute_stress</span></code>, then switch
+to NPT.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="units-and-settings-that-are-easy-to-get-wrong">
+<h3>Units and settings that are easy to get wrong<a class="headerlink" href="#units-and-settings-that-are-easy-to-get-wrong" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">md_kwargs.pressure</span></code> is in GPa.</strong> 1 atm is about 0.0001 GPa; 1.01 is about
+10,000 atm.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">md_kwargs.friction</span></code> is in ASE inverse-time units, not 1/fs.</strong></p>
+<ul>
+<li><p>0.002 is a thermostat time of about 5 ps. ASE’s own examples use 0.01/fs, which
+is 0.1 here.</p></li>
+<li><p>MD starts from 0 K (no velocities are drawn), so a weak thermostat spends the
+first few ps heating up.</p></li>
+<li><p><strong>Under <code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">npt</span></code> <code class="docutils literal notranslate"><span class="pre">friction</span></code> is ignored.</strong> <code class="docutils literal notranslate"><span class="pre">LangevinBAOAB</span></code> uses its own
+default <code class="docutils literal notranslate"><span class="pre">T_tau</span></code> = 50 × timestep.</p></li>
+</ul>
+</li>
+<li><p><strong>Filter config_type names must match real config types.</strong></p>
+<ul>
+<li><p>Nothing checks <code class="docutils literal notranslate"><span class="pre">selectable_configs</span></code>, <code class="docutils literal notranslate"><span class="pre">exempt_config_types</span></code> or
+<code class="docutils literal notranslate"><span class="pre">target_config_types</span></code> against the database. A typo silently matches nothing.</p></li>
+<li><p>The committee workflow tags its picks <code class="docutils literal notranslate"><span class="pre">high_sd</span></code>; initialization types are
+<code class="docutils literal notranslate"><span class="pre">init_*</span></code> and <code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code>.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="settings-that-have-no-effect">
+<h3>Settings that have no effect<a class="headerlink" href="#settings-that-have-no-effect" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>QE’s own relaxation settings are unused.</strong> <code class="docutils literal notranslate"><span class="pre">control.nstep</span></code>, <code class="docutils literal notranslate"><span class="pre">etot_conv_thr</span></code> and
+<code class="docutils literal notranslate"><span class="pre">forc_conv_thr</span></code> do nothing: relaxations are ASE BFGS driving QE single points. The
+target is <code class="docutils literal notranslate"><span class="pre">force_ceiling</span></code> and the step cap is <code class="docutils literal notranslate"><span class="pre">max_num_of_relax_steps</span></code>.</p></li>
+<li><p><strong>Section <code class="docutils literal notranslate"><span class="pre">name:</span></code> keys are ignored.</strong> Each section’s name is fixed; leaving them in
+gives a warning.</p></li>
+</ul>
+</section>
+<section id="test-filter">
+<h3>Test filter<a class="headerlink" href="#test-filter" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>A test structure that fails <code class="docutils literal notranslate"><span class="pre">test_filter</span></code> stays in the test split. It is lost to
+both test and training.</p></li>
+<li><p>A strict test filter therefore throws away most AL test picks, and the test set
+stops growing.</p></li>
+</ul>
+</section>
+</section>
+<section id="yun-an-what-went-wrong-in-loops-4041-october-2026">
+<h2>yun_an: what went wrong in loops 40–41 (October 2026)<a class="headerlink" href="#yun-an-what-went-wrong-in-loops-4041-october-2026" title="Link to this heading"></a></h2>
+<p>The config was edited on Oct 17 between loops 39 and 40
+(<code class="docutils literal notranslate"><span class="pre">standard_config.yaml.bak</span></code> → <code class="docutils literal notranslate"><span class="pre">standard_config.yaml</span></code>):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Before</p></th>
+<th class="head"><p>After</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">force_ceiling</span></code></p></td>
+<td><p>10</p></td>
+<td><p>0.05</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">max_go_time</span></code></p></td>
+<td><p>10H</p></td>
+<td><p>3H (back to 10H by Oct 21)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">train_filter.max_force</span></code></p></td>
+<td><p>10</p></td>
+<td><p>5</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ensemble</span></code></p></td>
+<td><p>nvt</p></td>
+<td><p>npt, <code class="docutils literal notranslate"><span class="pre">pressure:</span> <span class="pre">1.01</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">num_of_md_starts</span></code></p></td>
+<td><p>20</p></td>
+<td><p>25</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tstress</span></code></p></td>
+<td><p>false</p></td>
+<td><p>true</p></td>
+</tr>
+</tbody>
+</table>
+<section id="what-happened">
+<h3>What happened<a class="headerlink" href="#what-happened" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Loop 40 DFT: 72 of 81 jobs failed.</strong></p>
+<ul>
+<li><p>With a 0.05 ceiling, a relaxation needs about 100 BFGS steps (median 98, max
+133).</p></li>
+<li><p>The median job took 1.8 h and the longest 2.9 h. In loops 37–39 it was 6–8 steps
+and about 0.25 h.</p></li>
+<li><p>Most jobs hit the 3H limit and their partial relaxations were discarded.</p></li>
+<li><p>10 failed in QE itself:</p>
+<ul>
+<li><p>7 “fft order too large”, likely from cells blown up by the NPT barostat;</p></li>
+<li><p>3 “nsym == 0”.</p></li>
+</ul>
+</li>
+<li><p>Only 9 structures came back.</p></li>
+</ul>
+</li>
+<li><p><strong>Loop 40 MD:</strong> 24 of 25 runs hit the 2H limit after 0.4–4 ps of the planned 6 ps.
+This gave 148 frames, against a target of 500 and below the 200 (2 × per-loop)
+warning level. 45% of the frames had short bonds.</p></li>
+<li><p><strong>The training set shrank from 1972 to 1696.</strong> With <code class="docutils literal notranslate"><span class="pre">max_force</span></code> cut from 10 to 5,
+initialization dimers, trimers and stretch/compress structures were dropped (116
+dimer, 62 trimer, 398 stretch_compress), plus 328 <code class="docutils literal notranslate"><span class="pre">high_sd</span></code>.</p></li>
+<li><p><strong>Loops 37–39 had wasted DFT.</strong> With <code class="docutils literal notranslate"><span class="pre">force_ceiling</span></code> 10, their picks came back with
+a median max force of about 7 eV/Å. Under the new <code class="docutils literal notranslate"><span class="pre">max_force:</span> <span class="pre">5</span></code> most of them are
+now filtered out.</p></li>
+<li><p><strong>Loop 41 crashed on staging.</strong></p>
+<ul>
+<li><p>rsync reported “No space left on device” on the fhi-raccoon <code class="docutils literal notranslate"><span class="pre">/fhi</span></code> share.</p></li>
+<li><p>The retry then failed with “remote job rundir already exists”, because of the
+partial rsync.</p></li>
+<li><p>If this happens again, clear the <code class="docutils literal notranslate"><span class="pre">run_training_*</span></code> dirs under
+<code class="docutils literal notranslate"><span class="pre">~/alomancy_expyre_gpu/unkownhost-_work_home_jholl_alomancy_runs_yun_an/</span></code>.</p></li>
+</ul>
+</li>
+<li><p><strong>The test set barely grows.</strong> <code class="docutils literal notranslate"><span class="pre">test_filter.max_force:</span> <span class="pre">5</span></code> excludes 80–100% of each
+loop’s AL test picks.</p></li>
+</ul>
+</section>
+</section>
+<section id="yun-an-check-of-the-current-file-oct-21-before-resubmitting">
+<h2>yun_an: check of the current file (Oct 21, before resubmitting)<a class="headerlink" href="#yun-an-check-of-the-current-file-oct-21-before-resubmitting" title="Link to this heading"></a></h2>
+<p>The file builds without errors. The only warning is about the ignored <code class="docutils literal notranslate"><span class="pre">name:</span></code> keys.</p>
+<section id="fix-before-submitting">
+<h3>Fix before submitting<a class="headerlink" href="#fix-before-submitting" title="Link to this heading"></a></h3>
+<ol class="arabic">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">force_ceiling:</span> <span class="pre">0.05</span></code> → about 4.5.</strong></p>
+<ul class="simple">
+<li><p>At 0.05 each loop costs about 100 structures × 2 h of DFT and returns relaxed
+structures.</p></li>
+<li><p>With <code class="docutils literal notranslate"><span class="pre">max_go_time:</span> <span class="pre">10H</span></code> the jobs should now finish, so it no longer fails. It is
+just expensive and less informative.</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">pressure:</span> <span class="pre">1.01</span></code> is 1.01 GPa.</strong> If 1 atm was meant, use <code class="docutils literal notranslate"><span class="pre">0.0</span></code>, which keeps the
+barostat on at about 0 GPa.</p></li>
+<li><p><strong>NPT with untrained stress.</strong></p>
+<ul class="simple">
+<li><p>The committee has never been trained on stress, and almost no stored structure
+has <code class="docutils literal notranslate"><span class="pre">REF_stresses</span></code> (tstress was false until loop 40).</p></li>
+<li><p>Suggestion: go back to <code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">nvt</span></code> for now and keep <code class="docutils literal notranslate"><span class="pre">tstress:</span> <span class="pre">true</span></code> so
+stress is collected.</p></li>
+<li><p>Later, add <code class="docutils literal notranslate"><span class="pre">mace_kwargs.compute_stress:</span> <span class="pre">true</span></code> and return to NPT.</p></li>
+<li><p>Before turning it on, check how MACE weights structures without stress.</p></li>
+</ul>
+</li>
+<li><p><strong>MD will hit <code class="docutils literal notranslate"><span class="pre">max_time:</span> <span class="pre">&quot;2H&quot;</span></code> again.</strong> 20000 steps × 0.3 fs = 6 ps did not fit
+under NPT. Either raise <code class="docutils literal notranslate"><span class="pre">max_time</span></code> (about 6H) or cut <code class="docutils literal notranslate"><span class="pre">steps</span></code> (about 6000). NVT on
+its own may fit in 2H; loops up to 39 did.</p></li>
+<li><p><strong>The run venv still has <code class="docutils literal notranslate"><span class="pre">deduplicate-lib</span></code> 0.1.2.</strong> The redundancy rework needs
+0.1.3:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--python<span class="w"> </span>/home/jholl/.venvs/al_install/bin/python<span class="w"> </span><span class="s2">"deduplicate-lib&gt;=0.1.3"</span>
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+<section id="worth-deciding">
+<h3>Worth deciding<a class="headerlink" href="#worth-deciding" title="Link to this heading"></a></h3>
+<ol class="arabic simple" start="6">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">exempt_config_types:</span> <span class="pre">[&quot;init_dimer&quot;,</span> <span class="pre">&quot;init_trimer&quot;]</span></code> leaves out
+<code class="docutils literal notranslate"><span class="pre">init_stretch_compress</span></code>.</strong></p>
+<ul class="simple">
+<li><p>At <code class="docutils literal notranslate"><span class="pre">max_force:</span> <span class="pre">5</span></code>, 398 of its 788 structures are still dropped. They are the
+large-strain data.</p></li>
+<li><p>Add it if those should be kept. All three exempt gave a 2274-structure training
+set on a copy of the database, against 1698 with none.</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">selectable_configs:</span> <span class="pre">[&quot;init_amorphous&quot;,</span> <span class="pre">&quot;amorphous&quot;]</span></code>: no structure has
+<code class="docutils literal notranslate"><span class="pre">config_type</span></code> “amorphous”.</strong></p>
+<ul class="simple">
+<li><p>The database has <code class="docutils literal notranslate"><span class="pre">high_sd</span></code>, <code class="docutils literal notranslate"><span class="pre">init_*</span></code> and <code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code>. MD seeds therefore only
+ever come from the 87 <code class="docutils literal notranslate"><span class="pre">init_amorphous</span></code> structures.</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">&quot;high_sd&quot;</span></code> if AL picks should seed MD.</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">friction:</span> <span class="pre">0.002</span></code> is a weak thermostat</strong> (about 5 ps, see above). It only matters
+under NVT. 0.02 gives about 0.5 ps.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">test_filter</span></code></strong> (<code class="docutils literal notranslate"><span class="pre">max_force:</span> <span class="pre">5</span></code>, formation energy up to 2.5) keeps throwing away
+most AL test picks.</p>
+<ul class="simple">
+<li><p>Raising it to match what the model should be judged on (e.g. <code class="docutils literal notranslate"><span class="pre">max_force:</span> <span class="pre">10</span></code>)
+lets the test set grow.</p></li>
+<li><p>The training filter can stay at 5.</p></li>
+</ul>
+</li>
+<li><p><strong>QE “nsym == 0” failures:</strong> <code class="docutils literal notranslate"><span class="pre">system.nosym:</span> <span class="pre">true</span></code> probably avoids them. AL
+amorphous cells have no symmetry to exploit anyway. Not verified.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">electron_maxstep:</span> <span class="pre">999</span></code>:</strong> a non-converging SCF can use up a whole walltime.
+About 200 is enough with <code class="docutils literal notranslate"><span class="pre">local-TF</span></code> mixing.</p></li>
+</ol>
+</section>
+<section id="cosmetic">
+<h3>Cosmetic<a class="headerlink" href="#cosmetic" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Remove the four section <code class="docutils literal notranslate"><span class="pre">name:</span></code> keys (they give a warning).</p></li>
+<li><p>Remove the stale “E0s” comment.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nstep</span></code>, <code class="docutils literal notranslate"><span class="pre">etot_conv_thr</span></code> and <code class="docutils literal notranslate"><span class="pre">forc_conv_thr</span></code> are inert (see above).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">energy_key</span></code> and <code class="docutils literal notranslate"><span class="pre">forces_key</span></code> are already ALomancy’s defaults.</p></li>
+</ul>
+</section>
+<section id="not-needed">
+<h3>Not needed<a class="headerlink" href="#not-needed" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>No HPC reinstall is needed for the unreleased changes: no remote function changed
+since 1.0.2.</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

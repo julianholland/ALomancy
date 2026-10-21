@@ -79,6 +79,7 @@
              
   <h1>Source code for alomancy.structure_generation.find_high_sd_structures</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -90,6 +91,17 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
 
+<div class="viewcode-block" id="read_selection">
+<a class="viewcode-back" href="../../../api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.read_selection">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_selection</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""The structures in a selection file find_high_sd_structures wrote;</span>
+<span class="sd">    an empty file is an empty selection."""</span>
+    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">stat</span><span class="p">()</span><span class="o">.</span><span class="n">st_size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span></div>
+
+
+
 <div class="viewcode-block" id="find_high_sd_structures">
 <a class="viewcode-back" href="../../../api/structure_generation.html#alomancy.structure_generation.find_high_sd_structures.find_high_sd_structures">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">find_high_sd_structures</span><span class="p">(</span>
@@ -99,10 +111,16 @@
     <span class="n">structure_forces_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">num_of_structures</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">read_xyz</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">select_indices</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Select the *num_of_structures* candidates (general.</span>
 <span class="sd">    num_of_structures_per_loop) with the highest committee force standard</span>
-<span class="sd">    deviation."""</span>
+<span class="sd">    deviation.</span>
+
+<span class="sd">    select_indices(ranked, n), given the candidate indices in descending</span>
+<span class="sd">    std-dev order, returns the n to keep (default: the first n); the</span>
+<span class="sd">    workflow passes one that skips candidates redundancy removal would flag</span>
+<span class="sd">    (ActiveLearningWorkflow.non_redundant_selector)."""</span>
     <span class="n">desired_structures</span> <span class="o">=</span> <span class="n">num_of_structures</span>
 
     <span class="k">if</span> <span class="n">desired_structures</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
@@ -146,7 +164,7 @@
         <span class="ow">and</span> <span class="n">Path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">)</span>
     <span class="p">):</span>
         <span class="n">std_dev_df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">std_dev_csv_name</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+        <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="n">read_selection</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">)</span>
 
     <span class="k">else</span><span class="p">:</span>
         <span class="n">std_dev_df</span> <span class="o">=</span> <span class="n">std_deviation_of_forces</span><span class="p">(</span>
@@ -155,22 +173,34 @@
                 <span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">]</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">index_list</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"structure_index"</span><span class="p">][:</span><span class="n">effective_structures</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+        <span class="n">ranked</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="p">[</span><span class="s2">"structure_index"</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+        <span class="n">index_list</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">select_indices</span><span class="p">(</span><span class="n">ranked</span><span class="p">,</span> <span class="n">effective_structures</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">select_indices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="n">ranked</span><span class="p">[:</span><span class="n">effective_structures</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_list</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">effective_structures</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Only </span><span class="si">%d</span><span class="s2"> of the </span><span class="si">%d</span><span class="s2"> candidate(s) are not redundant with the "</span>
+                <span class="s2">"training set or each other, fewer than the </span><span class="si">%d</span><span class="s2"> requested "</span>
+                <span class="s2">"(general.num_of_structures_per_loop)."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">index_list</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+                <span class="n">desired_structures</span><span class="p">,</span>
+                <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"fewer_candidates"</span><span class="p">,</span>
+                    <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_list</span><span class="p">),</span> <span class="s2">"desired"</span><span class="p">:</span> <span class="n">desired_structures</span><span class="p">},</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
         <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">index_list</span><span class="p">]</span>
 
-        <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">high_sd_structures</span><span class="p">:</span>
-            <span class="n">write</span><span class="p">(</span>
-                <span class="nb">str</span><span class="p">(</span>
-                    <span class="n">Path</span><span class="p">(</span>
-                        <span class="s2">"results"</span><span class="p">,</span>
-                        <span class="n">base_name</span><span class="p">,</span>
-                        <span class="n">job_dict</span><span class="p">[</span><span class="s2">"structure_generation"</span><span class="p">][</span><span class="s2">"name"</span><span class="p">],</span>
-                        <span class="s2">"high_sd_structures.xyz"</span><span class="p">,</span>
-                    <span class="p">)</span>
-                <span class="p">),</span>
-                <span class="n">structure</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
-                <span class="n">append</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="p">)</span>
+        <span class="c1"># Written once, even when empty: a restart reloads this file, and</span>
+        <span class="c1"># an empty selection is a valid result, not a missing one.</span>
+        <span class="n">write</span><span class="p">(</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">high_sd_structures_xyz_name</span><span class="p">),</span>
+            <span class="p">[</span><span class="n">structure</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">high_sd_structures</span><span class="p">],</span>
+            <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">,</span>
+        <span class="p">)</span>
 
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
         <span class="s2">"Selected </span><span class="si">%d</span><span class="s2"> structures for DFT calculations based on force std dev."</span><span class="p">,</span>
