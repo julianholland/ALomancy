@@ -130,7 +130,12 @@ def test_select_uncertain_predicts_with_best_model_first(
     captured = {}
 
     def fake_find(
-        structure_list, base_name, job_dict, structure_forces_dict, num_of_structures
+        structure_list,
+        base_name,
+        job_dict,
+        structure_forces_dict,
+        num_of_structures,
+        select_indices=None,
     ):
         captured["labels"] = list(structure_forces_dict)
         captured["name"] = job_dict["structure_generation"]["name"]
@@ -285,6 +290,20 @@ def test_selected_structures_read_back_with_config_type(tmp_path):
     write(path, [_atoms()], format="extxyz")
     (atoms,) = read(path, ":", format="extxyz")
     assert atoms.info["config_type"] == "high_sd"
+
+
+@pytest.mark.unit
+def test_restart_loads_an_empty_selection(tmp_path, monkeypatch):
+    """A loop whose selector kept nothing wrote an empty
+    high_sd_structures.xyz; the restart loader reads it as no structures
+    instead of failing."""
+    from alomancy.core.committee_uncertainty_workflow import _load_high_sd
+
+    monkeypatch.chdir(tmp_path)
+    sg_dir = tmp_path / "results/al_loop_0/structure_generation"
+    sg_dir.mkdir(parents=True)
+    write(sg_dir / "high_sd_structures.xyz", [], format="extxyz")
+    assert _load_high_sd(None, _ctx()) == []
 
 
 @pytest.mark.unit

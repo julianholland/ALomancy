@@ -83,8 +83,8 @@ Do not simply ask the user whether updates are needed. Make the judgement yourse
    ```
    Use the release's CHANGELOG entries as a guide to what changed, but verify against the diff: the changelog can be incomplete.
 2. For each user-facing or architectural change (new modules, new/changed config keys, changed defaults, new conventions, moved import paths, new CLI commands), check whether it is already documented:
-   - **CLAUDE.md**: grep for the relevant function/module/config names and read the matching section.
-   - **docs/**: grep `docs/` for the relevant names; check any page covering that subsystem (e.g. `docs/remote_submission_architecture.md` for `remote_submission/`, `docs/dataset_curation.md` for curation, `docs/deprecations.md` for deprecations).
+   - **CLAUDE.md and `docs/architecture/`**: CLAUDE.md is the index; grep the subsystem's architecture file (e.g. `docs/architecture/remote_submission.md` for `remote_submission/`) for the relevant names and read the matching section.
+   - **docs/**: grep the user docs for the relevant names (e.g. `docs/dataset_curation.md` for curation, `docs/deprecations.md` for deprecations).
 3. Report to the user, per change:
    - **Documented** → quote or cite (file:line) the section you think covers it.
    - **Not documented, or out of date** → draft the text you propose adding or replacing, and say where it would go.

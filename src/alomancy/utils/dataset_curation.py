@@ -154,7 +154,7 @@ def curate_database(db: Any, policy: dict) -> dict:
         updates[i] = metadata
         counts["accepted" if metadata["is_training_eligible"] else "rejected"] += 1
     if updates:
-        db.partition.set_metadata_bulk(updates, use_indices=True)
+        db.set_metadata_bulk(updates)
     return dict(counts)
 
 

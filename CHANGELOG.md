@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `general.redundancy_kwargs`: `tolerance` (set the duplicate tolerance directly), `max_flagged_fraction` (default 0.5), `min_plateau_width` (default 0.0025 of the swept range) and `probe_steps_per_structure` (default 10). Checked when the workflow is built.
+- **Redundant picks are replaced before DFT.** The committee workflow now skips any candidate that end-of-loop redundancy removal would flag (too close to a training structure or to an earlier pick) and takes the next most uncertain one instead (event `selection_redundant_replaced`). Off with `remove_redundancy: false`. If fewer non-redundant candidates remain than requested, the loop sends fewer (possibly none) to DFT and logs `fewer_candidates`; the selection file is written even when empty, so the loop can still be restarted.
+- **Relative-error plot in the loop report.** Under the best model's parity plot: energy error as a signed % of the DFT formation energy and force error as |ΔF|/|F| per atom, against the DFT value, with the median % per split. Energies with |formation energy| < 0.05 eV/atom and atoms with |F| < 0.1 eV/Å are left out. Large-force structures have large absolute errors; this shows whether they're also large relative ones.
+- `general.train_filter.exempt_config_types` / `general.test_filter.exempt_config_types`: config_types the whole filter skips, so a strict filter on AL structures doesn't also drop the initialization's high-force short-range data (dimers, trimers, stretched/compressed crystals). Off by default.
+- `GlobalDatabase.clear_duplicate_flags(config_types=None)` undoes redundancy flags, e.g. ones set by the old rule below. The workflow never calls it.
+
+### Fixed
+- **A database emptied under a live run is restored on the next write.** When another process opened a run's database for writing, sage_lib took HDF5's lock error for corruption, moved the live files to `*.corrupted_<ts>` and created empty ones. The run kept writing to the moved (often deleted) files, so nothing reached disk and everything was lost when it exited. Every database write now checks that the files on disk are the ones it has open. If they aren't, it copies its open files back into place, keeps whatever was there as `*.replaced_<ts>`, and logs an error (event `database_recovered`).
+- **Redundancy removal no longer flags whole groups of near-duplicates.** deduplicate_lib's `DistanceMatrix` kept a structure only if nothing at all was within the tolerance, so every member of a group not containing the first structure was flagged. One run had all 135 of its AL structures and all 26 amorphous ones flagged. ALomancy now requires deduplicate-lib >= 0.1.3, which keeps each group's earliest member.
+- **Redundancy removal no longer picks a coarse tolerance that flags most of the data.** On a pairwise-distance descriptor there is usually no plateau at small tolerances, so the lowest plateau the probe found grouped everything into a handful of clusters (96% flagged in that run). The sweep is now 10× finer and starts at 0, plateaus must be `min_plateau_width` wide, and a tolerance that would flag more than `max_flagged_fraction` flags nothing instead (warning, event `redundancy_cap_hit`). The probe plot shows the cap.
+- **Redundancy removal only compares structures still in the training set.** Already-flagged, quality-filtered and curation-rejected structures used to take part, and as the earliest of a pair they flagged new structures in their place. The quality filters and curation now run before redundancy removal.
+- The `redundancy_removed_new` report suggestion now points at the tolerance before blaming generation.
+- **The timings plot shows training again.** Each phase's queue time is now the mean over the jobs that finished inside that phase only. The training queue used to average every job of the loop, mostly the DFT jobs' long queue, and the queue bar wasn't capped at its phase, so a grey bar hid the whole training segment. A loop whose log marks training complete but has no "generate_structures started" line now gets its training and generation times too. Rebuild old plots with `alomancy results --replot`.
+- **The bond-distance plot's title no longer overlaps the panel titles or the logo**: left-aligned, with the logo sized in inches.
+
+### Changed
+- **Novelty selection** keeps the first candidate of a tight cluster of novel candidates rather than dropping the whole cluster (deduplicate-lib 0.1.3), so its picks are more spread out.
+- `alomancy list-hpc` no longer shows each profile's executable; the run's startup HPC table still does.
+- A `name:` in a config section now warns that it is ignored (event `config_key_ignored`). Section names have been fixed to their keys since 1.0; remove the line.
+- README links point at Read the Docs and GitHub, so they also work on the PyPI page.
+- `docs/examples.md`: `name:` lines and old key names removed, the predictions section describes any trainer, and every config block in `docs/examples.md` and `docs/starting_a_run.md` is now tested.
+- Contributor notes: CLAUDE.md is now a short index, with one file per subsystem in `docs/architecture/` (not part of the published docs). `docs/remote_submission_architecture.md` is replaced by `docs/architecture/remote_submission.md`, which describes the current code. A test checks every code reference in these notes still exists.
+- CI uploads coverage with codecov-action v5's `files:` key, so the coverage badge updates again.
+
+### Removed
+- `alomancy.remote_submission.committee_remote_submitter`, `md_remote_submitter` and `all_maces_remote_submitter`, unused since 1.0 (training, prediction and MD use `submit_n`).
+- `RemoteInfo`'s unused `hash_ignore`, `num_inputs_per_queued_job` and `ignore_failed_jobs` arguments.
+- `alomancy.high_accuracy_evaluation.dft.get_dft_functions` / `warn_mismatched_kwargs` (replaced by the module registry and the startup config-key check).
+
 ## [1.0.2] - 2026-10-10
 
 ### Added

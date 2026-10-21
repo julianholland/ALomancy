@@ -100,6 +100,18 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
             energy_label="formation energy" if e0 else "energy",
         )
         made["parity"] = path
+        percent_path = plots_dir / "best_model_percent_error.png"
+        # A regenerated report must not link a stale figure.
+        percent_path.unlink(missing_ok=True)
+        plots.percent_error(
+            predictions,
+            percent_path,
+            title=f"Best model (fit_{fit_idx}) relative error [{stats['base_name']}]",
+            energy_label="formation energy" if e0 else "energy",
+        )
+        if percent_path.exists():
+            made["percent_error"] = percent_path
+            model["percent_error"] = plots.percent_error_medians(predictions)
 
     def redundancy() -> None:
         from alomancy.analysis.report.stats import read_redundancy_probe

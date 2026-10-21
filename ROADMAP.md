@@ -1,24 +1,35 @@
 # ALomancy roadmap
 
-Current release: **v1.0.1**. Priorities, in order: reliable production runs, usability for
+Current release: **v1.0.2**. Priorities, in order: reliable production runs, usability for
 other groups, new scientific scope. The granular checklist is in [TODO.md](TODO.md).
 
-## 1.0.2 — patch (now)
+## 1.0.x — patches (now)
 
-Goal: ship the fixes already on the `82-local-expyre-failing` branch plus quick wins.
+### 1.0.2 (released 2026-10-10)
 
-- **Merge #82.** Isolated per-run `.expyre`; `e3nn==0.4.4` / `sevenn<0.11` pins (e3nn 0.6
+- **#82.** Isolated per-run `.expyre`; `e3nn==0.4.4` / `sevenn<0.11` pins (e3nn 0.6
   broke MACE stage two, see yun_an loop 36); a missing `initialization` section skips
   initialization.
-- **Timings plot.** The training queue window includes the DFT queue, the queue bar is not
-  capped at its phase length, and the generation-start fallback regex matches nothing,
-  so loop 35 of yun_an shows only DFT and queue time.
-- **Bond-distribution plot.** The title overlaps the subplot titles and the logo.
-- **`alomancy list-hpc`.** Drop the executable column.
-- **Coverage badge (#24).** codecov-action v5 needs `files:`; uploads currently fail silently.
-- **Dead code and stale docs.** Unused `RemoteInfo` fields, the old `dft/__init__`
-  registry, and the sections of `docs/remote_submission_architecture.md` that still
-  describe deleted modules.
+
+### 1.0.3
+
+Goal: quick fixes and documentation that matches the code.
+
+- **Timings plot.** The training queue average included every DFT job's queue time and
+  the queue bar wasn't capped at its phase, so the grey bar hid training (yun_an loop 36);
+  loops without a generation-start marker (loop 35) lost training and generation.
+- **Bond-distribution plot.** The title overlapped the subplot titles and the logo.
+- **`alomancy list-hpc`.** Drop the executable column (the run's startup table keeps it).
+- **Coverage badge (#24).** codecov-action v5 needs `files:`; uploads failed silently.
+- **Dead code.** Unused `RemoteInfo` fields, the old `dft/__init__` registry, and the
+  submitters replaced by `submit_n`.
+- **README links** go to Read the Docs and GitHub, so they work on PyPI too.
+- **Outdated examples.** `name:` keys (now ignored, with a warning) and old key names in
+  `docs/examples.md`; the MACE-only predictions section made trainer-agnostic; config
+  blocks in the docs are now tested like the example configs.
+- **Architecture notes.** CLAUDE.md split into a short index plus one file per subsystem in
+  `docs/architecture/`, replacing the stale `remote_submission_architecture.md` audit; a
+  test checks every code reference in them still exists.
 
 ## 1.1 — production reliability and paper plots (target ~2026-11-10)
 

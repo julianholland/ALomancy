@@ -1,6 +1,9 @@
+import functools
 import json
 import logging
 import os
+import shutil
+import time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +22,45 @@ _DEFAULT_DEDUP_CONFIG_TYPES = ["IsolatedAtom", "init_MP"]
 logger = logging.getLogger(__name__)
 
 
+def _guarded_write(method):
+    """Wrap a GlobalDatabase write so it never lands in a replaced DB.
+
+    Checks before the write that the files on disk are still the ones this
+    instance has open, recovering them (_recover_from_open_handles) if not.
+    If the write raises and the DB turns out to have been replaced, recovers
+    and retries once, provided the failed call added no structures.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        self.ensure_on_disk()
+        n_before = self.partition.N
+        try:
+            return method(self, *args, **kwargs)
+        except Exception:
+            if not self.db_replaced():
+                raise
+            self._recover_from_open_handles()
+            if n_before != self.partition.N:
+                raise
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+def is_in_training_set(metadata: dict) -> bool:
+    """Whether a container with this metadata is part of the training set:
+    train split, not flagged a duplicate or by the quality filter, and not
+    rejected by dataset curation. GlobalDatabase.get_train_atoms and
+    redundancy removal share this rule."""
+    return (
+        metadata.get("split") == "train"
+        and metadata.get("is_training_eligible", True)
+        and not metadata.get("is_duplicate", False)
+        and not metadata.get("is_quality_filtered", False)
+    )
+
+
 class GlobalDatabase:
     """
     Persistent store for all DFT-evaluated structures across the AL workflow.
@@ -35,7 +77,108 @@ class GlobalDatabase:
     def __init__(self, db_path: str = "results/global_database") -> None:
         Path(db_path).mkdir(parents=True, exist_ok=True)
         self.db_path = Path(db_path)
-        self.partition = Partition(path=db_path, storage="hybrid")
+        self._open()
+
+    def _open(self) -> None:
+        self.partition = Partition(path=str(self.db_path), storage="hybrid")
+        self._open_inodes = {path: _inode(path) for path in self._store_paths()}
+
+    # ------------------------------------------------------------------
+    # Replaced-DB detection and recovery
+    #
+    # When another process opens this DB read-write while we hold it,
+    # sage_lib's HybridStorage takes HDF5's lock error for corruption: it
+    # renames our live files to *.corrupted_<ts> and creates empty ones.
+    # Our handles still point at the renamed (possibly since deleted)
+    # files, so every later write succeeds but is invisible on disk and is
+    # lost when the process exits. Touches sage_lib internals (_store,
+    # _h5, _conn, h5_path, sqlite_path), kept to these methods.
+    # ------------------------------------------------------------------
+
+    def _store_paths(self) -> list[str]:
+        store = getattr(self.partition, "_store", None)
+        return [
+            path
+            for path in (
+                getattr(store, "sqlite_path", None),
+                getattr(store, "h5_path", None),
+            )
+            if path
+        ]
+
+    def db_replaced(self) -> bool:
+        """Whether the DB files on disk are no longer the ones this
+        instance has open (renamed, deleted or replaced by another
+        process)."""
+        return any(
+            opened is not None and _inode(path) != opened
+            for path, opened in self._open_inodes.items()
+        )
+
+    def ensure_on_disk(self) -> None:
+        """Recover the DB files from this instance's open handles if they
+        were replaced on disk; a no-op otherwise."""
+        if self.db_replaced():
+            self._recover_from_open_handles()
+
+    def _recover_from_open_handles(self) -> None:
+        """Put the data this instance has open back at the DB's paths.
+
+        Commits and checkpoints SQLite so its main file holds everything,
+        moves whatever now sits at the paths aside to *.replaced_<ts>
+        (never deleted: it may be another process's data), copies the open
+        files back through /proc/self/fd, and reopens. Raises RuntimeError
+        when the open files can't be reached (no /proc), rather than keep
+        writing where nothing will be saved.
+        """
+        store = self.partition._store
+        n_before = self.partition.N
+        store._h5.flush()
+        store._conn.commit()
+        store._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        fds = _fds_by_inode(set(self._open_inodes.values()) - {None})
+        missing = [path for path, ino in self._open_inodes.items() if ino not in fds]
+        if missing:
+            raise RuntimeError(
+                f"The database at {self.db_path} was replaced on disk while this "
+                f"run had it open, and the open files can't be reached to "
+                f"recover it ({', '.join(missing)}). Before this process exits, "
+                f"copy its open database files from /proc/{os.getpid()}/fd/ "
+                "(ls -l shows which) back into "
+                f"{Path(missing[0]).parent}."
+            )
+
+        stamp = int(time.time())
+        moved = []
+        for path in self._open_inodes:
+            for sidecar in (path, f"{path}-wal", f"{path}-shm"):
+                if os.path.exists(sidecar):
+                    target = f"{sidecar}.replaced_{stamp}"
+                    os.replace(sidecar, target)
+                    moved.append(target)
+        for path, ino in self._open_inodes.items():
+            shutil.copyfile(f"/proc/self/fd/{fds[ino]}", path)
+
+        self.partition.close()
+        self._open()
+        if n_before != self.partition.N:
+            raise RuntimeError(
+                f"Recovered database at {self.db_path} holds {self.partition.N} "
+                f"structures, expected {n_before}."
+            )
+        logger.error(
+            "The database at %s was replaced on disk while this run had it open "
+            "(another process opened it read-write). Restored its %d structures "
+            "from the open files; the files found in its place were moved to %s.",
+            self.db_path,
+            n_before,
+            moved or "nowhere (none were left)",
+            extra={
+                "event": "database_recovered",
+                "data": {"n": n_before, "moved_aside": moved},
+            },
+        )
 
     def clear(self) -> None:
         """Remove every structure, leaving this instance otherwise reusable.
@@ -105,6 +248,7 @@ class GlobalDatabase:
     # Writing
     # ------------------------------------------------------------------
 
+    @_guarded_write
     def add_structures(
         self,
         atoms_list: list[Atoms],
@@ -277,21 +421,20 @@ class GlobalDatabase:
         containers. ``is_quality_filtered`` is set by utils/split_filter.py
         (general.train_filter). The legacy ``is_high_force`` flag written by
         older versions is ignored."""
+        ignored = {
+            "is_training_eligible": not exclude_ineligible,
+            "is_duplicate": not exclude_duplicates,
+            "is_quality_filtered": not exclude_quality_filtered,
+        }
         return [
             self._atoms_from_container(c)
             for c in self.partition.list_containers()
-            if c.AtomPositionManager.metadata.get("split") == "train"
-            and (
-                not exclude_ineligible
-                or c.AtomPositionManager.metadata.get("is_training_eligible", True)
-            )
-            and not (
-                exclude_duplicates
-                and c.AtomPositionManager.metadata.get("is_duplicate", False)
-            )
-            and not (
-                exclude_quality_filtered
-                and c.AtomPositionManager.metadata.get("is_quality_filtered", False)
+            if is_in_training_set(
+                {
+                    k: v
+                    for k, v in c.AtomPositionManager.metadata.items()
+                    if not ignored.get(k, False)
+                }
             )
         ]
 
@@ -333,6 +476,7 @@ class GlobalDatabase:
     # In-place metadata update helpers
     # ------------------------------------------------------------------
 
+    @_guarded_write
     def store_model_predictions(
         self,
         loop_idx: int,
@@ -468,6 +612,33 @@ class GlobalDatabase:
             if b["e_dft"]
         }
 
+    @_guarded_write
+    def set_metadata_bulk(self, updates: dict[int, dict]) -> None:
+        """Merge *updates* ({positional index: {key: value}}) into container
+        metadata. Callers outside this class write metadata through this,
+        so the write is guarded like every other."""
+        self.partition.set_metadata_bulk(updates, use_indices=True)
+
+    @_guarded_write
+    def clear_duplicate_flags(self, config_types: list[str] | None = None) -> int:
+        """Set is_duplicate=False on every flagged container (only those of
+        *config_types*, if given). Never called by the workflow: for undoing
+        flags set under older redundancy rules. Returns the number cleared."""
+        updates = {
+            i: {"is_duplicate": False}
+            for i, c in enumerate(self.partition.list_containers())
+            if c.AtomPositionManager.metadata.get("is_duplicate", False)
+            and (
+                config_types is None
+                or c.AtomPositionManager.metadata.get("config_type") in config_types
+            )
+        }
+        if updates:
+            self.partition.set_metadata_bulk(updates, use_indices=True)
+        logger.info("Cleared %d duplicate flag(s).", len(updates))
+        return len(updates)
+
+    @_guarded_write
     def flag_as_duplicates(self, positional_indices: list[int]) -> None:
         """Set is_duplicate=True on containers at the given positional indices.
 
@@ -477,6 +648,7 @@ class GlobalDatabase:
         id_meta_map = {i: {"is_duplicate": True} for i in positional_indices}
         self.partition.set_metadata_bulk(id_meta_map, use_indices=True)
 
+    @_guarded_write
     def store_descriptors(self, descriptors: dict[int, list[float]], key: str) -> None:
         """Cache structure descriptors (e.g. redundancy removal's char_vec)
         in container metadata, keyed by positional index, so they are
@@ -486,6 +658,7 @@ class GlobalDatabase:
             {i: {key: vector} for i, vector in descriptors.items()}, use_indices=True
         )
 
+    @_guarded_write
     def assign_global_db_ids(self) -> int:
         """Assign global_db_id to any container that does not already have one.
 
@@ -548,6 +721,7 @@ class GlobalDatabase:
         )
         return len(updates)
 
+    @_guarded_write
     def apply_train_test_split(
         self,
         test_fraction: float = 0.1,
@@ -620,6 +794,7 @@ class GlobalDatabase:
         )
         return n_train_total, n_test_total
 
+    @_guarded_write
     def update_splits_post_hoc(
         self, train_atoms: list[Atoms], test_atoms: list[Atoms]
     ) -> int:
@@ -772,3 +947,30 @@ class GlobalDatabase:
         # the next key of any xyz file written from these atoms.
         drop_unwritable_info(atoms)
         return atoms
+
+
+def _inode(path: str) -> tuple[int, int] | None:
+    """(device, inode) of *path*, or None if it doesn't exist."""
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return st.st_dev, st.st_ino
+
+
+def _fds_by_inode(inodes: set[tuple[int, int]]) -> dict[tuple[int, int], int]:
+    """This process's open file descriptors for *inodes* (Linux /proc)."""
+    found: dict[tuple[int, int], int] = {}
+    try:
+        names = os.listdir("/proc/self/fd")
+    except OSError:
+        return found
+    for name in names:
+        try:
+            st = os.stat(f"/proc/self/fd/{name}")
+        except OSError:
+            continue
+        key = (st.st_dev, st.st_ino)
+        if key in inodes:
+            found.setdefault(key, int(name))
+    return found

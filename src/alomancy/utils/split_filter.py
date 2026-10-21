@@ -7,6 +7,7 @@ it is never deleted (the DB is a full DFT archive) but is left out of
 ``get_train_atoms()``/``get_test_atoms()`` and therefore out of the xyz
 files, training and test metrics. Flags are rewritten on every pass, so
 loosening or switching off a filter brings excluded structures back.
+``exempt_config_types`` lists config_types the whole filter skips.
 """
 
 import logging
@@ -17,17 +18,21 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-FILTER_KEYS = frozenset({"max_force", "formation_energy_per_atom"})
+FILTER_KEYS = frozenset(
+    {"max_force", "formation_energy_per_atom", "exempt_config_types"}
+)
 
 # train keeps the protection the old general.high_force_threshold gave by
 # default (flag max force >= 100 eV/Angstrom); test is entirely opt-in.
 TRAIN_FILTER_DEFAULTS: dict[str, Any] = {
     "max_force": 100.0,
     "formation_energy_per_atom": None,
+    "exempt_config_types": [],
 }
 TEST_FILTER_DEFAULTS: dict[str, Any] = {
     "max_force": None,
     "formation_energy_per_atom": None,
+    "exempt_config_types": [],
 }
 
 
@@ -56,6 +61,14 @@ def validate_split_filter(cfg: Any, name: str) -> None:
         raise ValueError(
             f"general.{name}.max_force must be a positive number (eV/Angstrom) "
             f"or null, got {max_force!r}."
+        )
+    exempt = cfg.get("exempt_config_types")
+    if exempt is not None and not (
+        isinstance(exempt, list) and all(isinstance(t, str) and t for t in exempt)
+    ):
+        raise ValueError(
+            f"general.{name}.exempt_config_types must be a list of config_type "
+            f"names or null, got {exempt!r}."
         )
     window = cfg.get("formation_energy_per_atom")
     if window is None:
@@ -122,6 +135,8 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
       energies (the parity plots' definition); outside the window fails.
       Structures containing an element with no IsolatedAtom energy are not
       energy-filtered (one warning per call).
+    - ``exempt_config_types``: structures of these config_types pass the
+      whole filter (their formation energy is still recorded).
 
     Every container of *split* has its flags rewritten, so a disabled
     filter (all criteria null) clears earlier flags. Returns excluded
@@ -130,6 +145,7 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
     cfg = cfg or {}
     max_force = cfg.get("max_force")
     window = cfg.get("formation_energy_per_atom")
+    exempt = set(cfg.get("exempt_config_types") or [])
     e0: dict[str, float] = {}
     if window is not None:
         for element, value in db.get_isolated_atom_energies().items():
@@ -141,13 +157,16 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
     reasons_count: Counter[str] = Counter()
     missing_e0: Counter[str] = Counter()
     n_missing_e0 = 0
+    n_exempt = 0
     for i, container in enumerate(db.partition.list_containers()):
         apm = container.AtomPositionManager
         if apm.metadata.get("split") != split:
             continue
         reasons: list[str] = []
         meta: dict[str, Any] = {}
-        if max_force is not None:
+        is_exempt = apm.metadata.get("config_type") in exempt
+        n_exempt += is_exempt
+        if max_force is not None and not is_exempt:
             reason = _force_reason(apm.forces, max_force)
             if reason:
                 reasons.append(reason)
@@ -162,7 +181,10 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
                 ef = (energy - sum(e0[s] for s in symbols)) / len(symbols)
                 meta["REF_formation_energy_per_atom_e0"] = ef
                 lo, hi = window
-                if (lo is not None and ef < lo) or (hi is not None and ef > hi):
+                out_of_window = (lo is not None and ef < lo) or (
+                    hi is not None and ef > hi
+                )
+                if out_of_window and not is_exempt:
                     reasons.append("formation_energy")
         reasons_count.update(reasons)
         updates[i] = {
@@ -172,7 +194,7 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
         }
 
     if updates:
-        db.partition.set_metadata_bulk(updates, use_indices=True)
+        db.set_metadata_bulk(updates)
     if n_missing_e0:
         logger.warning(
             "%s filter: %d structure(s) contain element(s) %s with no "
@@ -185,19 +207,21 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
     n_excluded = sum(1 for u in updates.values() if u["is_quality_filtered"])
     logger.info(
         "%s filter: %d/%d structure(s) excluded %s (max_force=%s, "
-        "formation_energy_per_atom=%s).",
+        "formation_energy_per_atom=%s, exempt=%d).",
         split,
         n_excluded,
         len(updates),
         dict(reasons_count),
         max_force,
         window,
+        n_exempt,
         extra={
             "event": "quality_filtered",
             "data": {
                 "split": split,
                 "n": n_excluded,
                 "total": len(updates),
+                "exempt": n_exempt,
                 "by_reason": dict(reasons_count),
             },
         },

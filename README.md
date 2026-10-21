@@ -115,7 +115,7 @@ adds them to the training set and starts again. Stop it at any point and run
 the same command again: it picks up where it left off, down to the step
 within a loop.
 
-More complete, tested configs are in [`examples/configs/`](examples/configs/).
+More complete, tested configs are in [`examples/configs/`](https://github.com/julianholland/ALomancy/tree/master/examples/configs).
 
 ## Swap any stage with one line
 
@@ -262,7 +262,7 @@ time isn't spent on structures the training filter would throw away.
 ## Extending ALomancy
 
 Modules are registered by name in
-[`src/alomancy/registry.py`](src/alomancy/registry.py). A new MLIP is an
+[`src/alomancy/registry.py`](https://github.com/julianholland/ALomancy/blob/master/src/alomancy/registry.py). A new MLIP is an
 `ALomancyTrainer` subclass that implements `fit`, `model_path` and
 `get_calculator`; the base class handles evaluation, restarts, plots and
 best-model selection:
@@ -274,17 +274,17 @@ register("mlip_trainer", "my_mlip", "my_package.trainer", trainer_class="MyTrain
 after which `trainer: "my_mlip"` works in any config. A new active-learning
 strategy is a short `ActiveLearningWorkflow` subclass whose `run()` puts
 the shared steps in order. See
-[Writing a workflow](docs/writing_a_workflow.md).
+[Writing a workflow](https://alomancy.readthedocs.io/en/latest/writing_a_workflow.html).
 
 ## Documentation
 
-- [Quick start](docs/quickstart.md) and [installation](docs/installation.md)
-- [Configuration reference and examples](docs/examples.md), plus tested configs in [`examples/configs/`](examples/configs/)
-- [Starting a run](docs/starting_a_run.md): cold start, warm start, continuing from a database
-- [Loop reports](docs/reports.md)
-- [Writing a workflow](docs/writing_a_workflow.md)
-- [Remote submission architecture](docs/remote_submission_architecture.md)
-- [Deprecations and migrating to 1.0](docs/deprecations.md)
+- [Quick start](https://alomancy.readthedocs.io/en/latest/quickstart.html) and [installation](https://alomancy.readthedocs.io/en/latest/installation.html)
+- [Configuration reference and examples](https://alomancy.readthedocs.io/en/latest/examples.html), plus tested configs in [`examples/configs/`](https://github.com/julianholland/ALomancy/tree/master/examples/configs)
+- [Starting a run](https://alomancy.readthedocs.io/en/latest/starting_a_run.html): cold start, warm start, continuing from a database
+- [Loop reports](https://alomancy.readthedocs.io/en/latest/reports.html)
+- [Writing a workflow](https://alomancy.readthedocs.io/en/latest/writing_a_workflow.html)
+- [Architecture notes](https://github.com/julianholland/ALomancy/tree/master/docs/architecture): how each subsystem works, for contributors
+- [Deprecations and migrating to 1.0](https://alomancy.readthedocs.io/en/latest/deprecations.html)
 - Full documentation: [alomancy.readthedocs.io](https://alomancy.readthedocs.io/en/latest/index.html)
 
 ## Development
@@ -300,7 +300,7 @@ uv run pytest -n auto                          # full suite
 uv run ruff check src tests && uv run ruff format src tests
 ```
 
-See the [contributing guide](docs/contributing.md).
+See the [contributing guide](https://alomancy.readthedocs.io/en/latest/contributing.html).
 
 ## Citation
 

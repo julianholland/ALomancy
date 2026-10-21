@@ -45,7 +45,25 @@ def _report(**sections):
 @pytest.mark.unit
 def test_a_complete_config_has_no_findings():
     report = _report()
-    assert (report.misplaced, report.unused, report.unrecognised) == ([], [], [])
+    assert (report.misplaced, report.unused, report.unrecognised, report.ignored) == (
+        [],
+        [],
+        [],
+        [],
+    )
+
+
+@pytest.mark.unit
+def test_a_phase_name_is_reported_as_ignored():
+    """Section names are fixed to their keys; older configs still set one."""
+    report = _report(
+        training={"name": "training"}, high_accuracy_evaluation={"name": "dft"}
+    )
+    assert [(path, key) for path, key, _ in report.ignored] == [
+        (("training",), "name"),
+        (("high_accuracy_evaluation",), "name"),
+    ]
+    assert (report.misplaced, report.unrecognised) == ([], [])
 
 
 @pytest.mark.unit
@@ -187,6 +205,7 @@ def test_workflow_logs_one_warning_per_misplaced_key(tmp_path, monkeypatch):
     config = copy.deepcopy(_BASE)
     config["structure_generation"]["num_of_md_starts"] = 20
     config["general"]["num_of_al_loop"] = 3
+    config["training"]["name"] = "training"
 
     records: list[logging.LogRecord] = []
     handler = logging.Handler()
@@ -205,3 +224,21 @@ def test_workflow_logs_one_warning_per_misplaced_key(tmp_path, monkeypatch):
         "belongs_in": "structure_generation.md_kwargs.structure_selection_kwargs",
     }
     assert "general.num_of_al_loop" in by_event["config_key_unrecognised"].getMessage()
+    assert by_event["config_key_ignored"].data == {"keys": ["training.name"]}
+
+
+@pytest.mark.unit
+def test_redundancy_kwargs_are_known_keys():
+    report = _report(
+        general={"redundancy_kwargs": {"tolerance": 0.2, "max_flagged_fraction": 0.3}}
+    )
+    assert (report.misplaced, report.unrecognised) == ([], [])
+
+
+@pytest.mark.unit
+def test_bad_redundancy_kwargs_fail_at_construction(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = copy.deepcopy(_BASE)
+    config["general"]["redundancy_kwargs"] = {"max_flagged_fraction": 2}
+    with pytest.raises(ValueError, match="max_flagged_fraction"):
+        build_workflow(config)

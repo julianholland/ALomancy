@@ -68,10 +68,14 @@ jobs:
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.xml
+        files: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
+        # A codecov outage shouldn't fail CI, but a failed upload must be
+        # visible in the log (v5 renamed `file` to `files`; the old key was
+        # silently ignored, so the badge never updated).
         fail_ci_if_error: false
+        verbose: true
 
   build:
     runs-on: ubuntu-latest

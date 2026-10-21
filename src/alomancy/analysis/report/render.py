@@ -3,7 +3,12 @@ written relative to the report file (``plots/<name>.png``)."""
 
 from pathlib import Path
 
-from alomancy.analysis.report.plots import STATUS_COLORS, STATUS_LABELS
+from alomancy.analysis.report.plots import (
+    PERCENT_ENERGY_FLOOR,
+    PERCENT_FORCE_FLOOR,
+    STATUS_COLORS,
+    STATUS_LABELS,
+)
 from alomancy.analysis.report.rules import Finding
 from alomancy.analysis.report.sections import Section, _fmt
 
@@ -22,6 +27,8 @@ EVENT_DESCRIPTIONS = {
     "short_bond_excluded": "structures dropped for a short bond",
     "quality_filtered": "train/test quality filter passes",
     "redundancy_flagged": "redundancy removal passes",
+    "redundancy_cap_hit": "redundancy removal skipped (would flag too many)",
+    "selection_redundant_replaced": "redundant picks replaced before DFT",
     "fit_retry": "model fits retried",
     "fit_missing": "model fits missing after retry",
     "fewer_candidates": "fewer candidates than requested",
@@ -65,6 +72,27 @@ def _warnings(stats: dict) -> int:
 
 # Kept upper case in image alt text built from a file name.
 _ACRONYMS = {"md": "MD", "dft": "DFT", "mae": "MAE", "go": "GO"}
+
+
+def _percent_error_lines(model: dict) -> list[str]:
+    """The median relative error of the best model per split, and what the
+    percentage-error plot leaves out."""
+    parts = []
+    for split, medians in (model.get("percent_error") or {}).items():
+        values = ", ".join(
+            f"{quantity} {medians[quantity]:.1f}%"
+            for quantity in ("energy", "force")
+            if quantity in medians
+        )
+        if values:
+            parts.append(f"{split} {values}")
+    lines = [f"Median relative error: {'; '.join(parts)}."] if parts else []
+    lines.append(
+        f"Energies with |formation energy| < {PERCENT_ENERGY_FLOOR} eV/atom and "
+        f"atoms with |F| < {PERCENT_FORCE_FLOOR} eV/Å are left out; force error "
+        "is |ΔF|/|F| per atom."
+    )
+    return lines
 
 
 def _image(path: Path, alt: str | None = None) -> str:
@@ -200,14 +228,19 @@ def _redundancy(stats: dict, core_plots: dict) -> list[str]:
         f"resampled to {dimensions} values "
         "(`global_descriptor/atomic_distance_descriptor.make_char_vec`). Two "
         "structures count as duplicates when the Euclidean distance between "
-        "their descriptors is below a tolerance. The plot sweeps that tolerance "
-        "and counts how many structures stay unique at each value. **We are "
-        "looking for plateaus** (shaded): ranges where the count barely changes, "
-        "so the result doesn't depend on the exact tolerance. The orange line "
-        "(right axis) is the number of structures removed between consecutive "
-        "tolerance steps, the gradient of the count: on a plateau it stays near "
-        "zero. The start of the lowest plateau is used (dashed line); if no "
-        "plateau is found, nothing is flagged.",
+        "their descriptors is below a tolerance: in database order, each "
+        "structure still in the training set is kept unless it is within the "
+        "tolerance of one already kept. The plot sweeps that tolerance and counts "
+        "how many structures are kept at each value. **We are looking for "
+        "plateaus** (shaded): ranges where the count doesn't change, so the "
+        "result doesn't depend on the exact tolerance. The orange line (right "
+        "axis) is the number of structures removed between consecutive tolerance "
+        "steps, the gradient of the count: zero on a plateau. The start of the "
+        "lowest plateau at least `general.redundancy_kwargs.min_plateau_width` "
+        "of the swept range wide is used (dashed line). Nothing is flagged when "
+        "no plateau qualifies, or when it would flag more than "
+        "`max_flagged_fraction` of the structures; "
+        "`general.redundancy_kwargs.tolerance` sets the tolerance directly.",
         "",
     ]
     n = probe.get("n_structures")
@@ -216,6 +249,15 @@ def _redundancy(stats: dict, core_plots: dict) -> list[str]:
             f"- This loop: {n:,} structures probed, tolerance "
             f"{probe['chosen_tolerance']:.4f}, {probe.get('n_flagged', 0):,} flagged "
             f"as duplicates ({len(probe.get('plateaus') or [])} plateau(s) found)."
+        )
+    elif probe.get("outcome") == "cap_exceeded":
+        cap = (probe.get("settings") or {}).get("max_flagged_fraction")
+        lines.append(
+            f"- This loop: {n:,} structures probed; the lowest plateau would flag "
+            f"more than {cap:.0%} of them, so nothing was flagged."
+            if cap is not None
+            else f"- This loop: {n:,} structures probed; the lowest plateau would "
+            "flag too many, so nothing was flagged."
         )
     else:
         lines.append(
@@ -367,6 +409,10 @@ def render_markdown(
                 "the plot shows the training set only.",
                 "",
             ]
+        if "percent_error" in core_plots:
+            out += [*_percent_error_lines(model), ""]
+            out += [_image(core_plots["percent_error"], "Best model percentage error")]
+            out += [""]
     else:
         out += ["No predictions stored for this loop's best model.", ""]
     out += ["## Training set", "", *_dataset(stats), ""]

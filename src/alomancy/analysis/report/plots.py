@@ -186,11 +186,12 @@ def md_runs(
 
 
 def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
-    """Unique structures against the duplicate tolerance, from redundancy
-    removal's tolerance probe: the plateaus it found shaded, the tolerance
-    it chose as a black dashed line, and on a right-hand axis the number of
-    structures removed between consecutive tolerance steps (the negative
-    gradient of the unique count: near zero on a plateau)."""
+    """Structures kept against the duplicate tolerance, from redundancy
+    removal's tolerance probe: the plateaus it found shaded, the
+    flagged-fraction cap as a horizontal line, the tolerance it chose as a
+    black dashed line, and on a right-hand axis the number of structures
+    removed between consecutive tolerance steps (the negative gradient of
+    the kept count: zero on a plateau)."""
     setup_alomancy_style()
     tolerances = np.asarray(record["tolerances"], dtype=float)
     counts = np.asarray(record["unique_counts"], dtype=float)
@@ -205,8 +206,17 @@ def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
             lw=0,
             label="plateau" if i == 0 else None,
         )
-    ax.plot(tolerances, counts, color=PALETTE[0], lw=1.2, label="unique structures")
+    ax.plot(tolerances, counts, color=PALETTE[0], lw=1.2, label="structures kept")
     ax.axhline(n, color="#9CA3AF", ls=":", lw=1, label=f"all {n:,} structures")
+    cap = (record.get("settings") or {}).get("max_flagged_fraction")
+    if cap is not None and cap < 1:
+        ax.axhline(
+            n * (1 - cap),
+            color=PALETTE[2],
+            ls="-.",
+            lw=1,
+            label=f"cap: at most {cap:.0%} flagged",
+        )
     chosen = record.get("chosen_tolerance")
     if chosen is not None:
         flagged = int(record.get("n_flagged") or 0)
@@ -224,14 +234,25 @@ def redundancy_probe(record: dict[str, Any], path: Path, *, title: str) -> None:
         ax.text(
             0.98,
             0.05,
-            "no plateau found: nothing flagged",
+            "lowest plateau flags more than the cap: nothing flagged"
+            if record.get("outcome") == "cap_exceeded"
+            else "no plateau found: nothing flagged",
             transform=ax.transAxes,
             ha="right",
             fontsize=9,
         )
+    # The sweep runs until one structure is left; past the point where 95%
+    # are flagged it's a long flat tail, so it's cut there (keeping the
+    # chosen tolerance in view).
+    if len(counts) > 1:
+        tail = np.nonzero(counts <= max(1.0, 0.05 * n))[0]
+        right = tolerances[tail[0]] * 1.1 if tail.size else tolerances[-1]
+        if chosen is not None:
+            right = max(right, chosen * 1.2)
+        ax.set_xlim(tolerances[0], min(right, tolerances[-1]))
     descriptor = (record.get("descriptor") or {}).get("key", "descriptor")
     ax.set_xlabel(f"Tolerance (Euclidean distance between {descriptor} descriptors)")
-    ax.set_ylabel("Unique structures")
+    ax.set_ylabel("Structures kept")
     ax.set_title(title)
     ax.grid(True)
 
@@ -360,6 +381,134 @@ def parity(
         ax.set_ylabel(f"Model {unit}")
         ax.grid(True)
         ax.legend(fontsize=8, loc="upper left")
+    fig.suptitle(title)
+    _save(fig, path)
+
+
+# Relative error is meaningless near zero: energies with |formation energy|
+# below this (eV/atom) and atoms with |F| below this (eV/Å) are left out.
+PERCENT_ENERGY_FLOOR = 0.05
+PERCENT_FORCE_FLOOR = 0.1
+
+
+def percent_errors(
+    predictions: dict[str, tuple],
+) -> dict[str, dict[str, tuple[np.ndarray, np.ndarray, int]]]:
+    """Relative errors for the percentage-error plot and the report's
+    summary line, {split: {"energy"|"force": (x, percent, n_below_floor)}}.
+
+    Energy: x = DFT energy per atom, percent = signed 100 (pred - ref) /
+    |ref|. Force: per atom, x = |F_ref|, percent = 100 |F_pred - F_ref| /
+    |F_ref| (unsigned). Points below the floors are left out and counted.
+    A force array that isn't whole atoms (length not a multiple of 3) gives
+    no force entry for that split."""
+    out: dict[str, dict[str, tuple[np.ndarray, np.ndarray, int]]] = {}
+    for split in ("train", "test"):
+        if split not in predictions:
+            continue
+        e_ref, e_pred, f_ref, f_pred = (
+            np.asarray(v, dtype=float).reshape(-1) for v in predictions[split]
+        )
+        entry: dict[str, tuple[np.ndarray, np.ndarray, int]] = {}
+        keep = np.abs(e_ref) >= PERCENT_ENERGY_FLOOR
+        entry["energy"] = (
+            e_ref[keep],
+            100 * (e_pred[keep] - e_ref[keep]) / np.abs(e_ref[keep]),
+            int((~keep).sum()),
+        )
+        if f_ref.size % 3 == 0 and f_ref.size == f_pred.size:
+            ref_vec, pred_vec = f_ref.reshape(-1, 3), f_pred.reshape(-1, 3)
+            ref_norm = np.linalg.norm(ref_vec, axis=1)
+            keep = ref_norm >= PERCENT_FORCE_FLOOR
+            err = np.linalg.norm(pred_vec[keep] - ref_vec[keep], axis=1)
+            entry["force"] = (
+                ref_norm[keep],
+                100 * err / ref_norm[keep],
+                int((~keep).sum()),
+            )
+        else:
+            logger.debug(
+                "%s forces are not whole atoms (%d components); no force "
+                "percentage error.",
+                split,
+                f_ref.size,
+            )
+        out[split] = entry
+    return out
+
+
+def percent_error_medians(predictions: dict[str, tuple]) -> dict[str, dict]:
+    """Median |percent error| per split and quantity (only those with
+    points above the floor), for the report's summary line."""
+    return {
+        split: {
+            quantity: float(np.median(np.abs(pct)))
+            for quantity, (_x, pct, _n) in entry.items()
+            if pct.size
+        }
+        for split, entry in percent_errors(predictions).items()
+    }
+
+
+def percent_error(
+    predictions: dict[str, tuple], path: Path, *, title: str, energy_label: str
+) -> None:
+    """Signed energy and unsigned force percentage error against the DFT
+    value for one model, train and test overlaid (see percent_errors).
+    Writes nothing when no point is above the floors."""
+    errors = percent_errors(predictions)
+    if not any(pct.size for entry in errors.values() for _x, pct, _n in entry.values()):
+        return
+    setup_alomancy_style()
+    fig, (ax_e, ax_f) = plt.subplots(1, 2, figsize=(10, 4.6))
+    for i, (split, entry) in enumerate(errors.items()):
+        color = PALETTE[i]
+        for ax, quantity, size, alpha in (
+            (ax_e, "energy", 10, 0.6),
+            (ax_f, "force", 6, 0.4),
+        ):
+            if quantity not in entry:
+                continue
+            x, pct, n_below = entry[quantity]
+            label = split
+            if pct.size:
+                label += f" (median {np.median(np.abs(pct)):.1f}%"
+                label += f", {n_below} below floor)" if n_below else ")"
+            ax.scatter(
+                x, pct, s=size, alpha=alpha, color=color, edgecolors="none", label=label
+            )
+    # Force error is unsigned and spans decades: log on both axes.
+    has_force = any(
+        entry["force"][1].size for entry in errors.values() if "force" in entry
+    )
+    if has_force:
+        ax_f.set_xscale("log")
+        ax_f.set_yscale("log")
+    else:
+        ax_f.text(
+            0.5,
+            0.5,
+            f"No atom with |F| ≥ {PERCENT_FORCE_FLOOR} eV/Å",
+            transform=ax_f.transAxes,
+            ha="center",
+            va="center",
+        )
+    # Signed energy error: symlog keeps a few huge outliers from flattening
+    # the rest.
+    ax_e.set_yscale("symlog", linthresh=10)
+    ax_e.axhline(0, color=DIAGONAL_COLOR, linewidth=1, zorder=0)
+    for ax, levels in ((ax_e, (-10, 10)), (ax_f, (10,) if has_force else ())):
+        for level in levels:
+            ax.axhline(level, color=DIAGONAL_COLOR, linewidth=0.8, linestyle="--")
+    for ax, xlabel, ylabel in (
+        (ax_e, f"DFT {energy_label} (eV/atom)", "Energy error (%)"),
+        (ax_f, "DFT |F| per atom (eV/Å)", "Force error |ΔF|/|F| (%)"),
+    ):
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.grid(True)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(fontsize=8, loc="upper right")
     fig.suptitle(title)
     _save(fig, path)
 

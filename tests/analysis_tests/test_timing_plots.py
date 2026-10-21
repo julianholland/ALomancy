@@ -459,3 +459,59 @@ def test_parses_the_log_the_phase_decorator_writes(tmp_path, monkeypatch):
         "postprocess_s",
     ):
         assert math.isfinite(row[column]), column
+
+
+def _queue_line(ts: str, job: int, queue_s: float) -> str:
+    return (
+        f"{ts} [INFO    ] alomancy.remote_submission.executor: "
+        f"Job {job} queue_time={queue_s:.1f} s."
+    )
+
+
+@pytest.mark.unit
+def test_training_queue_excludes_later_phases_jobs(tmp_path):
+    """Each phase averages only the queue times of jobs that finished inside
+    it: DFT jobs queueing for hours must not count toward training (yun_an
+    loop 36 showed a 9.6 h training queue for jobs that queued ~2 s)."""
+    from alomancy.analysis.timing_plots import parse_timing_log
+
+    lines = _phase_marker_lines(with_std_dev_line=False)
+    lines.insert(3, _queue_line("2026-10-04 10:59:00", 1, 2.0))
+    lines.insert(-2, _queue_line("2026-10-04 12:59:00", 1, 50000.0))
+    row = parse_timing_log(_write_log(tmp_path, lines)).row(0, named=True)
+
+    assert row["training_plots_queue_s"] == pytest.approx(2.0)
+    assert row["high_accuracy_evaluation_queue_s"] == pytest.approx(50000.0)
+    assert math.isnan(row["generate_structures_queue_s"])
+
+
+@pytest.mark.unit
+def test_training_end_marker_bounds_training_without_generation_start(tmp_path):
+    """A loop whose log marks training complete but has no "generate_structures
+    started" line (yun_an loop 35) still gets training and generation times."""
+    from alomancy.analysis.timing_plots import parse_timing_log
+
+    lines = [
+        line
+        for line in _phase_marker_lines(with_std_dev_line=False)
+        if "generate_structures started" not in line
+    ]
+    row = parse_timing_log(_write_log(tmp_path, lines)).row(0, named=True)
+
+    assert row["training_plots_s"] == pytest.approx(3600, abs=2)  # 10:00 -> 11:00
+    assert row["generate_structures_s"] == pytest.approx(3600, abs=2)  # 11:00 -> 12:00
+
+
+@pytest.mark.unit
+def test_queue_segment_never_exceeds_its_phase():
+    import numpy as np
+
+    from alomancy.analysis.timing_plots import _phase_segments
+
+    queued, running, total = _phase_segments(
+        np.array([1.5, np.nan, 2.0, 3.0]), np.array([9.6, 1.0, np.nan, 1.0])
+    )
+
+    np.testing.assert_allclose(queued, [1.5, 0.0, 0.0, 1.0])
+    np.testing.assert_allclose(running, [0.0, 0.0, 2.0, 2.0])
+    np.testing.assert_allclose(queued + running, total)

@@ -89,6 +89,7 @@ def _redundancy_probe_stats(base_name: str) -> dict[str, Any] | None:
             "chosen_tolerance",
             "outcome",
             "plateaus",
+            "settings",
             "descriptor",
         )
     }

@@ -243,7 +243,15 @@ from alomancy.utils.logging_config import (
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
 )
-from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+from alomancy.utils.remove_redundancy import (
+    REDUNDANCY_KWARGS_DEFAULTS,
+    descriptors_for_atoms,
+    probe_redundancy_tolerance,
+    remove_redundancy_from_partition,
+    select_non_redundant,
+    training_reference,
+    validate_redundancy_kwargs,
+)
 from alomancy.utils.seed_selection import filter_eligible_structures
 from alomancy.utils.split_filter import (
     apply_split_filter,
@@ -618,6 +626,7 @@ _GENERAL_KNOWN_KEYS = set(_GENERAL_KWARGS_DEFAULTS) | {
     "train_filter",
     "test_filter",
     "dataset_kwargs",
+    "redundancy_kwargs",
 }
 
 
@@ -709,6 +718,10 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
         effective["dataset_kwargs"] = {
             **_DATASET_KWARGS_DEFAULTS,
             **effective.get("dataset_kwargs", {}),
+        }
+        effective["redundancy_kwargs"] = {
+            **REDUNDANCY_KWARGS_DEFAULTS,
+            **(effective.get("redundancy_kwargs") or {}),
         }
         al_workflow = effective.get("al_workflow", _DEFAULT_AL_WORKFLOW)
         try:
@@ -1067,6 +1080,9 @@ class ActiveLearningWorkflow(ABC):
         self._db: GlobalDatabase | None = None
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
+        self.redundancy_kwargs = validate_redundancy_kwargs(
+            general_config.get("redundancy_kwargs")
+        )
         self.train_only = bool(general_kwargs["train_only"])
         self.report = bool(general_kwargs["report"])
         self.report_suggestions = general_kwargs["report_suggestions"]
@@ -1150,6 +1166,16 @@ class ActiveLearningWorkflow(ABC):
                     "event": "config_key_unused",
                     "data": {"keys": [".".join((*p, k)) for p, k, _ in report.unused]},
                 },
+            )
+        if report.ignored:
+            keys = [".".join((*path, key)) for path, key, _ in report.ignored]
+            logger.warning(
+                "Ignoring config key(s) no longer read: %s; remove them.",
+                "; ".join(
+                    f"{'.'.join((*path, key))} ({why})"
+                    for path, key, why in report.ignored
+                ),
+                extra={"event": "config_key_ignored", "data": {"keys": keys}},
             )
         if report.unrecognised:
             keys = [".".join((*path, key)) for path, key in report.unrecognised]
@@ -1795,20 +1821,68 @@ class ActiveLearningWorkflow(ABC):
         return int(effective_start)
 
     def _curate_dataset(self, base_name: str = _INITIALIZATION_NAME) -> None:
-        """Redundancy removal, train/test quality filters and (if
-        configured) dataset curation -- run before the first loop and at
-        the end of every loop. The redundancy tolerance probe is saved to
-        results/<base_name>/redundancy_probe.json for the loop report."""
-        if self.remove_redundancy:
-            remove_redundancy_from_partition(
-                self.db,
-                config_list=self.dataset_kwargs["target_config_types"]
-                + [self.NEW_STRUCTURE_CONFIG_TYPE],
-                probe_path=Path("results", base_name, _REDUNDANCY_PROBE_FILENAME),
-            )
+        """Train/test quality filters, (if configured) dataset curation,
+        then redundancy removal -- run before the first loop and at the end
+        of every loop. Redundancy removal goes last so it only compares
+        structures still in the training set. The redundancy tolerance
+        probe is saved to results/<base_name>/redundancy_probe.json for the
+        loop report."""
         self._apply_split_filters()
         if self.jobs_dict.get("dataset_curation"):
             curate_database(self.db, self.jobs_dict["dataset_curation"])
+        if self.remove_redundancy:
+            remove_redundancy_from_partition(
+                self.db,
+                config_list=self._redundancy_config_types(),
+                probe_path=Path("results", base_name, _REDUNDANCY_PROBE_FILENAME),
+                settings=self.redundancy_kwargs,
+            )
+
+    def _redundancy_config_types(self) -> list[str]:
+        """config_types redundancy removal deduplicates."""
+        return self.dataset_kwargs["target_config_types"] + [
+            self.NEW_STRUCTURE_CONFIG_TYPE
+        ]
+
+    def non_redundant_selector(
+        self, candidates: list[Atoms]
+    ) -> Callable[[list[int], int], list[int]] | None:
+        """A selector for *candidates* that, given their indices best
+        first and a count n, returns the first n that redundancy removal
+        wouldn't flag at the end of the loop (select_non_redundant), so no
+        DFT is spent on them. None when redundancy removal is off or no
+        tolerance qualifies on the current training set."""
+        if not self.remove_redundancy:
+            return None
+        reference = training_reference(self.db, self._redundancy_config_types())
+        tolerance, _record = probe_redundancy_tolerance(
+            reference, settings=self.redundancy_kwargs
+        )
+        if tolerance is None:
+            logger.info(
+                "No redundancy tolerance on the current training set; "
+                "selection is not checked for redundancy."
+            )
+            return None
+        descriptors = descriptors_for_atoms(candidates)
+
+        def select(ranked: list[int], n: int) -> list[int]:
+            chosen = select_non_redundant(descriptors[ranked], reference, tolerance, n)
+            replaced = (chosen[-1] + 1 - len(chosen)) if chosen else 0
+            if replaced:
+                logger.info(
+                    "Replaced %d redundant pick(s) with the next candidates in "
+                    "the ranking (tolerance=%.4f).",
+                    replaced,
+                    tolerance,
+                    extra={
+                        "event": "selection_redundant_replaced",
+                        "data": {"n": replaced, "tolerance": float(tolerance)},
+                    },
+                )
+            return [ranked[i] for i in chosen]
+
+        return select
 
     def iterate_loops(self, start: int) -> Iterator[LoopContext]:
         """Yield one LoopContext per loop from *start* to num_of_al_loops,

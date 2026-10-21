@@ -100,7 +100,8 @@ def test_candidate_descriptors_match_cached_db_descriptors(shared_db):
 
 @pytest.mark.unit
 def test_picks_most_distinct_candidates(tmp_path, jobs_dict, monkeypatch, shared_db):
-    """A tight cluster loses to two isolated candidates."""
+    """A tight cluster contributes one candidate (its first, 1.0), and the
+    two picks are the most spread out: 1.0 and 3.0, not 2.0 and 3.0."""
     monkeypatch.chdir(tmp_path)
     _store(shared_db, 5.0)
     wf = _workflow(jobs_dict, shared_db)
@@ -109,11 +110,11 @@ def test_picks_most_distinct_candidates(tmp_path, jobs_dict, monkeypatch, shared
     with patch.object(wf, "generate_candidates", return_value=cands):
         selected = wf.select_novel(_ctx(0), _MODEL)
 
-    assert [a.info["candidate"] for a in selected] == [3, 4]
+    assert [a.info["candidate"] for a in selected] == [0, 4]
     saved = read(
         "results/al_loop_0/structure_generation/novelty_selection_structures.xyz", ":"
     )
-    assert [a.info["candidate"] for a in saved] == [3, 4]
+    assert [a.info["candidate"] for a in saved] == [0, 4]
 
 
 @pytest.mark.unit

@@ -11,6 +11,9 @@ from alomancy.analysis.colors import PALETTE, add_logo_watermark, setup_alomancy
 
 logger = logging.getLogger(__name__)
 
+# Height (inches) of the logo in the title strip.
+_LOGO_HEIGHT_IN = 0.4
+
 
 def _pairwise_distances_by_element_pair(
     atoms_list: list[Atoms], max_distance: float
@@ -111,9 +114,13 @@ def plot_training_bond_distances(
     for idx in range(n_pairs, n_rows * n_cols):
         axes[idx // n_cols][idx % n_cols].axis("off")
 
-    fig.suptitle(f"Training-set pairwise bond distances [{base_name}]")
+    # Left-aligned, clear of the logo in the top-right corner.
+    fig.suptitle(f"Bond distances, training set ({base_name})", x=0.01, ha="left")
+    # tight_layout leaves room for the suptitle. The logo's default size is
+    # a fraction of the figure width, too tall on a wide one-row figure (it
+    # covered the last panel), so it is sized in inches to fit that strip.
     fig.tight_layout()
-    add_logo_watermark(fig)
+    add_logo_watermark(fig, size=_LOGO_HEIGHT_IN / fig.get_figwidth())
     path = plots_dir / f"train_bond_distances_{base_name}.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
