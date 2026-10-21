@@ -18,11 +18,16 @@ from alomancy.utils.split_filter import (
 _E0 = {"S": -5.0}
 
 
-def _s2(max_force: float = 1.0, energy: float = -10.0, x: float = 2.0) -> Atoms:
+def _s2(
+    max_force: float = 1.0,
+    energy: float = -10.0,
+    x: float = 2.0,
+    config_type: str = "high_sd",
+) -> Atoms:
     """S2 with force (max_force, 0, 0) on both atoms. Formation energy per
     atom vs _E0 is (energy - 2 * -5) / 2 = (energy + 10) / 2."""
     atoms = Atoms("S2", positions=[[0, 0, 0], [x, 0, 0]], cell=[10.0] * 3, pbc=True)
-    atoms.info["config_type"] = "high_sd"
+    atoms.info["config_type"] = config_type
     atoms.info["REF_energy"] = energy
     atoms.arrays["REF_forces"] = np.array([[max_force, 0, 0], [max_force, 0, 0]])
     return atoms
@@ -223,6 +228,68 @@ def test_train_and_test_filters_independent(db):
     assert db.get_test_atoms() == []
 
 
+# -- exemptions ------------------------------------------------------------------
+
+_STRICT = {"max_force": 5.0, "formation_energy_per_atom": [None, 0.5]}
+
+
+@pytest.mark.unit
+def test_exempt_config_type_skips_whole_filter(db):
+    """Fails both criteria (force 60, formation energy 2.0 > 0.5): the
+    exempt config_type is kept, the same structure as high_sd is not."""
+    db.add_structures(
+        [
+            _s2(60.0, energy=-6.0, config_type="init_dimer"),
+            _s2(60.0, energy=-6.0, x=2.5),
+        ],
+        split="test",
+        skip_duplicates=False,
+    )
+
+    counts = apply_split_filter(
+        db, "test", {**_STRICT, "exempt_config_types": ["init_dimer"]}
+    )
+
+    (kept,) = db.get_test_atoms()
+    assert kept.info["config_type"] == "init_dimer"
+    assert counts["excluded"] == 1
+    assert counts["high_force"] == 1
+    assert counts["formation_energy"] == 1
+
+
+@pytest.mark.unit
+def test_exemption_restores_and_records_formation_energy(db):
+    db.add_structures(
+        [_s2(60.0, energy=-6.0, config_type="init_dimer")],
+        split="test",
+        skip_duplicates=False,
+    )
+    apply_split_filter(db, "test", _STRICT)
+    assert db.get_test_atoms() == []
+
+    apply_split_filter(db, "test", {**_STRICT, "exempt_config_types": ["init_dimer"]})
+
+    (atoms,) = db.get_test_atoms()
+    assert atoms.info["REF_formation_energy_per_atom_e0"] == pytest.approx(2.0)
+    assert not atoms.info.get("quality_filter_reasons")
+
+
+@pytest.mark.unit
+def test_exemption_applies_to_its_own_filter_only(db):
+    for split in ("train", "test"):
+        db.add_structures(
+            [_s2(60.0, config_type="init_dimer")], split=split, skip_duplicates=False
+        )
+
+    apply_split_filter(
+        db, "train", {"max_force": 5.0, "exempt_config_types": ["init_dimer"]}
+    )
+    apply_split_filter(db, "test", {"max_force": 5.0})
+
+    assert "init_dimer" in {a.info["config_type"] for a in db.get_train_atoms()}
+    assert db.get_test_atoms() == []
+
+
 @pytest.mark.unit
 def test_legacy_is_high_force_flag_ignored(db):
     legacy = _s2(1.0)
@@ -249,6 +316,9 @@ def test_legacy_is_high_force_flag_ignored(db):
         ({"formation_energy_per_atom": [2.0, 1.0]}, "above its maximum"),
         ({"formation_energy_per_atom": ["a", 1.0]}, "finite numbers or null"),
         ("strict", "must be a mapping"),
+        ({"exempt_config_types": "init_dimer"}, "list of config_type names"),
+        ({"exempt_config_types": [1]}, "list of config_type names"),
+        ({"exempt_config_types": [""]}, "list of config_type names"),
     ],
 )
 def test_validate_rejects_bad_config(cfg, match):
@@ -265,6 +335,8 @@ def test_validate_rejects_bad_config(cfg, match):
         {"max_force": 50},
         {"formation_energy_per_atom": [None, 1.0]},
         {"max_force": None, "formation_energy_per_atom": [-2.0, 2.0]},
+        {"exempt_config_types": ["init_dimer", "init_trimer"]},
+        {"exempt_config_types": None},
     ],
 )
 def test_validate_accepts_good_config(cfg):

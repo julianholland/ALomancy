@@ -1722,10 +1722,12 @@ class TestQualityFilterAndForceCeilingConfig:
         assert wf.train_filter == {
             "max_force": 100.0,
             "formation_energy_per_atom": None,
+            "exempt_config_types": [],
         }
         assert wf.test_filter == {
             "max_force": None,
             "formation_energy_per_atom": [None, 1.0],
+            "exempt_config_types": [],
         }
         assert not any("unrecognised" in r.getMessage() for r in records)
 

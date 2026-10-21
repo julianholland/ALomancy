@@ -11,6 +11,14 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
+def read_selection(path: Path) -> list[Atoms]:
+    """The structures in a selection file find_high_sd_structures wrote;
+    an empty file is an empty selection."""
+    if path.stat().st_size == 0:
+        return []
+    return list(read(path, ":", format="extxyz"))
+
+
 def find_high_sd_structures(
     structure_list: list[Atoms],
     base_name: str,
@@ -71,7 +79,7 @@ def find_high_sd_structures(
         and Path.exists(high_sd_structures_xyz_name)
     ):
         std_dev_df = pl.read_csv(std_dev_csv_name, ignore_errors=True)
-        high_sd_structures = read(high_sd_structures_xyz_name, ":", format="extxyz")
+        high_sd_structures = read_selection(high_sd_structures_xyz_name)
 
     else:
         std_dev_df = std_deviation_of_forces(
@@ -86,21 +94,28 @@ def find_high_sd_structures(
             if select_indices is not None
             else ranked[:effective_structures]
         )
+        if len(index_list) < effective_structures:
+            logger.warning(
+                "Only %d of the %d candidate(s) are not redundant with the "
+                "training set or each other, fewer than the %d requested "
+                "(general.num_of_structures_per_loop).",
+                len(index_list),
+                len(structure_list),
+                desired_structures,
+                extra={
+                    "event": "fewer_candidates",
+                    "data": {"n": len(index_list), "desired": desired_structures},
+                },
+            )
         high_sd_structures = [structure_list[i] for i in index_list]
 
-        for structure in high_sd_structures:
-            write(
-                str(
-                    Path(
-                        "results",
-                        base_name,
-                        job_dict["structure_generation"]["name"],
-                        "high_sd_structures.xyz",
-                    )
-                ),
-                structure.copy(),
-                append=True,
-            )
+        # Written once, even when empty: a restart reloads this file, and
+        # an empty selection is a valid result, not a missing one.
+        write(
+            str(high_sd_structures_xyz_name),
+            [structure.copy() for structure in high_sd_structures],
+            format="extxyz",
+        )
 
     logger.info(
         "Selected %d structures for DFT calculations based on force std dev.",

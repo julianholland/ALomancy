@@ -11,10 +11,21 @@ Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP
 - [x] README links go to the Read the Docs documentation, not the repo files
 - [x] Outdated examples: `name:` keys (now warned about), MACE-only predictions section generalised, docs config blocks tested
 - [x] Split CLAUDE.md into `docs/architecture/` per subsystem (replaces `remote_submission_architecture.md`), with a drift test
+- [x] A `name:` key in a config section warns that it is ignored
+- [x] Restore a database that sage_lib replaced under a live run on the next write (`database_recovered`)
+- [x] Redundancy removal: deduplicate-lib >= 0.1.3 (keep one per group), finer sweep with a minimum plateau width and a flagged-fraction cap, `general.redundancy_kwargs`, training-set-only pool, filters and curation before redundancy
+- [x] Replace redundant committee picks before DFT; an empty or short selection still writes `high_sd_structures.xyz` and logs `fewer_candidates`
+- [x] `GlobalDatabase.clear_duplicate_flags`
+- [x] `exempt_config_types` for `train_filter` / `test_filter`
+- [x] Best-model relative (percentage) error plot in the report
 
 ## 1.1 — production reliability and paper plots
 - [ ] DFT failure triage: classify, retry the retryable, report DFT yield per loop
 - [ ] Retry failed committee prediction jobs once, with a minimum
+- [ ] Prediction jobs ending with "remote status done but no _succeeded or _error" (committee_mace_qe, loop 3): find the cause
+- [ ] A loop that selects no structures for DFT: check that DFT and adding to the database handle an empty list, or skip them
+- [ ] Redundancy descriptor: `char_vec_128` has no usable plateau on amorphous data (the cap hits); try a per-atom-normalised RDF or SOAP
+- [ ] Upstream sage_lib: don't treat an HDF5 lock error as corruption (it renames the live files)
 - [ ] Validate EZGA settings at construction; EZGA `kwargs_schema`
 - [ ] Pin a tested `expyre-wfl` range; test the patched expyre attributes exist
 - [ ] Plotting overhaul: each plot at the right level (run-level like timings at the top, plug-in plots with their plug-in); `plots: true` calls every relevant module's plotting; `plot_loop` in the base class

@@ -413,6 +413,57 @@ class TestFindHighSdStructures:
         assert "5" in messages
 
     @pytest.mark.unit
+    @pytest.mark.parametrize("n_kept", [0, 1])
+    def test_short_selection_is_written_warned_and_reloaded(
+        self, tmp_path, monkeypatch, n_kept
+    ):
+        """A selector that keeps fewer than requested (none at all, when
+        every candidate is redundant) still writes the selection file, so a
+        restart reloads it, and logs fewer_candidates."""
+        import logging
+
+        from alomancy.structure_generation.find_high_sd_structures import (
+            find_high_sd_structures,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        structures = [self._make_structure(i) for i in range(10)]
+        out_dir = tmp_path / "results" / "loop_0" / "structure_generation"
+        out_dir.mkdir(parents=True)
+        kwargs = {
+            "structure_list": structures,
+            "base_name": "loop_0",
+            "job_dict": self._build_job_dict(),
+            "structure_forces_dict": self._build_forces_dict(structures),
+            "num_of_structures": 3,
+        }
+
+        al_logger = logging.getLogger("alomancy")
+        records: list[logging.LogRecord] = []
+
+        class _Collector(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Collector()
+        al_logger.addHandler(handler)
+        try:
+            result = find_high_sd_structures(
+                **kwargs,
+                read_xyz=False,
+                select_indices=lambda ranked, _n: ranked[:n_kept],
+            )
+        finally:
+            al_logger.removeHandler(handler)
+
+        assert len(result) == n_kept
+        events = [getattr(r, "event", None) for r in records]
+        assert "fewer_candidates" in events
+        assert (out_dir / "high_sd_structures.xyz").exists()
+        reloaded = find_high_sd_structures(**kwargs, read_xyz=True)
+        assert len(reloaded) == n_kept
+
+    @pytest.mark.unit
     def test_empty_structure_list_raises_value_error(self, tmp_path, monkeypatch):
         """No candidates at all: nothing to select from, so raise ValueError
         (never AssertionError — see CLAUDE.md's guard-with-ValueError

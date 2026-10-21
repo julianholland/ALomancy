@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `general.redundancy_kwargs`: `tolerance` (set the duplicate tolerance directly), `max_flagged_fraction` (default 0.5), `min_plateau_width` (default 0.0025 of the swept range) and `probe_steps_per_structure` (default 10). Checked when the workflow is built.
-- **Redundant picks are replaced before DFT.** The committee workflow now skips any candidate that end-of-loop redundancy removal would flag (too close to a training structure or to an earlier pick) and takes the next most uncertain one instead (event `selection_redundant_replaced`). Off with `remove_redundancy: false`.
+- **Redundant picks are replaced before DFT.** The committee workflow now skips any candidate that end-of-loop redundancy removal would flag (too close to a training structure or to an earlier pick) and takes the next most uncertain one instead (event `selection_redundant_replaced`). Off with `remove_redundancy: false`. If fewer non-redundant candidates remain than requested, the loop sends fewer (possibly none) to DFT and logs `fewer_candidates`; the selection file is written even when empty, so the loop can still be restarted.
+- **Relative-error plot in the loop report.** Under the best model's parity plot: energy error as a signed % of the DFT formation energy and force error as |ΔF|/|F| per atom, against the DFT value, with the median % per split. Energies with |formation energy| < 0.05 eV/atom and atoms with |F| < 0.1 eV/Å are left out. Large-force structures have large absolute errors; this shows whether they're also large relative ones.
+- `general.train_filter.exempt_config_types` / `general.test_filter.exempt_config_types`: config_types the whole filter skips, so a strict filter on AL structures doesn't also drop the initialization's high-force short-range data (dimers, trimers, stretched/compressed crystals). Off by default.
 - `GlobalDatabase.clear_duplicate_flags(config_types=None)` undoes redundancy flags, e.g. ones set by the old rule below. The workflow never calls it.
 
 ### Fixed

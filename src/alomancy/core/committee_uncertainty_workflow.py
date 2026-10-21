@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ase import Atoms
-from ase.io import read
 
 from alomancy.analysis.plotting import mae_al_loop_plot
 from alomancy.core.active_learning_workflow import (
@@ -36,6 +35,7 @@ from alomancy.core.active_learning_workflow import (
 )
 from alomancy.structure_generation.find_high_sd_structures import (
     find_high_sd_structures,
+    read_selection,
 )
 
 __all__ = ["CommitteeUncertaintyWorkflow", "build_workflow"]
@@ -57,7 +57,7 @@ def _load_high_sd(
     """generate_structures.done loader: the selection find_high_sd_structures
     wrote last time."""
     path = Path("results", ctx.base_name, _STRUCTURE_GENERATION_NAME, _HIGH_SD_FILENAME)
-    structures = list(read(path, ":", format="extxyz"))
+    structures = read_selection(path)
     logger.info("%d High SD structures loaded from file: %s", len(structures), path)
     return structures
 

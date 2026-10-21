@@ -3,7 +3,12 @@ written relative to the report file (``plots/<name>.png``)."""
 
 from pathlib import Path
 
-from alomancy.analysis.report.plots import STATUS_COLORS, STATUS_LABELS
+from alomancy.analysis.report.plots import (
+    PERCENT_ENERGY_FLOOR,
+    PERCENT_FORCE_FLOOR,
+    STATUS_COLORS,
+    STATUS_LABELS,
+)
 from alomancy.analysis.report.rules import Finding
 from alomancy.analysis.report.sections import Section, _fmt
 
@@ -67,6 +72,27 @@ def _warnings(stats: dict) -> int:
 
 # Kept upper case in image alt text built from a file name.
 _ACRONYMS = {"md": "MD", "dft": "DFT", "mae": "MAE", "go": "GO"}
+
+
+def _percent_error_lines(model: dict) -> list[str]:
+    """The median relative error of the best model per split, and what the
+    percentage-error plot leaves out."""
+    parts = []
+    for split, medians in (model.get("percent_error") or {}).items():
+        values = ", ".join(
+            f"{quantity} {medians[quantity]:.1f}%"
+            for quantity in ("energy", "force")
+            if quantity in medians
+        )
+        if values:
+            parts.append(f"{split} {values}")
+    lines = [f"Median relative error: {'; '.join(parts)}."] if parts else []
+    lines.append(
+        f"Energies with |formation energy| < {PERCENT_ENERGY_FLOOR} eV/atom and "
+        f"atoms with |F| < {PERCENT_FORCE_FLOOR} eV/Å are left out; force error "
+        "is |ΔF|/|F| per atom."
+    )
+    return lines
 
 
 def _image(path: Path, alt: str | None = None) -> str:
@@ -383,6 +409,10 @@ def render_markdown(
                 "the plot shows the training set only.",
                 "",
             ]
+        if "percent_error" in core_plots:
+            out += [*_percent_error_lines(model), ""]
+            out += [_image(core_plots["percent_error"], "Best model percentage error")]
+            out += [""]
     else:
         out += ["No predictions stored for this loop's best model.", ""]
     out += ["## Training set", "", *_dataset(stats), ""]

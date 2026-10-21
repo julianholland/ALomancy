@@ -293,6 +293,20 @@ def test_selected_structures_read_back_with_config_type(tmp_path):
 
 
 @pytest.mark.unit
+def test_restart_loads_an_empty_selection(tmp_path, monkeypatch):
+    """A loop whose selector kept nothing wrote an empty
+    high_sd_structures.xyz; the restart loader reads it as no structures
+    instead of failing."""
+    from alomancy.core.committee_uncertainty_workflow import _load_high_sd
+
+    monkeypatch.chdir(tmp_path)
+    sg_dir = tmp_path / "results/al_loop_0/structure_generation"
+    sg_dir.mkdir(parents=True)
+    write(sg_dir / "high_sd_structures.xyz", [], format="extxyz")
+    assert _load_high_sd(None, _ctx()) == []
+
+
+@pytest.mark.unit
 def test_moved_and_removed_keys_reported_together(jobs_dict, shared_db):
     jobs_dict["general"]["committee_uncertainty_kwargs"]["test_ratio"] = 0.1
     jobs_dict["general"]["high_force_threshold"] = 5.0

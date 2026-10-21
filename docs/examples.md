@@ -334,6 +334,7 @@ general:
   train_filter:
     max_force: 100.0                  # eV/Å; the default. null disables it
     formation_energy_per_atom: null   # off by default
+    exempt_config_types: ["init_dimer", "init_trimer", "init_stretch_compress"]
   test_filter:                        # off by default
     max_force: 20.0
     formation_energy_per_atom: [null, 1.0]   # eV/atom; null bound = open
@@ -341,6 +342,7 @@ general:
 
 - `max_force` excludes structures whose largest per-atom force is at or above the value.
 - `formation_energy_per_atom` keeps only structures inside `[min, max]` (inclusive), measured against the database's `IsolatedAtom` energies: `(E − Σ E_isolated) / n_atoms`, the same definition as the parity plots. Structures containing an element without an `IsolatedAtom` energy are not energy-filtered, and a warning says so.
+- `exempt_config_types` lists config_types the whole filter skips (both criteria), for example the initialization's dimers and stretched/compressed crystals, whose large forces are the short-range data MD needs. Exempt structures are counted in the filter's log line, and removing an exemption filters them again in the next loop.
 
 Excluded structures are flagged (`is_quality_filtered`, with the reason in `quality_filter_reasons`) and left out of `train_set.xyz`/`test_set.xyz`, training and test metrics. The flags are recomputed every loop, so loosening or removing a filter brings them back.
 

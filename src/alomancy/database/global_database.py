@@ -613,7 +613,6 @@ class GlobalDatabase:
         }
 
     @_guarded_write
-    @_guarded_write
     def set_metadata_bulk(self, updates: dict[int, dict]) -> None:
         """Merge *updates* ({positional index: {key: value}}) into container
         metadata. Callers outside this class write metadata through this,

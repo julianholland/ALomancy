@@ -494,6 +494,9 @@ def test_report_parity_recovers_test_predictions_from_older_files(
     assert "plots/best_model_parity.png" in _image_links(markdown)
     # The note appears whenever the test split is missing (next test).
     assert "No test-set predictions" not in markdown
+    assert "plots/best_model_percent_error.png" in _image_links(markdown)
+    assert "Median relative error: train energy" in markdown
+    assert "; test energy" in markdown
 
 
 @pytest.mark.unit
