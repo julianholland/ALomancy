@@ -1330,6 +1330,29 @@ class TestReplacedDatabaseRecovery:
         assert GlobalDatabase(str(db_path)).size == 3
 
     @pytest.mark.unit
+    def test_recovery_without_proc_uses_dev_fd(self, tmp_path, monkeypatch):
+        """macOS has no /proc: the open files are found through /dev/fd."""
+        import os
+
+        db_path = tmp_path / "db"
+        db = GlobalDatabase(str(db_path))
+        db.add_structures([_c_atoms(-1.0), _c_atoms(-2.0)])
+        self._replace_like_sage_lib(db_path, delete_backups=True)
+        listdir = os.listdir
+
+        def no_proc(path="."):
+            if str(path).startswith("/proc"):
+                raise FileNotFoundError(path)
+            return listdir(path)
+
+        monkeypatch.setattr(os, "listdir", no_proc)
+        db.add_structures([_c_atoms(-3.0)])
+        monkeypatch.undo()
+
+        assert _on_disk_count(db_path) == 3
+        assert GlobalDatabase(str(db_path)).size == 3
+
+    @pytest.mark.unit
     def test_metadata_write_after_replacement_is_kept(self, tmp_path):
         db_path = tmp_path / "db"
         db = GlobalDatabase(str(db_path))

@@ -2,7 +2,6 @@ import functools
 import json
 import logging
 import os
-import shutil
 import time
 from collections import Counter
 from datetime import datetime
@@ -127,9 +126,9 @@ class GlobalDatabase:
         Commits and checkpoints SQLite so its main file holds everything,
         moves whatever now sits at the paths aside to *.replaced_<ts>
         (never deleted: it may be another process's data), copies the open
-        files back through /proc/self/fd, and reopens. Raises RuntimeError
-        when the open files can't be reached (no /proc), rather than keep
-        writing where nothing will be saved.
+        files back through their descriptors (found via /proc/self/fd or
+        /dev/fd), and reopens. Raises RuntimeError when the open files can't
+        be reached, rather than keep writing where nothing will be saved.
         """
         store = self.partition._store
         n_before = self.partition.N
@@ -144,8 +143,8 @@ class GlobalDatabase:
                 f"The database at {self.db_path} was replaced on disk while this "
                 f"run had it open, and the open files can't be reached to "
                 f"recover it ({', '.join(missing)}). Before this process exits, "
-                f"copy its open database files from /proc/{os.getpid()}/fd/ "
-                "(ls -l shows which) back into "
+                f"copy its open database files (ls -l /proc/{os.getpid()}/fd/ "
+                f"on Linux, lsof -p {os.getpid()} elsewhere, shows which) back into "
                 f"{Path(missing[0]).parent}."
             )
 
@@ -158,7 +157,7 @@ class GlobalDatabase:
                     os.replace(sidecar, target)
                     moved.append(target)
         for path, ino in self._open_inodes.items():
-            shutil.copyfile(f"/proc/self/fd/{fds[ino]}", path)
+            _copy_fd(fds[ino], path)
 
         self.partition.close()
         self._open()
@@ -959,18 +958,37 @@ def _inode(path: str) -> tuple[int, int] | None:
 
 
 def _fds_by_inode(inodes: set[tuple[int, int]]) -> dict[tuple[int, int], int]:
-    """This process's open file descriptors for *inodes* (Linux /proc)."""
+    """This process's open file descriptors for *inodes*: listed from
+    /proc/self/fd on Linux, /dev/fd elsewhere (macOS)."""
     found: dict[tuple[int, int], int] = {}
-    try:
-        names = os.listdir("/proc/self/fd")
-    except OSError:
+    for fd_dir in ("/proc/self/fd", "/dev/fd"):
+        try:
+            names = os.listdir(fd_dir)
+        except OSError:
+            continue
+        break
+    else:
         return found
     for name in names:
         try:
-            st = os.stat(f"/proc/self/fd/{name}")
-        except OSError:
+            # fstat, not stat of the link: /dev/fd entries aren't symlinks,
+            # and the descriptor listdir itself used is closed by now.
+            st = os.fstat(int(name))
+        except (OSError, ValueError):
             continue
         key = (st.st_dev, st.st_ino)
         if key in inodes:
             found.setdefault(key, int(name))
     return found
+
+
+def _copy_fd(fd: int, path: str) -> None:
+    """Copy the whole file open as *fd* to *path*. pread reads from offset
+    0 without moving the descriptor's own position, which the open
+    database still uses."""
+    chunk = 1 << 20
+    offset = 0
+    with open(path, "wb") as out:
+        while data := os.pread(fd, chunk, offset):
+            out.write(data)
+            offset += len(data)
