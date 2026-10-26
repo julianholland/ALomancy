@@ -2,8 +2,9 @@
 
 Every ALomancy run needs an initial set of DFT-labelled structures before the
 first committee can be trained. `general.start_from` says where those come
-from. There are four start modes, and the mode is picked automatically from
-which keys you give.
+from. Each source key takes one path or a list of paths, and sources can be
+combined: everything listed goes into the starting dataset. The start mode
+is named after which keys you give.
 
 ## Choosing a start mode
 
@@ -12,6 +13,7 @@ which keys you give.
 | `train_xyz` + `test_xyz` | Pre-split files | Both files are imported. Every structure in `train_xyz` is training data and every structure in `test_xyz` is test data, exactly as given. |
 | `xyz` (one path or a list) | Single file | The file(s) are imported, then split into train/test by `test_ratio` (see [Train/test split](#train-test-split)). |
 | `database` | Former ALomancy database | A **copy** of a previous run's `global_database` is imported, keeping its `config_type`, train/test split and duplicate flags. The old database is never modified. |
+| More than one of the above | Combined | Every source is imported (order below), each keeping the split rule of its kind. |
 | *(no `start_from`)* | Cold start | Nothing is imported. ALomancy generates and DFT-evaluates the whole initial dataset itself. |
 
 When to use each:
@@ -19,9 +21,10 @@ When to use each:
 - **Pre-split files:** you already have a train/test split you want to keep, e.g. from a paper or from another ALomancy run's `results/initialization/train_set.xyz` and `test_set.xyz`.
 - **Single file:** you have one pile of DFT data and want ALomancy to hold out a test set.
 - **Former database:** you are starting a new run (new settings, new results directory) on top of everything an earlier run computed.
+- **Combined:** you want several of these at once, e.g. two earlier runs' databases plus a published dataset.
 - **Cold start:** you have no data yet.
 
-Giving more than one source (e.g. `xyz` and `database`), or only one of `train_xyz`/`test_xyz`, is an error at start-up.
+Sources are imported in this order: every `database`, then `train_xyz`/`test_xyz`, then `xyz`, each list in the order given. Structures of the exactly deduplicated types (`IsolatedAtom`, `init_MP`) are kept from the first source that has them, so a former run's isolated-atom energies win over an xyz file's. Giving only one of `train_xyz`/`test_xyz` is an error at start-up.
 
 ## Examples
 
@@ -66,6 +69,21 @@ general:
     target_config_types: ["init_MP", "init_amorphous"]
 ```
 
+Combined: two former runs' databases plus two xyz files, split by `test_ratio`:
+
+```yaml
+general:
+  elements: ["C"]
+  start_from:
+    database:
+      - "../init_run/results/global_database"
+      - "../other_run/results/global_database"
+    xyz: ["data/carbon_dft.xyz", "data/carbon_extra.xyz"]
+  dataset_kwargs:
+    test_ratio: 0.1
+    target_config_types: ["init_MP", "init_amorphous", "external"]
+```
+
 Cold start: leave `start_from` out.
 
 ```yaml
@@ -78,7 +96,7 @@ general:
 
 ## What every mode does next
 
-After the import, all four modes follow the same path:
+After the import, every mode follows the same path:
 
 1. **Import into this run's database** (`results/global_database`). Imports are idempotent. Each xyz file's SHA-256 (and a database's path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in `general.elements` are dropped at import, with one warning per source giving the count (event `start_from_elements_excluded`). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to `general.elements` later does not bring back structures that an earlier import excluded. To get them, start a fresh run.
 2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section. Leave the `initialization` section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (`initialization: {}`) to use the defaults.
@@ -111,6 +129,7 @@ Metadata that belongs to the run that wrote the file is dropped on import: train
 | Pre-split files | As given: `train_xyz` → train, `test_xyz` → test. |
 | Former database | The imported database's own `split` tags are kept (its quality-filter flags are recomputed by this run's `train_filter`/`test_filter`). |
 | Single file | `test_ratio` of the structures whose `config_type` is in `target_config_types` go to test; everything else trains. At least one structure of each targeted type stays in training. |
+| Combined | Each structure follows the rule of the source it came from: database and pre-split structures keep their split, `xyz` structures are split by `test_ratio` together. |
 | Cold start | Same rule as a single file. |
 
 Structures generated to fill gaps have no split yet, so they follow the single-file rule in every mode.
@@ -138,8 +157,8 @@ Two behaviors differ from the old fast path. `initial_train_file_path`/`initial_
 
 | Error message (start) | Cause | Fix |
 |---|---|---|
-| `general.start_from has more than one data source` | e.g. both `xyz` and `database` given | Keep one source. |
-| `general.start_from.train_xyz and test_xyz must be given together` | Only one of the pair | Add the other, or use `xyz` for a single file to be split. |
+| `general.start_from.<key> must be a path or a list of paths` | An empty list, or an entry that isn't a path | Give one path or a non-empty list of paths. |
+| `general.start_from.train_xyz and test_xyz must be given together` | Only one of the pair | Add the other, or use `xyz` for files to be split. |
 | `Unknown general.start_from key(s)` | Typo | Allowed keys: `train_xyz`, `test_xyz`, `xyz`, `database`, `metadata_map`. |
 | `general.start_from.metadata_map only applies to xyz imports` | `metadata_map` with `database` or a cold start | Remove `metadata_map`; databases already use ALomancy's keys. |
 | `Could not find DFT labels for N structure(s)` | Energy or forces under an unrecognised key | Name the keys with `start_from.metadata_map.energy` / `.forces`. |

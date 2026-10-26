@@ -1268,6 +1268,12 @@ class TestParseStartFrom:
             ({"xyz": "a.xyz"}, "single_xyz"),
             ({"xyz": ["a.xyz", "b.xyz"]}, "single_xyz"),
             ({"database": "old/global_database"}, "database"),
+            ({"database": ["a/global_database", "b/global_database"]}, "database"),
+            ({"xyz": "a.xyz", "database": "db"}, "combined"),
+            (
+                {"train_xyz": "a.xyz", "test_xyz": "b.xyz", "xyz": ["c.xyz"]},
+                "combined",
+            ),
         ],
     )
     def test_mode_detected_from_keys(self, start_from, mode):
@@ -1279,8 +1285,9 @@ class TestParseStartFrom:
         ("start_from", "match"),
         [
             ({"train_xyz": "a.xyz"}, "must be given together"),
-            ({"xyz": "a.xyz", "database": "db"}, "more than one data source"),
-            ({"train_xyz": "a", "test_xyz": "b", "xyz": "c"}, "more than one"),
+            ({"database": []}, "database must be a path or a list"),
+            ({"train_xyz": ["a.xyz"], "test_xyz": [3]}, "test_xyz must be a path"),
+            ({"xyz": ["a.xyz", ""]}, "xyz must be a path"),
             ({"databse": "db"}, "Unknown general.start_from"),
             ({"database": "db", "metadata_map": {"energy": "e"}}, "only applies"),
             ({"xyz": []}, "path or a list"),
@@ -1291,6 +1298,23 @@ class TestParseStartFrom:
 
         with pytest.raises(ValueError, match=match):
             _parse_start_from(start_from)
+
+    def test_every_source_is_normalised_to_a_list(self):
+        from alomancy.core.active_learning_workflow import _parse_start_from
+
+        _mode, parsed = _parse_start_from(
+            {
+                "database": "db",
+                "train_xyz": "a.xyz",
+                "test_xyz": ["b.xyz", "c.xyz"],
+                "xyz": Path("d.xyz"),
+            }
+        )
+
+        assert parsed["database"] == ["db"]
+        assert parsed["train_xyz"] == ["a.xyz"]
+        assert parsed["test_xyz"] == ["b.xyz", "c.xyz"]
+        assert parsed["xyz"] == ["d.xyz"]
 
     @pytest.mark.parametrize(
         ("section", "key", "replacement"),
@@ -1324,7 +1348,7 @@ def _starting_a_run_examples() -> list[dict]:
 @pytest.mark.unit
 def test_docs_start_examples_build_workflows(tmp_path, minimal_jobs_dict, shared_db):
     """Every YAML example in docs/starting_a_run.md is a valid config, and
-    together they cover all four start modes."""
+    together they cover every start mode."""
     from alomancy.core.committee_uncertainty_workflow import build_workflow
 
     examples = _starting_a_run_examples()
@@ -1336,7 +1360,7 @@ def test_docs_start_examples_build_workflows(tmp_path, minimal_jobs_dict, shared
         wf = build_workflow(jobs_dict=jobs_dict)
         wf.db = shared_db
         modes.add(wf.start_mode)
-    assert modes == {"split_files", "single_xyz", "database", "cold"}
+    assert modes == {"split_files", "single_xyz", "database", "combined", "cold"}
 
 
 @pytest.mark.unit
@@ -1572,6 +1596,63 @@ class TestStartModes:
         assert sorted(a.info["source_global_db_id"] for a in copied) == [0, 1, 2]
         assert not any(k.startswith("model_") for a in copied for k in a.info)
         assert GlobalDatabase(str(tmp_path / "old_run" / "global_database")).size == 3
+
+    def test_databases_and_xyz_files_combine(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """Every source is imported; databases first, so their isolated-atom
+        energy wins over an xyz file's, and their split tags are kept."""
+        from alomancy.database.global_database import GlobalDatabase
+
+        def isolated(energy: float) -> Atoms:
+            a = Atoms("H", cell=[6] * 3, pbc=True)
+            a.info["REF_energy"] = energy
+            a.arrays["REF_forces"] = np.zeros((1, 3))
+            a.info["config_type"] = "IsolatedAtom"
+            return a
+
+        monkeypatch.chdir(tmp_path)
+        first = GlobalDatabase(str(tmp_path / "run_a" / "global_database"))
+        first.add_structures([_labelled(0), isolated(-0.5)], split="train")
+        first.add_structures([_labelled(1)], split="test")
+        second = GlobalDatabase(str(tmp_path / "run_b" / "global_database"))
+        second.add_structures([_labelled(2)], split="train")
+        write("one.xyz", [_labelled(i) for i in range(3, 8)], format="extxyz")
+        write(
+            "two.xyz",
+            [*(_labelled(i) for i in range(8, 13)), isolated(-0.6)],
+            format="extxyz",
+        )
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        workflow_jobs_dict["general"]["dataset_kwargs"]["test_ratio"] = 0.2
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={
+                "database": ["run_a/global_database", "run_b/global_database"],
+                "xyz": ["one.xyz", "two.xyz"],
+            },
+        )
+        assert wf.start_mode == "combined"
+
+        train, test = self._init(wf)
+        self._init(wf)  # a restart imports nothing again
+
+        # 3 + 1 from the databases, 10 from the files; the files' H atom is
+        # a duplicate of the first database's.
+        assert shared_db.size == 14
+        assert len(train) + len(test) == 14
+        assert shared_db.get_isolated_atom_energies() == {"H": -0.5}
+        from_databases = sorted(
+            a.info["split"]
+            for a in shared_db.get_all_as_atoms()
+            if "source_database" in a.info
+            and a.info.get("config_type") == "init_amorphous"
+        )
+        assert from_databases == ["test", "train", "train"]
+        from_files = [a for a in test if "source_dataset_sha256" in a.info]
+        assert len(from_files) == 2
 
     def test_warm_start_generates_only_missing_targets(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db

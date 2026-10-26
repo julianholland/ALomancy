@@ -49,6 +49,7 @@ keys that the schema can't check. This started with yun_an
     `target_config_types` against the database. A typo silently matches nothing.
   - The committee workflow tags its picks `high_sd`; initialization types are
     `init_*` and `IsolatedAtom`.
+  - `selectable_configs` always includes `high_sd`, whether listed or not.
 
 ### Settings that have no effect
 
@@ -148,9 +149,11 @@ The file builds without errors. The only warning is about the ignored `name:` ke
      set on a copy of the database, against 1698 with none.
 7. **`selectable_configs: ["init_amorphous", "amorphous"]`: no structure has
    `config_type` "amorphous".**
-   - The database has `high_sd`, `init_*` and `IsolatedAtom`. MD seeds therefore only
-     ever come from the 87 `init_amorphous` structures.
-   - Add `"high_sd"` if AL picks should seed MD.
+   - The database has `high_sd`, `init_*` and `IsolatedAtom`, so that entry matches
+     nothing. It does no harm.
+   - AL picks already seed MD: `seed_selection.py` always adds `"high_sd"` to
+     `selectable_configs`. Seeds come from the 87 `init_amorphous` structures plus every
+     `high_sd` pick.
 8. **`friction: 0.002` is a weak thermostat** (about 5 ps, see above). It only matters
    under NVT. 0.02 gives about 0.5 ps.
 9. **`test_filter`** (`max_force: 5`, formation energy up to 2.5) keeps throwing away

@@ -61,9 +61,10 @@ lives as a direct child of `general` (see
 `_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
 `elements`, since none of these are specific to one AL workflow. Every key
 falls back to its old constructor default. Where the run's first
-structures come from is `general.start_from` (warm start from train/test
-xyz files, a single xyz file, or a former run's database; cold start when
-absent -- see `_parse_start_from` and docs/starting_a_run.md).
+structures come from is `general.start_from` (warm start from any mix of
+train/test xyz files, xyz files to split and former runs' databases, each
+key a path or a list; cold start when absent -- see `_parse_start_from` and
+docs/starting_a_run.md).
 `general.train_filter`/`general.test_filter` exclude poor-quality DFT
 structures from each split (utils/split_filter.py; the train filter's
 `max_force` defaults to 100 eV/Angstrom, everything else is off), and
@@ -550,23 +551,41 @@ def _find_removed_keys(jobs_dict: dict) -> list[str]:
     return found
 
 
-# general.start_from: where the run's first structures come from. Which
-# source keys are present picks the mode (see docs/starting_a_run.md).
-_START_FROM_KEYS = frozenset(
-    {"train_xyz", "test_xyz", "xyz", "database", "metadata_map"}
-)
+# general.start_from: where the run's first structures come from. Each
+# source key takes a path or a list of paths, and sources can be combined
+# (see docs/starting_a_run.md).
+_START_FROM_SOURCE_KEYS = ("database", "train_xyz", "test_xyz", "xyz")
+_START_FROM_KEYS = frozenset({*_START_FROM_SOURCE_KEYS, "metadata_map"})
 START_MODE_SPLIT_FILES = "split_files"
 START_MODE_SINGLE_XYZ = "single_xyz"
 START_MODE_DATABASE = "database"
+START_MODE_COMBINED = "combined"
 START_MODE_COLD = "cold"
+
+
+def _start_from_paths(key: str, value: Any) -> list[str]:
+    """general.start_from.<key> as a non-empty list of path strings."""
+    paths = [value] if isinstance(value, str | os.PathLike) else value
+    if (
+        not isinstance(paths, list)
+        or not paths
+        or not all(isinstance(p, str | os.PathLike) and str(p) for p in paths)
+    ):
+        raise ValueError(
+            f"general.start_from.{key} must be a path or a list of paths, "
+            f"got {value!r}."
+        )
+    return [str(p) for p in paths]
 
 
 def _parse_start_from(start_from: Any) -> tuple[str, dict]:
     """Validate general.start_from and return ``(mode, start_from)``.
 
-    Modes: train_xyz + test_xyz -> split_files; xyz (a path or list of
-    paths) -> single_xyz; database -> database; none -> cold. More than one
-    source, or half of the train/test pair, raises ValueError.
+    Every source key (database, train_xyz/test_xyz, xyz) takes a path or a
+    list of paths and is returned as a list. Sources can be combined. The
+    mode names what was given: split_files (train_xyz + test_xyz),
+    single_xyz (xyz), database, combined (more than one of these) or cold
+    (none). Half of the train/test pair raises ValueError.
     """
     if start_from is None:
         start_from = {}
@@ -582,40 +601,31 @@ def _parse_start_from(start_from: Any) -> tuple[str, dict]:
     if has_train != has_test:
         raise ValueError(
             "general.start_from.train_xyz and test_xyz must be given together "
-            "(use start_from.xyz for a single file to be split)."
-        )
-    sources = [
-        name
-        for name, present in (
-            ("train_xyz + test_xyz", has_train),
-            ("xyz", "xyz" in start_from),
-            ("database", "database" in start_from),
-        )
-        if present
-    ]
-    if len(sources) > 1:
-        raise ValueError(
-            f"general.start_from has more than one data source ({', '.join(sources)}); "
-            "choose one."
+            "(use start_from.xyz for files to be split)."
         )
     if "metadata_map" in start_from and not (has_train or "xyz" in start_from):
         raise ValueError(
             "general.start_from.metadata_map only applies to xyz imports "
             "(train_xyz/test_xyz or xyz)."
         )
-    if has_train:
-        return START_MODE_SPLIT_FILES, start_from
-    if "xyz" in start_from:
-        xyz = start_from["xyz"]
-        paths = [xyz] if isinstance(xyz, str) else xyz
-        if not isinstance(paths, list) or not paths:
-            raise ValueError(
-                "general.start_from.xyz must be a path or a list of paths."
-            )
-        return START_MODE_SINGLE_XYZ, {**start_from, "xyz": paths}
-    if "database" in start_from:
-        return START_MODE_DATABASE, start_from
-    return START_MODE_COLD, start_from
+    parsed = dict(start_from)
+    for key in _START_FROM_SOURCE_KEYS:
+        if key in parsed:
+            parsed[key] = _start_from_paths(key, parsed[key])
+    kinds = [
+        mode
+        for mode, present in (
+            (START_MODE_DATABASE, "database" in parsed),
+            (START_MODE_SPLIT_FILES, has_train),
+            (START_MODE_SINGLE_XYZ, "xyz" in parsed),
+        )
+        if present
+    ]
+    if not kinds:
+        return START_MODE_COLD, parsed
+    if len(kinds) > 1:
+        return START_MODE_COMBINED, parsed
+    return kinds[0], parsed
 
 
 # general keys every workflow accepts; a workflow adds its own KWARGS_KEY.
@@ -1390,17 +1400,20 @@ class ActiveLearningWorkflow(ABC):
 
     def _import_start_data(self) -> None:
         """Bring general.start_from's data into the global DB. Every mode
-        then continues through the same DB-driven initialization."""
-        if self.start_mode == START_MODE_SPLIT_FILES:
-            self._import_xyz(self.start_from["train_xyz"], split="train")
-            self._import_xyz(self.start_from["test_xyz"], split="test")
-        elif self.start_mode == START_MODE_SINGLE_XYZ:
-            for path in self.start_from["xyz"]:
-                self._import_xyz(path)
-        elif self.start_mode == START_MODE_DATABASE:
-            self.db.import_from_database(
-                self.start_from["database"], elements=self._required_elements()
-            )
+        then continues through the same DB-driven initialization.
+
+        Databases are imported first, then train_xyz/test_xyz, then xyz,
+        each list in order. Exact-duplicate types (IsolatedAtom, init_MP)
+        keep the first import's copy, so a former run's isolated-atom
+        energies win over an xyz file's."""
+        for path in self.start_from.get("database", []):
+            self.db.import_from_database(path, elements=self._required_elements())
+        for path in self.start_from.get("train_xyz", []):
+            self._import_xyz(path, split="train")
+        for path in self.start_from.get("test_xyz", []):
+            self._import_xyz(path, split="test")
+        for path in self.start_from.get("xyz", []):
+            self._import_xyz(path)
         logger.info(
             "Start mode: %s (global DB now holds %d structures).",
             self.start_mode,
@@ -1539,7 +1552,7 @@ class ActiveLearningWorkflow(ABC):
 
         target_config_types = set(self.dataset_kwargs["target_config_types"])
         if (
-            self.start_mode == START_MODE_SINGLE_XYZ
+            self.start_from.get("xyz")
             and not test_xyzs
             and EXTERNAL_CONFIG_TYPE not in target_config_types
             and any(a.info.get("config_type") == EXTERNAL_CONFIG_TYPE for a in untagged)
