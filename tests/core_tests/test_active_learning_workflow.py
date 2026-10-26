@@ -85,6 +85,7 @@ def _make_workflow(tmp_path, jobs_dict, shared_db, **general_overrides):
     lazy `db` property/setter, which never pays for the real
     GlobalDatabase(db_path) construction this replaces."""
     general = jobs_dict.setdefault("general", {})
+    general.setdefault("elements", ["H"])
     general.setdefault(
         "dataset_kwargs",
         {"test_ratio": 0.1, "target_config_types": ["IsolatedAtom"]},
@@ -123,6 +124,54 @@ def _atoms(symbol="H", config_type="init_dimer"):
 
 
 # ---------------------------------------------------------------------------
+# general.elements
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRequiredElements:
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            ("Ni", ["Ni"]),
+            (["C", "O"], ["C", "O"]),
+        ],
+    )
+    def test_normalizes_valid_elements(
+        self, tmp_path, minimal_jobs_dict, shared_db, configured, expected
+    ):
+        wf = _make_workflow(
+            tmp_path,
+            minimal_jobs_dict,
+            shared_db,
+            elements=configured,
+        )
+
+        assert wf._required_elements() == expected
+        assert wf.jobs_dict["general"]["elements"] == expected
+
+    @pytest.mark.parametrize(
+        ("configured", "message"),
+        [
+            ("CO", "Invalid chemical element"),
+            (["Ni", "Invalid"], "Invalid chemical element"),
+            ([], "must not be empty"),
+            (["Ni", "Ni"], "duplicate chemical symbols"),
+        ],
+    )
+    def test_rejects_invalid_elements(
+        self, tmp_path, minimal_jobs_dict, shared_db, configured, message
+    ):
+        with pytest.raises(ValueError, match=message):
+            _make_workflow(
+                tmp_path,
+                minimal_jobs_dict,
+                shared_db,
+                elements=configured,
+            )
+
+
+# ---------------------------------------------------------------------------
 # build_workflow
 # ---------------------------------------------------------------------------
 
@@ -140,6 +189,7 @@ class TestBuildWorkflow:
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
         minimal_jobs_dict["general"] = {
+            "elements": ["H"],
             "dataset_kwargs": {
                 "test_ratio": 0.1,
                 "target_config_types": ["IsolatedAtom"],
@@ -158,6 +208,7 @@ class TestBuildWorkflow:
         committee = {"test_ratio": 0.1, "target_config_types": ["IsolatedAtom"]}
         del committee[missing]
         minimal_jobs_dict["general"] = {
+            "elements": ["H"],
             "dataset_kwargs": committee,
         }
         with pytest.raises(ValueError, match=missing):
@@ -1090,6 +1141,8 @@ class TestGenerateCandidates:
             result = wf.generate_candidates(_ctx(0, train=[_atoms()]), _model(1))
 
         spec = fake_generator.generate.call_args.args[1]
+        call_kwargs = fake_generator.generate.call_args.kwargs
+        assert call_kwargs["elements"] == ["H"]
         # The generator builds the trained model's calculator through the
         # trainer that trained it (training.trainer), not one of its own.
         assert spec == CalculatorSpec(
@@ -1097,6 +1150,31 @@ class TestGenerateCandidates:
             trainer_config=wf.training_config,
             model_path="model_1.pt",
         )
+        assert len(result) == 1
+
+    def test_dispatches_canonicalized_scalar_elements(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = _make_workflow(
+            tmp_path,
+            minimal_jobs_dict,
+            shared_db,
+            elements="Ni",
+        )
+
+        fake_generator = MagicMock()
+        fake_generator.generate.return_value = [_atoms("Ni")]
+
+        with patch(f"{_MODULE}.resolve", return_value=fake_generator):
+            result = wf.generate_candidates(
+                _ctx(0, train=[_atoms("Ni")]),
+                _model(0),
+            )
+
+        call_kwargs = fake_generator.generate.call_args.kwargs
+        assert call_kwargs["elements"] == ["Ni"]
+        assert wf.jobs_dict["general"]["elements"] == ["Ni"]
         assert len(result) == 1
 
 
@@ -1855,6 +1933,7 @@ class TestRun:
             patch(f"{_MODULE}._evaluator_orchestrate", return_value=[]),
             patch(f"{_MODULE}.write"),
         ):
+            wf._write_run_config()
             wf.run()
 
         # Resumed past loop 0 -- initialize_training_set is skipped entirely,
@@ -2523,3 +2602,34 @@ def test_md_explores_with_the_calculator_of_the_trained_mlip(
 
     assert _NotMaceTrainer.built_on == [str(model_file)] * 2  # once per MD run
     assert len(candidates) > 0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("changed_setting", ["elements", "ezga_kwargs"])
+def test_restart_rejects_changed_config(
+    tmp_path, minimal_jobs_dict, monkeypatch, shared_db, changed_setting
+):
+    monkeypatch.chdir(tmp_path)
+    wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+    wf.jobs_dict["structure_generation"]["generator"] = "ezga"
+
+    wf._write_run_config()
+    config_path = Path("results/run_config.yaml")
+    saved_config = config_path.read_text()
+    wf._mark_phase_done("al_loop_0", "generate_structures")
+
+    if changed_setting == "elements":
+        wf.jobs_dict["general"]["elements"] = ["He"]
+    else:
+        wf.jobs_dict["structure_generation"].setdefault("ezga_kwargs", {})[
+            "max_generations"
+        ] = 30
+
+    with (
+        patch.object(wf, "pre_run_checks") as pre_run_checks,
+        pytest.raises(ValueError, match="Run configuration changed"),
+    ):
+        wf.prepare_run()
+
+    pre_run_checks.assert_not_called()
+    assert config_path.read_text() == saved_config

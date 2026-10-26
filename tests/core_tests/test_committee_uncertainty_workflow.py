@@ -235,6 +235,7 @@ def test_resumes_existing_mid_loop_results_without_redoing_work(
         loop1 / "structure_generation/high_sd_structures.xyz", selected, format="extxyz"
     )
     wf = _workflow(jobs_dict, shared_db)
+    wf._write_run_config()
 
     fake_trainer = MagicMock()
     fake_trainer.read_existing_result.side_effect = lambda *a, **kw: (
@@ -342,6 +343,8 @@ def test_resumes_after_dft_without_rerunning_any_step(
         )
     write(loop1 / "high_accuracy_eval_results.xyz", evaluated, format="extxyz")
     wf = _workflow(jobs_dict, shared_db)
+    wf._write_run_config()
+
     fake_trainer = MagicMock()
     fake_trainer.read_existing_result.side_effect = lambda *a, **kw: (
         f"fit_{kw['fit_idx']}.model",

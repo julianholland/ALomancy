@@ -186,6 +186,7 @@ from typing import Any, ClassVar, TypeVar, cast
 import numpy as np
 import polars as pl
 from ase import Atoms
+from ase.data import atomic_numbers
 from ase.io import read, write
 
 from alomancy.configs.hpc_profiles import format_table, hpc_profile_row
@@ -1002,10 +1003,13 @@ class ActiveLearningWorkflow(ABC):
 
     def __init__(self, jobs_dict: dict):
         self.jobs_dict = jobs_dict
+        general_config = jobs_dict.get("general", {})
+
+        general_config["elements"] = self._required_elements()
+
         if jobs_dict.get("dataset_curation"):
             validate_policy(jobs_dict["dataset_curation"])
 
-        general_config = jobs_dict.get("general", {})
         general_kwargs = {**_GENERAL_KWARGS_DEFAULTS, **general_config}
 
         # The config, not the class a caller happened to import, picks the
@@ -1380,13 +1384,39 @@ class ActiveLearningWorkflow(ABC):
         return added
 
     def _required_elements(self) -> list[str]:
-        elements = self.jobs_dict.get("general", {}).get("elements")
-        if not elements:
+        raw_elements = self.jobs_dict.get("general", {}).get("elements")
+
+        if isinstance(raw_elements, str):
+            elements = [raw_elements]
+        elif isinstance(raw_elements, list):
+            elements = list(raw_elements)
+        else:
             raise ValueError(
-                "general.elements is required (list of atomic symbols, e.g. "
-                '["C", "O"]).'
+                "general.elements is required and must be a chemical symbol or a non-empty list "
+                'of chemical symbols, e.g. "Ni" or ["C", "O"].'
             )
-        return list(elements)
+
+        if not elements:
+            raise ValueError("general.elements must not be empty.")
+
+        invalid = [
+            element
+            for element in elements
+            if not isinstance(element, str)
+            or element == "X"
+            or element not in atomic_numbers
+        ]
+        if invalid:
+            raise ValueError(
+                f"Invalid chemical element(s) in general.elements: {invalid}."
+            )
+
+        if len(elements) != len(set(elements)):
+            raise ValueError(
+                f"general.elements contains duplicate chemical symbols: {elements}."
+            )
+
+        return elements
 
     def _import_start_data(self) -> None:
         """Bring general.start_from's data into the global DB. Every mode
@@ -1765,6 +1795,61 @@ class ActiveLearningWorkflow(ABC):
         mapping every run has used, so cached fits stay valid."""
         return [self.seed + i for i in range(n)]
 
+    def _validate_restart_config(self) -> None:
+        """Reject incompatible configuration before reusing completed phases."""
+        import yaml
+
+        path = Path("results", "run_config.yaml")
+        if not path.exists():
+            if any(path.parent.glob("*/*.done")):
+                raise ValueError(
+                    "Cannot validate this restart: results/run_config.yaml "
+                    "is missing but completed phases exist. Use a new run directory."
+                )
+            return
+
+        try:
+            previous = yaml.safe_load(path.read_text())
+            current = yaml.safe_load(yaml.safe_dump(self.jobs_dict))
+        except (OSError, yaml.YAMLError) as exc:
+            raise ValueError(
+                f"Cannot validate the saved run configuration at {path}."
+            ) from exc
+
+        if not isinstance(previous, dict) or not isinstance(current, dict):
+            raise ValueError("Run configurations must be YAML mappings.")
+
+        # These settings control execution/output, not cached scientific results.
+        runtime_keys = (
+            "num_of_al_loops",
+            "start_loop",
+            "train_only",
+            "verbose",
+            "log_file",
+            "plots",
+            "report",
+            "report_suggestions",
+        )
+        for config in (previous, current):
+            general = config.get("general", {})
+            if not isinstance(general, dict):
+                raise ValueError("general must be a YAML mapping.")
+            config["general"] = {**_GENERAL_KWARGS_DEFAULTS, **general}
+            for key in runtime_keys:
+                config["general"].pop(key, None)
+
+        changed = sorted(
+            key
+            for key in previous.keys() | current.keys()
+            if previous.get(key) != current.get(key)
+        )
+        if changed:
+            raise ValueError(
+                "Run configuration changed in section(s): "
+                f"{', '.join(changed)}. Cached phases may be incompatible. "
+                "Use a new run directory; keep the existing results unchanged."
+            )
+
     def _write_run_config(self) -> None:
         """Save the resolved config as results/run_config.yaml, so
         `alomancy report` can rebuild this run's reports later. Best effort:
@@ -1784,6 +1869,8 @@ class ActiveLearningWorkflow(ABC):
         train/test set (cold/warm start, see general.start_from), followed
         by redundancy removal, the train/test filters and curation. Returns
         the first loop to run."""
+        self._validate_restart_config()
+
         if self.jobs_dict.get("dataset_curation"):
             policy_path = Path("results/curation_policy.json")
             policy = json.dumps(
@@ -2225,6 +2312,7 @@ class ActiveLearningWorkflow(ABC):
         drop candidates with unphysically short bonds. The generator caches
         its own candidates file for restarts."""
         sg_config = self.jobs_dict["structure_generation"]
+        elements = self._required_elements()
         selection_kwargs = sg_config.get("structure_selection_kwargs", {})
         eligible = filter_eligible_structures(
             ctx.train,
@@ -2239,6 +2327,7 @@ class ActiveLearningWorkflow(ABC):
             eligible,
             self.calculator_spec(model),
             sg_config,
+            elements=elements,
             base_name=ctx.base_name,
             name=_STRUCTURE_GENERATION_NAME,
             hpc=sg_config["hpc"],

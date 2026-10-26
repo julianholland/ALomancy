@@ -356,6 +356,7 @@ def generate(
     calculator_spec: CalculatorSpec,
     config: dict,
     *,
+    elements: list[str],  # noqa: ARG001 -- common generator interface
     base_name: str,
     name: str,
     hpc: dict,

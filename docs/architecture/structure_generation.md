@@ -32,7 +32,7 @@ Settings live in `structure_generation.md_kwargs` (schema from `run_md`'s signat
 - It uses the single best model (the `rank_committee` pick, as MD does).
 - `structure_generation.ezga_kwargs`: `max_generations`/`population_size` (default 2 each), `min_atoms`/`max_atoms` (default 2/41; every seed must be in range or `run_ezga` raises before calling EZGA), `mutation_operators` (override any of `rattle`, `random_strain`, `add`, `remove`, `remove_add`; an unknown name or disabling all of them raises).
 - `bounded_mutation_add`/`bounded_mutation_remove` clamp EZGA's `add`/`remove` to `[min_atoms, max_atoms]` (returning `None`, a no-op mutation). `objective_energy_per_atom` treats unevaluated seeds' NaN energies as 0.0, as EZGA does.
-- `build_ezga_config`/`build_mutation_configs` translate the settings into EZGA's YAML. Output in `results/<base>/structure_generation/ezga/`: `initial_population.xyz`, `ezga_config.yaml`, `ezga_candidates.xyz`, EZGA's population database (`db`/`db_ro`).
+- `build_ezga_config`/`build_mutation_configs` translate the settings into EZGA's YAML. Output in `results/<base>/structure_generation/ezga/`: `initial_population.xyz`, `ezga_config.yaml`, `ezga_new_candidates.xyz`, EZGA's population database (`db`/`db_ro`).
 
 ## Committee uncertainty selection
 

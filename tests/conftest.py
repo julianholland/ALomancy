@@ -184,6 +184,9 @@ def sample_xyz_file(tmp_path, h2o_mol, h_atom):
 @pytest.fixture
 def minimal_jobs_dict():
     return {
+        "general": {
+            "elements": ["H"],
+        },
         "initialization": {
             "name": "initialization",
             "max_time": "1H",

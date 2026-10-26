@@ -139,6 +139,7 @@ class TestGenerate:
                 seed_atoms=seeds,
                 calculator_spec=_SPEC,
                 config={},
+                elements=["H"],
                 base_name="al_loop_0",
                 name="md",
                 hpc={},
@@ -170,6 +171,7 @@ class TestGenerate:
                 config={
                     "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 3}}
                 },
+                elements=["H"],
                 base_name="al_loop_0",
                 name="md",
                 hpc={"hpc_name": "test"},
@@ -220,6 +222,7 @@ class TestGenerate:
                         "structure_selection_kwargs": {"num_of_md_starts": 3},
                     }
                 },
+                elements=["H"],
                 base_name="al_loop_0",
                 name="md",
                 hpc={},
@@ -253,6 +256,7 @@ class TestGenerate:
             generate(
                 seed_atoms=_seed_atoms(3),
                 calculator_spec=_SPEC,
+                elements=["H"],
                 config={},
                 base_name="al_loop_0",
                 name="md",
@@ -286,6 +290,7 @@ class TestGenerate:
                 seed_atoms=_seed_atoms(3),
                 calculator_spec=_SPEC,
                 config={"md_kwargs": {"steps": 500, "temperature": 1200}},
+                elements=["H"],
                 base_name="al_loop_0",
                 name="md",
                 hpc={},
@@ -311,6 +316,7 @@ class TestGenerate:
                 seed_atoms=_seed_atoms(10),
                 calculator_spec=_SPEC,
                 config={},
+                elements=["H"],
                 base_name="al_loop_0",
                 name="md",
                 hpc={},
@@ -344,6 +350,7 @@ class TestGenerate:
                 config={
                     "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 3}}
                 },
+                elements=["H"],
                 base_name="al_loop_0",
                 name="md",
                 hpc={},
@@ -405,6 +412,7 @@ def _md_generate(tmp_path, outcome, n_seeds=3, eligible=None, items=None):
                     "structure_selection_kwargs": {"num_of_md_starts": n_seeds}
                 }
             },
+            elements=["H"],
             base_name="al_loop_0",
             name="md",
             hpc={},

@@ -135,11 +135,11 @@ def ezga_section(
     from ase.io import read
 
     sg = config.get("structure_generation", {})
-    path = Path("results", base_name, sg.get("name", "structure_generation"), "ezga")
-    candidates = path / "ezga_candidates.xyz"
+    path = Path("results", base_name, "structure_generation", "ezga")
+    candidates = path / "ezga_new_candidates.xyz"
     if not candidates.exists():
         return None
-    kwargs = sg.get("run_ezga_kwargs", {})
+    kwargs = sg.get("ezga_kwargs", {})
     n = len(read(candidates, ":", format="extxyz"))
     return Section(
         "Structure generation: EZGA",
