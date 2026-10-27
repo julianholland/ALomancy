@@ -47,12 +47,17 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
 <li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Deprecations &amp; Planned Breaking Changes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#shipped-in-1-0-4">Shipped in 1.0.4</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#structure-generation-ezga-kwargs-is-ezga-s-own-config"><code class="docutils literal notranslate"><span class="pre">structure_generation.ezga_kwargs</span></code> is EZGA’s own config</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#shipped-in-1-0-0">Shipped in 1.0.0</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#max-batch-size-job-dict-key-removed"><code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> job-dict key removed</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#activelearningstandardmace-baseactivelearningworkflow-removed"><code class="docutils literal notranslate"><span class="pre">ActiveLearningStandardMACE</span></code> / <code class="docutils literal notranslate"><span class="pre">BaseActiveLearningWorkflow</span></code> removed</a></li>
@@ -92,6 +97,38 @@
 <p>This page tracks deprecated features and breaking changes planned for future
 ALomancy releases, so users can migrate ahead of time. See <code class="docutils literal notranslate"><span class="pre">CHANGELOG.md</span></code> for
 changes that have already shipped.</p>
+<section id="shipped-in-1-0-4">
+<h2>Shipped in 1.0.4<a class="headerlink" href="#shipped-in-1-0-4" title="Link to this heading"></a></h2>
+<section id="structure-generation-ezga-kwargs-is-ezga-s-own-config">
+<h3><code class="docutils literal notranslate"><span class="pre">structure_generation.ezga_kwargs</span></code> is EZGA’s own config<a class="headerlink" href="#structure-generation-ezga-kwargs-is-ezga-s-own-config" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Status</strong>: changed in 1.0.4</p></li>
+<li><p><strong>What changed</strong>: <code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span></code> used to hold five ALomancy settings that
+ALomancy translated into a fixed EZGA config (with Pd hard-coded). It now
+is EZGA’s own config, the dict EZGA’s YAML file holds; ALomancy adds only
+what it owns (the trained model as calculator, seeds, paths, <code class="docutils literal notranslate"><span class="pre">resume</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rng</span></code>). The old keys raise with their new home:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">population_size</span></code> → <code class="docutils literal notranslate"><span class="pre">multiobjective.size</span></code>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mutation_operators</span></code> → <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code> (EZGA’s list of mutation
+factories);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">min_atoms</span></code> / <code class="docutils literal notranslate"><span class="pre">max_atoms</span></code> → the <code class="docutils literal notranslate"><span class="pre">min_atoms</span></code> / <code class="docutils literal notranslate"><span class="pre">max_atoms</span></code> arguments of
+<code class="docutils literal notranslate"><span class="pre">alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove</span></code> /
+<code class="docutils literal notranslate"><span class="pre">bounded_mutation_add</span></code>, or <code class="docutils literal notranslate"><span class="pre">structure_generation.structure_selection_kwargs.atom_number_range</span></code>
+(which also bounds the default mutations).</p></li>
+</ul>
+</li>
+<li><p><strong>Migrate</strong>: drop the old keys. The defaults (population 100,
+<code class="docutils literal notranslate"><span class="pre">max_generations</span></code> derived from <code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code>, mutations
+for every element in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>) need nothing else; to set them
+yourself, <code class="docutils literal notranslate"><span class="pre">max_generations</span> <span class="pre">×</span> <span class="pre">multiobjective.size</span></code> must be at least
+<code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code>, and mutations are EZGA
+<code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code> entries (see <code class="docutils literal notranslate"><span class="pre">examples/ezga_use/input_files/standard_config.yaml</span></code>).
+EZGA now runs on <code class="docutils literal notranslate"><span class="pre">structure_generation.hpc</span></code> (<code class="docutils literal notranslate"><span class="pre">local:</span> <span class="pre">true</span></code> keeps it in the
+driver process), so run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code> first.</p></li>
+</ul>
+</section>
+</section>
 <section id="shipped-in-1-0-0">
 <h2>Shipped in 1.0.0<a class="headerlink" href="#shipped-in-1-0-0" title="Link to this heading"></a></h2>
 <section id="max-batch-size-job-dict-key-removed">

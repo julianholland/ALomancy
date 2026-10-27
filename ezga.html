@@ -1,0 +1,500 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exploring with EZGA and HiSE &mdash; ALomancy 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Loop reports" href="reports.html" />
+    <link rel="prev" title="Starting a Run" href="starting_a_run.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            ALomancy
+              <img src="_static/alomancy_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Exploring with EZGA and HiSE</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#what-ezga-does-in-a-loop">What EZGA does in a loop</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#before-you-start">Before you start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-config">The config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-structure-generation-section">The <code class="docutils literal notranslate"><span class="pre">structure_generation</span></code> section</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#seeds">Seeds</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#ezga-kwargs-is-ezga-s-own-config"><code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span></code> is EZGA’s own config</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-calculator">The calculator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#defaults">Defaults</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hise-supercell-escalation-and-the-md-burst">HiSE: supercell escalation and the MD burst</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-many-structures-ezga-makes">How many structures EZGA makes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cost">Cost</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#what-you-get">What you get</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#restarts">Restarts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#common-errors-at-startup">Common errors at startup</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
+<li class="toctree-l1"><a class="reference internal" href="writing_a_workflow.html">Writing a Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deprecations.html">Deprecations &amp; Planned Breaking Changes</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">ALomancy</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Exploring with EZGA and HiSE</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/julianholland/ALomancy/blob/master/docs/ezga.md" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="exploring-with-ezga-and-hise">
+<h1>Exploring with EZGA and HiSE<a class="headerlink" href="#exploring-with-ezga-and-hise" title="Link to this heading"></a></h1>
+<p>This walkthrough sets up a full active-learning run that explores with
+EZGA (<code class="docutils literal notranslate"><span class="pre">ezga-lib</span></code>, a genetic algorithm) instead of
+molecular dynamics. It uses EZGA’s hierarchical supercell escalation (HiSE)
+and finishes each search with a short MD burst, following the EZGA wiki’s
+<em>Active Learning for MLIPs</em> example. The complete config is
+<code class="docutils literal notranslate"><span class="pre">examples/configs/committee_mace_ezga_hise.yaml</span></code>; every block below comes
+from it.</p>
+<section id="what-ezga-does-in-a-loop">
+<h2>What EZGA does in a loop<a class="headerlink" href="#what-ezga-does-in-a-loop" title="Link to this heading"></a></h2>
+<p>Each AL loop trains a committee, generates candidates, scores them and sends
+the most uncertain to DFT. With <code class="docutils literal notranslate"><span class="pre">generator:</span> <span class="pre">&quot;ezga&quot;</span></code>, only the generation step
+changes:</p>
+<ol class="arabic simple">
+<li><p><strong>Seeds.</strong> ALomancy picks <code class="docutils literal notranslate"><span class="pre">num_of_seeds</span></code> diverse structures from the
+training set and saves them to <code class="docutils literal notranslate"><span class="pre">ezga_seeds.xyz</span></code>.</p></li>
+<li><p><strong>Search.</strong> One job on <code class="docutils literal notranslate"><span class="pre">structure_generation.hpc</span></code> runs EZGA with the loop’s
+best model. EZGA mutates the population, relaxes every new structure with
+the model and keeps the best by its objective (energy per atom by
+default), generation after generation. EZGA drops structures it has
+already seen.</p></li>
+<li><p><strong>HiSE stages.</strong> With a <code class="docutils literal notranslate"><span class="pre">hise:</span></code> block, the search runs in stages. Each
+stage starts from the previous one’s population, tiled into the next
+supercell. Here the stages are a wide search in the training cells, the
+same tiled 2×1×1, then two generations tiled 2×2×1 with a short MD burst.</p></li>
+<li><p><strong>Candidates.</strong> ALomancy reads EZGA’s database from the last stage. It
+takes only the structures that stage generated, newest generations first,
+up to <code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code>.</p></li>
+<li><p><strong>As usual from here.</strong> The bond filter, committee scoring, selection
+and DFT run as they do after MD.</p></li>
+</ol>
+</section>
+<section id="before-you-start">
+<h2>Before you start<a class="headerlink" href="#before-you-start" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>HPC profiles.</strong> You need a GPU profile for training and EZGA, and a CPU
+profile for DFT (<code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code>; see <code class="docutils literal notranslate"><span class="pre">examples.md</span></code>). EZGA relaxes every
+structure with the model, so give it a GPU.</p></li>
+<li><p><strong>HPC install.</strong> EZGA runs on the HPC, so the HPC install must be the same
+ALomancy version as your machine. After upgrading, run
+<code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code>.</p></li>
+<li><p><strong>EZGA version.</strong> ALomancy pins <code class="docutils literal notranslate"><span class="pre">ezga-lib&gt;=1.2,&lt;1.3</span></code>. It is installed with
+ALomancy, locally and by <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code>.</p></li>
+</ul>
+</section>
+<section id="the-config">
+<h2>The config<a class="headerlink" href="#the-config" title="Link to this heading"></a></h2>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">al_workflow</span><span class="p">:</span><span class="w"> </span><span class="s">"committee_uncertainty"</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Cu"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">num_of_al_loops</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">  </span><span class="nt">num_of_structures_per_loop</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25</span><span class="w">     </span><span class="c1"># selected for DFT each loop</span>
+<span class="w">  </span><span class="nt">verbose</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">committee_uncertainty_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_models_in_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">    </span><span class="c1"># minimum 3</span>
+
+<span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"my_cpu_hpc"</span>
+<span class="w">  </span><span class="nt">amorphous_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_amorphous_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">    </span><span class="nt">num_of_atoms_per_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># small seeds: 2x2x1 makes them 40 atoms</span>
+<span class="w">    </span><span class="nt">densities_list</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">7.0</span><span class="p p-Indicator">]</span>
+
+<span class="nt">training</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">trainer</span><span class="p">:</span><span class="w"> </span><span class="s">"mace"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"5H"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"my_gpu_hpc"</span>
+<span class="w">  </span><span class="nt">mace_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">max_num_epochs</span><span class="p">:</span><span class="w"> </span><span class="s">"dynamic"</span><span class="w">        </span><span class="c1"># resolved from the training-set size</span>
+
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"ezga"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">250</span><span class="w"> </span><span class="c1"># candidates the committee scores per loop</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"12H"</span><span class="w">                    </span><span class="c1"># walltime of the one EZGA job</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"my_gpu_hpc"</span><span class="w">                  </span><span class="c1"># EZGA relaxes with the model: use a GPU</span>
+<span class="w">  </span><span class="nt">structure_selection_kwargs</span><span class="p">:</span><span class="w">        </span><span class="c1"># which training structures may seed EZGA</span>
+<span class="w">    </span><span class="nt">selectable_configs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># (+ earlier loops' picks)</span>
+<span class="w">  </span><span class="nt">ezga_kwargs</span><span class="p">:</span><span class="w">                       </span><span class="c1"># EZGA's own config, plus ALomancy's two keys</span>
+<span class="w">    </span><span class="nt">structure_selection_kwargs</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">num_of_seeds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span><span class="w">                </span><span class="c1"># diverse training structures to start from</span>
+<span class="w">    </span><span class="nt">hise</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">supercells</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[[</span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">],</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">],</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">]]</span><span class="w">  </span><span class="c1"># a new cell each stage</span>
+<span class="w">      </span><span class="nt">overrides</span><span class="p">:</span><span class="w">                     </span><span class="c1"># one value per stage</span>
+<span class="w">        </span><span class="nt">max_generations</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">20</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">10</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">multiobjective.size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">100</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">100</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">250</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">simulator.calculator</span><span class="p">:</span><span class="w">        </span><span class="c1"># ase_calculator settings, over the defaults</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">nvt_steps</span><span class="p">:</span><span class="w"> </span><span class="nv">40</span><span class="p p-Indicator">,</span><span class="nt"> T</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">300</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">600</span><span class="p p-Indicator">]}</span>
+
+<span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"qe"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
+<span class="w">  </span><span class="nt">max_go_time</span><span class="p">:</span><span class="w"> </span><span class="s">"4H"</span>
+<span class="w">  </span><span class="nt">force_ceiling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100.0</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"my_cpu_hpc"</span>
+</pre></div>
+</div>
+<p>Run it with <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">run</span> <span class="pre">committee_mace_ezga_hise.yaml</span></code>. The rest of this
+page explains the <code class="docutils literal notranslate"><span class="pre">structure_generation</span></code> section; the other sections are as
+in <code class="docutils literal notranslate"><span class="pre">examples.md</span></code>.</p>
+</section>
+<section id="the-structure-generation-section">
+<h2>The <code class="docutils literal notranslate"><span class="pre">structure_generation</span></code> section<a class="headerlink" href="#the-structure-generation-section" title="Link to this heading"></a></h2>
+<section id="seeds">
+<h3>Seeds<a class="headerlink" href="#seeds" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">structure_generation.structure_selection_kwargs</span></code> filters which training
+structures may seed any generator: <code class="docutils literal notranslate"><span class="pre">selectable_configs</span></code>, <code class="docutils literal notranslate"><span class="pre">chem_formula_list</span></code>
+and <code class="docutils literal notranslate"><span class="pre">atom_number_range</span></code>. Structures picked in earlier loops are always
+eligible. Without <code class="docutils literal notranslate"><span class="pre">selectable_configs</span></code>, isolated atoms, dimers and trimers
+from initialization could become seeds.</p>
+<p><code class="docutils literal notranslate"><span class="pre">ezga_kwargs.structure_selection_kwargs.num_of_seeds</span></code> (default 8) caps how
+many of them start the search. They are chosen for diversity with
+<code class="docutils literal notranslate"><span class="pre">general.seed</span></code>, so a restart picks the same ones. Set
+<code class="docutils literal notranslate"><span class="pre">enforce_chemical_diversity:</span> <span class="pre">true</span></code> to prefer distinct formulas.</p>
+</section>
+<section id="ezga-kwargs-is-ezga-s-own-config">
+<h3><code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span></code> is EZGA’s own config<a class="headerlink" href="#ezga-kwargs-is-ezga-s-own-config" title="Link to this heading"></a></h3>
+<p>Anything EZGA’s YAML file accepts goes under <code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span></code>, with EZGA’s own
+names: <code class="docutils literal notranslate"><span class="pre">max_generations</span></code>, <code class="docutils literal notranslate"><span class="pre">multiobjective</span></code>, <code class="docutils literal notranslate"><span class="pre">population</span></code>, <code class="docutils literal notranslate"><span class="pre">thermostat</span></code>,
+<code class="docutils literal notranslate"><span class="pre">variation</span></code>, <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code>, <code class="docutils literal notranslate"><span class="pre">crossover_funcs</span></code>, <code class="docutils literal notranslate"><span class="pre">evaluator</span></code>, <code class="docutils literal notranslate"><span class="pre">simulator</span></code>,
+<code class="docutils literal notranslate"><span class="pre">hise</span></code>, <code class="docutils literal notranslate"><span class="pre">convergence</span></code> and so on. EZGA checks the config when the workflow is
+built, so a typo or an unknown mutation fails at startup, not hours into the
+run.</p>
+<p>ALomancy adds two keys of its own, removed before EZGA sees the config:
+<code class="docutils literal notranslate"><span class="pre">structure_selection_kwargs</span></code> (above) and <code class="docutils literal notranslate"><span class="pre">local</span></code>. <code class="docutils literal notranslate"><span class="pre">local:</span> <span class="pre">true</span></code> runs EZGA
+in the driver process instead of as a job, for tests and small runs.</p>
+<p>ALomancy sets these itself, and setting them raises an error:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Setting</p></th>
+<th class="head"><p>Why</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">output_path</span></code></p></td>
+<td><p>each loop’s search has its own directory</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">resume</span></code></p></td>
+<td><p>every search starts fresh; ALomancy restarts a crashed one</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rng</span></code></p></td>
+<td><p>seeded from <code class="docutils literal notranslate"><span class="pre">general.seed</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">population.dataset_path</span></code></p></td>
+<td><p>the seeds come from the training set</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">population.db_path</span></code>, <code class="docutils literal notranslate"><span class="pre">db_ro_path</span></code>, <code class="docutils literal notranslate"><span class="pre">storage</span></code></p></td>
+<td><p>ALomancy reads the candidates from EZGA’s database</p></td>
+</tr>
+<tr class="row-odd"><td><p>the model in <code class="docutils literal notranslate"><span class="pre">simulator.calculator</span></code></p></td>
+<td><p>always the loop’s best model</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="the-calculator">
+<h3>The calculator<a class="headerlink" href="#the-calculator" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">simulator.calculator</span></code> holds settings for EZGA’s <code class="docutils literal notranslate"><span class="pre">ase_calculator</span></code>, which
+ALomancy wraps around the loop’s best model on the HPC node:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">fmax</span></code> and <code class="docutils literal notranslate"><span class="pre">steps_max</span></code> for the relaxation;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nvt_steps</span></code>, <code class="docutils literal notranslate"><span class="pre">T</span></code> and <code class="docutils literal notranslate"><span class="pre">md_timestep_fs</span></code> for MD;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">constant_volume</span></code> to relax the cell too.</p></li>
+</ul>
+<p>Here it is left at the defaults (<code class="docutils literal notranslate"><span class="pre">fmax</span></code> 0.05, <code class="docutils literal notranslate"><span class="pre">steps_max</span></code> 100, FIRE).
+ALomancy rejects any setting <code class="docutils literal notranslate"><span class="pre">ase_calculator</span></code> doesn’t have.</p>
+</section>
+<section id="defaults">
+<h3>Defaults<a class="headerlink" href="#defaults" title="Link to this heading"></a></h3>
+<p>Leave a section out and ALomancy fills it in. The defaults follow the EZGA
+wiki’s active-learning example:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Setting</p></th>
+<th class="head"><p>Default</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">multiobjective.size</span></code></p></td>
+<td><p>100, with <code class="docutils literal notranslate"><span class="pre">composition_repulsion_weight</span></code> 1.0</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">max_generations</span></code></p></td>
+<td><p>enough for twice <code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code> (at least 5)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">thermostat</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">initial_temperature</span></code> 0.05, constant</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">population</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">filter_duplicates</span></code> on, <code class="docutils literal notranslate"><span class="pre">collision_factor</span></code> 0.6</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">variation</span></code></p></td>
+<td><p>mutation rate 1.0, no crossover</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">simulator.calculator</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">fmax</span></code> 0.05, <code class="docutils literal notranslate"><span class="pre">steps_max</span></code> 100, FIRE</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code></p></td>
+<td><p>rattle and strain; an add and a remove per element in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>; a swap for every pair of elements</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">evaluator</span></code></p></td>
+<td><p>composition feature over <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>; energy per atom as the objective</p></td>
+</tr>
+</tbody>
+</table>
+<p>Your values are merged over these. A dict merges key by key, so
+<code class="docutils literal notranslate"><span class="pre">simulator:</span> <span class="pre">{calculator:</span> <span class="pre">{steps_max:</span> <span class="pre">20}}</span></code> keeps <code class="docutils literal notranslate"><span class="pre">fmax</span></code>. A list replaces the
+default, so <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code> is either all yours or all the defaults. If
+<code class="docutils literal notranslate"><span class="pre">structure_selection_kwargs.atom_number_range</span></code> is set, it also bounds the
+default add and remove mutations, except with HiSE (below).</p>
+</section>
+<section id="hise-supercell-escalation-and-the-md-burst">
+<h3>HiSE: supercell escalation and the MD burst<a class="headerlink" href="#hise-supercell-escalation-and-the-md-burst" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">hise.supercells</span></code> lists one supercell per stage, each larger than the last.
+Each stage starts from the previous one’s structures, tiled into its cell. <code class="docutils literal notranslate"><span class="pre">hise.overrides</span></code> sets a
+value per stage, one list entry per stage:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Stage</p></th>
+<th class="head"><p>Supercell</p></th>
+<th class="head"><p>Generations</p></th>
+<th class="head"><p>Population</p></th>
+<th class="head"><p>Calculator</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>1×1×1</p></td>
+<td><p>20</p></td>
+<td><p>100</p></td>
+<td><p>relax</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>2×1×1</p></td>
+<td><p>10</p></td>
+<td><p>100</p></td>
+<td><p>relax</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>2×2×1</p></td>
+<td><p>2</p></td>
+<td><p>250</p></td>
+<td><p>40 MD steps at 300–600 K, then relax</p></td>
+</tr>
+</tbody>
+</table>
+<ul class="simple">
+<li><p><strong>Why stages.</strong> The first stage explores compositions cheaply in small
+cells. The second refines in larger cells. The last, in the largest cell,
+adds thermal distortions, which gives the committee force-rich structures
+to choose from.</p></li>
+<li><p><strong>Per-stage calculators.</strong> <code class="docutils literal notranslate"><span class="pre">simulator.calculator</span></code> in <code class="docutils literal notranslate"><span class="pre">overrides</span></code> takes one
+dict per stage. It is merged over the top-level <code class="docutils literal notranslate"><span class="pre">simulator.calculator</span></code>
+settings and wrapped around the model like it. <code class="docutils literal notranslate"><span class="pre">T:</span> <span class="pre">[300,</span> <span class="pre">600]</span></code> spreads the
+MD temperature over that range across the population.</p></li>
+<li><p><strong>Candidates come from the last stage only.</strong> Its database also holds the
+earlier stages’ structures, but ALomancy reads only the ones that stage
+generated.</p></li>
+</ul>
+</section>
+<section id="how-many-structures-ezga-makes">
+<h3>How many structures EZGA makes<a class="headerlink" href="#how-many-structures-ezga-makes" title="Link to this heading"></a></h3>
+<p>Only the last stage is read, so its <code class="docutils literal notranslate"><span class="pre">max_generations</span> <span class="pre">×</span> <span class="pre">multiobjective.size</span></code>
+must cover <code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code>. Here that is 2 × 250 = 500
+for 250 candidates.</p>
+<ul class="simple">
+<li><p><strong>Below 1×</strong> the run won’t start.</p></li>
+<li><p><strong>Below 2×</strong> it warns (<code class="docutils literal notranslate"><span class="pre">ezga_few_structures_configured</span></code>).</p></li>
+</ul>
+<p>EZGA often makes fewer structures than that product. It drops duplicates,
+and full relaxations of small cells often fall back into minima it has
+already found, so keep the margin. If a loop still gets fewer than twice
+<code class="docutils literal notranslate"><span class="pre">num_of_structures_per_loop</span></code> candidates, it logs <code class="docutils literal notranslate"><span class="pre">few_candidates_generated</span></code>.</p>
+<p>When there are more than <code class="docutils literal notranslate"><span class="pre">num_of_structures_to_generate</span></code>, ALomancy takes the
+newest generations whole. Only the oldest generation it needs is sampled
+(seeded), so the candidates come from as late in the search as possible.</p>
+</section>
+<section id="cost">
+<h3>Cost<a class="headerlink" href="#cost" title="Link to this heading"></a></h3>
+<p><strong>Model evaluations.</strong> A loop’s search is about Σ generations × population
+model evaluations: 20 × 100 + 10 × 100 + 2 × 250 = 3,500, each up to 100
+relaxation steps. Set <code class="docutils literal notranslate"><span class="pre">max_time</span></code> to cover it. Run a loop with <code class="docutils literal notranslate"><span class="pre">local:</span> <span class="pre">true</span></code>
+on a small case first if you aren’t sure.</p>
+<p><strong>DFT cost.</strong> Supercell escalation multiplies atom counts, and DFT cost with
+them. The candidates come from the 2×2×1 stage, so they have four times
+their seed’s atoms. That is why the amorphous structures here are 10 atoms
+(<code class="docutils literal notranslate"><span class="pre">num_of_atoms_per_amorphous</span></code>, default 20): they become 40-atom DFT
+structures. Choose <code class="docutils literal notranslate"><span class="pre">supercells</span></code>, and the seed sizes, for the cells you want
+to pay DFT for. With HiSE, <code class="docutils literal notranslate"><span class="pre">atom_number_range</span></code> only filters the seeds: the
+default add and remove mutations are unbounded, because the range is sized
+for the seeds and the stages tile beyond it. Setting both logs
+<code class="docutils literal notranslate"><span class="pre">ezga_atom_range_seeds_only</span></code> at startup. To bound atom counts per stage,
+write your own <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code>.</p>
+</section>
+</section>
+<section id="what-you-get">
+<h2>What you get<a class="headerlink" href="#what-you-get" title="Link to this heading"></a></h2>
+<p>For loop <code class="docutils literal notranslate"><span class="pre">N</span></code>, in <code class="docutils literal notranslate"><span class="pre">results/al_loop_N/structure_generation/</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ezga_seeds</span><span class="o">.</span><span class="n">xyz</span>               <span class="n">the</span> <span class="n">seeds</span> <span class="p">(</span><span class="n">reused</span> <span class="n">on</span> <span class="n">restart</span><span class="p">)</span>
+<span class="n">ezga</span><span class="o">/</span>
+  <span class="n">initial_population</span><span class="o">.</span><span class="n">xyz</span>     <span class="n">the</span> <span class="n">seeds</span> <span class="k">as</span> <span class="n">EZGA</span> <span class="n">read</span> <span class="n">them</span>
+  <span class="n">supercell_1_1_1</span><span class="o">/</span>           <span class="n">stage</span> <span class="mi">1</span><span class="p">:</span> <span class="n">EZGA</span><span class="s1">'s database, generation/, workflow.log</span>
+  <span class="n">supercell_2_1_1</span><span class="o">/</span>           <span class="n">stage</span> <span class="mi">2</span>
+  <span class="n">supercell_2_2_1</span><span class="o">/</span>           <span class="n">stage</span> <span class="mi">3</span>
+  <span class="n">ezga_candidates</span><span class="o">.</span><span class="n">xyz</span>        <span class="n">the</span> <span class="n">candidates</span><span class="p">,</span> <span class="n">written</span> <span class="n">last</span>
+</pre></div>
+</div>
+<p>Each candidate carries <code class="docutils literal notranslate"><span class="pre">ezga_generation</span></code> and <code class="docutils literal notranslate"><span class="pre">ezga_operation</span></code> (the mutation
+that made it). It also carries <code class="docutils literal notranslate"><span class="pre">ezga_energy</span></code>, the model’s energy and not a
+DFT label. The committee’s scores and picks follow as after MD.</p>
+<p>The loop report has a <strong>Structure generation: EZGA</strong> section:</p>
+<ul class="simple">
+<li><p>the seeds, generations run, structures generated and candidates taken;</p></li>
+<li><p>the oldest generation used;</p></li>
+<li><p>the main settings.</p></li>
+</ul>
+<p>The events table counts <code class="docutils literal notranslate"><span class="pre">ezga_summary</span></code>, and <code class="docutils literal notranslate"><span class="pre">ezga_restarted</span></code> if a search had
+to start over.</p>
+</section>
+<section id="restarts">
+<h2>Restarts<a class="headerlink" href="#restarts" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ezga_candidates.xyz</span></code> marks the search as done, so a restart after it reuses
+the candidates.</p>
+<p>If the run stopped mid-search, the next start moves the unfinished <code class="docutils literal notranslate"><span class="pre">ezga/</span></code>
+directory to <code class="docutils literal notranslate"><span class="pre">ezga.failed_&lt;date&gt;</span></code> and runs the search again from the same
+seeds. EZGA adds to an existing database rather than replacing it, so
+starting over in place would mix two searches.</p>
+<p>If the job fails, or the search generates nothing, the loop stops with an
+error and nothing is cached. Restarting retries the search.</p>
+</section>
+<section id="common-errors-at-startup">
+<h2>Common errors at startup<a class="headerlink" href="#common-errors-at-startup" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Message</p></th>
+<th class="head"><p>Fix</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span> <span class="pre">must</span> <span class="pre">not</span> <span class="pre">set:</span> <span class="pre">...</span></code></p></td>
+<td><p>Remove the named setting; ALomancy sets it (see the table above).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span> <span class="pre">is</span> <span class="pre">now</span> <span class="pre">EZGA's</span> <span class="pre">own</span> <span class="pre">config</span> <span class="pre">...</span> <span class="pre">Removed</span> <span class="pre">keys</span></code></p></td>
+<td><p>A 1.0.3 key (<code class="docutils literal notranslate"><span class="pre">population_size</span></code>, <code class="docutils literal notranslate"><span class="pre">mutation_operators</span></code>, <code class="docutils literal notranslate"><span class="pre">min_atoms</span></code>, <code class="docutils literal notranslate"><span class="pre">max_atoms</span></code>); the message names its new place (<code class="docutils literal notranslate"><span class="pre">deprecations.md</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">EZGA</span> <span class="pre">makes</span> <span class="pre">about</span> <span class="pre">...</span> <span class="pre">structures,</span> <span class="pre">fewer</span> <span class="pre">than</span> <span class="pre">...</span> <span class="pre">num_of_structures_to_generate</span></code></p></td>
+<td><p>Raise the last stage’s <code class="docutils literal notranslate"><span class="pre">max_generations</span></code> or <code class="docutils literal notranslate"><span class="pre">multiobjective.size</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">...</span> <span class="pre">not</span> <span class="pre">in</span> <span class="pre">general.elements</span></code></p></td>
+<td><p>A mutation or feature names a species the run doesn’t have.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">unknown</span> <span class="pre">ase_calculator</span> <span class="pre">settings</span></code></p></td>
+<td><p>A typo in <code class="docutils literal notranslate"><span class="pre">simulator.calculator</span></code> or a stage’s calculator override.</p></td>
+</tr>
+<tr class="row-odd"><td><p>A pydantic error from EZGA</p></td>
+<td><p>A key EZGA doesn’t know, or a wrong type, in its own config.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="starting_a_run.html" class="btn btn-neutral float-left" title="Starting a Run" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="reports.html" class="btn btn-neutral float-right" title="Loop reports" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Julian Holland.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

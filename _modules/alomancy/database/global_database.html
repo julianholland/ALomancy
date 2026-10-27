@@ -45,6 +45,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
@@ -86,6 +87,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
@@ -140,6 +142,62 @@
         <span class="ow">and</span> <span class="ow">not</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_duplicate"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
         <span class="ow">and</span> <span class="ow">not</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_quality_filtered"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
     <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="atoms_from_container">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.atoms_from_container">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">atoms_from_container</span><span class="p">(</span><span class="n">container</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">labels</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Reconstruct an ASE Atoms object from a sage_lib SingleRun container.</span>
+
+<span class="sd">    With *labels* (an ALomancy DB), the stored energy, forces and stress are</span>
+<span class="sd">    the DFT labels (REF_*) and the metadata becomes atoms.info. Without</span>
+<span class="sd">    (another program's storage, e.g. EZGA's, whose energies come from a</span>
+<span class="sd">    model), only the geometry is rebuilt: no REF_* keys, no calculator, no</span>
+<span class="sd">    metadata; the caller copies what it needs from container metadata."""</span>
+    <span class="n">apm</span> <span class="o">=</span> <span class="n">container</span><span class="o">.</span><span class="n">AtomPositionManager</span>
+    <span class="n">atoms</span> <span class="o">=</span> <span class="n">Atoms</span><span class="p">(</span>
+        <span class="n">symbols</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span><span class="p">),</span>
+        <span class="n">positions</span><span class="o">=</span><span class="n">apm</span><span class="o">.</span><span class="n">atomPositions</span><span class="p">,</span>
+        <span class="n">cell</span><span class="o">=</span><span class="n">apm</span><span class="o">.</span><span class="n">latticeVectors</span><span class="p">,</span>
+        <span class="n">pbc</span><span class="o">=</span><span class="p">[</span><span class="nb">bool</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">pbc</span><span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">labels</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">atoms</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
+    <span class="n">stress</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"_REF_stresses"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="c1"># Cached descriptors (store_descriptors) are DB-internal: a 128-float</span>
+    <span class="c1"># array in atoms.info would be written into every train xyz file.</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">meta</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"char_vec"</span><span class="p">)]:</span>
+        <span class="k">del</span> <span class="n">meta</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+    <span class="n">energy</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">energy</span>
+    <span class="n">forces</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">SinglePointCalculator</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">energy</span><span class="o">=</span><span class="n">energy</span><span class="p">,</span> <span class="n">forces</span><span class="o">=</span><span class="n">forces</span><span class="p">)</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+    <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
+    <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
+    <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">stress</span><span class="p">)</span>
+    <span class="c1"># e.g. quality_filter_reasons=[]: kept in the DB, but would corrupt</span>
+    <span class="c1"># the next key of any xyz file written from these atoms.</span>
+    <span class="n">drop_unwritable_info</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">atoms</span></div>
+
+
+
+<div class="viewcode-block" id="read_storage">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.read_storage">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_storage</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Every container of the sage_lib hybrid storage directly in *path*</span>
+<span class="sd">    (db_index.sqlite + db_objects.h5, the layout EZGA writes), opened</span>
+<span class="sd">    read-only: nothing is created or modified. GlobalDatabase keeps its own</span>
+<span class="sd">    storage one level down (hybrid_local/) and opens it read-write."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">"db_index.sqlite"</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"No sage_lib storage at </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
+    <span class="n">partition</span> <span class="o">=</span> <span class="n">Partition</span><span class="p">(</span><span class="n">storage</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">,</span> <span class="n">local_root</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="n">access</span><span class="o">=</span><span class="s2">"ro"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">())</span></div>
 
 
 
@@ -1089,33 +1147,7 @@
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_atoms_from_container</span><span class="p">(</span><span class="n">container</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Reconstruct an ASE Atoms object from a sage_lib SingleRun container."""</span>
-        <span class="n">apm</span> <span class="o">=</span> <span class="n">container</span><span class="o">.</span><span class="n">AtomPositionManager</span>
-
-        <span class="n">atoms</span> <span class="o">=</span> <span class="n">Atoms</span><span class="p">(</span>
-            <span class="n">symbols</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span><span class="p">),</span>
-            <span class="n">positions</span><span class="o">=</span><span class="n">apm</span><span class="o">.</span><span class="n">atomPositions</span><span class="p">,</span>
-            <span class="n">cell</span><span class="o">=</span><span class="n">apm</span><span class="o">.</span><span class="n">latticeVectors</span><span class="p">,</span>
-            <span class="n">pbc</span><span class="o">=</span><span class="p">[</span><span class="nb">bool</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">pbc</span><span class="p">],</span>
-        <span class="p">)</span>
-        <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
-        <span class="n">stress</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"_REF_stresses"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="c1"># Cached descriptors (store_descriptors) are DB-internal: a 128-float</span>
-        <span class="c1"># array in atoms.info would be written into every train xyz file.</span>
-        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">meta</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"char_vec"</span><span class="p">)]:</span>
-            <span class="k">del</span> <span class="n">meta</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
-        <span class="n">energy</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">energy</span>
-        <span class="n">forces</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">SinglePointCalculator</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">energy</span><span class="o">=</span><span class="n">energy</span><span class="p">,</span> <span class="n">forces</span><span class="o">=</span><span class="n">forces</span><span class="p">)</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
-        <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">atoms</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
-        <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">stress</span><span class="p">)</span>
-        <span class="c1"># e.g. quality_filter_reasons=[]: kept in the DB, but would corrupt</span>
-        <span class="c1"># the next key of any xyz file written from these atoms.</span>
-        <span class="n">drop_unwritable_info</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">atoms</span></div>
+        <span class="k">return</span> <span class="n">atoms_from_container</span><span class="p">(</span><span class="n">container</span><span class="p">)</span></div>
 
 
 

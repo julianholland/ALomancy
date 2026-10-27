@@ -45,6 +45,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
@@ -254,7 +255,8 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""An ASE calculator for a trained model, on *device* (None: the</span>
 <span class="sd">        backend's own choice). Called in remote jobs (evaluation, MD,</span>
-<span class="sd">        prediction) and, on the CPU, in the driver process by EZGA."""</span></div>
+<span class="sd">        EZGA, prediction), and in the driver process by EZGA with</span>
+<span class="sd">        ezga_kwargs.local."""</span></div>
 
 
     <span class="c1"># -- Overridable, with generic defaults ----------------------------------</span>

@@ -48,6 +48,7 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="reports.html">Loop reports</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Writing a Workflow</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#what-the-parent-provides">What the parent provides</a></li>
@@ -332,8 +333,8 @@ loop report).</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">get_calculator</span></code> is how every other part of ALomancy uses your model</strong>:
 evaluation, committee prediction and structure generation. Generators get
 a <code class="docutils literal notranslate"><span class="pre">CalculatorSpec</span></code> (trainer name, config, model path) and call
-<code class="docutils literal notranslate"><span class="pre">spec.build()</span></code> on the HPC node (MD) or with <code class="docutils literal notranslate"><span class="pre">device=&quot;cpu&quot;</span></code> in the driver
-(EZGA), so MD and EZGA work with any registered trainer without changes.</p></li>
+<code class="docutils literal notranslate"><span class="pre">spec.build()</span></code> on the HPC node, so MD and EZGA work with any registered
+trainer without changes.</p></li>
 <li><p>Training runs remotely through the module-level <code class="docutils literal notranslate"><span class="pre">run_training</span></code>, which
 builds the trainer on the HPC node from its registry name, so changes
 to a trainer need <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code> before the next run.</p></li>

@@ -20,7 +20,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Writing a Workflow" href="writing_a_workflow.html" />
-    <link rel="prev" title="Starting a Run" href="starting_a_run.html" /> 
+    <link rel="prev" title="Exploring with EZGA and HiSE" href="ezga.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -48,6 +48,7 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Loop reports</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#what-s-in-a-report">What’s in a report</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#settings">Settings</a></li>
@@ -139,7 +140,7 @@ and a warning is logged.</p>
 <td><p>Returned vs submitted, single points vs relaxations, how many relaxations reached the force ceiling, BFGS steps vs the step budget, average DFT time per structure, largest force after DFT, DFT phase wall-clock and queue time</p></td>
 </tr>
 <tr class="row-odd"><td><p>Module sections</p></td>
-<td><p>From the configured trainer, generator and evaluator, e.g. MD frames per run and every MD run’s temperature against step (overlaid), the best fit’s training curve, GO-step and DFT-time histograms</p></td>
+<td><p>From the configured trainer, generator and evaluator, e.g. MD frames per run and every MD run’s temperature against step (overlaid, y-axis up to 3× the higher of the target and equilibration temperatures), the best fit’s training curve, GO-step and DFT-time histograms</p></td>
 </tr>
 <tr class="row-even"><td><p>Workflow section</p></td>
 <td><p>e.g. the committee’s force std-dev distribution with the selection cut, or the novelty tolerance</p></td>
@@ -326,7 +327,7 @@ sections by overriding <code class="docutils literal notranslate"><span class="p
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="starting_a_run.html" class="btn btn-neutral float-left" title="Starting a Run" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="ezga.html" class="btn btn-neutral float-left" title="Exploring with EZGA and HiSE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="writing_a_workflow.html" class="btn btn-neutral float-right" title="Writing a Workflow" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

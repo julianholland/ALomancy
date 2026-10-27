@@ -45,6 +45,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../reports.html">Loop reports</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api/index.html">API Reference</a></li>
@@ -199,10 +200,10 @@
 <span class="sd">`structure_generation.structure_selection_kwargs` for the skeleton's own</span>
 <span class="sd">`filter_eligible_structures` pre-filter, called once before any generator</span>
 <span class="sd">dispatch) stay at the top `structure_generation` level rather than being</span>
-<span class="sd">duplicated per-generator; MD-specific settings that would make no sense</span>
-<span class="sd">for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --</span>
-<span class="sd">`num_of_md_starts`/`enforce_chemical_diversity`/`seed`) live</span>
-<span class="sd">nested inside `md_kwargs` instead. Which calculator drives MD or EZGA</span>
+<span class="sd">duplicated per-generator; each generator's own seed choice</span>
+<span class="sd">(`select_diverse_seeds`' `structure_selection_kwargs`: MD's</span>
+<span class="sd">`num_of_md_starts`, EZGA's `num_of_seeds`) lives nested inside its</span>
+<span class="sd">`md_kwargs`/`ezga_kwargs` instead. Which calculator drives MD or EZGA</span>
 <span class="sd">is not a generator setting at all: generators get a `CalculatorSpec` for</span>
 <span class="sd">the model `training.trainer` trained (`calculator_spec`). `training.max_num_epochs`</span>
 <span class="sd">likewise moves inside `mace_kwargs`: it's a MACE-specific training</span>
@@ -1228,9 +1229,29 @@
                     <span class="p">},</span>
                 <span class="p">},</span>
             <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_generator_kwargs</span><span class="p">(</span><span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"structure_generation"</span><span class="p">))</span>
         <span class="c1"># After setup_logging so the warnings reach the console/log file.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_warn_about_unread_keys</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">validate_settings</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_generator_kwargs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sg_config</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Run the structure generator's own construction-time check</span>
+<span class="sd">        (registry entry validate_kwargs, e.g. EZGA's), which may store its</span>
+<span class="sd">        resolved settings back into *sg_config*. An unknown generator is</span>
+<span class="sd">        reported by the config-key check, not here."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sg_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">entry</span> <span class="o">=</span> <span class="n">resolve</span><span class="p">(</span><span class="s2">"structure_generator"</span><span class="p">,</span> <span class="n">sg_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"generator"</span><span class="p">,</span> <span class="s2">"md"</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">validate</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="s2">"validate_kwargs"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">validate</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">validate</span><span class="p">(</span>
+                <span class="n">sg_config</span><span class="p">,</span>
+                <span class="n">elements</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_required_elements</span><span class="p">(),</span>
+                <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
+            <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_warn_about_unread_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Warn about every config key the run will never read (configs/</span>
@@ -2353,6 +2374,8 @@
             <span class="n">name</span><span class="o">=</span><span class="n">_STRUCTURE_GENERATION_NAME</span><span class="p">,</span>
             <span class="n">hpc</span><span class="o">=</span><span class="n">sg_config</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">],</span>
             <span class="n">max_time</span><span class="o">=</span><span class="n">sg_config</span><span class="p">[</span><span class="s2">"max_time"</span><span class="p">],</span>
+            <span class="n">elements</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"general"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"elements"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="n">seed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seed</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">kept</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="n">filter_structures_by_min_bond_distance</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span>
         <span class="n">per_loop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_of_structures_per_loop</span>

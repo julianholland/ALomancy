@@ -45,6 +45,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../starting_a_run.html">Starting a Run</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../ezga.html">Exploring with EZGA and HiSE</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../reports.html">Loop reports</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../writing_a_workflow.html">Writing a Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../api/index.html">API Reference</a></li>
@@ -360,9 +361,8 @@
 <span class="c1"># generate() is a local orchestrator (see the architecture plan's</span>
 <span class="c1"># remote-submission-shape decision): called once by the skeleton with the</span>
 <span class="c1"># full eligible seed population, it selects a diversity-maximizing subset</span>
-<span class="c1"># via utils.seed_selection (population-side selection is MD's own business,</span>
-<span class="c1"># unlike EZGA which uses the population directly) and fans out one remote</span>
-<span class="c1"># MD job per selected seed via submit_n. Committee scoring of the</span>
+<span class="c1"># via utils.seed_selection and fans out one remote MD job per selected seed</span>
+<span class="c1"># via submit_n (EZGA picks its seeds the same way, but runs one job). Committee scoring of the</span>
 <span class="c1"># candidates lives in the skeleton (ActiveLearningWorkflow.predict), not</span>
 <span class="c1"># in this module.</span>
 <span class="c1"># ---------------------------------------------------------------------------</span>
@@ -451,6 +451,8 @@
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">hpc</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">max_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">elements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># noqa: ARG001 -- MD needs no species</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># noqa: ARG001 -- md_kwargs.structure_selection_kwargs.seed</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Local orchestrator: select a diversity-maximizing subset of</span>
 <span class="sd">    seed_atoms (via utils.seed_selection.select_diverse_seeds), then fan</span>
