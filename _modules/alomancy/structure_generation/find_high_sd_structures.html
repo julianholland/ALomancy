@@ -85,8 +85,10 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">write</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.file_saving_and_parsing</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_xyz</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
 
@@ -96,9 +98,7 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">read_selection</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""The structures in a selection file find_high_sd_structures wrote;</span>
 <span class="sd">    an empty file is an empty selection."""</span>
-    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">stat</span><span class="p">()</span><span class="o">.</span><span class="n">st_size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">[]</span>
-    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span></div>
+    <span class="k">return</span> <span class="n">read_xyz</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></div>
 
 
 
@@ -188,11 +188,21 @@
                 <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
                 <span class="n">desired_structures</span><span class="p">,</span>
                 <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
-                    <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"fewer_candidates"</span><span class="p">,</span>
-                    <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_list</span><span class="p">),</span> <span class="s2">"desired"</span><span class="p">:</span> <span class="n">desired_structures</span><span class="p">},</span>
+                    <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"selection_redundant_shortfall"</span><span class="p">,</span>
+                    <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span>
+                        <span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_list</span><span class="p">),</span>
+                        <span class="s2">"desired"</span><span class="p">:</span> <span class="n">effective_structures</span><span class="p">,</span>
+                        <span class="s2">"candidates"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
+                    <span class="p">},</span>
                 <span class="p">},</span>
             <span class="p">)</span>
         <span class="n">high_sd_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">structure_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">index_list</span><span class="p">]</span>
+        <span class="c1"># Redundant picks are skipped, so the selection isn't always the top</span>
+        <span class="c1"># of the ranking; record it for the report's selection cut.</span>
+        <span class="n">std_dev_df</span> <span class="o">=</span> <span class="n">std_dev_df</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
+            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"structure_index"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span><span class="n">index_list</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"selected"</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">std_dev_df</span><span class="o">.</span><span class="n">write_csv</span><span class="p">(</span><span class="n">std_dev_csv_name</span><span class="p">)</span>
 
         <span class="c1"># Written once, even when empty: a restart reloads this file, and</span>
         <span class="c1"># an empty selection is a valid result, not a missing one.</span>

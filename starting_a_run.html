@@ -93,8 +93,9 @@
 <h1>Starting a Run<a class="headerlink" href="#starting-a-run" title="Link to this heading"></a></h1>
 <p>Every ALomancy run needs an initial set of DFT-labelled structures before the
 first committee can be trained. <code class="docutils literal notranslate"><span class="pre">general.start_from</span></code> says where those come
-from. There are four start modes, and the mode is picked automatically from
-which keys you give.</p>
+from. Each source key takes one path or a list of paths, and sources can be
+combined: everything listed goes into the starting dataset. The start mode
+is named after which keys you give.</p>
 <section id="choosing-a-start-mode">
 <h2>Choosing a start mode<a class="headerlink" href="#choosing-a-start-mode" title="Link to this heading"></a></h2>
 <table class="docutils align-default">
@@ -117,7 +118,11 @@ which keys you give.</p>
 <td><p>Former ALomancy database</p></td>
 <td><p>A <strong>copy</strong> of a previous run’s <code class="docutils literal notranslate"><span class="pre">global_database</span></code> is imported, keeping its <code class="docutils literal notranslate"><span class="pre">config_type</span></code>, train/test split and duplicate flags. The old database is never modified.</p></td>
 </tr>
-<tr class="row-odd"><td><p><em>(no <code class="docutils literal notranslate"><span class="pre">start_from</span></code>)</em></p></td>
+<tr class="row-odd"><td><p>More than one of the above</p></td>
+<td><p>Combined</p></td>
+<td><p>Every source is imported (order below), each keeping the split rule of its kind.</p></td>
+</tr>
+<tr class="row-even"><td><p><em>(no <code class="docutils literal notranslate"><span class="pre">start_from</span></code>)</em></p></td>
 <td><p>Cold start</p></td>
 <td><p>Nothing is imported. ALomancy generates and DFT-evaluates the whole initial dataset itself.</p></td>
 </tr>
@@ -128,9 +133,10 @@ which keys you give.</p>
 <li><p><strong>Pre-split files:</strong> you already have a train/test split you want to keep, e.g. from a paper or from another ALomancy run’s <code class="docutils literal notranslate"><span class="pre">results/initialization/train_set.xyz</span></code> and <code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>.</p></li>
 <li><p><strong>Single file:</strong> you have one pile of DFT data and want ALomancy to hold out a test set.</p></li>
 <li><p><strong>Former database:</strong> you are starting a new run (new settings, new results directory) on top of everything an earlier run computed.</p></li>
+<li><p><strong>Combined:</strong> you want several of these at once, e.g. two earlier runs’ databases plus a published dataset.</p></li>
 <li><p><strong>Cold start:</strong> you have no data yet.</p></li>
 </ul>
-<p>Giving more than one source (e.g. <code class="docutils literal notranslate"><span class="pre">xyz</span></code> and <code class="docutils literal notranslate"><span class="pre">database</span></code>), or only one of <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_xyz</span></code>, is an error at start-up.</p>
+<p>Sources are imported in this order: every <code class="docutils literal notranslate"><span class="pre">database</span></code>, then <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_xyz</span></code>, then <code class="docutils literal notranslate"><span class="pre">xyz</span></code>, each list in the order given. Structures of the exactly deduplicated types (<code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code>, <code class="docutils literal notranslate"><span class="pre">init_MP</span></code>) are kept from the first source that has them, so a former run’s isolated-atom energies win over an xyz file’s. Giving only one of <code class="docutils literal notranslate"><span class="pre">train_xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_xyz</span></code> is an error at start-up.</p>
 </section>
 <section id="examples">
 <h2>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h2>
@@ -169,6 +175,19 @@ which keys you give.</p>
 <span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
+<p>Combined: two former runs’ databases plus two xyz files, split by <code class="docutils literal notranslate"><span class="pre">test_ratio</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">start_from</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">database</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"../init_run/results/global_database"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"../other_run/results/global_database"</span>
+<span class="w">    </span><span class="nt">xyz</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"data/carbon_dft.xyz"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"data/carbon_extra.xyz"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_amorphous"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"external"</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
 <p>Cold start: leave <code class="docutils literal notranslate"><span class="pre">start_from</span></code> out.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"C"</span><span class="p p-Indicator">]</span>
@@ -180,7 +199,7 @@ which keys you give.</p>
 </section>
 <section id="what-every-mode-does-next">
 <h2>What every mode does next<a class="headerlink" href="#what-every-mode-does-next" title="Link to this heading"></a></h2>
-<p>After the import, all four modes follow the same path:</p>
+<p>After the import, every mode follows the same path:</p>
 <ol class="arabic simple">
 <li><p><strong>Import into this run’s database</strong> (<code class="docutils literal notranslate"><span class="pre">results/global_database</span></code>). Imports are idempotent. Each xyz file’s SHA-256 (and a database’s path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> are dropped at import, with one warning per source giving the count (event <code class="docutils literal notranslate"><span class="pre">start_from_elements_excluded</span></code>). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> later does not bring back structures that an earlier import excluded. To get them, start a fresh run.</p></li>
 <li><p><strong>Fill the gaps.</strong> ALomancy counts what the database already holds against the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> targets (isolated atoms, dimers, trimers, amorphous, Materials Project, …). It generates and DFT-evaluates <strong>only what is missing</strong>. Imported data counts towards those targets. To skip a structure type entirely, set its <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> in the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section. Leave the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (<code class="docutils literal notranslate"><span class="pre">initialization:</span> <span class="pre">{}</span></code>) to use the defaults.</p></li>
@@ -255,7 +274,10 @@ which keys you give.</p>
 <tr class="row-even"><td><p>Single file</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">test_ratio</span></code> of the structures whose <code class="docutils literal notranslate"><span class="pre">config_type</span></code> is in <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code> go to test; everything else trains. At least one structure of each targeted type stays in training.</p></td>
 </tr>
-<tr class="row-odd"><td><p>Cold start</p></td>
+<tr class="row-odd"><td><p>Combined</p></td>
+<td><p>Each structure follows the rule of the source it came from: database and pre-split structures keep their split, <code class="docutils literal notranslate"><span class="pre">xyz</span></code> structures are split by <code class="docutils literal notranslate"><span class="pre">test_ratio</span></code> together.</p></td>
+</tr>
+<tr class="row-even"><td><p>Cold start</p></td>
 <td><p>Same rule as a single file.</p></td>
 </tr>
 </tbody>
@@ -306,13 +328,13 @@ which keys you give.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">general.start_from</span> <span class="pre">has</span> <span class="pre">more</span> <span class="pre">than</span> <span class="pre">one</span> <span class="pre">data</span> <span class="pre">source</span></code></p></td>
-<td><p>e.g. both <code class="docutils literal notranslate"><span class="pre">xyz</span></code> and <code class="docutils literal notranslate"><span class="pre">database</span></code> given</p></td>
-<td><p>Keep one source.</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.&lt;key&gt;</span> <span class="pre">must</span> <span class="pre">be</span> <span class="pre">a</span> <span class="pre">path</span> <span class="pre">or</span> <span class="pre">a</span> <span class="pre">list</span> <span class="pre">of</span> <span class="pre">paths</span></code></p></td>
+<td><p>An empty list, or an entry that isn’t a path</p></td>
+<td><p>Give one path or a non-empty list of paths.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">general.start_from.train_xyz</span> <span class="pre">and</span> <span class="pre">test_xyz</span> <span class="pre">must</span> <span class="pre">be</span> <span class="pre">given</span> <span class="pre">together</span></code></p></td>
 <td><p>Only one of the pair</p></td>
-<td><p>Add the other, or use <code class="docutils literal notranslate"><span class="pre">xyz</span></code> for a single file to be split.</p></td>
+<td><p>Add the other, or use <code class="docutils literal notranslate"><span class="pre">xyz</span></code> for files to be split.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Unknown</span> <span class="pre">general.start_from</span> <span class="pre">key(s)</span></code></p></td>
 <td><p>Typo</p></td>

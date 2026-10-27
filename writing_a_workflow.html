@@ -123,7 +123,7 @@ declare its settings and write a short <code class="docutils literal notranslate
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">prepare_run()</span></code></p></td>
-<td><p>Everything before the first loop: config and HPC checks, then either resume from the database or build the initial dataset (see <a class="reference internal" href="starting_a_run.html"><span class="std std-doc">Starting a run</span></a>), then redundancy removal and the train/test filters. Returns the first loop to run.</p></td>
+<td><p>Everything before the first loop: config and HPC checks, then either resume from the database or build the initial dataset (see <a class="reference internal" href="starting_a_run.html"><span class="std std-doc">Starting a run</span></a>), then the train/test filters, curation and redundancy removal. Returns the first loop to run.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">iterate_loops(start)</span></code></p></td>
 <td><p>Yields a <code class="docutils literal notranslate"><span class="pre">LoopContext</span></code> for each loop still to run: <code class="docutils literal notranslate"><span class="pre">loop</span></code>, <code class="docutils literal notranslate"><span class="pre">base_name</span></code> (<code class="docutils literal notranslate"><span class="pre">al_loop_N</span></code>), <code class="docutils literal notranslate"><span class="pre">workdir</span></code>, the current <code class="docutils literal notranslate"><span class="pre">train</span></code>/<code class="docutils literal notranslate"><span class="pre">test</span></code> structures, <code class="docutils literal notranslate"><span class="pre">train_only</span></code>, <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code>. Writes <code class="docutils literal notranslate"><span class="pre">train_set.xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>.</p></td>
@@ -150,7 +150,7 @@ declare its settings and write a short <code class="docutils literal notranslate
 <td><p>Adds labelled structures to the database, split by <code class="docutils literal notranslate"><span class="pre">dataset_kwargs.test_ratio</span></code> (or <code class="docutils literal notranslate"><span class="pre">fixed_test</span></code> rules).</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">finish_loop(ctx)</span></code></p></td>
-<td><p>Redundancy removal, train/test filters and curation on the grown dataset; marks the loop done.</p></td>
+<td><p>Train/test filters, curation and redundancy removal on the grown dataset; marks the loop done.</p></td>
 </tr>
 </tbody>
 </table>

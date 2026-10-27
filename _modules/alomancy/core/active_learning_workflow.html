@@ -141,9 +141,10 @@
 <span class="sd">`_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/</span>
 <span class="sd">`elements`, since none of these are specific to one AL workflow. Every key</span>
 <span class="sd">falls back to its old constructor default. Where the run's first</span>
-<span class="sd">structures come from is `general.start_from` (warm start from train/test</span>
-<span class="sd">xyz files, a single xyz file, or a former run's database; cold start when</span>
-<span class="sd">absent -- see `_parse_start_from` and docs/starting_a_run.md).</span>
+<span class="sd">structures come from is `general.start_from` (warm start from any mix of</span>
+<span class="sd">train/test xyz files, xyz files to split and former runs' databases, each</span>
+<span class="sd">key a path or a list; cold start when absent -- see `_parse_start_from` and</span>
+<span class="sd">docs/starting_a_run.md).</span>
 <span class="sd">`general.train_filter`/`general.test_filter` exclude poor-quality DFT</span>
 <span class="sd">structures from each split (utils/split_filter.py; the train filter's</span>
 <span class="sd">`max_force` defaults to 100 eV/Angstrom, everything else is off), and</span>
@@ -326,7 +327,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.remove_redundancy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">REDUNDANCY_KWARGS_DEFAULTS</span><span class="p">,</span>
     <span class="n">descriptors_for_atoms</span><span class="p">,</span>
-    <span class="n">probe_redundancy_tolerance</span><span class="p">,</span>
+    <span class="n">redundancy_tolerance</span><span class="p">,</span>
     <span class="n">remove_redundancy_from_partition</span><span class="p">,</span>
     <span class="n">select_non_redundant</span><span class="p">,</span>
     <span class="n">training_reference</span><span class="p">,</span>
@@ -368,6 +369,9 @@
     <span class="s2">"partitions"</span><span class="p">,</span>
     <span class="s2">"ranks_per_node"</span><span class="p">,</span>
     <span class="s2">"max_mem_per_node"</span><span class="p">,</span>
+    <span class="c1"># Left out of `alomancy list-hpc` (long); shown here so the run's log</span>
+    <span class="c1"># says which DFT/MLIP binary each profile uses.</span>
+    <span class="s2">"executable"</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="c1"># The best model keeps its trainer's own extension (.model for MACE, .pth</span>
 <span class="c1"># for SevenNet), so a loader chosen by extension gets the right format.</span>
@@ -630,23 +634,41 @@
     <span class="k">return</span> <span class="n">found</span>
 
 
-<span class="c1"># general.start_from: where the run's first structures come from. Which</span>
-<span class="c1"># source keys are present picks the mode (see docs/starting_a_run.md).</span>
-<span class="n">_START_FROM_KEYS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
-    <span class="p">{</span><span class="s2">"train_xyz"</span><span class="p">,</span> <span class="s2">"test_xyz"</span><span class="p">,</span> <span class="s2">"xyz"</span><span class="p">,</span> <span class="s2">"database"</span><span class="p">,</span> <span class="s2">"metadata_map"</span><span class="p">}</span>
-<span class="p">)</span>
+<span class="c1"># general.start_from: where the run's first structures come from. Each</span>
+<span class="c1"># source key takes a path or a list of paths, and sources can be combined</span>
+<span class="c1"># (see docs/starting_a_run.md).</span>
+<span class="n">_START_FROM_SOURCE_KEYS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"database"</span><span class="p">,</span> <span class="s2">"train_xyz"</span><span class="p">,</span> <span class="s2">"test_xyz"</span><span class="p">,</span> <span class="s2">"xyz"</span><span class="p">)</span>
+<span class="n">_START_FROM_KEYS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="o">*</span><span class="n">_START_FROM_SOURCE_KEYS</span><span class="p">,</span> <span class="s2">"metadata_map"</span><span class="p">})</span>
 <span class="n">START_MODE_SPLIT_FILES</span> <span class="o">=</span> <span class="s2">"split_files"</span>
 <span class="n">START_MODE_SINGLE_XYZ</span> <span class="o">=</span> <span class="s2">"single_xyz"</span>
 <span class="n">START_MODE_DATABASE</span> <span class="o">=</span> <span class="s2">"database"</span>
+<span class="n">START_MODE_COMBINED</span> <span class="o">=</span> <span class="s2">"combined"</span>
 <span class="n">START_MODE_COLD</span> <span class="o">=</span> <span class="s2">"cold"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_start_from_paths</span><span class="p">(</span><span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""general.start_from.&lt;key&gt; as a non-empty list of path strings."""</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">)</span> <span class="k">else</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="ow">not</span> <span class="n">paths</span>
+        <span class="ow">or</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"general.start_from.</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> must be a path or a list of paths, "</span>
+            <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">]</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_parse_start_from</span><span class="p">(</span><span class="n">start_from</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Validate general.start_from and return ``(mode, start_from)``.</span>
 
-<span class="sd">    Modes: train_xyz + test_xyz -&gt; split_files; xyz (a path or list of</span>
-<span class="sd">    paths) -&gt; single_xyz; database -&gt; database; none -&gt; cold. More than one</span>
-<span class="sd">    source, or half of the train/test pair, raises ValueError.</span>
+<span class="sd">    Every source key (database, train_xyz/test_xyz, xyz) takes a path or a</span>
+<span class="sd">    list of paths and is returned as a list. Sources can be combined. The</span>
+<span class="sd">    mode names what was given: split_files (train_xyz + test_xyz),</span>
+<span class="sd">    single_xyz (xyz), database, combined (more than one of these) or cold</span>
+<span class="sd">    (none). Half of the train/test pair raises ValueError.</span>
 <span class="sd">    """</span>
     <span class="k">if</span> <span class="n">start_from</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">start_from</span> <span class="o">=</span> <span class="p">{}</span>
@@ -662,40 +684,31 @@
     <span class="k">if</span> <span class="n">has_train</span> <span class="o">!=</span> <span class="n">has_test</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="s2">"general.start_from.train_xyz and test_xyz must be given together "</span>
-            <span class="s2">"(use start_from.xyz for a single file to be split)."</span>
-        <span class="p">)</span>
-    <span class="n">sources</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="n">name</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">present</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="p">(</span><span class="s2">"train_xyz + test_xyz"</span><span class="p">,</span> <span class="n">has_train</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">"xyz"</span><span class="p">,</span> <span class="s2">"xyz"</span> <span class="ow">in</span> <span class="n">start_from</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">"database"</span><span class="p">,</span> <span class="s2">"database"</span> <span class="ow">in</span> <span class="n">start_from</span><span class="p">),</span>
-        <span class="p">)</span>
-        <span class="k">if</span> <span class="n">present</span>
-    <span class="p">]</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">"general.start_from has more than one data source (</span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span><span class="si">}</span><span class="s2">); "</span>
-            <span class="s2">"choose one."</span>
+            <span class="s2">"(use start_from.xyz for files to be split)."</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="s2">"metadata_map"</span> <span class="ow">in</span> <span class="n">start_from</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">has_train</span> <span class="ow">or</span> <span class="s2">"xyz"</span> <span class="ow">in</span> <span class="n">start_from</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="s2">"general.start_from.metadata_map only applies to xyz imports "</span>
             <span class="s2">"(train_xyz/test_xyz or xyz)."</span>
         <span class="p">)</span>
-    <span class="k">if</span> <span class="n">has_train</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">START_MODE_SPLIT_FILES</span><span class="p">,</span> <span class="n">start_from</span>
-    <span class="k">if</span> <span class="s2">"xyz"</span> <span class="ow">in</span> <span class="n">start_from</span><span class="p">:</span>
-        <span class="n">xyz</span> <span class="o">=</span> <span class="n">start_from</span><span class="p">[</span><span class="s2">"xyz"</span><span class="p">]</span>
-        <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">xyz</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">xyz</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">xyz</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">paths</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">"general.start_from.xyz must be a path or a list of paths."</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="n">START_MODE_SINGLE_XYZ</span><span class="p">,</span> <span class="p">{</span><span class="o">**</span><span class="n">start_from</span><span class="p">,</span> <span class="s2">"xyz"</span><span class="p">:</span> <span class="n">paths</span><span class="p">}</span>
-    <span class="k">if</span> <span class="s2">"database"</span> <span class="ow">in</span> <span class="n">start_from</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">START_MODE_DATABASE</span><span class="p">,</span> <span class="n">start_from</span>
-    <span class="k">return</span> <span class="n">START_MODE_COLD</span><span class="p">,</span> <span class="n">start_from</span>
+    <span class="n">parsed</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">start_from</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">_START_FROM_SOURCE_KEYS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">parsed</span><span class="p">:</span>
+            <span class="n">parsed</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">_start_from_paths</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">parsed</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
+    <span class="n">kinds</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">mode</span>
+        <span class="k">for</span> <span class="n">mode</span><span class="p">,</span> <span class="n">present</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">START_MODE_DATABASE</span><span class="p">,</span> <span class="s2">"database"</span> <span class="ow">in</span> <span class="n">parsed</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">START_MODE_SPLIT_FILES</span><span class="p">,</span> <span class="n">has_train</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">START_MODE_SINGLE_XYZ</span><span class="p">,</span> <span class="s2">"xyz"</span> <span class="ow">in</span> <span class="n">parsed</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">present</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">kinds</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">START_MODE_COLD</span><span class="p">,</span> <span class="n">parsed</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">kinds</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">START_MODE_COMBINED</span><span class="p">,</span> <span class="n">parsed</span>
+    <span class="k">return</span> <span class="n">kinds</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">parsed</span>
 
 
 <span class="c1"># general keys every workflow accepts; a workflow adds its own KWARGS_KEY.</span>
@@ -1160,6 +1173,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_db</span><span class="p">:</span> <span class="n">GlobalDatabase</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_db_path</span> <span class="o">=</span> <span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"db_path"</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span> <span class="o">=</span> <span class="n">general_kwargs</span><span class="p">[</span><span class="s2">"remove_redundancy"</span><span class="p">]</span>
+        <span class="c1"># Set by each curation pass; the pre-DFT selection reuses it.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_tolerance</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_curated</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span> <span class="o">=</span> <span class="n">validate_redundancy_kwargs</span><span class="p">(</span>
             <span class="n">general_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"redundancy_kwargs"</span><span class="p">)</span>
         <span class="p">)</span>
@@ -1470,17 +1486,20 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_import_start_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Bring general.start_from's data into the global DB. Every mode</span>
-<span class="sd">        then continues through the same DB-driven initialization."""</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_mode</span> <span class="o">==</span> <span class="n">START_MODE_SPLIT_FILES</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_import_xyz</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="p">[</span><span class="s2">"train_xyz"</span><span class="p">],</span> <span class="n">split</span><span class="o">=</span><span class="s2">"train"</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_import_xyz</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="p">[</span><span class="s2">"test_xyz"</span><span class="p">],</span> <span class="n">split</span><span class="o">=</span><span class="s2">"test"</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_mode</span> <span class="o">==</span> <span class="n">START_MODE_SINGLE_XYZ</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="p">[</span><span class="s2">"xyz"</span><span class="p">]:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_import_xyz</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_mode</span> <span class="o">==</span> <span class="n">START_MODE_DATABASE</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">import_from_database</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="p">[</span><span class="s2">"database"</span><span class="p">],</span> <span class="n">elements</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_required_elements</span><span class="p">()</span>
-            <span class="p">)</span>
+<span class="sd">        then continues through the same DB-driven initialization.</span>
+
+<span class="sd">        Databases are imported first, then train_xyz/test_xyz, then xyz,</span>
+<span class="sd">        each list in order. Exact-duplicate types (IsolatedAtom, init_MP)</span>
+<span class="sd">        keep the first import's copy, so a former run's isolated-atom</span>
+<span class="sd">        energies win over an xyz file's."""</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"database"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">import_from_database</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">elements</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_required_elements</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"train_xyz"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_import_xyz</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"train"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"test_xyz"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_import_xyz</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"test"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"xyz"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_import_xyz</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
             <span class="s2">"Start mode: </span><span class="si">%s</span><span class="s2"> (global DB now holds </span><span class="si">%d</span><span class="s2"> structures)."</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">start_mode</span><span class="p">,</span>
@@ -1619,7 +1638,7 @@
 
         <span class="n">target_config_types</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataset_kwargs</span><span class="p">[</span><span class="s2">"target_config_types"</span><span class="p">])</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">start_mode</span> <span class="o">==</span> <span class="n">START_MODE_SINGLE_XYZ</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"xyz"</span><span class="p">)</span>
             <span class="ow">and</span> <span class="ow">not</span> <span class="n">test_xyzs</span>
             <span class="ow">and</span> <span class="n">EXTERNAL_CONFIG_TYPE</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">target_config_types</span>
             <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="o">==</span> <span class="n">EXTERNAL_CONFIG_TYPE</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">untagged</span><span class="p">)</span>
@@ -1706,8 +1725,8 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_apply_split_filters</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Re-flag train/test structures against general.train_filter /</span>
 <span class="sd">        general.test_filter. Always runs (a disabled filter clears old</span>
-<span class="sd">        flags), after redundancy removal and before the next loop reads the</span>
-<span class="sd">        splits."""</span>
+<span class="sd">        flags), before curation and redundancy removal, so those only see</span>
+<span class="sd">        structures that pass the filters."""</span>
         <span class="n">apply_split_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">train_filter</span><span class="p">)</span>
         <span class="n">apply_split_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_filter</span><span class="p">)</span>
 
@@ -1862,7 +1881,7 @@
 <span class="w">        </span><span class="sd">"""Everything before the first loop: curation-policy check, pre-run</span>
 <span class="sd">        checks, then resume from the database or build the initial</span>
 <span class="sd">        train/test set (cold/warm start, see general.start_from), followed</span>
-<span class="sd">        by redundancy removal, the train/test filters and curation. Returns</span>
+<span class="sd">        by the train/test filters, curation and redundancy removal. Returns</span>
 <span class="sd">        the first loop to run."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dataset_curation"</span><span class="p">):</span>
             <span class="n">policy_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results/curation_policy.json"</span><span class="p">)</span>
@@ -1911,12 +1930,13 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dataset_curation"</span><span class="p">):</span>
             <span class="n">curate_database</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">jobs_dict</span><span class="p">[</span><span class="s2">"dataset_curation"</span><span class="p">])</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
-            <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_tolerance</span> <span class="o">=</span> <span class="n">remove_redundancy_from_partition</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
                 <span class="n">config_list</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_config_types</span><span class="p">(),</span>
                 <span class="n">probe_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">_REDUNDANCY_PROBE_FILENAME</span><span class="p">),</span>
                 <span class="n">settings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_curated</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_redundancy_config_types</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""config_types redundancy removal deduplicates."""</span>
@@ -1929,26 +1949,36 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""A selector for *candidates* that, given their indices best</span>
 <span class="sd">        first and a count n, returns the first n that redundancy removal</span>
-<span class="sd">        wouldn't flag at the end of the loop (select_non_redundant), so no</span>
-<span class="sd">        DFT is spent on them. None when redundancy removal is off or no</span>
-<span class="sd">        tolerance qualifies on the current training set."""</span>
+<span class="sd">        wouldn't flag (select_non_redundant), so no DFT is spent on them.</span>
+<span class="sd">        Uses the tolerance the last curation pass chose (every start and</span>
+<span class="sd">        every loop end run one before selection), probing the same pool</span>
+<span class="sd">        only if none has run in this process. None when redundancy removal</span>
+<span class="sd">        is off or no tolerance qualifies on the current training set."""</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_redundancy</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="n">reference</span> <span class="o">=</span> <span class="n">training_reference</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_config_types</span><span class="p">())</span>
-        <span class="n">tolerance</span><span class="p">,</span> <span class="n">_record</span> <span class="o">=</span> <span class="n">probe_redundancy_tolerance</span><span class="p">(</span>
-            <span class="n">reference</span><span class="p">,</span> <span class="n">settings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_curated</span><span class="p">:</span>
+            <span class="n">tolerance</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_tolerance</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tolerance</span> <span class="o">=</span> <span class="n">redundancy_tolerance</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_config_types</span><span class="p">(),</span>
+                <span class="n">settings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">redundancy_kwargs</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
                 <span class="s2">"No redundancy tolerance on the current training set; "</span>
                 <span class="s2">"selection is not checked for redundancy."</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">reference</span> <span class="o">=</span> <span class="n">training_reference</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_redundancy_config_types</span><span class="p">())</span>
         <span class="n">descriptors</span> <span class="o">=</span> <span class="n">descriptors_for_atoms</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">select</span><span class="p">(</span><span class="n">ranked</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
             <span class="n">chosen</span> <span class="o">=</span> <span class="n">select_non_redundant</span><span class="p">(</span><span class="n">descriptors</span><span class="p">[</span><span class="n">ranked</span><span class="p">],</span> <span class="n">reference</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
-            <span class="n">replaced</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">chosen</span><span class="p">))</span> <span class="k">if</span> <span class="n">chosen</span> <span class="k">else</span> <span class="mi">0</span>
+            <span class="c1"># The walk stops at the n-th accepted pick, or reads every</span>
+            <span class="c1"># candidate when there aren't n.</span>
+            <span class="n">examined</span> <span class="o">=</span> <span class="n">chosen</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span> <span class="o">==</span> <span class="n">n</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">ranked</span><span class="p">)</span>
+            <span class="n">replaced</span> <span class="o">=</span> <span class="n">examined</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">replaced</span><span class="p">:</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
                     <span class="s2">"Replaced </span><span class="si">%d</span><span class="s2"> redundant pick(s) with the next candidates in "</span>
@@ -2476,8 +2506,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_structures</span><span class="p">(</span><span class="n">new_test_data</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"test"</span><span class="p">,</span> <span class="n">skip_duplicates</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">finish_loop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">LoopContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""End of a loop: redundancy removal, train/test filters and</span>
-<span class="sd">        curation on the grown database, then mark the loop done."""</span>
+<span class="w">        </span><span class="sd">"""End of a loop: train/test filters, curation and redundancy</span>
+<span class="sd">        removal on the grown database, then mark the loop done."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_curate_dataset</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">base_name</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_mark_phase_done</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">base_name</span><span class="p">,</span> <span class="s2">"loop"</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">report</span><span class="p">:</span>

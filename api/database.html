@@ -217,8 +217,10 @@ instance – no stale-counter risk.</p>
 <dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags">
 <span class="sig-name descname"><span class="pre">clear_duplicate_flags</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_types</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.15)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.clear_duplicate_flags"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.clear_duplicate_flags" title="Link to this definition"></a></dt>
 <dd><p>Set is_duplicate=False on every flagged container (only those of
-<em>config_types</em>, if given). Never called by the workflow: for undoing
-flags set under older redundancy rules. Returns the number cleared.</p>
+<em>config_types</em>, if given). Never called by the workflow, whose
+redundancy passes rewrite the flags of the config_types they
+deduplicate: for other types or manual use. Returns the number
+cleared.</p>
 </dd></dl>
 
 <dl class="py method">

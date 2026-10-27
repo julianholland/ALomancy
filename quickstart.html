@@ -147,24 +147,20 @@ The <code class="docutils literal notranslate"><span class="pre">hpc:</span></co
 <span class="w">    </span><span class="nt">num_of_models_in_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 
 <span class="nt">initialization</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"initialization"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"4:00:00"</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_cpu"</span><span class="w">       </span><span class="c1"># profile name from ~/.alomancy/hpc_config.yaml</span>
 
 <span class="nt">training</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"mace_training"</span>
 <span class="w">  </span><span class="nt">trainer</span><span class="p">:</span><span class="w"> </span><span class="s">"mace"</span><span class="w">        </span><span class="c1"># selects the registered mlip_trainer backend</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"12:00:00"</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_gpu"</span>
 
 <span class="nt">structure_generation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"md_generation"</span>
 <span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"md"</span><span class="w">        </span><span class="c1"># "md" (default) or "ezga"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"8:00:00"</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_gpu"</span>
 
 <span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"high_accuracy_evaluation"</span>
 <span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"qe"</span><span class="w">        </span><span class="c1"># "qe" (default) or "vasp"</span>
 <span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"24:00:00"</span>
 <span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_cpu"</span>

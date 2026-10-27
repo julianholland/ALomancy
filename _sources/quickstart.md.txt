@@ -62,24 +62,20 @@ general:
     num_of_models_in_committee: 5
 
 initialization:
-  name: "initialization"
   max_time: "4:00:00"
   hpc: "raven_cpu"       # profile name from ~/.alomancy/hpc_config.yaml
 
 training:
-  name: "mace_training"
   trainer: "mace"        # selects the registered mlip_trainer backend
   max_time: "12:00:00"
   hpc: "raven_gpu"
 
 structure_generation:
-  name: "md_generation"
   generator: "md"        # "md" (default) or "ezga"
   max_time: "8:00:00"
   hpc: "raven_gpu"
 
 high_accuracy_evaluation:
-  name: "high_accuracy_evaluation"
   evaluator: "qe"        # "qe" (default) or "vasp"
   max_time: "24:00:00"
   hpc: "raven_cpu"

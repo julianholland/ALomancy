@@ -242,9 +242,13 @@
         <span class="n">stamp</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
         <span class="n">moved</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">sidecar</span> <span class="ow">in</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">-wal"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">-shm"</span><span class="p">):</span>
+            <span class="c1"># SQLite pairs a database with "&lt;name&gt;-wal"/"&lt;name&gt;-shm", so the</span>
+            <span class="c1"># moved-aside copy keeps that pairing (as sage_lib's own</span>
+            <span class="c1"># *.corrupted_&lt;ts&gt; backups do) and opens with its WAL rows.</span>
+            <span class="k">for</span> <span class="n">suffix</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">""</span><span class="p">,</span> <span class="s2">"-wal"</span><span class="p">,</span> <span class="s2">"-shm"</span><span class="p">):</span>
+                <span class="n">sidecar</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">"</span>
                 <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">sidecar</span><span class="p">):</span>
-                    <span class="n">target</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">sidecar</span><span class="si">}</span><span class="s2">.replaced_</span><span class="si">{</span><span class="n">stamp</span><span class="si">}</span><span class="s2">"</span>
+                    <span class="n">target</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">.replaced_</span><span class="si">{</span><span class="n">stamp</span><span class="si">}{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">"</span>
                     <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">sidecar</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
                     <span class="n">moved</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">ino</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_inodes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -272,6 +276,7 @@
 
 <div class="viewcode-block" id="GlobalDatabase.clear">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.clear">[docs]</a>
+    <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Remove every structure, leaving this instance otherwise reusable.</span>
 
@@ -765,8 +770,10 @@
     <span class="nd">@_guarded_write</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">clear_duplicate_flags</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_types</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Set is_duplicate=False on every flagged container (only those of</span>
-<span class="sd">        *config_types*, if given). Never called by the workflow: for undoing</span>
-<span class="sd">        flags set under older redundancy rules. Returns the number cleared."""</span>
+<span class="sd">        *config_types*, if given). Never called by the workflow, whose</span>
+<span class="sd">        redundancy passes rewrite the flags of the config_types they</span>
+<span class="sd">        deduplicate: for other types or manual use. Returns the number</span>
+<span class="sd">        cleared."""</span>
         <span class="n">updates</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">i</span><span class="p">:</span> <span class="p">{</span><span class="s2">"is_duplicate"</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
             <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">())</span>
@@ -870,7 +877,7 @@
             <span class="k">if</span> <span class="n">new_keys</span><span class="p">:</span>
                 <span class="n">updates</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_keys</span>
         <span class="k">if</span> <span class="n">updates</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">updates</span><span class="p">,</span> <span class="n">use_indices</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_metadata_bulk</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
             <span class="s2">"migrate_mace_prediction_keys: updated </span><span class="si">%d</span><span class="s2"> container(s)."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span>
         <span class="p">)</span>
