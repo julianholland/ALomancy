@@ -96,7 +96,7 @@ def test_percent_error_writes_a_figure(tmp_path):
         "test": _split([-1.5], [-1.4], [[0, 2, 0]], [[0, 2.5, 0]]),
     }
 
-    percent_error(predictions, path, title="t", energy_label="formation energy")
+    percent_error(predictions, path, title="t")
 
     assert path.exists()
 
@@ -109,7 +109,6 @@ def test_percent_error_writes_nothing_when_every_point_is_below_the_floor(tmp_pa
         {"train": _split([0.0], [0.1], [[0, 0, 0]], [[1, 0, 0]])},
         path,
         title="t",
-        energy_label="energy",
     )
 
     assert not path.exists()
@@ -124,7 +123,46 @@ def test_percent_error_with_energies_only(tmp_path):
         {"train": _split([-1.0], [-1.1], [[0, 0, 0]], [[0.01, 0, 0]])},
         path,
         title="t",
-        energy_label="energy",
     )
 
     assert path.exists()
+
+
+@pytest.mark.unit
+def test_total_energies_give_no_energy_percentage(tmp_path):
+    """Without formation energies the energy error is left out (relative to
+    a total energy every error looks like 0%); forces still count."""
+    path = tmp_path / "percent.png"
+    predictions = {"train": _split([-150.0], [-150.1], [[0, 2, 0]], [[0, 2.5, 0]])}
+
+    medians = percent_error(predictions, path, title="t", formation_energy=False)
+
+    assert path.exists()
+    assert medians == {"train": {"force": pytest.approx(25.0)}}
+    assert "energy" not in percent_errors(predictions, formation_energy=False)["train"]
+
+
+@pytest.mark.unit
+def test_committee_cut_is_the_lowest_selected_candidate(tmp_path, monkeypatch):
+    """Redundant picks skipped before DFT leave gaps in the ranking: the
+    reported cut is the lowest std dev actually selected, not the N-th."""
+    import polars as pl
+
+    from alomancy.analysis.report.sections import committee_section
+
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "results/al_loop_0/structure_generation/std_dev_forces.csv"
+    path.parent.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "structure_index": [0, 1, 2, 3],
+            "max_std_dev": [5.0, 4.0, 3.0, 2.0],
+            "selected": [True, False, True, False],
+        }
+    ).write_csv(path)
+
+    section = committee_section(
+        {"dft": {"submitted": 2}}, base_name="al_loop_0", plots_dir=None
+    )
+
+    assert "2 selected (max force std dev ≥ 3" in section.lines[0]

@@ -84,6 +84,16 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
         if fit_idx is None:
             return
         e0 = workflow.db.get_isolated_atom_energies() or None
+        elements = set(workflow.jobs_dict.get("general", {}).get("elements") or [])
+        if e0 and not elements <= set(e0):
+            # The prediction loaders would fall back to total energies anyway;
+            # say so here, so the labels and the relative error follow.
+            logger.warning(
+                "Loop report: no isolated-atom energy for %s; parity plots show "
+                "total energies and the relative energy error is left out.",
+                ", ".join(sorted(elements - set(e0))),
+            )
+            e0 = None
         fit_dir = Path("results", stats["base_name"], "training", f"fit_{fit_idx}")
         predictions = parity_predictions(
             workflow.db, stats["loop"], fit_idx, fit_dir, e0=e0
@@ -103,15 +113,16 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
         percent_path = plots_dir / "best_model_percent_error.png"
         # A regenerated report must not link a stale figure.
         percent_path.unlink(missing_ok=True)
-        plots.percent_error(
+        medians = plots.percent_error(
             predictions,
             percent_path,
             title=f"Best model (fit_{fit_idx}) relative error [{stats['base_name']}]",
-            energy_label="formation energy" if e0 else "energy",
+            formation_energy=e0 is not None,
         )
-        if percent_path.exists():
+        if medians is not None:
             made["percent_error"] = percent_path
-            model["percent_error"] = plots.percent_error_medians(predictions)
+            model["percent_error"] = medians
+            model["percent_error_formation"] = e0 is not None
 
     def redundancy() -> None:
         from alomancy.analysis.report.stats import read_redundancy_probe

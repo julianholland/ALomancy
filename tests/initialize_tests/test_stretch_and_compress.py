@@ -16,6 +16,7 @@ def _make_h2o():
 
 @pytest.mark.unit
 class TestCreateStretchCompressAtomsList:
+    @pytest.mark.unit
     def test_returns_correct_count(self):
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
@@ -25,6 +26,7 @@ class TestCreateStretchCompressAtomsList:
         result = create_stretch_compress_atoms_list(atoms, 0.1, 5)
         assert len(result) == 5
 
+    @pytest.mark.unit
     def test_zero_structures_returns_empty(self):
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
@@ -34,6 +36,7 @@ class TestCreateStretchCompressAtomsList:
         result = create_stretch_compress_atoms_list(atoms, 0.1, 0)
         assert result == []
 
+    @pytest.mark.unit
     def test_config_type(self):
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
@@ -43,6 +46,7 @@ class TestCreateStretchCompressAtomsList:
         result = create_stretch_compress_atoms_list(atoms, 0.2, 4)
         assert all(a.info["config_type"] == "init_stretch_compress" for a in result)
 
+    @pytest.mark.unit
     def test_needs_relaxation_false(self):
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
@@ -52,6 +56,7 @@ class TestCreateStretchCompressAtomsList:
         result = create_stretch_compress_atoms_list(atoms, 0.2, 4)
         assert all(a.info["needs_relaxation"] is False for a in result)
 
+    @pytest.mark.unit
     def test_deformation_stored_in_info(self):
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,
@@ -61,6 +66,7 @@ class TestCreateStretchCompressAtomsList:
         result = create_stretch_compress_atoms_list(atoms, 0.2, 4)
         assert all("deformation" in a.info for a in result)
 
+    @pytest.mark.unit
     def test_cell_varies_across_structures(self):
         """Each structure should have a different cell volume."""
         from alomancy.initialize.stretch_and_compress import (
@@ -72,6 +78,7 @@ class TestCreateStretchCompressAtomsList:
         volumes = [a.get_volume() for a in result]
         assert len(set(volumes)) > 1
 
+    @pytest.mark.unit
     def test_original_atoms_not_modified(self):
         """Source atoms object should not be mutated."""
         from alomancy.initialize.stretch_and_compress import (
@@ -83,6 +90,7 @@ class TestCreateStretchCompressAtomsList:
         create_stretch_compress_atoms_list(atoms, 0.5, 5)
         np.testing.assert_allclose(atoms.cell.array, orig_cell)
 
+    @pytest.mark.unit
     def test_atoms_scaled_with_cell(self):
         """Atom positions should scale proportionally with the cell."""
         from alomancy.initialize.stretch_and_compress import (
@@ -98,6 +106,7 @@ class TestCreateStretchCompressAtomsList:
         mid_frac = mid.get_scaled_positions()
         np.testing.assert_allclose(mid_frac, orig_frac, atol=1e-10)
 
+    @pytest.mark.unit
     def test_single_structure(self):
         from alomancy.initialize.stretch_and_compress import (
             create_stretch_compress_atoms_list,

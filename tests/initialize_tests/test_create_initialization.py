@@ -79,6 +79,7 @@ def _enter_patches(stack, patches):
 
 @pytest.mark.unit
 class TestCreateInitializationAtomsList:
+    @pytest.mark.unit
     def test_empty_elements_raises(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -87,6 +88,7 @@ class TestCreateInitializationAtomsList:
         with pytest.raises(AssertionError):
             create_initialization_atoms_list(work_dir=str(tmp_path), elements=[])
 
+    @pytest.mark.unit
     def test_skips_mp_when_mp_structures_false(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -106,6 +108,7 @@ class TestCreateInitializationAtomsList:
 
         mock_mp.assert_not_called()
 
+    @pytest.mark.unit
     def test_calls_mp_when_mp_structures_true(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -129,6 +132,7 @@ class TestCreateInitializationAtomsList:
 
         mock_mp.assert_called_once()
 
+    @pytest.mark.unit
     def test_skips_singles_when_single_atoms_false(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -149,6 +153,7 @@ class TestCreateInitializationAtomsList:
 
         mock_single.assert_not_called()
 
+    @pytest.mark.unit
     def test_isolated_atoms_override_restricts_elements(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -173,6 +178,7 @@ class TestCreateInitializationAtomsList:
         elements_called = [c.kwargs["element"] for c in mock_single.call_args_list]
         assert elements_called == ["O"]
 
+    @pytest.mark.unit
     def test_no_singles_when_override_empty(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -194,6 +200,7 @@ class TestCreateInitializationAtomsList:
 
         mock_single.assert_not_called()
 
+    @pytest.mark.unit
     def test_dimer_override_zero_skips_combo(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -215,6 +222,7 @@ class TestCreateInitializationAtomsList:
 
         mock_dimer.assert_not_called()
 
+    @pytest.mark.unit
     def test_dimer_override_count_passed_to_generator(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -239,6 +247,7 @@ class TestCreateInitializationAtomsList:
         assert mock_dimer.call_count == 1
         assert mock_dimer.call_args.kwargs["num_dimers"] == 3
 
+    @pytest.mark.unit
     def test_trimer_override_zero_skips_combo(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -260,6 +269,7 @@ class TestCreateInitializationAtomsList:
 
         mock_trimer.assert_not_called()
 
+    @pytest.mark.unit
     def test_zero_amorphous_produces_none(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -283,6 +293,7 @@ class TestCreateInitializationAtomsList:
 
         mock_amorphous.assert_not_called()
 
+    @pytest.mark.unit
     def test_amorphous_override_controls_count(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -308,6 +319,7 @@ class TestCreateInitializationAtomsList:
         assert mock_amorphous.call_count == 1
         assert mock_amorphous.call_args.kwargs["num_structures"] == 20
 
+    @pytest.mark.unit
     def test_max_atom_number_and_amorphous_atom_number_are_independent(self, tmp_path):
         """max_num_of_atoms (MP fetch cap) and num_of_atoms_per_amorphous (amorphous
         cell size) are separate knobs -- changing one must not affect the
@@ -343,6 +355,7 @@ class TestCreateInitializationAtomsList:
         assert mock_mp.call_args.kwargs["max_energy_above_hull"] == 0.05
         assert mock_amorphous.call_args.kwargs["atom_number"] == 8
 
+    @pytest.mark.unit
     def test_max_atom_number_and_amorphous_atom_number_default_independently(
         self, tmp_path
     ):
@@ -376,6 +389,7 @@ class TestCreateInitializationAtomsList:
         assert mock_mp.call_args.kwargs["max_energy_above_hull"] == 0.1
         assert mock_amorphous.call_args.kwargs["atom_number"] == 20
 
+    @pytest.mark.unit
     def test_mp_max_energy_above_hull_does_not_affect_amorphous(self, tmp_path):
         """Regression test: mp_max_energy_above_hull only tunes the MP fetch
         and must never leak into the amorphous generator call."""
@@ -406,6 +420,7 @@ class TestCreateInitializationAtomsList:
         assert "mp_max_energy_above_hull" not in mock_amorphous.call_args.kwargs
         assert "max_energy_above_hull" not in mock_amorphous.call_args.kwargs
 
+    @pytest.mark.unit
     def test_writes_output_file(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -432,6 +447,7 @@ class TestCreateInitializationAtomsList:
 
         assert (tmp_path / "initialization_structures_generated.xyz").exists()
 
+    @pytest.mark.unit
     def test_stretch_compress_called_per_target_structure(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -470,6 +486,7 @@ class TestCreateInitializationAtomsList:
         assert mock_sc.call_count == 2
         assert mock_sc.call_args_list[0].kwargs["num_structures"] == 3
 
+    @pytest.mark.unit
     def test_stretch_compress_skipped_when_mp_false(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -499,6 +516,7 @@ class TestCreateInitializationAtomsList:
 
         mock_sc.assert_not_called()
 
+    @pytest.mark.unit
     def test_stretch_compress_skipped_when_config_type_not_a_target(self, tmp_path):
         """Generalization guard: a structure whose config_type isn't listed
         in target_config_types is never stretch/compressed, even if it was
@@ -537,6 +555,7 @@ class TestCreateInitializationAtomsList:
 
         mock_sc.assert_not_called()
 
+    @pytest.mark.unit
     def test_stretch_compress_applies_to_non_mp_target_config_type(self, tmp_path):
         """Generalization: any config_type listed in target_config_types is
         subject to stretch/compress, not just init_MP."""
@@ -574,6 +593,7 @@ class TestCreateInitializationAtomsList:
         assert mock_sc.call_args.kwargs["num_structures"] == 2
         assert mock_sc.call_args.kwargs["atoms"] is dimer
 
+    @pytest.mark.unit
     def test_rattle_called_per_target_structure(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -614,6 +634,7 @@ class TestCreateInitializationAtomsList:
         assert mock_rattle.call_args_list[0].kwargs["num_structures"] == 4
         assert mock_rattle.call_args_list[0].kwargs["rattle_standard_deviation"] == 0.02
 
+    @pytest.mark.unit
     def test_rattle_num_structures_zero_when_not_configured(self, tmp_path):
         """num_of_rattled_per_target defaults to 0 -- create_rattle_atoms_list
         is still called per target (matching create_stretch_compress_atoms_
@@ -652,6 +673,7 @@ class TestCreateInitializationAtomsList:
         mock_rattle.assert_called_once()
         assert mock_rattle.call_args.kwargs["num_structures"] == 0
 
+    @pytest.mark.unit
     def test_rattle_skipped_when_no_target_structures(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -681,6 +703,7 @@ class TestCreateInitializationAtomsList:
 
         mock_rattle.assert_not_called()
 
+    @pytest.mark.unit
     def test_result_includes_all_enabled_components(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
@@ -713,6 +736,7 @@ class TestCreateInitializationAtomsList:
         # single + dimer + amorphous = 3
         assert len(result) == 3
 
+    @pytest.mark.unit
     def test_multiple_densities_calls_amorphous_per_density(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,

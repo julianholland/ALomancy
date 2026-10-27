@@ -124,6 +124,26 @@ def fewer_candidates(stats: dict) -> dict | None:
     return {"value": 1 - n / desired, "n": n, "desired": desired}
 
 
+@trigger("selection_redundant_shortfall")
+def selection_redundant_shortfall(stats: dict) -> dict | None:
+    """Shortfall of non-redundant candidates against the structures
+    requested this loop."""
+    rows = stats["events"]["data"].get("selection_redundant_shortfall") or []
+    if not rows:
+        return None
+    row = rows[-1]
+    desired = int(row.get("desired") or 0)
+    if desired <= 0:
+        return None
+    n = int(row.get("n") or 0)
+    return {
+        "value": 1 - n / desired,
+        "n": n,
+        "desired": desired,
+        "candidates": int(row.get("candidates") or 0),
+    }
+
+
 @trigger("few_candidates_generated")
 def few_candidates_generated(stats: dict) -> dict | None:
     """Shortfall of generated candidates against twice general.

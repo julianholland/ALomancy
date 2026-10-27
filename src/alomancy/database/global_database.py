@@ -151,9 +151,13 @@ class GlobalDatabase:
         stamp = int(time.time())
         moved = []
         for path in self._open_inodes:
-            for sidecar in (path, f"{path}-wal", f"{path}-shm"):
+            # SQLite pairs a database with "<name>-wal"/"<name>-shm", so the
+            # moved-aside copy keeps that pairing (as sage_lib's own
+            # *.corrupted_<ts> backups do) and opens with its WAL rows.
+            for suffix in ("", "-wal", "-shm"):
+                sidecar = f"{path}{suffix}"
                 if os.path.exists(sidecar):
-                    target = f"{sidecar}.replaced_{stamp}"
+                    target = f"{path}.replaced_{stamp}{suffix}"
                     os.replace(sidecar, target)
                     moved.append(target)
         for path, ino in self._open_inodes.items():
@@ -179,6 +183,7 @@ class GlobalDatabase:
             },
         )
 
+    @_guarded_write
     def clear(self) -> None:
         """Remove every structure, leaving this instance otherwise reusable.
 
@@ -621,8 +626,10 @@ class GlobalDatabase:
     @_guarded_write
     def clear_duplicate_flags(self, config_types: list[str] | None = None) -> int:
         """Set is_duplicate=False on every flagged container (only those of
-        *config_types*, if given). Never called by the workflow: for undoing
-        flags set under older redundancy rules. Returns the number cleared."""
+        *config_types*, if given). Never called by the workflow, whose
+        redundancy passes rewrite the flags of the config_types they
+        deduplicate: for other types or manual use. Returns the number
+        cleared."""
         updates = {
             i: {"is_duplicate": False}
             for i, c in enumerate(self.partition.list_containers())
@@ -714,7 +721,7 @@ class GlobalDatabase:
             if new_keys:
                 updates[i] = new_keys
         if updates:
-            self.partition.set_metadata_bulk(updates, use_indices=True)
+            self.set_metadata_bulk(updates)
         logger.info(
             "migrate_mace_prediction_keys: updated %d container(s).", len(updates)
         )

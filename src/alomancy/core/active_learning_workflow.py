@@ -247,7 +247,7 @@ from alomancy.utils.remote_ssh import (
 from alomancy.utils.remove_redundancy import (
     REDUNDANCY_KWARGS_DEFAULTS,
     descriptors_for_atoms,
-    probe_redundancy_tolerance,
+    redundancy_tolerance,
     remove_redundancy_from_partition,
     select_non_redundant,
     training_reference,
@@ -289,6 +289,9 @@ _SUMMARY_HPC_COLUMNS = (
     "partitions",
     "ranks_per_node",
     "max_mem_per_node",
+    # Left out of `alomancy list-hpc` (long); shown here so the run's log
+    # says which DFT/MLIP binary each profile uses.
+    "executable",
 )
 # The best model keeps its trainer's own extension (.model for MACE, .pth
 # for SevenNet), so a loader chosen by extension gets the right format.
@@ -1090,6 +1093,9 @@ class ActiveLearningWorkflow(ABC):
         self._db: GlobalDatabase | None = None
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
+        # Set by each curation pass; the pre-DFT selection reuses it.
+        self._redundancy_tolerance: float | None = None
+        self._redundancy_curated = False
         self.redundancy_kwargs = validate_redundancy_kwargs(
             general_config.get("redundancy_kwargs")
         )
@@ -1639,8 +1645,8 @@ class ActiveLearningWorkflow(ABC):
     def _apply_split_filters(self) -> None:
         """Re-flag train/test structures against general.train_filter /
         general.test_filter. Always runs (a disabled filter clears old
-        flags), after redundancy removal and before the next loop reads the
-        splits."""
+        flags), before curation and redundancy removal, so those only see
+        structures that pass the filters."""
         apply_split_filter(self.db, "train", self.train_filter)
         apply_split_filter(self.db, "test", self.test_filter)
 
@@ -1795,7 +1801,7 @@ class ActiveLearningWorkflow(ABC):
         """Everything before the first loop: curation-policy check, pre-run
         checks, then resume from the database or build the initial
         train/test set (cold/warm start, see general.start_from), followed
-        by redundancy removal, the train/test filters and curation. Returns
+        by the train/test filters, curation and redundancy removal. Returns
         the first loop to run."""
         if self.jobs_dict.get("dataset_curation"):
             policy_path = Path("results/curation_policy.json")
@@ -1844,12 +1850,13 @@ class ActiveLearningWorkflow(ABC):
         if self.jobs_dict.get("dataset_curation"):
             curate_database(self.db, self.jobs_dict["dataset_curation"])
         if self.remove_redundancy:
-            remove_redundancy_from_partition(
+            self._redundancy_tolerance = remove_redundancy_from_partition(
                 self.db,
                 config_list=self._redundancy_config_types(),
                 probe_path=Path("results", base_name, _REDUNDANCY_PROBE_FILENAME),
                 settings=self.redundancy_kwargs,
             )
+            self._redundancy_curated = True
 
     def _redundancy_config_types(self) -> list[str]:
         """config_types redundancy removal deduplicates."""
@@ -1862,26 +1869,36 @@ class ActiveLearningWorkflow(ABC):
     ) -> Callable[[list[int], int], list[int]] | None:
         """A selector for *candidates* that, given their indices best
         first and a count n, returns the first n that redundancy removal
-        wouldn't flag at the end of the loop (select_non_redundant), so no
-        DFT is spent on them. None when redundancy removal is off or no
-        tolerance qualifies on the current training set."""
+        wouldn't flag (select_non_redundant), so no DFT is spent on them.
+        Uses the tolerance the last curation pass chose (every start and
+        every loop end run one before selection), probing the same pool
+        only if none has run in this process. None when redundancy removal
+        is off or no tolerance qualifies on the current training set."""
         if not self.remove_redundancy:
             return None
-        reference = training_reference(self.db, self._redundancy_config_types())
-        tolerance, _record = probe_redundancy_tolerance(
-            reference, settings=self.redundancy_kwargs
-        )
+        if self._redundancy_curated:
+            tolerance = self._redundancy_tolerance
+        else:
+            tolerance = redundancy_tolerance(
+                self.db,
+                self._redundancy_config_types(),
+                settings=self.redundancy_kwargs,
+            )
         if tolerance is None:
             logger.info(
                 "No redundancy tolerance on the current training set; "
                 "selection is not checked for redundancy."
             )
             return None
+        reference = training_reference(self.db, self._redundancy_config_types())
         descriptors = descriptors_for_atoms(candidates)
 
         def select(ranked: list[int], n: int) -> list[int]:
             chosen = select_non_redundant(descriptors[ranked], reference, tolerance, n)
-            replaced = (chosen[-1] + 1 - len(chosen)) if chosen else 0
+            # The walk stops at the n-th accepted pick, or reads every
+            # candidate when there aren't n.
+            examined = chosen[-1] + 1 if len(chosen) == n else len(ranked)
+            replaced = examined - len(chosen)
             if replaced:
                 logger.info(
                     "Replaced %d redundant pick(s) with the next candidates in "
@@ -2409,8 +2426,8 @@ class ActiveLearningWorkflow(ABC):
         self.db.add_structures(new_test_data, split="test", skip_duplicates=False)
 
     def finish_loop(self, ctx: LoopContext) -> None:
-        """End of a loop: redundancy removal, train/test filters and
-        curation on the grown database, then mark the loop done."""
+        """End of a loop: train/test filters, curation and redundancy
+        removal on the grown database, then mark the loop done."""
         self._curate_dataset(ctx.base_name)
         self._mark_phase_done(ctx.base_name, "loop")
         if self.report:

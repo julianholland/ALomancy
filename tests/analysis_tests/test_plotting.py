@@ -12,6 +12,7 @@ def _make_df():
 
 @pytest.mark.unit
 class TestPlotConstructor:
+    @pytest.mark.unit
     def test_attributes_set(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -24,6 +25,7 @@ class TestPlotConstructor:
         assert p.ylabel == "Y"
         assert p.directory == str(tmp_path)
 
+    @pytest.mark.unit
     def test_filename_contains_title(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -36,6 +38,7 @@ class TestPlotConstructor:
         )
         assert "al_loop_mae" in p.filename
 
+    @pytest.mark.unit
     def test_filename_ends_with_png(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -51,6 +54,7 @@ class TestPlotConstructor:
 
 @pytest.mark.unit
 class TestPlotCreate:
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_create_with_dataframe(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
@@ -66,6 +70,7 @@ class TestPlotCreate:
         p.create()
         mock_plt.subplots.assert_called_once()
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_create_with_dict(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
@@ -82,6 +87,7 @@ class TestPlotCreate:
         p.create()
         mock_plt.subplots.assert_called_once()
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_create_with_list(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
@@ -98,6 +104,7 @@ class TestPlotCreate:
         p.create()
         mock_plt.subplots.assert_called_once()
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_create_sets_labels_and_grid(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
@@ -120,6 +127,7 @@ class TestPlotCreate:
 
 @pytest.mark.unit
 class TestPlotFindData:
+    @pytest.mark.unit
     def test_finds_column_from_dataframe(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -131,6 +139,7 @@ class TestPlotFindData:
 
 @pytest.mark.unit
 class TestPlotSave:
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_save_calls_savefig(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
@@ -148,12 +157,14 @@ class TestPlotSave:
 
 @pytest.mark.unit
 class TestPlotNoInteractive:
+    @pytest.mark.unit
     def test_no_show_method(self, tmp_path):
         """Plotting must never open an interactive window -- create an image and close."""
         from alomancy.analysis.plotting import Plot
 
         assert not hasattr(Plot, "show")
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_save_closes_figure_after_create(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import Plot
@@ -175,6 +186,7 @@ class TestPlotNoInteractive:
 
 @pytest.mark.unit
 class TestPlotClear:
+    @pytest.mark.unit
     def test_clear_dataframe(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -189,6 +201,7 @@ class TestPlotClear:
         assert len(p.data) == 0
         assert list(p.data.columns) == ["mae_e", "mae_f"]
 
+    @pytest.mark.unit
     def test_clear_dict(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -199,6 +212,7 @@ class TestPlotClear:
         p.clear()
         assert p.data == {"a": [], "b": []}
 
+    @pytest.mark.unit
     def test_clear_list(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -215,6 +229,7 @@ class TestPlotClear:
 
 @pytest.mark.unit
 class TestPlotUpdate:
+    @pytest.mark.unit
     def test_update_dataframe(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -226,6 +241,7 @@ class TestPlotUpdate:
         p.update(df2)
         assert len(p.data) == 2
 
+    @pytest.mark.unit
     def test_update_dict(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -236,6 +252,7 @@ class TestPlotUpdate:
         p.update({"a": [2.0, 3.0]})
         assert p.data["a"] == [1.0, 2.0, 3.0]
 
+    @pytest.mark.unit
     def test_update_list(self, tmp_path):
         from alomancy.analysis.plotting import Plot
 
@@ -248,6 +265,7 @@ class TestPlotUpdate:
 
 @pytest.mark.unit
 class TestMaeAlLoopPlot:
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_mae_al_loop_plot_runs(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import mae_al_loop_plot
@@ -262,6 +280,7 @@ class TestMaeAlLoopPlot:
         mock_plt.subplots.assert_called_once()
         mock_plt.savefig.assert_called_once()
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_uses_errorbar_when_std_columns_present(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import mae_al_loop_plot
@@ -280,6 +299,7 @@ class TestMaeAlLoopPlot:
         assert mock_ax.errorbar.called
         assert not mock_ax.plot.called
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_falls_back_to_plot_without_std_columns(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import mae_al_loop_plot
@@ -291,6 +311,7 @@ class TestMaeAlLoopPlot:
         assert not mock_ax.errorbar.called
         assert mock_ax.plot.called
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_legend_labels_include_units(self, mock_plt, tmp_path):
         from alomancy.analysis.plotting import mae_al_loop_plot
@@ -303,6 +324,7 @@ class TestMaeAlLoopPlot:
         assert any("eV/atom" in lbl for lbl in labels)
         assert any("eV/Å" in lbl for lbl in labels)
 
+    @pytest.mark.unit
     @patch("alomancy.analysis.plotting.plt")
     def test_x_axis_is_al_loop_column_so_skipped_loops_leave_a_gap(
         self, mock_plt, tmp_path

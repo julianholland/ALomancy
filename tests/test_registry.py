@@ -35,6 +35,7 @@ def _install_fake_module(monkeypatch, name: str, **attrs):
 
 @pytest.mark.unit
 class TestRegister:
+    @pytest.mark.unit
     def test_register_does_not_import_the_module(self, monkeypatch):
         """Registration is pure string bookkeeping -- registering a module
         path that doesn't exist (and could never be imported) must not
@@ -48,6 +49,7 @@ class TestRegister:
         )
         assert "mlip_trainer" in registry.registered()
 
+    @pytest.mark.unit
     def test_re_registering_overwrites(self, monkeypatch):
         _install_fake_module(monkeypatch, "fake_mod_a", value="a")
         _install_fake_module(monkeypatch, "fake_mod_b", value="b")
@@ -58,6 +60,7 @@ class TestRegister:
 
 @pytest.mark.unit
 class TestResolve:
+    @pytest.mark.unit
     def test_resolve_returns_named_entry_points_as_attributes(self, monkeypatch):
         def train(x):
             return x * 2
@@ -79,6 +82,7 @@ class TestResolve:
         assert resolved.train is train
         assert resolved.get_calculator is get_calculator
 
+    @pytest.mark.unit
     def test_resolve_is_lazy_until_called(self, monkeypatch):
         """register() must never import; only resolve() does. Verified by
         registering a module path that would raise on import and confirming
@@ -87,6 +91,7 @@ class TestResolve:
         with pytest.raises(ModuleNotFoundError):
             registry.resolve("cat", "broken")
 
+    @pytest.mark.unit
     def test_unknown_name_raises_value_error_listing_available_names(self, monkeypatch):
         _install_fake_module(monkeypatch, "fake_mod", fn=lambda: None)
         registry.register("dft_evaluator", "qe", "fake_mod", sp="fn")
@@ -99,6 +104,7 @@ class TestResolve:
         ):
             registry.resolve("dft_evaluator", "castep")
 
+    @pytest.mark.unit
     def test_unknown_category_raises_value_error_listing_available_categories(
         self, monkeypatch
     ):
@@ -117,21 +123,25 @@ class TestResolve:
 
 @pytest.mark.unit
 class TestRegistered:
+    @pytest.mark.unit
     def test_registered_scoped_to_one_category(self, monkeypatch):
         registry.register("mlip_trainer", "mace", "fake_mod_1")
         registry.register("structure_generator", "md", "fake_mod_2")
         assert set(registry.registered("mlip_trainer")) == {"mace"}
         assert set(registry.registered("structure_generator")) == {"md"}
 
+    @pytest.mark.unit
     def test_registered_unknown_category_returns_empty_dict(self):
         assert registry.registered("nothing_registered_here") == {}
 
+    @pytest.mark.unit
     def test_registered_returns_a_copy_not_a_live_reference(self, monkeypatch):
         registry.register("mlip_trainer", "mace", "fake_mod")
         snapshot = registry.registered("mlip_trainer")
         snapshot["injected"] = {"module": "should.not.leak", "entry_points": {}}
         assert "injected" not in registry.registered("mlip_trainer")
 
+    @pytest.mark.unit
     def test_registered_with_no_category_lists_everything(self, monkeypatch):
         registry.register("mlip_trainer", "mace", "fake_mod_1")
         registry.register("structure_generator", "md", "fake_mod_2")

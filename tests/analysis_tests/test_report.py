@@ -485,6 +485,10 @@ def test_report_parity_recovers_test_predictions_from_older_files(
 ):
     """Loop files written before the extxyz fix lost model_energy in
     test_pred.xyz; the report reads it back and plots train and test."""
+    isolated = Atoms("H", cell=[10] * 3, pbc=True)
+    isolated.info.update(config_type="IsolatedAtom", REF_energy=-0.3)
+    isolated.arrays["REF_forces"] = np.zeros((1, 3))
+    finished_loop.db.add_structures([isolated], split="train")
     fit_dir = Path("results/al_loop_0/training/fit_0")
     write(fit_dir / "train_pred.xyz", _pred_frames(3, 0.01), format="extxyz")
     write_pred_file_like_before_fix(fit_dir / "test_pred.xyz", _pred_frames(2, 0.05))
@@ -497,6 +501,29 @@ def test_report_parity_recovers_test_predictions_from_older_files(
     assert "plots/best_model_percent_error.png" in _image_links(markdown)
     assert "Median relative error: train energy" in markdown
     assert "; test energy" in markdown
+
+
+@pytest.mark.unit
+def test_relative_energy_error_needs_formation_energies(finished_loop):
+    """Without an isolated-atom energy for every element the energies are
+    totals: the report gives only the force relative error and says why."""
+    frames = []
+    for i in range(3):
+        a = _labelled(0.7 + 0.1 * i, "init_dimer", force=2.0)
+        a.info["model_energy"] = a.info["REF_energy"] + 0.01
+        forces = a.arrays["REF_forces"].copy()
+        forces[0, 0] += 0.2
+        a.set_array("model_forces", forces)
+        frames.append(a)
+    fit_dir = Path("results/al_loop_0/training/fit_0")
+    write(fit_dir / "train_pred.xyz", frames, format="extxyz")
+
+    markdown = write_loop_report(finished_loop, 0).read_text()
+
+    assert "plots/best_model_percent_error.png" in _image_links(markdown)
+    assert "Median relative error: train force 10.0%" in markdown
+    assert "train energy" not in markdown
+    assert "No relative energy error" in markdown
 
 
 @pytest.mark.unit

@@ -42,6 +42,7 @@ def _trainer(mace_kwargs: dict | None = None, **config) -> MaceTrainer:
 
 @pytest.mark.unit
 class TestWriteResolvedMaceEpochs:
+    @pytest.mark.unit
     def test_writes_max_num_epochs_and_start_swa(self, tmp_path):
         _write_resolved_mace_epochs(
             tmp_path, {"max_num_epochs": 160, "start_swa": 128, "other": "ignored"}
@@ -52,17 +53,20 @@ class TestWriteResolvedMaceEpochs:
 
 @pytest.mark.unit
 class TestApplyComputeStressDefaults:
+    @pytest.mark.unit
     def test_noop_when_compute_stress_false(self):
         params = {"loss": "weighted"}
         _apply_compute_stress_defaults(params, False)
         assert params == {"loss": "weighted"}
 
+    @pytest.mark.unit
     def test_sets_stress_key_and_loss_when_enabled(self):
         params = {}
         _apply_compute_stress_defaults(params, True)
         assert params["stress_key"] == "REF_stresses"
         assert params["loss"] == "stress"
 
+    @pytest.mark.unit
     def test_does_not_override_explicit_loss(self):
         params = {"loss": "huber"}
         _apply_compute_stress_defaults(params, True)
@@ -71,17 +75,20 @@ class TestApplyComputeStressDefaults:
 
 @pytest.mark.unit
 class TestModelFiles:
+    @pytest.mark.unit
     def test_output_paths_are_uncompiled_model_and_metrics(self):
         assert _trainer().output_paths(_FIT_DIR) == [
             _FIT_DIR / "committee_stagetwo.model",
             _FIT_DIR / "evaluation_metrics.json",
         ]
 
+    @pytest.mark.unit
     def test_output_paths_never_include_compiled_model(self):
         """MACE swallows a failed compile, so gating restart on the compiled
         model would make a genuinely finished fit look incomplete forever."""
         assert not any("compiled" in str(p) for p in _trainer().output_paths(_FIT_DIR))
 
+    @pytest.mark.unit
     def test_deployable_model_is_compiled_or_none(self, tmp_path):
         trainer = _trainer()
         assert trainer.deployable_model_path(tmp_path) is None
@@ -90,6 +97,7 @@ class TestModelFiles:
             tmp_path / "committee_stagetwo_compiled.model"
         )
 
+    @pytest.mark.unit
     def test_checkpoints_cleaned_only_once_compiled_model_exists(self, tmp_path):
         trainer = _trainer()
         (tmp_path / "checkpoints").mkdir()
@@ -118,6 +126,7 @@ class TestReadExistingResult:
         model.write_bytes(b"checkpoint")
         save_evaluation(fit_dir, model, splits)
 
+    @pytest.mark.unit
     def test_reconstructs_model_path_and_metrics(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         self._write_fit(
@@ -134,6 +143,7 @@ class TestReadExistingResult:
         assert compiled_path is None  # never written in this test
         assert set(metrics) == {"train", "test"}
 
+    @pytest.mark.unit
     def test_includes_compiled_path_when_present(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         self._write_fit(_FIT_DIR, {"valid": prediction_metrics([_predicted(0.1)])})
@@ -142,11 +152,13 @@ class TestReadExistingResult:
         _, compiled_path, _ = _trainer().read_existing_result(_FIT_DIR)
         assert compiled_path == str(_FIT_DIR / "committee_stagetwo_compiled.model")
 
+    @pytest.mark.unit
     def test_raises_when_nothing_valid_found(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ValueError, match="No valid checkpoint-verified"):
             _trainer().read_existing_result(_FIT_DIR)
 
+    @pytest.mark.unit
     def test_raises_when_checkpoint_changed_since_evaluation(
         self, tmp_path, monkeypatch
     ):
@@ -162,6 +174,7 @@ class TestReadExistingResult:
 
 @pytest.mark.unit
 class TestGetCalculator:
+    @pytest.mark.unit
     def test_builds_mace_calculator_with_given_device_and_dtype(self):
         with patch("alomancy.mlip.mace.trainer.MACECalculator") as mock_cls:
             mock_cls.return_value = MagicMock()
@@ -172,6 +185,7 @@ class TestGetCalculator:
             model_paths=["model.pt"], device="cpu", default_dtype="float32"
         )
 
+    @pytest.mark.unit
     def test_defaults_dtype_to_float64(self):
         with patch("alomancy.mlip.mace.trainer.MACECalculator") as mock_cls:
             mock_cls.return_value = MagicMock()
@@ -225,6 +239,7 @@ class TestTrain:
             )
         return result, mock_run, mock_calc_cls
 
+    @pytest.mark.unit
     def test_returns_model_path_and_evaluates(self, tmp_path, monkeypatch):
         result, mock_run, _ = self._run_train(tmp_path, monkeypatch)
         assert result == str(_FIT_DIR.resolve() / "committee_stagetwo.model")
@@ -233,6 +248,7 @@ class TestTrain:
         assert set(metrics["splits"]) == {"train", "test"}
         assert (_FIT_DIR / "train_pred.xyz").exists()
 
+    @pytest.mark.unit
     def test_returns_none_and_skips_evaluation_without_a_model(
         self, tmp_path, monkeypatch
     ):
@@ -252,6 +268,7 @@ class TestTrain:
         assert result is None
         assert not (_FIT_DIR / "evaluation_metrics.json").exists()
 
+    @pytest.mark.unit
     def test_evaluates_the_uncompiled_model_even_when_compiled_exists(
         self, tmp_path, monkeypatch
     ):
@@ -263,6 +280,7 @@ class TestTrain:
         record = json.loads((_FIT_DIR / "evaluation_metrics.json").read_text())
         assert record["checkpoint"] == "committee_stagetwo.model"
 
+    @pytest.mark.unit
     def test_mace_args_come_from_class_defaults_plus_user_kwargs(
         self, tmp_path, monkeypatch
     ):
@@ -280,6 +298,7 @@ class TestTrain:
         assert (args.max_num_epochs, args.start_swa) == (10, 8)
         assert not hasattr(args, "compute_stress")
 
+    @pytest.mark.unit
     def test_compute_stress_read_from_mace_kwargs(self, tmp_path, monkeypatch):
         _, mock_run, _ = self._run_train(
             tmp_path, monkeypatch, mace_kwargs={"compute_stress": True}
@@ -289,6 +308,7 @@ class TestTrain:
         assert args.loss == "stress"
         assert not hasattr(args, "compute_stress")
 
+    @pytest.mark.unit
     def test_raises_when_e0s_missing_element(self, tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="E0s"):
             self._run_train(
@@ -298,6 +318,7 @@ class TestTrain:
                 elements=["H", "O"],
             )
 
+    @pytest.mark.unit
     def test_e0s_covering_all_elements_does_not_raise(self, tmp_path, monkeypatch):
         self._run_train(
             tmp_path,
@@ -306,6 +327,7 @@ class TestTrain:
             elements=["H", "O"],
         )
 
+    @pytest.mark.unit
     def test_defaults_e0s_from_isolated_atom_energies_when_unset(
         self, tmp_path, monkeypatch
     ):
@@ -314,6 +336,7 @@ class TestTrain:
         )
         assert mock_run.call_args.args[0].E0s == "{1: -13.6}"
 
+    @pytest.mark.unit
     def test_explicit_e0s_wins_over_isolated_atom_default(self, tmp_path, monkeypatch):
         _, mock_run, _ = self._run_train(
             tmp_path,
@@ -324,6 +347,7 @@ class TestTrain:
         )
         assert mock_run.call_args.args[0].E0s == "{1: -1.0}"
 
+    @pytest.mark.unit
     def test_raises_when_no_e0s_and_no_isolated_atom_energies(
         self, tmp_path, monkeypatch
     ):
@@ -332,6 +356,7 @@ class TestTrain:
                 tmp_path, monkeypatch, elements=["H"], isolated_atom_energies={}
             )
 
+    @pytest.mark.unit
     def test_no_e0s_passed_when_unset_and_elements_not_given(
         self, tmp_path, monkeypatch
     ):
@@ -342,22 +367,26 @@ class TestTrain:
         )
         assert not hasattr(mock_run.call_args.args[0], "E0s")
 
+    @pytest.mark.unit
     def test_string_e0s_passed_through(self, tmp_path, monkeypatch):
         _, mock_run, _ = self._run_train(
             tmp_path, monkeypatch, mace_kwargs={"E0s": "average"}, elements=["H"]
         )
         assert mock_run.call_args.args[0].E0s == "average"
 
+    @pytest.mark.unit
     def test_raises_when_seed_in_mace_kwargs(self, tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="seed"):
             self._run_train(tmp_path, monkeypatch, mace_kwargs={"seed": 1})
 
+    @pytest.mark.unit
     def test_no_valid_file_passed_when_valid_atoms_path_is_none(
         self, tmp_path, monkeypatch
     ):
         _, mock_run, _ = self._run_train(tmp_path, monkeypatch)
         assert not hasattr(mock_run.call_args.args[0], "valid_file")
 
+    @pytest.mark.unit
     def test_valid_file_passed_when_valid_atoms_path_given(self, tmp_path, monkeypatch):
         valid_path = tmp_path / "valid.xyz"
         _write_structures(valid_path, 2)
@@ -366,12 +395,14 @@ class TestTrain:
         )
         assert mock_run.call_args.args[0].valid_file == str(valid_path.resolve())
 
+    @pytest.mark.unit
     def test_max_num_epochs_defaults_to_dynamic_when_unset(self, tmp_path, monkeypatch):
         """Unset -> dynamic (4 structures pin to the cap, 300), never MACE's
         own 2048 or an old fixed fallback."""
         _, mock_run, _ = self._run_train(tmp_path, monkeypatch, mace_kwargs={})
         assert mock_run.call_args.args[0].max_num_epochs == 300
 
+    @pytest.mark.unit
     def test_dynamic_epochs_uses_train_plus_valid_count(self, tmp_path, monkeypatch):
         """950 train + 50 valid -> ceil(200_000/1000) = 200; train alone
         would give 211, so a regression to the train-only count shows."""

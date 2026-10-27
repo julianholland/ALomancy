@@ -29,19 +29,24 @@ def _cu_dimer():
 
 @pytest.mark.unit
 class TestBuildSrunCommand:
+    @pytest.mark.unit
     def test_executable_in_command(self):
         cmd = _build_srun_command(_PARA_INFO, "pw.x -nk 4")
         assert "pw.x -nk 4" in cmd
 
+    @pytest.mark.unit
     def test_ntasks(self):
         assert "--ntasks=72" in _build_srun_command(_PARA_INFO, "pw.x")
 
+    @pytest.mark.unit
     def test_tasks_per_node(self):
         assert "--tasks-per-node=36" in _build_srun_command(_PARA_INFO, "pw.x")
 
+    @pytest.mark.unit
     def test_cpus_per_task(self):
         assert "--cpus-per-task=2" in _build_srun_command(_PARA_INFO, "pw.x")
 
+    @pytest.mark.unit
     def test_mem_is_zero_sentinel(self):
         # --mem=0 means "inherit all memory already granted to the job", not
         # "request zero memory" -- see comment in _build_srun_command.
@@ -53,19 +58,23 @@ class TestBuildSrunCommand:
         assert "--mem=0 " in _build_srun_command(_PARA_INFO, "pw.x")
         assert "--mem=90G" not in _build_srun_command(_PARA_INFO, "pw.x")
 
+    @pytest.mark.unit
     def test_distribution(self):
         assert "--distribution=block:block" in _build_srun_command(_PARA_INFO, "pw.x")
 
+    @pytest.mark.unit
     def test_hint_nomultithread(self):
         assert "--hint=nomultithread" in _build_srun_command(_PARA_INFO, "pw.x")
 
 
 @pytest.mark.unit
 class TestWriteDftResult:
+    @pytest.mark.unit
     def test_file_created(self, tmp_path):
         _write_dft_result(_cu_dimer(), str(tmp_path), "sp")
         assert (tmp_path / "sp.xyz").exists()
 
+    @pytest.mark.unit
     def test_written_atoms_readable(self, tmp_path):
         from ase.io import read
 
@@ -76,6 +85,7 @@ class TestWriteDftResult:
         assert loaded.get_chemical_formula() == "Cu2"
         assert loaded.info.get("config_type") == "test"
 
+    @pytest.mark.unit
     def test_name_used_as_filename_stem(self, tmp_path):
         _write_dft_result(_cu_dimer(), str(tmp_path), "my_custom_name")
         assert (tmp_path / "my_custom_name.xyz").exists()
@@ -83,12 +93,14 @@ class TestWriteDftResult:
 
 @pytest.mark.unit
 class TestRunSp:
+    @pytest.mark.unit
     def test_returns_atoms(self, tmp_path):
         result = _run_sp(
             _cu_dimer(), str(tmp_path / "out"), {"name": "sp"}, lambda a, j, d: EMT()
         )
         assert isinstance(result, Atoms)
 
+    @pytest.mark.unit
     def test_returns_same_object(self, tmp_path):
         atoms = _cu_dimer()
         result = _run_sp(
@@ -96,16 +108,19 @@ class TestRunSp:
         )
         assert result is atoms
 
+    @pytest.mark.unit
     def test_output_xyz_written(self, tmp_path):
         out = str(tmp_path / "out")
         _run_sp(_cu_dimer(), out, {"name": "result"}, lambda a, j, d: EMT())
         assert (Path(out) / "result.xyz").exists()
 
+    @pytest.mark.unit
     def test_creates_nested_directory(self, tmp_path):
         out = str(tmp_path / "a" / "b" / "c")
         _run_sp(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
         assert Path(out).exists()
 
+    @pytest.mark.unit
     def test_calc_fn_called_with_atoms_jobdict_outdir(self, tmp_path):
         recorded = {}
 
@@ -126,22 +141,26 @@ class TestRunSp:
 
 @pytest.mark.unit
 class TestRunGo:
+    @pytest.mark.unit
     def test_returns_atoms(self, tmp_path):
         result = _run_go(
             _cu_dimer(), str(tmp_path / "out"), {"name": "go"}, lambda a, j, d: EMT()
         )
         assert isinstance(result, Atoms)
 
+    @pytest.mark.unit
     def test_output_xyz_written(self, tmp_path):
         out = str(tmp_path / "out")
         _run_go(_cu_dimer(), out, {"name": "result"}, lambda a, j, d: EMT())
         assert (Path(out) / "result.xyz").exists()
 
+    @pytest.mark.unit
     def test_default_opt_prefix_log_written(self, tmp_path):
         out = str(tmp_path / "out")
         _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
         assert (Path(out) / "opt.log").exists()
 
+    @pytest.mark.unit
     def test_custom_opt_prefix_log_written(self, tmp_path):
         out = str(tmp_path / "out")
         _run_go(
@@ -153,6 +172,7 @@ class TestRunGo:
         )
         assert (Path(out) / "vasp_opt.log").exists()
 
+    @pytest.mark.unit
     def test_custom_opt_prefix_traj_written(self, tmp_path):
         out = str(tmp_path / "out")
         _run_go(
@@ -160,16 +180,19 @@ class TestRunGo:
         )
         assert (Path(out) / "qe_opt.traj").exists()
 
+    @pytest.mark.unit
     def test_creates_nested_directory(self, tmp_path):
         out = str(tmp_path / "a" / "b" / "c")
         _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
         assert Path(out).exists()
 
+    @pytest.mark.unit
     def test_converged_structure_flagged_true(self, tmp_path):
         out = str(tmp_path / "out")
         result = _run_go(_cu_dimer(), out, {"name": "x"}, lambda a, j, d: EMT())
         assert result.info["geometry_converged"] is True
 
+    @pytest.mark.unit
     def test_fmax_and_steps_default_when_absent_from_job_dict(
         self, tmp_path, monkeypatch
     ):
@@ -196,6 +219,7 @@ class TestRunGo:
         assert captured["fmax"] == 0.05
         assert captured["steps"] == 200
 
+    @pytest.mark.unit
     def test_fmax_and_steps_read_from_job_dict_when_present(
         self, tmp_path, monkeypatch
     ):
@@ -227,6 +251,7 @@ class TestRunGo:
         assert captured["fmax"] == 5.0
         assert captured["steps"] == 500
 
+    @pytest.mark.unit
     def test_non_convergence_warns_and_keeps_structure(self, tmp_path, monkeypatch):
         """Non-convergence must not discard the completed DFT computation --
         it downgrades to a logged warning and geometry_converged=False,

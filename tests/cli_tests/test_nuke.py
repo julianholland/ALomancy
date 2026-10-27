@@ -10,6 +10,7 @@ from alomancy.cli.nuke import nuke_expyre_results, resolve_default_expyre_dir
 
 @pytest.mark.unit
 class TestResolveDefaultExpyreDir:
+    @pytest.mark.unit
     def test_uses_resolved_local_stage_dir_when_available(self, tmp_path, monkeypatch):
         from expyre import config as expyre_config
 
@@ -18,6 +19,7 @@ class TestResolveDefaultExpyreDir:
 
         assert resolve_default_expyre_dir() == run_local
 
+    @pytest.mark.unit
     def test_falls_back_to_home_expyre_when_unresolved(self, tmp_path, monkeypatch):
         from expyre import config as expyre_config
 
@@ -40,6 +42,7 @@ def _make_expyre_dir(tmp_path: Path) -> Path:
 
 @pytest.mark.unit
 class TestNukeExpyreResults:
+    @pytest.mark.unit
     def test_deletes_everything_except_config_on_yes(self, tmp_path, monkeypatch):
         expyre_dir = _make_expyre_dir(tmp_path)
         monkeypatch.setattr("builtins.input", lambda: "y")
@@ -50,6 +53,7 @@ class TestNukeExpyreResults:
         assert not (expyre_dir / "jobs.db").exists()
         assert not (expyre_dir / "run_high_accuracy_evaluation_abc123_xyz").exists()
 
+    @pytest.mark.unit
     def test_accepts_uppercase_yes(self, tmp_path, monkeypatch):
         expyre_dir = _make_expyre_dir(tmp_path)
         monkeypatch.setattr("builtins.input", lambda: "Y")
@@ -58,6 +62,7 @@ class TestNukeExpyreResults:
 
         assert not (expyre_dir / "jobs.db").exists()
 
+    @pytest.mark.unit
     def test_aborts_and_deletes_nothing_on_no(self, tmp_path, monkeypatch):
         expyre_dir = _make_expyre_dir(tmp_path)
         monkeypatch.setattr("builtins.input", lambda: "n")
@@ -68,6 +73,7 @@ class TestNukeExpyreResults:
         assert (expyre_dir / "jobs.db").exists()
         assert (expyre_dir / "run_high_accuracy_evaluation_abc123_xyz").exists()
 
+    @pytest.mark.unit
     def test_aborts_on_arbitrary_input(self, tmp_path, monkeypatch):
         expyre_dir = _make_expyre_dir(tmp_path)
         monkeypatch.setattr("builtins.input", lambda: "")
@@ -76,6 +82,7 @@ class TestNukeExpyreResults:
 
         assert (expyre_dir / "jobs.db").exists()
 
+    @pytest.mark.unit
     def test_missing_directory_is_a_no_op_and_never_prompts(
         self, tmp_path, monkeypatch
     ):
@@ -88,6 +95,7 @@ class TestNukeExpyreResults:
 
         nuke_expyre_results(missing_dir)
 
+    @pytest.mark.unit
     def test_deletes_symlinks_without_following_them(self, tmp_path, monkeypatch):
         expyre_dir = _make_expyre_dir(tmp_path)
         target = tmp_path / "outside_target.txt"
@@ -100,6 +108,7 @@ class TestNukeExpyreResults:
         assert not (expyre_dir / "link_to_outside").exists()
         assert target.exists()
 
+    @pytest.mark.unit
     def test_none_default_resolves_via_resolve_default_expyre_dir(
         self, tmp_path, monkeypatch
     ):

@@ -180,6 +180,20 @@ def test_reloads_saved_selection_when_done(tmp_path, jobs_dict, monkeypatch, sha
 
 
 @pytest.mark.unit
+def test_every_database_row_blocks_candidates():
+    """Regression: with deduplicate-lib's keep-first rule a database row
+    close to another one was not 'kept', so it stopped blocking candidates:
+    candidate 0 (0.5 from database row 1) was picked over candidate 1."""
+    reference = np.array([[0.0, 0.0], [0.9, 0.0]])
+    candidates = np.array([[0.9, 0.5], [-1.02, 0.0]])
+
+    chosen, tolerance = select_novel_indices(reference, candidates, 1)
+
+    assert chosen == [1]
+    assert tolerance > 0.5
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("n", [1, 2, 3, 4, 5])
 def test_never_selects_more_than_n(n):
     rng = np.random.default_rng(0)

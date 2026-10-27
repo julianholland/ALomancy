@@ -21,6 +21,7 @@ def _mock_mpr(search_return=None, search_side_effect=None):
 
 @pytest.mark.unit
 class TestRetrieveMpMaterialDocs:
+    @pytest.mark.unit
     def test_raises_without_api_key(self, monkeypatch):
         from alomancy.initialize.mp_interface import retrieve_mp_material_docs
 
@@ -28,6 +29,7 @@ class TestRetrieveMpMaterialDocs:
         with pytest.raises(ValueError, match="MP_API_KEY"):
             retrieve_mp_material_docs(["H"], 0.1, 20)
 
+    @pytest.mark.unit
     def test_requests_only_needed_fields(self, monkeypatch):
         """Regression test: requesting all_fields (the mp_api client default)
         pulls in sub-models like bandstructure whose schema can drift out of
@@ -45,6 +47,7 @@ class TestRetrieveMpMaterialDocs:
         _, kwargs = mock_mpr.materials.summary.search.call_args
         assert kwargs["fields"] == ["material_id", "structure"]
 
+    @pytest.mark.unit
     def test_queries_all_element_permutations(self, monkeypatch):
         from alomancy.initialize.mp_interface import retrieve_mp_material_docs
 
@@ -57,6 +60,7 @@ class TestRetrieveMpMaterialDocs:
         # combinations of size 1 (H, O) and size 2 (HO) => 3 calls total
         assert mock_mpr.materials.summary.search.call_count == 3
 
+    @pytest.mark.unit
     def test_docs_collected_across_calls(self, monkeypatch):
         from alomancy.initialize.mp_interface import retrieve_mp_material_docs
 
@@ -68,6 +72,7 @@ class TestRetrieveMpMaterialDocs:
 
         assert result == ["doc1", "doc2", "doc3"]
 
+    @pytest.mark.unit
     def test_search_kwargs_forwarded(self, monkeypatch):
         from alomancy.initialize.mp_interface import retrieve_mp_material_docs
 
@@ -86,6 +91,7 @@ class TestRetrieveMpMaterialDocs:
 
 @pytest.mark.unit
 class TestDocsToAtoms:
+    @pytest.mark.unit
     def test_converts_structure_field(self):
         from alomancy.initialize.mp_interface import docs_to_atoms
 
@@ -104,6 +110,7 @@ class TestDocsToAtoms:
 
 @pytest.mark.unit
 class TestAtomsListFromMp:
+    @pytest.mark.unit
     def test_sets_config_type_and_relaxation_flag(self, monkeypatch):
         from ase import Atoms
 
@@ -127,6 +134,7 @@ class TestAtomsListFromMp:
         assert result[0].info["config_type"] == "init_MP"
         assert result[0].info["needs_relaxation"] is True
 
+    @pytest.mark.unit
     def test_needs_relaxation_defaults_false(self, monkeypatch):
         from ase import Atoms
 

@@ -5,8 +5,10 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 from ase import Atoms
-from ase.io import read, write
+from ase.io import write
 from tqdm import tqdm
+
+from alomancy.utils.file_saving_and_parsing import read_xyz
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +16,7 @@ logger = logging.getLogger(__name__)
 def read_selection(path: Path) -> list[Atoms]:
     """The structures in a selection file find_high_sd_structures wrote;
     an empty file is an empty selection."""
-    if path.stat().st_size == 0:
-        return []
-    return list(read(path, ":", format="extxyz"))
+    return read_xyz(path)
 
 
 def find_high_sd_structures(
@@ -103,11 +103,21 @@ def find_high_sd_structures(
                 len(structure_list),
                 desired_structures,
                 extra={
-                    "event": "fewer_candidates",
-                    "data": {"n": len(index_list), "desired": desired_structures},
+                    "event": "selection_redundant_shortfall",
+                    "data": {
+                        "n": len(index_list),
+                        "desired": effective_structures,
+                        "candidates": len(structure_list),
+                    },
                 },
             )
         high_sd_structures = [structure_list[i] for i in index_list]
+        # Redundant picks are skipped, so the selection isn't always the top
+        # of the ranking; record it for the report's selection cut.
+        std_dev_df = std_dev_df.with_columns(
+            pl.col("structure_index").is_in(index_list).alias("selected")
+        )
+        std_dev_df.write_csv(std_dev_csv_name)
 
         # Written once, even when empty: a restart reloads this file, and
         # an empty selection is a valid result, not a missing one.

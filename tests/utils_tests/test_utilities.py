@@ -769,6 +769,7 @@ class TestSubmitN:
     only behavior submit_n itself is responsible for (run_and_wait's own
     internals are already covered by TestRemoteJobExecutor above)."""
 
+    @pytest.mark.unit
     def test_constructs_executor_from_remote_info_and_forwards_arguments(self):
         from alomancy.remote_submission.executor import submit_n
 
@@ -808,6 +809,7 @@ class TestSubmitN:
         assert captured["kwargs"] == {"common_input_files": ["shared.xyz"]}
         assert results == ["result_for_a", "result_for_b"]
 
+    @pytest.mark.unit
     def test_end_to_end_returns_index_aligned_results_with_none_for_failures(
         self, tmp_path
     ):
@@ -870,6 +872,7 @@ class TestSalvagePartialOutput:
     in the committee's PES -- exactly the structure active learning most
     needs) would silently discard everything that job produced."""
 
+    @pytest.mark.unit
     def test_copies_existing_output_into_cwd(self, tmp_path, monkeypatch):
         stage_dir = tmp_path / "stage"
         stage_dir.mkdir()
@@ -892,6 +895,7 @@ class TestSalvagePartialOutput:
             "fake trajectory data"
         )
 
+    @pytest.mark.unit
     def test_noop_when_no_output_files_marker(self, tmp_path, monkeypatch):
         """A job that died before ExPyRe even got to write
         _expyre_output_files (or one submitted with no output_files at all)
@@ -907,6 +911,7 @@ class TestSalvagePartialOutput:
 
         assert list(cwd.iterdir()) == []
 
+    @pytest.mark.unit
     def test_noop_when_referenced_output_never_materialized(
         self, tmp_path, monkeypatch
     ):
@@ -928,6 +933,7 @@ class TestSalvagePartialOutput:
 
         assert list(cwd.iterdir()) == []
 
+    @pytest.mark.unit
     def test_run_single_job_failure_still_salvages_output(self, tmp_path, monkeypatch):
         """End-to-end: _run_single_job's failure path (not just the salvage
         helper in isolation) actually triggers the salvage for a job that
@@ -1035,6 +1041,7 @@ class TestAcquireLocalExpyreLock:
         monkeypatch.setattr(executor_module, "_expyre_root_lock_handle", None)
         return executor_module
 
+    @pytest.mark.unit
     def test_noop_when_no_local_stage_dir_resolved(self, tmp_path, monkeypatch):
         from expyre import config as expyre_config
 
@@ -1046,6 +1053,7 @@ class TestAcquireLocalExpyreLock:
         assert executor_module._expyre_root_lock_handle is None
         assert not (tmp_path / "alomancy.lock").exists()
 
+    @pytest.mark.unit
     def test_acquires_lock_and_records_holder_metadata(self, tmp_path, monkeypatch):
         from expyre import config as expyre_config
 
@@ -1059,6 +1067,7 @@ class TestAcquireLocalExpyreLock:
         assert lock_path.exists()
         assert f"pid={os.getpid()}" in lock_path.read_text()
 
+    @pytest.mark.unit
     def test_reentrant_call_in_same_process_is_a_noop(self, tmp_path, monkeypatch):
         from expyre import config as expyre_config
 
@@ -1071,6 +1080,7 @@ class TestAcquireLocalExpyreLock:
 
         assert executor_module._expyre_root_lock_handle is first_handle
 
+    @pytest.mark.unit
     def test_concurrent_threads_in_same_process_do_not_race(
         self, tmp_path, monkeypatch
     ):
@@ -1106,6 +1116,7 @@ class TestAcquireLocalExpyreLock:
         assert errors == []
         assert executor_module._expyre_root_lock_handle is not None
 
+    @pytest.mark.unit
     def test_raises_when_already_held_by_another_process(self, tmp_path, monkeypatch):
         from expyre import config as expyre_config
 
@@ -1124,6 +1135,7 @@ class TestAcquireLocalExpyreLock:
                 executor_module.acquire_local_expyre_lock()
             assert executor_module._expyre_root_lock_handle is None
 
+    @pytest.mark.unit
     def test_second_open_fd_to_same_path_cannot_also_acquire(
         self, tmp_path, monkeypatch
     ):
@@ -1167,6 +1179,7 @@ class TestEnsureExpyreDbThreadSafe:
         executor_module._ensure_expyre_db_thread_safe()
         return db
 
+    @pytest.mark.unit
     def test_execute_returns_a_list_not_a_live_cursor(self, tmp_path, monkeypatch):
         """The fetch must happen *inside* the lock: a caller must never be
         handed a live cursor to iterate after the lock is already released,
@@ -1180,6 +1193,7 @@ class TestEnsureExpyreDbThreadSafe:
         assert isinstance(result, list)
         assert not isinstance(result, sqlite3.Cursor)
 
+    @pytest.mark.unit
     def test_add_then_immediate_jobs_lookup_never_empty_under_concurrency(
         self, tmp_path, monkeypatch
     ):
@@ -1451,6 +1465,7 @@ class TestArrayOperations:
 class TestUnitUtilities:
     """Unit tests for basic utility functions."""
 
+    @pytest.mark.unit
     def test_basic_math_operations(self):
         """Test basic mathematical operations."""
         # Test array operations
@@ -1461,6 +1476,7 @@ class TestUnitUtilities:
         expected = np.array([5, 7, 9])
         np.testing.assert_array_equal(result, expected)
 
+    @pytest.mark.unit
     def test_string_operations(self):
         """Test string manipulation utilities."""
         # Test base name generation
@@ -1473,6 +1489,7 @@ class TestUnitUtilities:
         train_file = base_path / "train_set.xyz"
         assert str(train_file) == "results/al_loop_5/train_set.xyz"
 
+    @pytest.mark.unit
     def test_type_checking(self):
         """Test type checking utilities."""
         # Test ASE Atoms type checking
@@ -1921,6 +1938,7 @@ class TestWrapStructuresIntoCell:
 class TestReadAtomsFileIfEnabled:
     """Test read_atoms_file_if_enabled function."""
 
+    @pytest.mark.unit
     def test_returns_none_when_disabled(self, tmp_path):
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 
@@ -1929,6 +1947,7 @@ class TestReadAtomsFileIfEnabled:
         )
         assert result is None
 
+    @pytest.mark.unit
     def test_returns_none_when_file_missing(self, tmp_path):
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 
@@ -1937,6 +1956,7 @@ class TestReadAtomsFileIfEnabled:
         )
         assert result is None
 
+    @pytest.mark.unit
     def test_returns_empty_list_for_empty_file(self, tmp_path):
         from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
 
@@ -1945,6 +1965,7 @@ class TestReadAtomsFileIfEnabled:
         result = read_atoms_file_if_enabled(read_file=True, file_path=empty_file)
         assert result == []
 
+    @pytest.mark.unit
     def test_returns_atoms_from_file(self, tmp_path, h2o_mol):
         from ase.io import write
 
@@ -1956,6 +1977,7 @@ class TestReadAtomsFileIfEnabled:
         assert result is not None
         assert len(result) == 1
 
+    @pytest.mark.unit
     def test_returns_multiple_atoms(self, tmp_path, h2o_mol, h_atom):
         from ase.io import write
 
@@ -1966,6 +1988,7 @@ class TestReadAtomsFileIfEnabled:
         result = read_atoms_file_if_enabled(read_file=True, file_path=xyz_path)
         assert len(result) == 2
 
+    @pytest.mark.unit
     def test_accepts_path_object(self, tmp_path, h2o_mol):
         from ase.io import write
 

@@ -63,6 +63,7 @@ def mock_md_job_dict():
 class TestFlattenArrayOfForces:
     """Test the flatten_array_of_forces function."""
 
+    @pytest.mark.unit
     def test_shape_n3_to_1_3n(self):
         """Test that (N, 3) forces reshape to (1, N*3)."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -73,6 +74,7 @@ class TestFlattenArrayOfForces:
         result = flatten_array_of_forces(forces)
         assert result.shape == (1, 15)
 
+    @pytest.mark.unit
     def test_single_atom(self):
         """Test flattening forces for a single atom."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -83,6 +85,7 @@ class TestFlattenArrayOfForces:
         result = flatten_array_of_forces(forces)
         assert result.shape == (1, 3)
 
+    @pytest.mark.unit
     def test_values_preserved(self):
         """Test that values are preserved during flattening."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -124,6 +127,7 @@ class TestStdDeviationOfForces:
                 }
         return d
 
+    @pytest.mark.unit
     def test_returns_polars_dataframe(self, tmp_path):
         """Test that std_deviation_of_forces returns a Polars DataFrame."""
         import polars as pl
@@ -136,6 +140,7 @@ class TestStdDeviationOfForces:
         df = std_deviation_of_forces(d, tmp_path)
         assert isinstance(df, pl.DataFrame)
 
+    @pytest.mark.unit
     def test_correct_columns(self, tmp_path):
         """Test that returned DataFrame has correct columns."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -151,6 +156,7 @@ class TestStdDeviationOfForces:
             "std_dev_energy",
         }
 
+    @pytest.mark.unit
     def test_identical_predictions_zero_std(self, tmp_path):
         """Test that identical model predictions give zero std dev."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -168,6 +174,7 @@ class TestStdDeviationOfForces:
         assert df["max_std_dev"][0] == pytest.approx(0.0)
         assert df["std_dev_energy"][0] == pytest.approx(0.0)
 
+    @pytest.mark.unit
     def test_sorted_descending_by_max_std_dev(self, tmp_path):
         """Test that results are sorted by max_std_dev in descending order."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -192,6 +199,7 @@ class TestStdDeviationOfForces:
         # structure_1 should be first (highest std dev)
         assert df["structure_index"][0] == 1
 
+    @pytest.mark.unit
     def test_csv_written(self, tmp_path):
         """Test that CSV file is written."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -202,6 +210,7 @@ class TestStdDeviationOfForces:
         std_deviation_of_forces(d, tmp_path)
         assert (tmp_path / "std_dev_forces.csv").exists()
 
+    @pytest.mark.unit
     def test_row_count_equals_n_structures(self, tmp_path):
         """Test that output has one row per structure."""
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -258,6 +267,7 @@ class TestFindHighSdStructures:
                 }
         return d
 
+    @pytest.mark.unit
     def test_returns_desired_count(self, tmp_path, monkeypatch):
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -279,6 +289,7 @@ class TestFindHighSdStructures:
         )
         assert len(result) == 3
 
+    @pytest.mark.unit
     def test_result_items_from_structure_list(self, tmp_path, monkeypatch):
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -300,6 +311,7 @@ class TestFindHighSdStructures:
         )
         assert all(a in structures for a in result)
 
+    @pytest.mark.unit
     def test_writes_xyz_file(self, tmp_path, monkeypatch):
         from alomancy.structure_generation.find_high_sd_structures import (
             find_high_sd_structures,
@@ -322,6 +334,7 @@ class TestFindHighSdStructures:
         )
         assert (out_dir / "high_sd_structures.xyz").exists()
 
+    @pytest.mark.unit
     def test_reads_from_cached_files(self, tmp_path, monkeypatch):
         """When read_xyz=True and both cache files exist, load from disk."""
         from ase.io import write
@@ -419,7 +432,7 @@ class TestFindHighSdStructures:
     ):
         """A selector that keeps fewer than requested (none at all, when
         every candidate is redundant) still writes the selection file, so a
-        restart reloads it, and logs fewer_candidates."""
+        restart reloads it, and logs selection_redundant_shortfall."""
         import logging
 
         from alomancy.structure_generation.find_high_sd_structures import (
@@ -458,7 +471,7 @@ class TestFindHighSdStructures:
 
         assert len(result) == n_kept
         events = [getattr(r, "event", None) for r in records]
-        assert "fewer_candidates" in events
+        assert "selection_redundant_shortfall" in events
         assert (out_dir / "high_sd_structures.xyz").exists()
         reloaded = find_high_sd_structures(**kwargs, read_xyz=True)
         assert len(reloaded) == n_kept
@@ -536,6 +549,7 @@ class TestFindSdOfAllStructures:
         a.arrays["REF_forces"] = a.get_forces()
         return a
 
+    @pytest.mark.unit
     def test_returns_polars_dataframe(self, tmp_path, monkeypatch):
         import polars as pl
         from ase.calculators.emt import EMT
@@ -558,6 +572,7 @@ class TestFindSdOfAllStructures:
         )
         assert isinstance(result, pl.DataFrame)
 
+    @pytest.mark.unit
     def test_one_row_per_structure(self, tmp_path, monkeypatch):
         from ase.calculators.emt import EMT
 
@@ -579,6 +594,7 @@ class TestFindSdOfAllStructures:
         )
         assert len(result) == 4
 
+    @pytest.mark.unit
     def test_csv_written(self, tmp_path, monkeypatch):
         from ase.calculators.emt import EMT
 
@@ -619,6 +635,7 @@ class TestSelectInitialStructures:
         atoms.info["config_type"] = config_type
         return atoms
 
+    @pytest.mark.unit
     def test_formula_filter(self):
         """Test that chemical formula filter works correctly."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -640,6 +657,7 @@ class TestSelectInitialStructures:
         assert len(result) == 3
         assert all(a.get_chemical_formula() == "H2" for a in result)
 
+    @pytest.mark.unit
     def test_atom_number_range_filter(self):
         """Test that atom count range filter works correctly."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -663,6 +681,7 @@ class TestSelectInitialStructures:
         assert len(result) == 4
         assert all(len(a) == 2 for a in result)
 
+    @pytest.mark.unit
     def test_config_type_filter(self):
         """Test that config_type filter and marking works correctly."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -788,6 +807,7 @@ class TestSelectInitialStructures:
         result1 = select_initial_structures(base_name="al_loop_1", **kwargs)
         assert len(result1) == 5
 
+    @pytest.mark.unit
     def test_less_than_two_atoms_warning(self):
         """Test warning is raised for atom_number_range starting below 2."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -807,6 +827,7 @@ class TestSelectInitialStructures:
             )
         assert any(issubclass(warning.category, UserWarning) for warning in w)
 
+    @pytest.mark.unit
     def test_enforce_chemical_diversity_fewer_formulas_than_jobs(self):
         """When unique formulas < jobs, all unique formulas are chosen and extras sampled."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -828,6 +849,7 @@ class TestSelectInitialStructures:
         )
         assert len(result) == 4
 
+    @pytest.mark.unit
     def test_enforce_chemical_diversity_more_formulas_than_jobs(self):
         """When unique formulas > jobs, selects weighted diverse subset."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -854,6 +876,7 @@ class TestSelectInitialStructures:
         )
         assert len(result) == 3
 
+    @pytest.mark.unit
     def test_combined_formula_and_atom_range_filter(self):
         """Test combined formula and atom-number range filter."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -879,6 +902,7 @@ class TestSelectInitialStructures:
         assert all(len(a) == 2 for a in result)
         assert all(a.get_chemical_formula() in ["H2", "O2"] for a in result)
 
+    @pytest.mark.unit
     def test_reuses_structures_when_concurrency_exceeds_available(self):
         """When num_of_md_starts exceeds the number of selectable
         structures, structures are reused (not an error) and every returned
@@ -900,6 +924,7 @@ class TestSelectInitialStructures:
         seeds = [a.info["md_seed"] for a in result]
         assert len(set(seeds)) == 5
 
+    @pytest.mark.unit
     def test_reuse_warns(self):
         """A warning is logged (not raised) when reuse is needed."""
         import logging
@@ -933,6 +958,7 @@ class TestSelectInitialStructures:
 
         assert any(r.levelno == logging.WARNING for r in records)
 
+    @pytest.mark.unit
     def test_no_reuse_when_enough_structures_available(self):
         """When there are enough structures, selection stays without-replacement
         (no duplicate structures/seeds needed) as before."""
@@ -953,6 +979,7 @@ class TestSelectInitialStructures:
         seeds = [a.info["md_seed"] for a in result]
         assert len(set(seeds)) == 3
 
+    @pytest.mark.unit
     def test_reuse_with_enforce_chemical_diversity(self):
         """Reuse also works (no error) when enforce_chemical_diversity=True and
         fewer structures exist than num_of_md_starts."""
@@ -974,6 +1001,7 @@ class TestSelectInitialStructures:
         seeds = [a.info["md_seed"] for a in result]
         assert len(set(seeds)) == 4
 
+    @pytest.mark.unit
     def test_zero_selectable_structures_raises_value_error(self):
         """A genuinely empty pool (nothing to reuse either) is a real config
         error, not silently swallowed."""
@@ -990,6 +1018,7 @@ class TestSelectInitialStructures:
                 num_of_md_starts=3,
             )
 
+    @pytest.mark.unit
     def test_seed_param_controls_md_seed_values(self):
         """The seed parameter deterministically offsets md_seed values."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -1019,6 +1048,7 @@ class TestSelectInitialStructures:
 class TestMarkStructuresForDft:
     """Test the mark_structures_for_dft function."""
 
+    @pytest.mark.unit
     def test_sets_config_type(self):
         """Test that config_type is set correctly."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -1031,6 +1061,7 @@ class TestMarkStructuresForDft:
         )
         assert atoms.info["config_type"] == "al_loop_0_structure_generation"
 
+    @pytest.mark.unit
     def test_sets_job_id_default(self):
         """Test that job_id is initialized to -1."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -1041,6 +1072,7 @@ class TestMarkStructuresForDft:
         mark_structures_for_dft([atoms], base_name="test", job_name="md")
         assert atoms.info["job_id"] == -1
 
+    @pytest.mark.unit
     def test_preserves_existing_job_id(self):
         """Test that existing job_id is preserved."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -1052,6 +1084,7 @@ class TestMarkStructuresForDft:
         mark_structures_for_dft([atoms], base_name="test", job_name="md")
         assert atoms.info["job_id"] == 42
 
+    @pytest.mark.unit
     def test_marks_multiple_structures(self):
         """Test marking multiple structures at once."""
         from alomancy.structure_generation.select_initial_structures import (
@@ -1075,6 +1108,7 @@ class TestMarkStructuresForDft:
 class TestTrajectoryIO:
     """Test trajectory file input/output."""
 
+    @pytest.mark.unit
     def test_xyz_round_trip(self, tmp_path):
         """Test writing and reading a single structure."""
         from ase.io import read, write
@@ -1091,6 +1125,7 @@ class TestTrajectoryIO:
         assert len(loaded) == 1
         np.testing.assert_allclose(loaded[0].get_positions(), atoms.get_positions())
 
+    @pytest.mark.unit
     def test_multiple_frames(self, tmp_path):
         """Test writing and reading multiple frames."""
         from ase.io import read, write
@@ -1104,6 +1139,7 @@ class TestTrajectoryIO:
         loaded = read(str(path), ":", format="extxyz")
         assert len(loaded) == 5
 
+    @pytest.mark.unit
     def test_preserves_structure_properties(self, tmp_path):
         """Test that structure properties are preserved in I/O."""
         from ase.io import read, write
