@@ -11,6 +11,7 @@ changes.
 | `committee_sevennet.yaml` | committee uncertainty | SevenNet | MD (NPT) | QE | `start_from.xyz` |
 | `random_selection_baseline.yaml` | random selection (baseline) | MACE | MD | QE | cold start |
 | `novelty_selection_from_database.yaml` | novelty selection | MACE | EZGA | VASP | `start_from.database` |
+| `committee_mace_ezga_hise.yaml` | committee uncertainty | MACE | EZGA with HiSE and an MD burst (walkthrough: `docs/ezga.md`) | QE | cold start |
 
 The `hpc` values name profiles in `~/.alomancy/hpc_config.yaml`; create
 yours with `alomancy add-hpc` and change the names to match. Then:

@@ -1,34 +1,128 @@
-import json
+"""EZGA structure generator (``structure_generation.generator: "ezga"``).
+
+``structure_generation.ezga_kwargs`` is EZGA's own config (the dict its YAML
+holds), plus two ALomancy keys (``structure_selection_kwargs`` and
+``local``). ALomancy fills in what it owns: the calculator (the loop's best
+model, wrapped in EZGA's ``ase_calculator`` with the user's
+``simulator.calculator`` settings), the seeds, the output and database
+paths, ``resume`` and ``rng``. The search runs as one remote job on
+``structure_generation.hpc`` (or in-process with ``local: true``), and the
+candidates are read back from EZGA's database: the offspring of the most
+recent generations, up to ``num_of_structures_to_generate``.
+"""
+
+import copy
+import inspect
+import itertools
+import logging
+import math
+import shutil
+import tempfile
 from collections.abc import Callable
-from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import yaml
 from ase import Atoms
-from ase.io import read, write
-from ezga.factory import build_default_engine, load_config
+from ase.io import write
 
 from alomancy.mlip.base import CalculatorSpec
+from alomancy.utils.clean_structures import drop_unwritable_info
+from alomancy.utils.file_saving_and_parsing import read_xyz
+from alomancy.utils.seed_selection import mark_structures_for_dft, select_diverse_seeds
 
-# EZGA relaxes candidates in the driver process, so on the CPU.
-_EZGA_DEVICE = "cpu"
-_CALCULATOR_SPEC_FILENAME = "calculator_spec.json"
+logger = logging.getLogger(__name__)
 
-# run_ezga's own signature defaults, mirrored here (rather than
-# introspected via inspect.signature, which this codebase doesn't use
-# elsewhere) so the modular structure_generator entry point (generate(),
-# below) and the skeleton's pre-run config summary (committee_uncertainty_
-# workflow.py's display_workflow_summary) have one obvious, named place to
-# read ezga_kwargs' defaults from. Keep in sync with run_ezga's own
-# defaults below if those ever change.
-_EZGA_KWARGS_DEFAULTS: dict[str, Any] = {
-    "max_generations": 2,
-    "population_size": 2,
-    "min_atoms": 2,
-    "max_atoms": 41,
+_EZGA_DIRNAME = "ezga"
+_CANDIDATES_FILENAME = "ezga_candidates.xyz"
+_SEEDS_FILENAME = "ezga_seeds.xyz"
+_INITIAL_POPULATION_FILENAME = "initial_population.xyz"
+_DEFAULT_NUM_OF_SEEDS = 8
+_MODULE = "alomancy.structure_generation.ezga.generate_structures"
+
+# ezga_kwargs keys that are ALomancy's, popped before EZGA sees the config.
+_ALOMANCY_KEYS = ("structure_selection_kwargs", "local")
+_SELECTION_KEYS = {"num_of_seeds", "enforce_chemical_diversity"}
+
+# EZGA settings ALomancy sets itself; a user value raises.
+_OWNED_KEYS = {
+    "output_path": "ALomancy writes each loop's search to its own directory",
+    "resume": "every search starts fresh (ALomancy restarts a crashed search)",
+    "rng": "EZGA is seeded from general.seed",
 }
+_OWNED_POPULATION_KEYS = {
+    "dataset_path": "the seeds are ALomancy's training structures",
+    "db_path": "ALomancy reads the candidates from this database",
+    "db_ro_path": "ALomancy reads the candidates from this database",
+    "storage": "the candidates are read from EZGA's database, so it must persist",
+}
+# ase_calculator's own arguments that aren't settings: the model is the
+# loop's best model.
+_OWNED_CALCULATOR_KEYS = {"calculator"}
+
+# The 1.0.3 ezga_kwargs keys, with where each setting lives now.
+_REMOVED_KEYS = {
+    "population_size": "multiobjective.size",
+    "mutation_operators": "mutation_funcs (EZGA's own list of mutation factories)",
+    "min_atoms": (
+        "the min_atoms argument of bounded_mutation_remove, or "
+        "structure_generation.structure_selection_kwargs.atom_number_range"
+    ),
+    "max_atoms": (
+        "the max_atoms argument of bounded_mutation_add, or "
+        "structure_generation.structure_selection_kwargs.atom_number_range"
+    ),
+}
+
+# Element-independent defaults, after the EZGA wiki's MLIP active-learning
+# example (Examples/MLIP-Active-Learning): a wide population (100), a low,
+# constant selection temperature, a looser collision check, composition
+# niching and full relaxations. The mutations and the composition feature
+# depend on general.elements and are added by _default_kwargs;
+# max_generations is derived from num_of_structures_to_generate (_resolve).
+_EZGA_KWARGS_DEFAULTS: dict[str, Any] = {
+    "structure_selection_kwargs": {
+        "num_of_seeds": _DEFAULT_NUM_OF_SEEDS,
+        "enforce_chemical_diversity": False,
+    },
+    "local": False,
+    "population": {"filter_duplicates": True, "collision_factor": 0.6},
+    "thermostat": {"initial_temperature": 0.05, "constant_temperature": True},
+    "multiobjective": {"size": 100, "composition_repulsion_weight": 1.0},
+    "variation": {
+        "initial_mutation_rate": 1.0,
+        "min_mutation_rate": 1.0,
+        "crossover_probability": 0.0,
+    },
+    "simulator": {
+        "mode": "sampling",
+        "calculator": {"fmax": 0.05, "steps_max": 100, "optimizer": "FIRE"},
+    },
+}
+# Without max_generations, enough generations for twice
+# num_of_structures_to_generate, and at least this many.
+_MIN_DERIVED_GENERATIONS = 5
+
+# Keys of mutation/feature factories that name chemical species.
+_SPECIES_KEYS = {
+    "species",
+    "species_add",
+    "species_remove",
+    "bound",
+    "IDs",
+    "ID1",
+    "ID2",
+}
+
+# hise.overrides keys (dot paths) ALomancy owns, as at the top level.
+_OWNED_OVERRIDE_KEYS = {
+    "output_path",
+    "resume",
+    "rng",
+    *(f"population.{key}" for key in _OWNED_POPULATION_KEYS),
+}
+_CALCULATOR_OVERRIDE = "simulator.calculator"
 
 
 def objective_energy_per_atom(scale: float = 1.0) -> Callable[[Any], np.ndarray]:
@@ -55,388 +149,522 @@ def objective_energy_per_atom(scale: float = 1.0) -> Callable[[Any], np.ndarray]
     return compute
 
 
+def _bounded(
+    mutation: Callable, min_atoms: int | None, max_atoms: int | None
+) -> Callable[..., Any]:
+    """Wrap an EZGA mutation so a result outside [min_atoms, max_atoms]
+    (or an input already at the limit it would cross) is rejected (None,
+    EZGA's no-op). Passes EZGA's rng through so the search stays seeded."""
+    takes_rng = "rng" in inspect.signature(mutation).parameters
+
+    def apply(structure: Any, rng: np.random.Generator | None = None) -> Any:
+        n = structure.AtomPositionManager.atomCount
+        if (max_atoms is not None and n >= max_atoms) or (
+            min_atoms is not None and n <= min_atoms
+        ):
+            return None
+        result = mutation(structure, rng=rng) if takes_rng else mutation(structure)
+        candidate = result[0] if isinstance(result, tuple) else result
+        if candidate is None:
+            return None
+        n_new = candidate.AtomPositionManager.atomCount
+        if (max_atoms is not None and n_new > max_atoms) or (
+            min_atoms is not None and n_new < min_atoms
+        ):
+            return None
+        return result
+
+    return apply
+
+
 def bounded_mutation_add(
     species: list[str],
-    max_atoms: int,
+    max_atoms: int | None = None,
     bound: list[str] | None = None,
     collision_tolerance: float = 2.0,
     slab: bool = False,
-) -> Callable[[Any], Any | None]:
-    """Build an EZGA add mutation that respects an upper atom-count limit."""
+) -> Callable[..., Any]:
+    """EZGA's add mutation, never growing a structure past *max_atoms*."""
     from ezga.variation.mutation import mutation_add
 
     mutation = mutation_add(
-        species=species,
-        bound=bound,
-        collision_tolerance=collision_tolerance,
-        slab=slab,
+        species=species, bound=bound, collision_tolerance=collision_tolerance, slab=slab
     )
-
-    def apply(structure: Any) -> Any | None:
-        if structure.AtomPositionManager.atomCount >= max_atoms:
-            return None
-        candidate = mutation(structure)
-        if candidate is None or candidate.AtomPositionManager.atomCount > max_atoms:
-            return None
-        return candidate
-
-    return apply
+    return _bounded(mutation, None, max_atoms)
 
 
 def bounded_mutation_remove(
-    species: str,
-    min_atoms: int,
-) -> Callable[[Any], Any | None]:
-    """Build an EZGA remove mutation that respects a lower atom-count limit."""
+    species: str, min_atoms: int | None = None
+) -> Callable[..., Any]:
+    """EZGA's remove mutation, never shrinking a structure below *min_atoms*."""
     from ezga.variation.mutation import mutation_remove
 
-    mutation = mutation_remove(species=species)
-
-    def apply(structure: Any) -> Any | None:
-        if structure.AtomPositionManager.atomCount <= min_atoms:
-            return None
-        candidate = mutation(structure)
-        if candidate is None or candidate.AtomPositionManager.atomCount < min_atoms:
-            return None
-        return candidate
-
-    return apply
+    return _bounded(mutation_remove(species=species), min_atoms, None)
 
 
-def build_mutation_configs(
-    mutation_operators: dict[str, dict[str, Any]] | None,
-    min_atoms: int,
-    max_atoms: int,
-) -> list[dict[str, Any]]:
-    """Translate ALomancy mutation settings into EZGA factory specifications."""
-    defaults: dict[str, dict[str, Any]] = {
-        "rattle": {"enabled": True, "std": 0.05, "species": ["Pd"]},
-        "random_strain": {"enabled": True, "max_strain": 0.02},
-        "add": {
-            "enabled": True,
-            "species": ["Pd"],
-            "bound": ["Pd"],
-            "collision_tolerance": 2.0,
-            "slab": True,
+def _default_kwargs(elements: list[str], atom_number_range: Any) -> dict[str, Any]:
+    """The defaults, with every species-dependent setting from
+    general.elements and the add/remove limits from the seed filter's
+    atom_number_range (unbounded when it isn't set)."""
+    min_atoms = max_atoms = None
+    if atom_number_range and tuple(atom_number_range) != (0, 0):
+        min_atoms, max_atoms = (int(n) for n in atom_number_range)
+    mutations: list[dict[str, Any]] = [
+        {
+            "type": "ezga.variation.mutation.mutation_rattle",
+            "std": 0.05,
+            "species": list(elements),
         },
-        "remove": {"enabled": True, "species": "Pd"},
-        "remove_add": {
-            "enabled": True,
-            "species_add": ["Pd"],
-            "species_remove": ["Pd"],
-            "bound": ["Pd"],
-            "collision_tolerance": 2.0,
-            "slab": True,
-        },
-    }
-    supplied = mutation_operators or {}
-    unknown = set(supplied) - set(defaults)
-    if unknown:
-        raise ValueError(f"Unknown EZGA mutation operators: {sorted(unknown)}")
-
-    settings = {
-        name: {**default, **supplied.get(name, {})}
-        for name, default in defaults.items()
-    }
-    mutations: list[dict[str, Any]] = []
-
-    if settings["rattle"].pop("enabled"):
-        mutations.append(
+        {"type": "ezga.variation.mutation.mutation_random_strain", "max_strain": 0.02},
+    ]
+    for element in elements:
+        mutations += [
             {
-                "type": "ezga.variation.mutation.mutation_rattle",
-                **settings["rattle"],
-            }
-        )
-    if settings["random_strain"].pop("enabled"):
-        mutations.append(
-            {
-                "type": "ezga.variation.mutation.mutation_random_strain",
-                **settings["random_strain"],
-            }
-        )
-    if settings["add"].pop("enabled"):
-        mutations.append(
-            {
-                "type": (
-                    "alomancy.structure_generation.ezga.generate_structures."
-                    "bounded_mutation_add"
-                ),
+                "type": f"{_MODULE}.bounded_mutation_add",
+                "species": [element],
                 "max_atoms": max_atoms,
-                **settings["add"],
-            }
-        )
-    if settings["remove"].pop("enabled"):
-        mutations.append(
+            },
             {
-                "type": (
-                    "alomancy.structure_generation.ezga.generate_structures."
-                    "bounded_mutation_remove"
-                ),
+                "type": f"{_MODULE}.bounded_mutation_remove",
+                "species": element,
                 "min_atoms": min_atoms,
-                **settings["remove"],
-            }
-        )
-    if settings["remove_add"].pop("enabled"):
-        mutations.append(
-            {
-                "type": "ezga.variation.mutation.mutation_remove_add",
-                **settings["remove_add"],
-            }
-        )
-
-    if not mutations:
-        raise ValueError("At least one EZGA mutation operator must be enabled.")
-    return mutations
-
-
-def trained_model_calculator(
-    calculator_spec_path: str, device: str = _EZGA_DEVICE, **ezga_kwargs: Any
-) -> Any:
-    """EZGA calculator factory (referenced by string from the generated
-    ezga_config.yaml): the trained model's own calculator, built by the
-    trainer that trained it, wrapped in EZGA's generic ASE adapter.
-
-    The spec is read from a JSON file because EZGA imports any config string
-    containing ":" or a dotted name, so the trainer config can't be inlined."""
-    from ezga.simulator.ase_calculator import ase_calculator
-
-    spec = CalculatorSpec(**json.loads(Path(calculator_spec_path).read_text()))
-    return ase_calculator(calculator=spec.build(device), device=device, **ezga_kwargs)
-
-
-def build_ezga_config(
-    dataset_path: Path,
-    output_path: Path,
-    calculator_spec_path: Path,
-    max_generations: int = 2,
-    population_size: int = 2,
-    min_atoms: int = 2,
-    max_atoms: int = 41,
-    mutation_operators: dict[str, dict[str, Any]] | None = None,
-) -> dict:
-    if max_generations < 1:
-        raise ValueError("max_generations must be at least 1.")
-    if population_size < 1:
-        raise ValueError("population_size must be at least 1.")
-    if min_atoms < 1:
-        raise ValueError("min_atoms must be at least 1.")
-    if max_atoms < min_atoms:
-        raise ValueError("max_atoms must be greater than or equal to min_atoms.")
-
+            },
+        ]
+    mutations += [
+        {"type": "ezga.variation.mutation.mutation_swap", "ID1": a, "ID2": b}
+        for a, b in itertools.permutations(elements, 2)
+    ]
     return {
-        "max_generations": max_generations,
-        "resume": False,
-        "output_path": str(output_path),
-        "population": {
-            "dataset_path": str(dataset_path),
-            "db_path": str(output_path / "db"),
-            "db_ro_path": str(output_path / "db_ro"),
-            "filter_duplicates": True,
-            "collision_factor": 0.80,
-        },
-        "multiobjective": {
-            "size": population_size,
-        },
-        "variation": {
-            "initial_mutation_rate": 1.0,
-            "min_mutation_rate": 1.0,
-            "crossover_probability": 0.0,
-            "use_magnitude_scaling": False,
-        },
-        "mutation_funcs": build_mutation_configs(
-            mutation_operators=mutation_operators,
-            min_atoms=min_atoms,
-            max_atoms=max_atoms,
-        ),
-        "crossover_funcs": [
-            "ezga.variation.crossover.crossover_inplane_shuffle",
-        ],
-        "thermostat": {
-            "initial_temperature": 1.0,
-            "constant_temperature": True,
-        },
+        **copy.deepcopy(_EZGA_KWARGS_DEFAULTS),
+        "mutation_funcs": mutations,
         "evaluator": {
             "features_funcs": [
                 {
                     "type": "ezga.evaluator.features.feature_composition_vector",
-                    "IDs": ["Pd"],
+                    "IDs": list(elements),
                 }
             ],
-            "objectives_funcs": [
-                {
-                    "type": (
-                        "alomancy.structure_generation.ezga."
-                        "generate_structures.objective_energy_per_atom"
-                    ),
-                    "scale": 1.0,
-                }
-            ],
-        },
-        "simulator": {
-            "mode": "sampling",
-            "calculator": {
-                "type": (
-                    "alomancy.structure_generation.ezga."
-                    "generate_structures.trained_model_calculator"
-                ),
-                "calculator_spec_path": str(calculator_spec_path),
-                "device": _EZGA_DEVICE,
-                "default_dtype": "float64",
-                "nvt_steps": None,
-                "fmax": 0.05,
-                "steps_max": 5,
-                "optimizer": "FIRE",
-            },
+            "objectives_funcs": [{"type": f"{_MODULE}.objective_energy_per_atom"}],
         },
     }
 
 
-def run_ezga(
-    initial_structures: list[Atoms],
-    calculator_spec: CalculatorSpec,
-    output_dir: Path,
-    max_generations: int = 2,
-    population_size: int = 2,
-    min_atoms: int = 2,
-    max_atoms: int = 41,
-    mutation_operators: dict[str, dict[str, Any]] | None = None,
-) -> list[Atoms]:
+def _merge(defaults: dict, user: dict) -> dict:
+    """User settings over the defaults: dicts merge key by key at every
+    level; anything else (lists such as mutation_funcs, scalars) replaces
+    the default."""
+    merged = copy.deepcopy(defaults)
+    for key, value in user.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
 
-    if not initial_structures:
-        raise ValueError("EZGA requires at least one initial structure.")
-    invalid_sizes = [
-        len(structure)
-        for structure in initial_structures
-        if not min_atoms <= len(structure) <= max_atoms
-    ]
-    if invalid_sizes:
+
+def _check_species(value: Any, elements: set[str], where: str) -> None:
+    """Raise on a species name outside general.elements anywhere in a
+    mutation or evaluator entry."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in _SPECIES_KEYS and item is not None:
+                names = [item] if isinstance(item, str) else item
+                if isinstance(names, list | tuple):
+                    unknown = sorted(
+                        {n for n in names if isinstance(n, str)} - elements
+                    )
+                    if unknown:
+                        raise ValueError(
+                            f"structure_generation.ezga_kwargs.{where}: {key} "
+                            f"{unknown} not in general.elements {sorted(elements)}."
+                        )
+            _check_species(item, elements, where)
+    elif isinstance(value, list | tuple):
+        for item in value:
+            _check_species(item, elements, where)
+
+
+def _positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _resolve(sg_config: dict, elements: list[str]) -> dict[str, Any]:
+    """ezga_kwargs merged over the defaults, after rejecting removed and
+    ALomancy-owned keys. Idempotent: resolving the result changes nothing."""
+    user = sg_config.get("ezga_kwargs") or {}
+    if not isinstance(user, dict):
         raise ValueError(
-            "EZGA initial structures must contain between "
-            f"{min_atoms} and {max_atoms} atoms; found invalid sizes "
-            f"{sorted(set(invalid_sizes))}."
+            "structure_generation.ezga_kwargs must be a mapping (EZGA's own "
+            f"config), got {type(user).__name__}."
+        )
+    removed = [key for key in _REMOVED_KEYS if key in user]
+    if removed:
+        moves = "; ".join(f"{key} -> {_REMOVED_KEYS[key]}" for key in removed)
+        raise ValueError(
+            "structure_generation.ezga_kwargs is now EZGA's own config "
+            f"(docs/deprecations.md). Removed keys: {moves}."
+        )
+    problems = [f"{key} ({why})" for key, why in _OWNED_KEYS.items() if key in user]
+    population = user.get("population") or {}
+    problems += [
+        f"population.{key} ({why})"
+        for key, why in _OWNED_POPULATION_KEYS.items()
+        if key in population
+    ]
+    calculator = (user.get("simulator") or {}).get("calculator") or {}
+    if not isinstance(calculator, dict):
+        raise ValueError(
+            "structure_generation.ezga_kwargs.simulator.calculator holds the "
+            "settings of EZGA's ase_calculator (fmax, steps_max, nvt_steps, ...); "
+            "the model is the loop's best model. Got "
+            f"{type(calculator).__name__}."
+        )
+    problems += [
+        f"simulator.calculator.{key} (the model is the loop's best model)"
+        for key in sorted(
+            set(calculator) & (_OWNED_CALCULATOR_KEYS | {"type", "factory"})
+        )
+    ]
+    overrides = (user.get("hise") or {}).get("overrides") or {}
+    problems += [
+        f"hise.overrides.{key} (as at the top level)"
+        for key in sorted(set(overrides) & _OWNED_OVERRIDE_KEYS)
+    ]
+    for stage, settings in enumerate(_stage_calculator_overrides(user) or []):
+        problems += [
+            f"hise.overrides.{_CALCULATOR_OVERRIDE}[{stage}].{key} (the model is "
+            "the loop's best model)"
+            for key in sorted(
+                set(settings) & (_OWNED_CALCULATOR_KEYS | {"type", "factory"})
+            )
+        ]
+    if problems:
+        raise ValueError(
+            "structure_generation.ezga_kwargs must not set: "
+            + "; ".join(problems)
+            + ". ALomancy sets these itself."
+        )
+    atom_number_range = (sg_config.get("structure_selection_kwargs") or {}).get(
+        "atom_number_range"
+    )
+    resolved = _merge(_default_kwargs(elements, atom_number_range), user)
+    size: Any = (resolved.get("multiobjective") or {}).get("size")
+    if "max_generations" not in resolved and _positive_int(size):
+        to_generate = sg_config.get("num_of_structures_to_generate") or 0
+        resolved["max_generations"] = max(
+            _MIN_DERIVED_GENERATIONS, math.ceil(2 * to_generate / size)
+        )
+    return resolved
+
+
+def _stage_calculator_overrides(ezga_kwargs: dict[str, Any]) -> list[dict] | None:
+    """hise.overrides["simulator.calculator"]: one dict of ase_calculator
+    settings per HiSE stage (None without one). Raises if it isn't a list
+    of dicts."""
+    overrides = (ezga_kwargs.get("hise") or {}).get("overrides") or {}
+    if _CALCULATOR_OVERRIDE not in overrides:
+        return None
+    stages = overrides[_CALCULATOR_OVERRIDE]
+    if not isinstance(stages, list) or not all(isinstance(s, dict) for s in stages):
+        raise ValueError(
+            "structure_generation.ezga_kwargs.hise.overrides."
+            f"{_CALCULATOR_OVERRIDE} must be a list with one dict of "
+            "ase_calculator settings per stage (the model is the loop's best "
+            "model)."
+        )
+    return stages
+
+
+def _last_stage_value(ezga_kwargs: dict[str, Any], dotted: str, default: Any) -> Any:
+    """A setting as the last HiSE stage sees it: its hise.overrides entry
+    if there is one, else *default* (the top-level value)."""
+    overrides = (ezga_kwargs.get("hise") or {}).get("overrides") or {}
+    values = overrides.get(dotted)
+    return values[-1] if isinstance(values, list) and values else default
+
+
+def _ezga_config(
+    ezga_kwargs: dict[str, Any],
+    *,
+    output_dir: Path,
+    make_calculator: Callable[[dict[str, Any]], Any],
+    seed: int,
+) -> dict[str, Any]:
+    """EZGA's config dict: the user's settings plus everything ALomancy
+    owns. *make_calculator* turns ase_calculator settings into the live
+    object for simulator.calculator (and for each HiSE stage's calculator
+    override, its settings over the top-level ones), so nothing has to
+    round-trip through YAML."""
+    config = {
+        key: copy.deepcopy(value)
+        for key, value in ezga_kwargs.items()
+        if key not in _ALOMANCY_KEYS
+    }
+    config["output_path"] = str(output_dir)
+    config["resume"] = False
+    config["rng"] = int(seed)
+    population = config.setdefault("population", {})
+    population["dataset_path"] = str(output_dir / _INITIAL_POPULATION_FILENAME)
+    population["db_path"] = str(output_dir / "db")
+    population["db_ro_path"] = str(output_dir / "db_ro")
+    population["storage"] = "composite"
+    settings = _calculator_settings(ezga_kwargs)
+    config.setdefault("simulator", {})["calculator"] = make_calculator(settings)
+    stages = _stage_calculator_overrides(ezga_kwargs)
+    if stages is not None:
+        config["hise"]["overrides"][_CALCULATOR_OVERRIDE] = [
+            make_calculator({**settings, **stage}) for stage in stages
+        ]
+    return config
+
+
+def _calculator_settings(ezga_kwargs: dict[str, Any]) -> dict[str, Any]:
+    return dict(ezga_kwargs.get("simulator", {}).get("calculator", {}))
+
+
+def validate_kwargs(sg_config: dict, *, elements: list[str], seed: int) -> None:
+    """Construction-time check (registry hook): resolve ezga_kwargs and
+    store the result back into *sg_config*, so the summary and generate()
+    see the full config. EZGA's own schema (pydantic, unknown keys
+    rejected) checks the config and every factory is imported, so a typo
+    fails now rather than at the first loop's generation phase."""
+    from ezga.factory import load_config
+    from ezga.simulator.ase_calculator import ase_calculator
+
+    resolved = _resolve(sg_config, elements)
+    _check_species(resolved.get("mutation_funcs"), set(elements), "mutation_funcs")
+    _check_species(resolved.get("evaluator"), set(elements), "evaluator")
+
+    selection = resolved["structure_selection_kwargs"]
+    unknown = set(selection) - _SELECTION_KEYS
+    if unknown:
+        raise ValueError(
+            "structure_generation.ezga_kwargs.structure_selection_kwargs: unknown "
+            f"keys {sorted(unknown)} (known: {sorted(_SELECTION_KEYS)})."
+        )
+    if not _positive_int(selection["num_of_seeds"]):
+        raise ValueError(
+            "structure_generation.ezga_kwargs.structure_selection_kwargs."
+            f"num_of_seeds must be a positive integer, got {selection['num_of_seeds']!r}."
+        )
+    if not isinstance(resolved["local"], bool):
+        raise ValueError(
+            "structure_generation.ezga_kwargs.local must be true or false, "
+            f"got {resolved['local']!r}."
         )
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    calculator_params = set(inspect.signature(ase_calculator).parameters)
+    calculator_settings = {"simulator.calculator": _calculator_settings(resolved)}
+    for stage, settings in enumerate(_stage_calculator_overrides(resolved) or []):
+        calculator_settings[f"hise.overrides.{_CALCULATOR_OVERRIDE}[{stage}]"] = (
+            settings
+        )
+    for where, settings in calculator_settings.items():
+        unknown = set(settings) - calculator_params
+        if unknown:
+            raise ValueError(
+                f"structure_generation.ezga_kwargs.{where}: unknown "
+                f"ase_calculator settings {sorted(unknown)}."
+            )
 
-    # ------------------------------------------------------------------
-    # 1. Write ALomancy/ASE structures into an EZGA-readable EXTXYZ file
-    # ------------------------------------------------------------------
-
-    initial_population_path = output_dir / "initial_population.xyz"
-
-    write(
-        initial_population_path,
-        initial_structures,
-        format="extxyz",
+    # Only the last HiSE stage's database is read, so its settings count.
+    generations: Any = _last_stage_value(
+        resolved, "max_generations", resolved.get("max_generations")
     )
-
-    # ------------------------------------------------------------------
-    # 2. Build EZGA configuration
-    # ------------------------------------------------------------------
-
-    calculator_spec_path = output_dir / _CALCULATOR_SPEC_FILENAME
-    calculator_spec_path.write_text(
-        json.dumps(asdict(calculator_spec), indent=2, default=str)
+    size: Any = _last_stage_value(
+        resolved,
+        "multiobjective.size",
+        (resolved.get("multiobjective") or {}).get("size"),
     )
-    config = build_ezga_config(
-        dataset_path=initial_population_path,
-        output_path=output_dir,
-        calculator_spec_path=calculator_spec_path,
-        max_generations=max_generations,
-        population_size=population_size,
-        min_atoms=min_atoms,
-        max_atoms=max_atoms,
-        mutation_operators=mutation_operators,
-    )
-
-    # ------------------------------------------------------------------
-    # 3. Write YAML config
-    #
-    # EZGA's YAML loader performs the post-processing required to
-    # materialize strings such as the calculator factory into real callables.
-    # ------------------------------------------------------------------
-
-    config_path = output_dir / "ezga_config.yaml"
-
-    with open(config_path, "w") as f:
-        yaml.safe_dump(
-            config,
-            f,
-            sort_keys=False,
+    if not (_positive_int(generations) and _positive_int(size)):
+        raise ValueError(
+            "structure_generation.ezga_kwargs.max_generations and "
+            "multiobjective.size must be positive integers (for HiSE, the "
+            "last stage's): together they set how many structures EZGA makes "
+            "(max_generations x size), which must cover structure_generation."
+            f"num_of_structures_to_generate. Got max_generations={generations!r}, "
+            f"multiobjective.size={size!r}."
+        )
+    to_generate = sg_config.get("num_of_structures_to_generate")
+    expected = generations * size
+    if to_generate is not None and expected < to_generate:
+        raise ValueError(
+            f"EZGA makes about max_generations x multiobjective.size = {expected} "
+            "structures, fewer than structure_generation."
+            f"num_of_structures_to_generate ({to_generate}). Raise either setting."
+        )
+    if to_generate is not None and expected < 2 * to_generate:
+        logger.warning(
+            "EZGA makes about max_generations x multiobjective.size = %d "
+            "structures, less than twice structure_generation."
+            "num_of_structures_to_generate (%d): duplicates and failed "
+            "relaxations can leave it short of candidates.",
+            expected,
+            to_generate,
+            extra={
+                "event": "ezga_few_structures_configured",
+                "data": {"expected": expected, "to_generate": to_generate},
+            },
         )
 
-    # ------------------------------------------------------------------
-    # 4. Build and run EZGA
-    # ------------------------------------------------------------------
+    with tempfile.TemporaryDirectory() as tmp:
+        # load_config mutates its input; the placeholder calculator is never
+        # called.
+        load_config(
+            _ezga_config(
+                resolved,
+                output_dir=Path(tmp),
+                make_calculator=lambda _settings: lambda **_: None,
+                seed=seed,
+            )
+        )
+    sg_config["ezga_kwargs"] = resolved
 
-    cfg = load_config(config_path)
 
-    engine = build_default_engine(cfg)
+def run_ezga(
+    seeds: list[Atoms],
+    calculator_spec: CalculatorSpec,
+    ezga_kwargs: dict[str, Any],
+    output_dir: str,
+    seed: int = 803,
+) -> str:
+    """Remote worker (module-level: ExPyRe pickles it by reference): run one
+    EZGA search (or, with a ``hise`` block, EZGA's HiSE stages) from *seeds*
+    with the trained model, built once on the node. Every structure EZGA
+    evaluates is stored in a database: ``<output_dir>/db``, or for HiSE the
+    last stage's directory. Returns that database's path relative to
+    *output_dir*, which generate() reads after the job (a failed job
+    returns None)."""
+    from ezga.factory import build_default_engine, load_config
+    from ezga.simulator.ase_calculator import ase_calculator
 
-    population = engine.run()
-
-    # ------------------------------------------------------------------
-    # 5. Export EZGA population
-    # ------------------------------------------------------------------
-
-    candidate_path = output_dir / "ezga_candidates.xyz"
-
-    # EZGA export may append to an existing file.
-    # Remove the old candidate file so we only return structures
-    # belonging to the current run.
-    if candidate_path.exists():
-        candidate_path.unlink()
-
-    population.export_structures(
-        dataset=population.get_dataset("dataset"),
-        file_path=str(candidate_path),
+    if not seeds:
+        raise ValueError("EZGA requires at least one seed structure.")
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    write(out / _INITIAL_POPULATION_FILENAME, seeds, format="extxyz")
+    model = calculator_spec.build()
+    config = _ezga_config(
+        ezga_kwargs,
+        output_dir=out,
+        make_calculator=lambda settings: ase_calculator(calculator=model, **settings),
+        seed=seed,
     )
+    if "hise" in config:
+        from ezga.hise.manager import run_hise
 
-    # ------------------------------------------------------------------
-    # 6. Convert EZGA structures back to ASE
-    # ------------------------------------------------------------------
+        stage_dirs = list(run_hise(load_config(config)).values())
+        return str(Path(stage_dirs[-1]).resolve().relative_to(out.resolve()))
+    build_default_engine(load_config(config)).run()
+    return "db"
 
-    candidates = read(
-        candidate_path,
-        index=":",
-        format="extxyz",
-    )
 
-    if isinstance(candidates, Atoms):
-        candidates = [candidates]
+def read_offspring(db_path: Path) -> list[Atoms]:
+    """Every structure EZGA's latest run generated, from its database: the
+    containers with a generation number (the seeds have none) and the
+    newest run_uid. A HiSE stage's database also holds the earlier stages'
+    structures, carried with their own run_uid and generation numbers.
+    Geometry only, plus ezga_generation / ezga_operation / ezga_energy (the
+    model's energy, not a label)."""
+    from alomancy.database.global_database import atoms_from_container, read_storage
 
-    if len(candidates) == 0:
-        raise RuntimeError("EZGA returned no candidate structures.")
+    generated = []
+    for container in read_storage(db_path):
+        metadata = dict(container.AtomPositionManager.metadata or {})
+        if metadata.get("generation") is not None:
+            generated.append((container, metadata))
+    started: dict[Any, float] = {}
+    for _, metadata in generated:
+        run, created = metadata.get("run_uid"), float(metadata.get("created_at", 0))
+        started[run] = min(created, started.get(run, created))
+    latest = max(started, key=lambda run: started[run]) if started else None
 
-    return list(candidates)
+    offspring = []
+    for container, metadata in generated:
+        if metadata.get("run_uid") != latest:
+            continue
+        atoms = atoms_from_container(container, labels=False)
+        atoms.info["ezga_generation"] = int(metadata["generation"])
+        if isinstance(metadata.get("operation"), str):
+            atoms.info["ezga_operation"] = metadata["operation"]
+        energy = container.AtomPositionManager.energy
+        if energy is not None and np.isfinite(energy):
+            atoms.info["ezga_energy"] = float(energy)
+        offspring.append(atoms)
+    return offspring
+
+
+def most_recent(offspring: list[Atoms], n: int, seed: int) -> list[Atoms]:
+    """Up to *n* structures, newest generations first: whole generations
+    are taken while they fit, and only the oldest one needed is sampled
+    (reproducibly, from *seed*)."""
+    by_generation: dict[int, list[Atoms]] = {}
+    for atoms in offspring:
+        by_generation.setdefault(atoms.info["ezga_generation"], []).append(atoms)
+    rng = np.random.default_rng(seed)
+    chosen: list[Atoms] = []
+    for generation in sorted(by_generation, reverse=True):
+        group = by_generation[generation]
+        room = n - len(chosen)
+        if room <= 0:
+            break
+        if len(group) <= room:
+            chosen.extend(group)
+        else:
+            picks = sorted(rng.choice(len(group), room, replace=False))
+            chosen.extend(group[i] for i in picks)
+    return chosen
 
 
 # ---------------------------------------------------------------------------
-# Modular AL architecture: structure_generator registry entry points.
-#
-# EZGA runs entirely in the local driver process (no remote submission --
-# see CLAUDE.md's note on this), so its orchestrator entry point is a thin
-# wrapper: it uses the full eligible seed population directly (a
-# population-based genetic search, unlike MD, needs no per-seed diversity
-# selection via utils.seed_selection -- see the architecture plan's
-# structure-generation decision). Its calculator is the trained model's
-# own, built from the CalculatorSpec by trained_model_calculator.
+# structure_generator registry entry points
 # ---------------------------------------------------------------------------
+
+
+def _sg_dir(base_name: str) -> Path:
+    return Path("results", base_name, "structure_generation")
+
+
+def _candidates_path(base_name: str) -> Path:
+    return _sg_dir(base_name) / _EZGA_DIRNAME / _CANDIDATES_FILENAME
 
 
 def output_paths(config: dict, *, base_name: str, name: str) -> list[Path]:  # noqa: ARG001
-    """Restart check: the consolidated candidates file run_ezga itself
-    already writes unconditionally."""
-    return [Path("results", base_name, name, "ezga", "ezga_candidates.xyz")]
+    """Restart check: the candidates file generate() writes last."""
+    return [_candidates_path(base_name)]
 
 
 def read_existing_result(config: dict, *, base_name: str, name: str) -> list[Atoms]:  # noqa: ARG001
-    path = Path("results", base_name, name, "ezga", "ezga_candidates.xyz")
+    path = _candidates_path(base_name)
     if not path.exists():
         raise ValueError(f"No cached EZGA result at {path}.")
-    candidates = read(path, index=":", format="extxyz")
-    return [candidates] if isinstance(candidates, Atoms) else list(candidates)
+    return list(read_xyz(path))
+
+
+def _seeds(
+    seed_atoms: list[Atoms], selection: dict, *, base_name: str, name: str, seed: int
+) -> list[Atoms]:
+    """At most num_of_seeds diverse seeds from the eligible structures,
+    saved so a restart searches from the same ones."""
+    path = _sg_dir(base_name) / _SEEDS_FILENAME
+    if path.exists():
+        return list(read_xyz(path))
+    if not seed_atoms:
+        raise ValueError(
+            "EZGA has no seed structures: no training structure passed "
+            "structure_generation.structure_selection_kwargs."
+        )
+    seeds = select_diverse_seeds(
+        base_name=base_name,
+        job_name=name,
+        eligible_structures=seed_atoms,
+        num_of_md_starts=min(selection["num_of_seeds"], len(seed_atoms)),
+        enforce_chemical_diversity=selection["enforce_chemical_diversity"],
+        seed=seed,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write(path, seeds, format="extxyz")
+    return list(seeds)
 
 
 def generate(
@@ -446,29 +674,110 @@ def generate(
     *,
     base_name: str,
     name: str,
-    hpc: dict,  # noqa: ARG001 -- unused (EZGA runs locally); uniform across module categories
-    max_time: str,  # noqa: ARG001 -- unused (EZGA runs locally); uniform across module categories
+    hpc: dict,
+    max_time: str,
+    elements: list[str],
+    seed: int = 803,
 ) -> list[Atoms]:
-    """Local orchestrator: run EZGA once against the full eligible
-    population. hpc/max_time are accepted for interface uniformity across
-    generator categories (a future remotely-run generator would need them)
-    but are unused here. config carries only ezga_kwargs (run_ezga's own
-    direct kwargs -- max_generations, population_size, min_atoms,
-    max_atoms, mutation_operators).
-    """
-    output_dir = Path("results", base_name, name, "ezga")
-    candidates_path = output_dir / "ezga_candidates.xyz"
+    """Run one EZGA search from diverse seeds as a remote job (or locally
+    with ezga_kwargs.local), then take num_of_structures_to_generate
+    candidates from its database, newest generations first."""
+    candidates_path = _candidates_path(base_name)
     if candidates_path.exists():
-        candidates = read(candidates_path, index=":", format="extxyz")
-        return [candidates] if isinstance(candidates, Atoms) else list(candidates)
+        return list(read_xyz(candidates_path))
 
-    ezga_kwargs = config.get("ezga_kwargs", {})
-    return run_ezga(
-        initial_structures=seed_atoms,
-        calculator_spec=calculator_spec,
-        output_dir=output_dir,
-        **ezga_kwargs,
+    ezga_kwargs = _resolve(config, elements)
+    seeds = _seeds(
+        seed_atoms,
+        ezga_kwargs["structure_selection_kwargs"],
+        base_name=base_name,
+        name=name,
+        seed=seed,
     )
+    ezga_dir = candidates_path.parent
+    if ezga_dir.exists():
+        # A search that didn't finish: EZGA would append to its database.
+        moved = ezga_dir.with_name(
+            f"{_EZGA_DIRNAME}.failed_{datetime.now():%Y%m%d_%H%M%S}"
+        )
+        shutil.move(str(ezga_dir), str(moved))
+        logger.warning(
+            "An unfinished EZGA search for %s was moved to %s; starting a new one.",
+            base_name,
+            moved,
+            extra={"event": "ezga_restarted", "data": {"moved_to": str(moved)}},
+        )
+
+    kwargs = {
+        "seeds": seeds,
+        "calculator_spec": calculator_spec,
+        "ezga_kwargs": ezga_kwargs,
+        "output_dir": str(ezga_dir),
+        "seed": seed,
+    }
+    if ezga_kwargs["local"]:
+        result = run_ezga(**kwargs)
+    else:
+        from alomancy.configs.remote_info import get_remote_info
+        from alomancy.remote_submission.executor import submit_n
+
+        remote_info = get_remote_info(
+            {"hpc": hpc, "name": name, "max_time": max_time},
+            input_files=[calculator_spec.model_path],
+        )
+        [result] = submit_n(
+            run_ezga,
+            [
+                {
+                    "function_kwargs": kwargs,
+                    "output_files": [str(ezga_dir)],
+                    "item": "ezga_search",
+                }
+            ],
+            remote_info,
+        )
+        if result is None:
+            raise RuntimeError(
+                f"The EZGA search for {base_name} failed (see the job's logs). "
+                "Nothing was cached, so a restart will retry."
+            )
+
+    db_path = ezga_dir / result
+    offspring = read_offspring(db_path)
+    if not offspring:
+        raise RuntimeError(
+            f"The EZGA search for {base_name} generated no structures ({db_path}). "
+            "Nothing was cached, so a restart will retry."
+        )
+    to_generate = config.get("num_of_structures_to_generate", len(offspring))
+    candidates = most_recent(offspring, to_generate, seed)
+    mark_structures_for_dft(candidates, base_name, name)
+    for atoms in candidates:
+        drop_unwritable_info(atoms)
+    generations = sorted({a.info["ezga_generation"] for a in offspring})
+    logger.info(
+        "EZGA for %s: %d seed(s), %d generation(s), %d structure(s) generated, "
+        "%d taken as candidates.",
+        base_name,
+        len(seeds),
+        len(generations),
+        len(offspring),
+        len(candidates),
+        extra={
+            "event": "ezga_summary",
+            "data": {
+                "seeds": len(seeds),
+                "generations": len(generations),
+                "generated": len(offspring),
+                "candidates": len(candidates),
+                "oldest_generation_used": min(
+                    a.info["ezga_generation"] for a in candidates
+                ),
+            },
+        },
+    )
+    write(candidates_path, candidates, format="extxyz")
+    return candidates
 
 
 def report_section(stats: dict, **kwargs: Any) -> Any:

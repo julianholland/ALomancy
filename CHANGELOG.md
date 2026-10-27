@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`structure_generation.ezga_kwargs` is now EZGA's own config** (breaking; `docs/deprecations.md`). Write any EZGA setting there as in EZGA's YAML; ALomancy adds the calculator (the loop's best model wrapped in EZGA's `ase_calculator`, configured by `simulator.calculator`), seeds, paths, `resume` and `rng` (`general.seed`), and setting those raises. `population_size`, `mutation_operators`, `min_atoms` and `max_atoms` are gone and raise naming their new home.
+- **EZGA defaults follow the EZGA wiki's MLIP active-learning example**: population 100 (`multiobjective.size`) with composition niching, `max_generations` derived to give twice `num_of_structures_to_generate` (at least 5), full relaxations (`fmax` 0.05, up to 100 steps instead of 5), selection temperature 0.05 (constant), `collision_factor` 0.6.
+- **EZGA defaults use `general.elements`** instead of Pd: rattle and strain, an add and a remove per element, and a swap for every element pair (replacing remove_add), and the composition feature; no `slab`. The default add/remove limits come from `structure_selection_kwargs.atom_number_range`.
+- **EZGA runs as a remote job** on `structure_generation.hpc` (GPU, walltime and retries like MD), or in the driver with `ezga_kwargs.local: true`. **Remote reinstall needed** (`alomancy upgrade-hpc`).
+- **EZGA starts from a few diverse seeds** (`ezga_kwargs.structure_selection_kwargs.num_of_seeds`, default 8, via `select_diverse_seeds`) instead of every eligible training structure, so seeding no longer grows with the training set. Seeds are saved to `ezga_seeds.xyz` for restarts. A seed outside the old `min_atoms`/`max_atoms` no longer stops the loop.
+- **EZGA candidates are read from its database**: the generated structures (not the seeds), newest generations first, up to `num_of_structures_to_generate`. Their model energies are kept as `ezga_energy`, never as DFT labels.
+- `ezga-lib` is pinned to `>=1.2,<1.3`.
+
+### Added
+- **EZGA settings are checked when the workflow is built**, by EZGA's own schema (unknown keys, bad factory paths), plus unknown `ase_calculator` settings and species outside `general.elements`. Fewer than `num_of_structures_to_generate` structures (`max_generations × multiobjective.size`) raises; fewer than twice warns (event `ezga_few_structures_configured`).
+- Structure generators get `elements` and `seed` keywords from the workflow, and may register a `validate_kwargs` hook run at construction.
+- **EZGA HiSE** (supercell escalation) runs when `ezga_kwargs` has a `hise:` block; the candidates come from the last stage only. `hise.overrides["simulator.calculator"]` gives per-stage `ase_calculator` settings, e.g. a final MD burst as in the EZGA wiki.
+- **EZGA walkthrough** (`docs/ezga.md`): a full committee run exploring with EZGA, HiSE supercell escalation and a final MD burst, with its config as `examples/configs/committee_mace_ezga_hise.yaml`.
+- Event `ezga_summary` (seeds, generations, structures generated, candidates taken); the report's EZGA section shows it.
+
+### Fixed
+- **The MD temperature plot's y-axis stops at 3× the target temperature**, so one run that blows up no longer flattens every other run; a run that goes above it shows its peak in the legend.
+- **A crashed EZGA search restarts clean.** EZGA appends to an existing database, so a restart searched on top of the old run; the unfinished `ezga/` directory is now moved to `ezga.failed_<stamp>` (event `ezga_restarted`). An empty candidates file is read as no structures.
+- **The report's EZGA section works**: it read the wrong directory and `run_ezga_kwargs`, so it always showed "default".
+- EZGA's add/remove limits pass EZGA's random generator through (seeded search) and handle mutations that return a proposal tuple.
+
 ## [1.0.3] - 2026-10-27
 
 ### Added

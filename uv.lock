@@ -249,7 +249,7 @@ requires-dist = [
     { name = "deduplicate-lib", specifier = ">=0.1.3" },
     { name = "e3nn", specifier = "==0.4.4" },
     { name = "expyre-wfl", specifier = ">=0.1.0" },
-    { name = "ezga-lib", specifier = ">=1.2.0" },
+    { name = "ezga-lib", specifier = ">=1.2,<1.3" },
     { name = "mace-torch", specifier = ">=0.3.0" },
     { name = "matplotlib", specifier = ">=3.5.0" },
     { name = "mp-api", specifier = ">=0.40.0" },

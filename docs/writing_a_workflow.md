@@ -212,8 +212,8 @@ register(
 - **`get_calculator` is how every other part of ALomancy uses your model**:
   evaluation, committee prediction and structure generation. Generators get
   a `CalculatorSpec` (trainer name, config, model path) and call
-  `spec.build()` on the HPC node (MD) or with `device="cpu"` in the driver
-  (EZGA), so MD and EZGA work with any registered trainer without changes.
+  `spec.build()` on the HPC node, so MD and EZGA work with any registered
+  trainer without changes.
 - Training runs remotely through the module-level `run_training`, which
   builds the trainer on the HPC node from its registry name, so changes
   to a trainer need `alomancy upgrade-hpc` before the next run.

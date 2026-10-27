@@ -132,7 +132,7 @@ def test_readme_snippet_applied_to_its_config_builds(snippet, tmp_path, monkeypa
 
 # Pages whose YAML blocks are run configs (whole or partial); blocks of other
 # kinds (HPC profiles, report output) don't have config sections at the top.
-_DOC_PAGES = ("examples.md", "starting_a_run.md", "quickstart.md")
+_DOC_PAGES = ("examples.md", "starting_a_run.md", "quickstart.md", "ezga.md")
 _DOC_SNIPPETS = [
     (page, i, block)
     for page in _DOC_PAGES
@@ -174,3 +174,14 @@ def test_readme_config_matches_tested_example():
         (_EXAMPLES / "configs" / "committee_mace_cold_start.yaml").read_text()
     )
     assert _README_FULL[0] == example
+
+
+@pytest.mark.unit
+def test_ezga_walkthrough_config_matches_tested_example():
+    """docs/ezga.md walks through examples/configs/committee_mace_ezga_hise.yaml,
+    so the two can't drift apart."""
+    example = yaml.safe_load(
+        (_EXAMPLES / "configs" / "committee_mace_ezga_hise.yaml").read_text()
+    )
+    walkthrough = [block for page, _, block in _DOC_SNIPPETS if page == "ezga.md"]
+    assert walkthrough == [example]

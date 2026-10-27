@@ -277,9 +277,8 @@ def run_md(
 # generate() is a local orchestrator (see the architecture plan's
 # remote-submission-shape decision): called once by the skeleton with the
 # full eligible seed population, it selects a diversity-maximizing subset
-# via utils.seed_selection (population-side selection is MD's own business,
-# unlike EZGA which uses the population directly) and fans out one remote
-# MD job per selected seed via submit_n. Committee scoring of the
+# via utils.seed_selection and fans out one remote MD job per selected seed
+# via submit_n (EZGA picks its seeds the same way, but runs one job). Committee scoring of the
 # candidates lives in the skeleton (ActiveLearningWorkflow.predict), not
 # in this module.
 # ---------------------------------------------------------------------------
@@ -360,6 +359,8 @@ def generate(
     name: str,
     hpc: dict,
     max_time: str,
+    elements: list[str] | None = None,  # noqa: ARG001 -- MD needs no species
+    seed: int | None = None,  # noqa: ARG001 -- md_kwargs.structure_selection_kwargs.seed
 ) -> list[Atoms]:
     """Local orchestrator: select a diversity-maximizing subset of
     seed_atoms (via utils.seed_selection.select_diverse_seeds), then fan

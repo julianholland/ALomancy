@@ -166,3 +166,41 @@ def test_committee_cut_is_the_lowest_selected_candidate(tmp_path, monkeypatch):
     )
 
     assert "2 selected (max force std dev ≥ 3" in section.lines[0]
+
+
+def _md_axes(monkeypatch, tmp_path, temperatures, target=300.0) -> object:
+    """Draw md_runs and return its axes (captured before the figure is saved
+    and closed)."""
+    from alomancy.analysis.report import plots
+
+    captured = {}
+
+    def keep(fig, path):
+        captured["ax"] = fig.axes[0]
+
+    monkeypatch.setattr(plots, "_save", keep)
+    plots.md_runs(
+        [np.asarray(t, dtype=float) for t in temperatures],
+        [len(t) for t in temperatures],
+        tmp_path / "md.png",
+        run_labels=[f"run {i}" for i in range(len(temperatures))],
+        title="t",
+        target_temperature=target,
+        requested_steps=3,
+    )
+    return captured["ax"]
+
+
+@pytest.mark.unit
+def test_md_temperature_axis_stops_at_three_times_the_target(monkeypatch, tmp_path):
+    ax = _md_axes(monkeypatch, tmp_path, [[290, 310, 5000], [300, 305, 295]])
+    assert ax.get_ylim() == (0.0, 900.0)
+    labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert "run 0 (peaks at 5,000 K)" in labels
+    assert "run 1" in labels
+
+
+@pytest.mark.unit
+def test_md_temperature_axis_is_free_without_a_target(monkeypatch, tmp_path):
+    ax = _md_axes(monkeypatch, tmp_path, [[0, 10, 5000]], target=0.0)
+    assert ax.get_ylim()[1] > 5000

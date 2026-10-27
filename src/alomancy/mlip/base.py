@@ -158,7 +158,8 @@ class ALomancyTrainer(ABC):
     ) -> Any:
         """An ASE calculator for a trained model, on *device* (None: the
         backend's own choice). Called in remote jobs (evaluation, MD,
-        prediction) and, on the CPU, in the driver process by EZGA."""
+        EZGA, prediction), and in the driver process by EZGA with
+        ezga_kwargs.local."""
 
     # -- Overridable, with generic defaults ----------------------------------
 

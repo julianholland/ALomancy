@@ -1,5 +1,12 @@
 # EZGA interface review (for 1.0.4)
 
+> **Historical.** This reviews the 1.0.3 EZGA interface, which 1.0.4 replaced:
+> `ezga_kwargs` is now EZGA's own config, EZGA runs as a remote job, and the
+> keys and functions named below (`population_size`, `mutation_operators`,
+> `min_atoms`/`max_atoms`, `build_ezga_config`, `trained_model_calculator`,
+> `calculator_spec.json`, `ezga_config.yaml`) no longer exist. For the current
+> behaviour see `docs/ezga.md` and `docs/architecture/structure_generation.md`.
+
 State of `structure_generation.generator: "ezga"` at v1.0.3 (ezga-lib 1.2.32 installed,
 `ezga-lib>=1.2.0` required). Code: `src/alomancy/structure_generation/ezga/generate_structures.py`.
 

@@ -110,6 +110,8 @@ def bar_per_item(
 
 # Points drawn per MD run; logs have one row per step (tens of thousands).
 _MD_MAX_POINTS = 2000
+# The temperature plot's y-axis stops at this multiple of the target.
+_MD_TEMPERATURE_CAP = 3
 
 
 def md_runs(
@@ -126,7 +128,9 @@ def md_runs(
     """Temperature against MD step for every run on one axis, one thin
     line and colour per run, with the target temperature as a black dashed
     line and the end of equilibration dotted. A run that stopped early says
-    where in the legend."""
+    where in the legend. The y-axis stops at _MD_TEMPERATURE_CAP x the
+    target, so one exploding run doesn't flatten the others; a run that
+    goes above it says so in the legend."""
     setup_alomancy_style()
     n = len(temperatures)
     # The brand palette in its fixed order; beyond it, evenly spaced colours
@@ -136,20 +140,28 @@ def md_runs(
         if n <= len(PALETTE)
         else [plt.get_cmap("turbo")(x) for x in np.linspace(0.05, 0.95, n)]
     )
+    y_max = _MD_TEMPERATURE_CAP * target_temperature if target_temperature > 0 else None
     fig, ax = plt.subplots(figsize=(10, 4.8))
     for temps, steps, label, color in zip(
         temperatures, completed_steps, run_labels, colors, strict=True
     ):
         stride = max(1, len(temps) // _MD_MAX_POINTS)
         stopped = f" (stopped at {steps:,})" if steps < requested_steps else ""
+        clipped = (
+            f" (peaks at {np.nanmax(temps):,.0f} K)"
+            if y_max is not None and len(temps) and np.nanmax(temps) > y_max
+            else ""
+        )
         ax.plot(
             np.arange(len(temps))[::stride],
             temps[::stride],
             color=color,
             lw=0.7,
             alpha=0.85,
-            label=f"{label}{stopped}",
+            label=f"{label}{stopped}{clipped}",
         )
+    if y_max is not None:
+        ax.set_ylim(0, y_max)
     ax.axhline(
         target_temperature,
         color="black",

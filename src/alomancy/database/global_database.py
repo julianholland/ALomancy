@@ -6,6 +6,7 @@ import time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from ase import Atoms
@@ -58,6 +59,56 @@ def is_in_training_set(metadata: dict) -> bool:
         and not metadata.get("is_duplicate", False)
         and not metadata.get("is_quality_filtered", False)
     )
+
+
+def atoms_from_container(container: Any, *, labels: bool = True) -> Atoms:
+    """Reconstruct an ASE Atoms object from a sage_lib SingleRun container.
+
+    With *labels* (an ALomancy DB), the stored energy, forces and stress are
+    the DFT labels (REF_*) and the metadata becomes atoms.info. Without
+    (another program's storage, e.g. EZGA's, whose energies come from a
+    model), only the geometry is rebuilt: no REF_* keys, no calculator, no
+    metadata; the caller copies what it needs from container metadata."""
+    apm = container.AtomPositionManager
+    atoms = Atoms(
+        symbols=list(apm.atomLabelsList),
+        positions=apm.atomPositions,
+        cell=apm.latticeVectors,
+        pbc=[bool(p) for p in apm.pbc],
+    )
+    if not labels:
+        return atoms
+    meta = dict(apm.metadata)
+    stress = meta.pop("_REF_stresses", None)
+    # Cached descriptors (store_descriptors) are DB-internal: a 128-float
+    # array in atoms.info would be written into every train xyz file.
+    for key in [k for k in meta if k.startswith("char_vec")]:
+        del meta[key]
+    energy = apm.energy
+    forces = apm.forces
+    atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)
+    atoms.info.update(meta)
+    atoms.info["REF_energy"] = energy
+    if forces is not None:
+        atoms.arrays["REF_forces"] = forces
+    if stress is not None:
+        atoms.info["REF_stresses"] = np.array(stress)
+    # e.g. quality_filter_reasons=[]: kept in the DB, but would corrupt
+    # the next key of any xyz file written from these atoms.
+    drop_unwritable_info(atoms)
+    return atoms
+
+
+def read_storage(path: str | Path) -> list:
+    """Every container of the sage_lib hybrid storage directly in *path*
+    (db_index.sqlite + db_objects.h5, the layout EZGA writes), opened
+    read-only: nothing is created or modified. GlobalDatabase keeps its own
+    storage one level down (hybrid_local/) and opens it read-write."""
+    path = Path(path)
+    if not (path / "db_index.sqlite").exists():
+        raise FileNotFoundError(f"No sage_lib storage at {path}.")
+    partition = Partition(storage="hybrid", local_root=str(path), access="ro")
+    return list(partition.list_containers())
 
 
 class GlobalDatabase:
@@ -926,33 +977,7 @@ class GlobalDatabase:
     @staticmethod
     def _atoms_from_container(container) -> Atoms:
         """Reconstruct an ASE Atoms object from a sage_lib SingleRun container."""
-        apm = container.AtomPositionManager
-
-        atoms = Atoms(
-            symbols=list(apm.atomLabelsList),
-            positions=apm.atomPositions,
-            cell=apm.latticeVectors,
-            pbc=[bool(p) for p in apm.pbc],
-        )
-        meta = dict(apm.metadata)
-        stress = meta.pop("_REF_stresses", None)
-        # Cached descriptors (store_descriptors) are DB-internal: a 128-float
-        # array in atoms.info would be written into every train xyz file.
-        for key in [k for k in meta if k.startswith("char_vec")]:
-            del meta[key]
-        energy = apm.energy
-        forces = apm.forces
-        atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)
-        atoms.info.update(meta)
-        atoms.info["REF_energy"] = energy
-        if forces is not None:
-            atoms.arrays["REF_forces"] = forces
-        if stress is not None:
-            atoms.info["REF_stresses"] = np.array(stress)
-        # e.g. quality_filter_reasons=[]: kept in the DB, but would corrupt
-        # the next key of any xyz file written from these atoms.
-        drop_unwritable_info(atoms)
-        return atoms
+        return atoms_from_container(container)
 
 
 def _inode(path: str) -> tuple[int, int] | None:
