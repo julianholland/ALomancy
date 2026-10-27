@@ -6,24 +6,28 @@ from ase.data import atomic_numbers, vdw_radii
 
 @pytest.mark.unit
 class TestCreateSingleAtomsList:
+    @pytest.mark.unit
     def test_returns_list_of_one(self):
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
         result = create_single_atoms_list("H")
         assert len(result) == 1
 
+    @pytest.mark.unit
     def test_config_type_is_isolated_atom(self):
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
         result = create_single_atoms_list("H")
         assert result[0].info["config_type"] == "IsolatedAtom"
 
+    @pytest.mark.unit
     def test_correct_element(self):
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
         result = create_single_atoms_list("O")
         assert result[0].get_chemical_symbols() == ["O"]
 
+    @pytest.mark.unit
     def test_cell_based_on_vdw_radius(self):
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
@@ -31,12 +35,14 @@ class TestCreateSingleAtomsList:
         expected = vdw_radii[atomic_numbers["H"]] * 3
         assert result[0].cell[0][0] == pytest.approx(expected)
 
+    @pytest.mark.unit
     def test_needs_relaxation_false(self):
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
         result = create_single_atoms_list("H")
         assert result[0].info["needs_relaxation"] is False
 
+    @pytest.mark.unit
     def test_different_elements(self):
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
@@ -47,30 +53,35 @@ class TestCreateSingleAtomsList:
 
 @pytest.mark.unit
 class TestCreateDimerAtomsList:
+    @pytest.mark.unit
     def test_returns_correct_count(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
         result = create_dimer_atoms_list("H", "O", 5)
         assert len(result) == 5
 
+    @pytest.mark.unit
     def test_zero_dimers_returns_empty(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
         result = create_dimer_atoms_list("H", "O", 0)
         assert result == []
 
+    @pytest.mark.unit
     def test_config_type(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
         result = create_dimer_atoms_list("H", "H", 3)
         assert all(a.info["config_type"] == "init_dimer" for a in result)
 
+    @pytest.mark.unit
     def test_two_atoms_per_dimer(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
         result = create_dimer_atoms_list("H", "O", 4)
         assert all(len(a) == 2 for a in result)
 
+    @pytest.mark.unit
     def test_correct_element_symbols(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
@@ -79,6 +90,7 @@ class TestCreateDimerAtomsList:
             syms = sorted(a.get_chemical_symbols())
             assert syms == ["H", "O"]
 
+    @pytest.mark.unit
     def test_distances_span_range(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
@@ -86,12 +98,14 @@ class TestCreateDimerAtomsList:
         distances = [a.get_distance(0, 1) for a in result]
         assert min(distances) < max(distances)
 
+    @pytest.mark.unit
     def test_distance_stored_in_info(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
         result = create_dimer_atoms_list("H", "O", 3)
         assert all("distance" in a.info for a in result)
 
+    @pytest.mark.unit
     def test_homonuclear_dimer(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
@@ -100,12 +114,14 @@ class TestCreateDimerAtomsList:
         for a in result:
             assert all(s == "C" for s in a.get_chemical_symbols())
 
+    @pytest.mark.unit
     def test_needs_relaxation_false(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
         result = create_dimer_atoms_list("H", "H", 3)
         assert all(a.info["needs_relaxation"] is False for a in result)
 
+    @pytest.mark.unit
     def test_single_dimer(self):
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
@@ -113,6 +129,7 @@ class TestCreateDimerAtomsList:
         assert len(result) == 1
         assert result[0].get_chemical_symbols() in [["N", "O"], ["O", "N"]]
 
+    @pytest.mark.unit
     def test_distance_minimum_fraction_of_vdw(self):
         """Minimum distance should be 20% of sum of vdW radii."""
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
@@ -126,42 +143,49 @@ class TestCreateDimerAtomsList:
 
 @pytest.mark.unit
 class TestCreateTrimerAtomsList:
+    @pytest.mark.unit
     def test_returns_atoms_with_three_per_trimer(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "O", "H", 10)
         assert all(len(a) == 3 for a in result)
 
+    @pytest.mark.unit
     def test_zero_trimers_returns_empty(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "O", "H", 0)
         assert result == []
 
+    @pytest.mark.unit
     def test_one_trimer_returns_empty(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "O", "H", 1)
         assert result == []
 
+    @pytest.mark.unit
     def test_config_type(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "O", "H", 10)
         assert all(a.info["config_type"] == "init_trimer" for a in result)
 
+    @pytest.mark.unit
     def test_needs_relaxation_false(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "O", "H", 10)
         assert all(a.info["needs_relaxation"] is False for a in result)
 
+    @pytest.mark.unit
     def test_deformation_info_stored(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "O", "H", 10)
         assert all("deformation" in a.info for a in result)
 
+    @pytest.mark.unit
     def test_exact_count(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
@@ -169,12 +193,14 @@ class TestCreateTrimerAtomsList:
             result = create_trimer_atoms_list("H", "O", "O", n)
             assert len(result) == n, f"Expected {n}, got {len(result)}"
 
+    @pytest.mark.unit
     def test_two_atom_count(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 
         result = create_trimer_atoms_list("H", "H", "H", 2)
         assert len(result) == 2
 
+    @pytest.mark.unit
     def test_homonuclear_trimer(self):
         from alomancy.initialize.singles_dimers_trimers import create_trimer_atoms_list
 

@@ -38,6 +38,7 @@ def _seed_atoms(n=5, config_type="init_amorphous"):
 
 @pytest.mark.unit
 class TestRunMdCalculator:
+    @pytest.mark.unit
     @patch(f"{_MODULE}.Langevin")
     def test_given_calculator_drives_the_dynamics(self, mock_langevin_cls, tmp_path):
         mock_langevin_cls.side_effect = RuntimeError("stop")
@@ -63,6 +64,7 @@ class TestRunMdCalculator:
 
 @pytest.mark.unit
 class TestRunMdWithSpec:
+    @pytest.mark.unit
     def test_builds_the_spec_calculator_on_the_node(self, tmp_path):
         """The worker asks the spec's own trainer for the calculator --
         the trainer that trained the model, never a hardcoded one."""
@@ -96,17 +98,20 @@ class TestRunMdWithSpec:
 
 @pytest.mark.unit
 class TestOutputPathsAndReadExistingResult:
+    @pytest.mark.unit
     def test_output_paths_is_the_candidates_file(self):
         paths = output_paths({}, base_name="al_loop_0", name="md")
         assert paths == [
             Path("results/al_loop_0/structure_generation/md_generated_candidates.xyz")
         ]
 
+    @pytest.mark.unit
     def test_read_existing_result_raises_when_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ValueError, match="No cached"):
             read_existing_result({}, base_name="al_loop_0", name="md")
 
+    @pytest.mark.unit
     def test_read_existing_result_reads_candidates(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         path = Path(
@@ -120,6 +125,7 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestGenerate:
+    @pytest.mark.unit
     def test_num_of_md_starts_defaults_to_ten(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         seeds = _seed_atoms(15)
@@ -148,6 +154,7 @@ class TestGenerate:
         job_configs = mock_submit_n.call_args.args[1]
         assert len(job_configs) == 10
 
+    @pytest.mark.unit
     def test_selects_seeds_and_fans_out_one_job_per_seed(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         seeds = _seed_atoms(10)
@@ -194,6 +201,7 @@ class TestGenerate:
             == "md"
         )
 
+    @pytest.mark.unit
     def test_md_kwargs_forwarded_to_run_md_excluding_selection_kwargs(
         self, tmp_path, monkeypatch
     ):
@@ -234,6 +242,7 @@ class TestGenerate:
         # inside generate() itself; run_md has no matching parameter.
         assert "structure_selection_kwargs" not in function_kwargs
 
+    @pytest.mark.unit
     def test_jobs_get_the_calculator_spec_and_alomancy_defaults(
         self, tmp_path, monkeypatch
     ):
@@ -268,6 +277,7 @@ class TestGenerate:
         assert function_kwargs["temperature"] == 300
         assert function_kwargs["timestep_fs"] == 0.5
 
+    @pytest.mark.unit
     def test_md_kwargs_defaults_overridden_by_config(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 
@@ -298,6 +308,7 @@ class TestGenerate:
         # Untouched default still applies for whatever wasn't overridden.
         assert function_kwargs["timestep_fs"] == 0.5
 
+    @pytest.mark.unit
     def test_reuses_cached_candidates_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         candidates_path = Path(
@@ -320,6 +331,7 @@ class TestGenerate:
         mock_submit_n.assert_not_called()
         assert len(result) == 4
 
+    @pytest.mark.unit
     def test_partial_existing_only_submits_remaining_seeds(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         md_dir = Path("results/al_loop_0/structure_generation")
@@ -418,6 +430,7 @@ _MD_DIR = Path("results/al_loop_0/structure_generation")
 
 @pytest.mark.unit
 class TestGenerateFailedRuns:
+    @pytest.mark.unit
     def test_partial_runs_kept_and_not_replaced(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result, calls = _md_generate(tmp_path, lambda i, a: 3 if i == 0 else 2)
@@ -425,6 +438,7 @@ class TestGenerateFailedRuns:
         assert calls == [[0, 1, 2]]  # nothing replaced
         assert len(result) == 3 + 2 + 2
 
+    @pytest.mark.unit
     def test_runs_that_never_stepped_are_replaced_once_with_unused_seeds(
         self, tmp_path, monkeypatch
     ):
@@ -442,6 +456,7 @@ class TestGenerateFailedRuns:
         assert len({a.info["md_seed"] for a in seeds}) == 5
         assert len(result) == 2 + 2 + 2  # runs 0, 3 and 4
 
+    @pytest.mark.unit
     def test_replacements_carry_the_item_of_the_run_they_replace(
         self, tmp_path, monkeypatch
     ):
@@ -453,6 +468,7 @@ class TestGenerateFailedRuns:
 
         assert items == [["md_run_0", "md_run_1", "md_run_2"], ["md_run_1"]]
 
+    @pytest.mark.unit
     def test_replacement_that_also_fails_is_not_replaced_again(
         self, tmp_path, monkeypatch, caplog
     ):
@@ -462,6 +478,7 @@ class TestGenerateFailedRuns:
         assert calls == [[0, 1, 2], [3]]  # one replacement round only
         assert len(result) == 2 + 2  # runs 0 and 2
 
+    @pytest.mark.unit
     def test_all_runs_failing_raises_and_caches_nothing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with pytest.raises(RuntimeError, match="completed a single MD step"):
@@ -469,6 +486,7 @@ class TestGenerateFailedRuns:
 
         assert not (_MD_DIR / "md_generated_candidates.xyz").exists()
 
+    @pytest.mark.unit
     def test_restart_reuses_saved_seeds_and_submits_only_missing_runs(
         self, tmp_path, monkeypatch
     ):

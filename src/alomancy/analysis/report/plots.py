@@ -392,16 +392,18 @@ PERCENT_FORCE_FLOOR = 0.1
 
 
 def percent_errors(
-    predictions: dict[str, tuple],
+    predictions: dict[str, tuple], *, formation_energy: bool = True
 ) -> dict[str, dict[str, tuple[np.ndarray, np.ndarray, int]]]:
     """Relative errors for the percentage-error plot and the report's
     summary line, {split: {"energy"|"force": (x, percent, n_below_floor)}}.
 
-    Energy: x = DFT energy per atom, percent = signed 100 (pred - ref) /
-    |ref|. Force: per atom, x = |F_ref|, percent = 100 |F_pred - F_ref| /
-    |F_ref| (unsigned). Points below the floors are left out and counted.
-    A force array that isn't whole atoms (length not a multiple of 3) gives
-    no force entry for that split."""
+    Energy: x = DFT formation energy per atom, percent = signed 100 (pred -
+    ref) / |ref|; left out unless *formation_energy* (relative to a total
+    energy of hundreds of eV/atom every error looks like 0%). Force: per
+    atom, x = |F_ref|, percent = 100 |F_pred - F_ref| / |F_ref| (unsigned).
+    Points below the floors are left out and counted. A force array that
+    isn't whole atoms (length not a multiple of 3) gives no force entry for
+    that split."""
     out: dict[str, dict[str, tuple[np.ndarray, np.ndarray, int]]] = {}
     for split in ("train", "test"):
         if split not in predictions:
@@ -410,12 +412,13 @@ def percent_errors(
             np.asarray(v, dtype=float).reshape(-1) for v in predictions[split]
         )
         entry: dict[str, tuple[np.ndarray, np.ndarray, int]] = {}
-        keep = np.abs(e_ref) >= PERCENT_ENERGY_FLOOR
-        entry["energy"] = (
-            e_ref[keep],
-            100 * (e_pred[keep] - e_ref[keep]) / np.abs(e_ref[keep]),
-            int((~keep).sum()),
-        )
+        if formation_energy:
+            keep = np.abs(e_ref) >= PERCENT_ENERGY_FLOOR
+            entry["energy"] = (
+                e_ref[keep],
+                100 * (e_pred[keep] - e_ref[keep]) / np.abs(e_ref[keep]),
+                int((~keep).sum()),
+            )
         if f_ref.size % 3 == 0 and f_ref.size == f_pred.size:
             ref_vec, pred_vec = f_ref.reshape(-1, 3), f_pred.reshape(-1, 3)
             ref_norm = np.linalg.norm(ref_vec, axis=1)
@@ -437,28 +440,40 @@ def percent_errors(
     return out
 
 
-def percent_error_medians(predictions: dict[str, tuple]) -> dict[str, dict]:
-    """Median |percent error| per split and quantity (only those with
-    points above the floor), for the report's summary line."""
+def _medians(errors: dict[str, dict]) -> dict[str, dict[str, float]]:
     return {
         split: {
             quantity: float(np.median(np.abs(pct)))
             for quantity, (_x, pct, _n) in entry.items()
             if pct.size
         }
-        for split, entry in percent_errors(predictions).items()
+        for split, entry in errors.items()
     }
 
 
+def percent_error_medians(
+    predictions: dict[str, tuple], *, formation_energy: bool = True
+) -> dict[str, dict[str, float]]:
+    """Median |percent error| per split and quantity (only those with
+    points above the floor), for the report's summary line."""
+    return _medians(percent_errors(predictions, formation_energy=formation_energy))
+
+
 def percent_error(
-    predictions: dict[str, tuple], path: Path, *, title: str, energy_label: str
-) -> None:
+    predictions: dict[str, tuple],
+    path: Path,
+    *,
+    title: str,
+    formation_energy: bool = True,
+) -> dict[str, dict[str, float]] | None:
     """Signed energy and unsigned force percentage error against the DFT
     value for one model, train and test overlaid (see percent_errors).
-    Writes nothing when no point is above the floors."""
-    errors = percent_errors(predictions)
+    Returns the medians the legend shows (percent_error_medians), or None
+    and writes nothing when no point is above the floors."""
+    errors = percent_errors(predictions, formation_energy=formation_energy)
     if not any(pct.size for entry in errors.values() for _x, pct, _n in entry.values()):
-        return
+        return None
+    medians = _medians(errors)
     setup_alomancy_style()
     fig, (ax_e, ax_f) = plt.subplots(1, 2, figsize=(10, 4.6))
     for i, (split, entry) in enumerate(errors.items()):
@@ -472,7 +487,7 @@ def percent_error(
             x, pct, n_below = entry[quantity]
             label = split
             if pct.size:
-                label += f" (median {np.median(np.abs(pct)):.1f}%"
+                label += f" (median {medians[split][quantity]:.1f}%"
                 label += f", {n_below} below floor)" if n_below else ")"
             ax.scatter(
                 x, pct, s=size, alpha=alpha, color=color, edgecolors="none", label=label
@@ -493,15 +508,27 @@ def percent_error(
             ha="center",
             va="center",
         )
-    # Signed energy error: symlog keeps a few huge outliers from flattening
-    # the rest.
-    ax_e.set_yscale("symlog", linthresh=10)
-    ax_e.axhline(0, color=DIAGONAL_COLOR, linewidth=1, zorder=0)
-    for ax, levels in ((ax_e, (-10, 10)), (ax_f, (10,) if has_force else ())):
+    if formation_energy:
+        # Signed energy error: symlog keeps a few huge outliers from
+        # flattening the rest.
+        ax_e.set_yscale("symlog", linthresh=10)
+        ax_e.axhline(0, color=DIAGONAL_COLOR, linewidth=1, zorder=0)
+    else:
+        ax_e.text(
+            0.5,
+            0.5,
+            "No isolated-atom energy for every element:\nno formation energies "
+            "to take a relative error of",
+            transform=ax_e.transAxes,
+            ha="center",
+            va="center",
+        )
+    energy_levels = (-10, 10) if formation_energy else ()
+    for ax, levels in ((ax_e, energy_levels), (ax_f, (10,) if has_force else ())):
         for level in levels:
             ax.axhline(level, color=DIAGONAL_COLOR, linewidth=0.8, linestyle="--")
     for ax, xlabel, ylabel in (
-        (ax_e, f"DFT {energy_label} (eV/atom)", "Energy error (%)"),
+        (ax_e, "DFT formation energy (eV/atom)", "Energy error (%)"),
         (ax_f, "DFT |F| per atom (eV/Å)", "Force error |ΔF|/|F| (%)"),
     ):
         ax.set_xlabel(xlabel)
@@ -511,6 +538,7 @@ def percent_error(
             ax.legend(fontsize=8, loc="upper right")
     fig.suptitle(title)
     _save(fig, path)
+    return medians
 
 
 def training_curve(df: Any, path: Path, *, title: str) -> None:

@@ -33,17 +33,20 @@ def _atoms(n=2):
 
 @pytest.mark.unit
 class TestOutputPathsAndReadExistingResult:
+    @pytest.mark.unit
     def test_output_paths_is_ezga_candidates_file(self):
         paths = output_paths({}, base_name="al_loop_0", name="structure_generation")
         assert paths == [
             Path("results/al_loop_0/structure_generation/ezga/ezga_candidates.xyz")
         ]
 
+    @pytest.mark.unit
     def test_read_existing_result_raises_when_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ValueError, match="No cached"):
             read_existing_result({}, base_name="al_loop_0", name="structure_generation")
 
+    @pytest.mark.unit
     def test_read_existing_result_reads_candidates(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         path = Path("results/al_loop_0/structure_generation/ezga/ezga_candidates.xyz")
@@ -57,6 +60,7 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestGenerate:
+    @pytest.mark.unit
     def test_calls_run_ezga_with_full_population_and_calculator_spec(
         self, tmp_path, monkeypatch
     ):
@@ -82,6 +86,7 @@ class TestGenerate:
         assert call_kwargs["max_generations"] == 4
         assert len(result) == 2
 
+    @pytest.mark.unit
     def test_reuses_cached_candidates_without_calling_run_ezga(
         self, tmp_path, monkeypatch
     ):

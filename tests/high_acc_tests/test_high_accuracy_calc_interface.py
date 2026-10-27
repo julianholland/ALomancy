@@ -69,10 +69,12 @@ def _call(structures, tmp_path, **overrides):
 
 @pytest.mark.unit
 class TestOutputPathsAndReadExistingResult:
+    @pytest.mark.unit
     def test_output_paths_is_the_consolidated_results_file(self, tmp_path):
         paths = output_paths({}, base_name="test_loop", name="high_accuracy_evaluation")
         assert paths == [Path("results/test_loop/high_accuracy_eval_results.xyz")]
 
+    @pytest.mark.unit
     def test_read_existing_result_raises_when_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ValueError, match="No cached"):
@@ -80,6 +82,7 @@ class TestOutputPathsAndReadExistingResult:
                 {}, base_name="test_loop", name="high_accuracy_evaluation"
             )
 
+    @pytest.mark.unit
     def test_read_existing_result_reads_the_sentinel(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         sentinel = Path("results/test_loop/high_accuracy_eval_results.xyz")
@@ -94,6 +97,7 @@ class TestOutputPathsAndReadExistingResult:
 
 @pytest.mark.unit
 class TestHighAccuracyEvaluation:
+    @pytest.mark.unit
     def test_reuses_all_existing_results(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         for i in range(2):
@@ -114,6 +118,7 @@ class TestHighAccuracyEvaluation:
         mock_sub.assert_not_called()
         assert len(result) == 2
 
+    @pytest.mark.unit
     def test_qe_kwargs_translated_to_legacy_qe_input_kwargs(
         self, tmp_path, monkeypatch
     ):
@@ -139,6 +144,7 @@ class TestHighAccuracyEvaluation:
         assert job_dict["qe_input_kwargs"] == {"system": {"input_dft": "pbe"}}
         assert "qe_kwargs" not in job_dict
 
+    @pytest.mark.unit
     def test_vasp_kwargs_translated_to_legacy_vasp_input_kwargs(
         self, tmp_path, monkeypatch
     ):
@@ -158,6 +164,7 @@ class TestHighAccuracyEvaluation:
         assert job_dict["vasp_input_kwargs"] == {"encut": 520}
         assert "vasp_kwargs" not in job_dict
 
+    @pytest.mark.unit
     def test_partial_existing_trims_structures_list(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         d = Path(
@@ -176,6 +183,7 @@ class TestHighAccuracyEvaluation:
         submitted = mock_sub.call_args.kwargs["input_atoms_list"]
         assert len(submitted) == 2
 
+    @pytest.mark.unit
     def test_go_sp_share_one_submission(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         go_atom = _atoms()
@@ -197,6 +205,7 @@ class TestHighAccuracyEvaluation:
         assert submitted_atoms[1].info.get("needs_relaxation") is not True
         assert "sp" in per_structure_function[1].__name__
 
+    @pytest.mark.unit
     def test_sp_only_batch_no_go(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         sp_atoms = [_atoms() for _ in range(2)]
@@ -210,6 +219,7 @@ class TestHighAccuracyEvaluation:
         per_structure_function = mock_sub.call_args.kwargs["per_structure_function"]
         assert all("sp" in fn.__name__ for fn in per_structure_function)
 
+    @pytest.mark.unit
     def test_single_call_regardless_of_structure_count(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with patch(
@@ -220,6 +230,7 @@ class TestHighAccuracyEvaluation:
         assert mock_sub.call_count == 1
         assert len(mock_sub.call_args.kwargs["input_atoms_list"]) == 20
 
+    @pytest.mark.unit
     def test_result_collection_reads_completed_xyz_files(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         for i in range(2):
@@ -240,6 +251,7 @@ class TestHighAccuracyEvaluation:
         assert len(result) == 2
         assert Path("results/test_loop/high_accuracy_eval.done").exists()
 
+    @pytest.mark.unit
     def test_all_jobs_failing_raises_without_marking_done(self, tmp_path, monkeypatch):
         """Regression: every DFT job failing (e.g. QE never printing forces)
         used to mark the phase done with zero structures, permanently."""
@@ -253,6 +265,7 @@ class TestHighAccuracyEvaluation:
         assert not Path("results/test_loop/high_accuracy_eval.done").exists()
         assert not Path("results/test_loop/high_accuracy_eval_results.xyz").exists()
 
+    @pytest.mark.unit
     def test_phase_done_sentinel_skips_reentirely(self, tmp_path, monkeypatch):
         """Once high_accuracy_eval.done exists, the whole call short-circuits
         to reading the consolidated sentinel results file -- no submission,
@@ -271,6 +284,26 @@ class TestHighAccuracyEvaluation:
         mock_sub.assert_not_called()
         assert len(result) == 1
 
+    @pytest.mark.unit
+    def test_empty_selection_completes_and_restarts(self, tmp_path, monkeypatch):
+        """Regression: a loop that sends nothing to DFT (an all-redundant
+        selection) marks the phase done with an empty results file; a
+        restart must read that back as no structures, not crash on it."""
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.ase_remote_submitter") as mock_sub:
+            assert _call([], tmp_path) == []
+            assert _call([], tmp_path) == []
+
+        mock_sub.assert_not_called()
+        assert Path("results/test_loop/high_accuracy_eval.done").exists()
+        assert (
+            read_existing_result(
+                {}, base_name="test_loop", name="high_accuracy_evaluation"
+            )
+            == []
+        )
+
+    @pytest.mark.unit
     def test_go_max_time_overrides_max_time_when_any_go_present(
         self, tmp_path, monkeypatch
     ):
@@ -292,6 +325,7 @@ class TestHighAccuracyEvaluation:
         submitted_config = mock_get_remote_info.call_args.args[0]
         assert submitted_config["max_time"] == "8H"
 
+    @pytest.mark.unit
     def test_bond_distance_filter_applied_before_submission(
         self, tmp_path, monkeypatch
     ):

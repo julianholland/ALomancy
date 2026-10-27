@@ -253,7 +253,7 @@ time isn't spent on structures the training filter would throw away.
 |---|---|
 | `alomancy run config.yaml` | Run the workflow described by a config |
 | `alomancy report [--loop N \| --all]` | Rebuild the per-loop reports from a results directory |
-| `alomancy results --replot` | Regenerate every plot from a results directory |
+| `alomancy results --replot` | Regenerate every plot from a results directory (not while a run is using it) |
 | `alomancy add-hpc` | Interactive wizard to add an HPC system |
 | `alomancy list-hpc [--check-remote]` | List configured HPC systems (and their installed ALomancy version) |
 | `alomancy upgrade-hpc` | Upgrade ALomancy on one or more HPC systems |

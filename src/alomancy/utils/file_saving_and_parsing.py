@@ -4,6 +4,16 @@ from ase import Atoms
 from ase.io import read
 
 
+def read_xyz(path: str | Path) -> list[Atoms]:
+    """Every structure in an extxyz file ALomancy wrote; an empty file (as
+    ase.io.write leaves for an empty list) holds no structures. ASE's own
+    read raises on it."""
+    path = Path(path)
+    if path.stat().st_size == 0:
+        return []
+    return list(read(path, ":", format="extxyz"))
+
+
 def read_atoms_file_if_enabled(
     read_file: bool, file_path: str | Path
 ) -> list[Atoms] | None:

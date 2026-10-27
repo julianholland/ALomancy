@@ -50,6 +50,7 @@ from alomancy.utils.clean_structures import (
     wrap_structures_into_cell,
 )
 from alomancy.utils.dft_utils import refresh_dft_labels
+from alomancy.utils.file_saving_and_parsing import read_xyz
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,9 @@ def read_existing_result(config: dict, *, base_name: str, name: str) -> list[Ato
         )
     return [
         refresh_dft_labels(a, str(sentinel_results))
-        for a in read(sentinel_results, ":")
+        # Empty when the loop sent nothing to DFT (an all-redundant
+        # selection); still a completed phase.
+        for a in read_xyz(sentinel_results)
     ]
 
 

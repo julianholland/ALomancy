@@ -17,7 +17,7 @@ declare its settings and write a short `run()`.
 
 | Helper | What it does |
 |---|---|
-| `prepare_run()` | Everything before the first loop: config and HPC checks, then either resume from the database or build the initial dataset (see [Starting a run](starting_a_run.md)), then redundancy removal and the train/test filters. Returns the first loop to run. |
+| `prepare_run()` | Everything before the first loop: config and HPC checks, then either resume from the database or build the initial dataset (see [Starting a run](starting_a_run.md)), then the train/test filters, curation and redundancy removal. Returns the first loop to run. |
 | `iterate_loops(start)` | Yields a `LoopContext` for each loop still to run: `loop`, `base_name` (`al_loop_N`), `workdir`, the current `train`/`test` structures, `train_only`, `plots_dir`. Writes `train_set.xyz`/`test_set.xyz`. |
 | `train_models(ctx, seeds, *, min_successful=1)` | Trains one model per seed on this loop's shared train/validation/test split, **all in one parallel remote batch**. Returns a list of `TrainedModel` (`fit_idx`, `seed`, `model_path`, `compiled_model_path`, `metrics`, `fit_dir`), updates `results/best_model/`, and raises if fewer than `min_successful` succeed. |
 | `seeds(n)` | `[general.seed, general.seed + 1, ...]`, the standard per-model seeds. |
@@ -26,7 +26,7 @@ declare its settings and write a short `run()`.
 | `predict(ctx, models, structures)` | Energies and forces of `structures` from every model, as one parallel remote batch. One `{"forces": [...], "energies": [...]}` per model. |
 | `high_accuracy_evaluate(ctx, structures)` | DFT-labels the chosen structures (relaxed up to `high_accuracy_evaluation.force_ceiling`), tagging them with your `NEW_STRUCTURE_CONFIG_TYPE` and the loop number. |
 | `add_to_dataset(ctx, structures)` | Adds labelled structures to the database, split by `dataset_kwargs.test_ratio` (or `fixed_test` rules). |
-| `finish_loop(ctx)` | Redundancy removal, train/test filters and curation on the grown dataset; marks the loop done. |
+| `finish_loop(ctx)` | Train/test filters, curation and redundancy removal on the grown dataset; marks the loop done. |
 
 ## What a workflow declares
 

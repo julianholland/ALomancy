@@ -132,7 +132,7 @@ def test_readme_snippet_applied_to_its_config_builds(snippet, tmp_path, monkeypa
 
 # Pages whose YAML blocks are run configs (whole or partial); blocks of other
 # kinds (HPC profiles, report output) don't have config sections at the top.
-_DOC_PAGES = ("examples.md", "starting_a_run.md")
+_DOC_PAGES = ("examples.md", "starting_a_run.md", "quickstart.md")
 _DOC_SNIPPETS = [
     (page, i, block)
     for page in _DOC_PAGES

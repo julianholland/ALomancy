@@ -34,6 +34,7 @@ def _make_dimer(ref_energy: float = -1.0) -> Atoms:
 
 @pytest.mark.unit
 class TestRenameLegacyPredictionSentinels:
+    @pytest.mark.unit
     def test_renames_legacy_sentinel(self, tmp_path):
         loop_dir = tmp_path / "results" / "al_loop_0"
         loop_dir.mkdir(parents=True)
@@ -45,6 +46,7 @@ class TestRenameLegacyPredictionSentinels:
         assert not (loop_dir / "mace_predictions.done").exists()
         assert (loop_dir / "model_predictions.done").exists()
 
+    @pytest.mark.unit
     def test_renames_across_multiple_loops(self, tmp_path):
         for i in range(3):
             loop_dir = tmp_path / "results" / f"al_loop_{i}"
@@ -58,6 +60,7 @@ class TestRenameLegacyPredictionSentinels:
             loop_dir = tmp_path / "results" / f"al_loop_{i}"
             assert (loop_dir / "model_predictions.done").exists()
 
+    @pytest.mark.unit
     def test_leaves_both_in_place_when_current_already_exists(self, tmp_path):
         """Never overwrite an already-migrated (or freshly created) current
         sentinel with a stale legacy one -- just leave both and warn."""
@@ -72,10 +75,12 @@ class TestRenameLegacyPredictionSentinels:
         assert (loop_dir / "mace_predictions.done").exists()
         assert (loop_dir / "model_predictions.done").exists()
 
+    @pytest.mark.unit
     def test_no_op_when_nothing_legacy_present(self, tmp_path):
         (tmp_path / "results").mkdir()
         assert rename_legacy_prediction_sentinels(tmp_path / "results") == 0
 
+    @pytest.mark.unit
     def test_idempotent_second_call_renames_nothing(self, tmp_path):
         loop_dir = tmp_path / "results" / "al_loop_0"
         loop_dir.mkdir(parents=True)
@@ -87,6 +92,7 @@ class TestRenameLegacyPredictionSentinels:
 
 @pytest.mark.unit
 class TestMigrate:
+    @pytest.mark.unit
     def test_runs_both_pieces_and_reports_counts(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         atoms = _make_dimer()

@@ -129,6 +129,7 @@ def _atoms(symbol="H", config_type="init_dimer"):
 
 @pytest.mark.unit
 class TestBuildWorkflow:
+    @pytest.mark.unit
     def test_dispatches_to_committee_uncertainty(
         self, tmp_path, workflow_jobs_dict, shared_db
     ):
@@ -136,6 +137,7 @@ class TestBuildWorkflow:
         wf.db = shared_db
         assert isinstance(wf, CommitteeUncertaintyWorkflow)
 
+    @pytest.mark.unit
     def test_defaults_to_committee_uncertainty_when_absent(
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
@@ -149,6 +151,7 @@ class TestBuildWorkflow:
         wf.db = shared_db
         assert isinstance(wf, CommitteeUncertaintyWorkflow)
 
+    @pytest.mark.unit
     @pytest.mark.parametrize("missing", ["test_ratio", "target_config_types"])
     def test_raises_at_construction_when_required_committee_key_missing(
         self, tmp_path, minimal_jobs_dict, missing
@@ -163,6 +166,7 @@ class TestBuildWorkflow:
         with pytest.raises(ValueError, match=missing):
             build_workflow(jobs_dict=minimal_jobs_dict)
 
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("path", "old", "new"),
         [
@@ -200,6 +204,7 @@ class TestBuildWorkflow:
         with pytest.raises(ValueError, match=rf"{old} -> .*{new}"):
             _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
 
+    @pytest.mark.unit
     def test_renamed_key_error_lists_every_old_key(
         self, tmp_path, workflow_jobs_dict, shared_db
     ):
@@ -295,6 +300,7 @@ class TestBuildWorkflow:
         events = [getattr(r, "event", None) for r in records]
         assert ("few_candidates_configured" in events) is warns
 
+    @pytest.mark.unit
     def test_warns_on_unrecognised_general_key(
         self, tmp_path, minimal_jobs_dict, shared_db
     ):
@@ -317,6 +323,7 @@ class TestBuildWorkflow:
         messages = [r.getMessage() for r in records if r.levelno == logging.WARNING]
         assert any("skip_initializatoin" in m for m in messages)
 
+    @pytest.mark.unit
     def test_raises_on_unknown_al_workflow(self, minimal_jobs_dict):
         minimal_jobs_dict["general"] = {"al_workflow": "furthest_point_sampling"}
         with pytest.raises(ValueError, match=r"Unknown general\.al_workflow"):
@@ -342,6 +349,7 @@ class TestSelectValidationSplit:
             for i in range(n)
         ]
 
+    @pytest.mark.unit
     def test_carves_correct_fraction(self):
         eligible = self._dimers(100, "dimer")
         ineligible = self._dimers(10, "IsolatedAtom")
@@ -352,6 +360,7 @@ class TestSelectValidationSplit:
         assert len(valid) == 5
         assert len(new_train) == len(all_training) - 5
 
+    @pytest.mark.unit
     def test_no_overlap(self):
         all_training = self._dimers(50, "dimer")
         new_train, valid = _select_validation_split(
@@ -361,6 +370,7 @@ class TestSelectValidationSplit:
         valid_ids = {id(a) for a in valid}
         assert train_ids.isdisjoint(valid_ids)
 
+    @pytest.mark.unit
     def test_ineligible_always_in_train(self):
         eligible = self._dimers(20, "dimer")
         ineligible = self._dimers(5, "IsolatedAtom")
@@ -371,6 +381,7 @@ class TestSelectValidationSplit:
         ineligible_ids = {id(a) for a in ineligible}
         assert ineligible_ids.issubset({id(a) for a in new_train})
 
+    @pytest.mark.unit
     def test_empty_eligible_returns_all_training(self):
         all_training = self._dimers(10, "IsolatedAtom")
         new_train, valid = _select_validation_split(
@@ -379,6 +390,7 @@ class TestSelectValidationSplit:
         assert valid == []
         assert len(new_train) == len(all_training)
 
+    @pytest.mark.unit
     def test_rounds_to_zero_returns_all_training(self):
         all_training = self._dimers(1, "dimer")
         new_train, valid = _select_validation_split(
@@ -395,6 +407,7 @@ class TestSelectValidationSplit:
 
 @pytest.mark.unit
 class TestScoreStructuresWithMember:
+    @pytest.mark.unit
     def test_resolves_calculator_and_scores_each_structure(self):
         fake_calc = MagicMock()
         structures = [_atoms(), _atoms()]
@@ -446,6 +459,7 @@ class TestCrossLoopMetricsDataframe:
             splits["valid"] = self._split(valid_error)
         save_evaluation(fit_dir, model, splits)
 
+    @pytest.mark.unit
     def test_one_best_model_row_per_loop(self, tmp_path, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
         for loop in range(2):
@@ -462,6 +476,7 @@ class TestCrossLoopMetricsDataframe:
         assert df["mae_f"].to_list() == pytest.approx([0.1, 0.1])
         assert "mae_f_std_dev" not in df.columns
 
+    @pytest.mark.unit
     def test_best_chosen_on_valid_but_reports_test(
         self, tmp_path, monkeypatch, shared_db
     ):
@@ -481,6 +496,7 @@ class TestCrossLoopMetricsDataframe:
         assert row["mae_f"] == pytest.approx(0.2)
         assert row["selection_split"] == "valid"
 
+    @pytest.mark.unit
     def test_skips_loop_with_inconsistent_evaluations(
         self, tmp_path, monkeypatch, shared_db
     ):
@@ -494,12 +510,14 @@ class TestCrossLoopMetricsDataframe:
 
         assert df["al_loop"].to_list() == [1]
 
+    @pytest.mark.unit
     def test_empty_when_no_loops(self, tmp_path, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
         wf = _make_workflow(tmp_path, {"initialization": {}}, shared_db)
         df = wf._cross_loop_metrics_dataframe("committee")
         assert len(df) == 0
 
+    @pytest.mark.unit
     def test_skips_loop_with_no_evaluations(self, tmp_path, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
         Path("results/al_loop_0/committee").mkdir(parents=True)
@@ -555,6 +573,7 @@ class TestUpdateBestModel:
         )
         return fit_dir
 
+    @pytest.mark.unit
     def test_copies_valid_best_compiled_model_with_metadata(
         self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
     ):
@@ -579,6 +598,7 @@ class TestUpdateBestModel:
         )
         assert "mae_e_per_atom" in test_errors
 
+    @pytest.mark.unit
     def test_best_model_keeps_its_trainers_file_extension(
         self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
     ):
@@ -605,6 +625,7 @@ class TestUpdateBestModel:
         assert metadata["model_file"] == "ALomancy_best_model.pth"
         assert metadata["trainer"] == "mace"
 
+    @pytest.mark.unit
     def test_later_loop_replaces_previous_best_model(
         self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
     ):
@@ -627,6 +648,7 @@ class TestUpdateBestModel:
         metadata = json.loads((best_dir / "model_metadata.json").read_text())
         assert metadata["al_loop"] == 1
 
+    @pytest.mark.unit
     def test_missing_compiled_model_keeps_previous(
         self, tmp_path, monkeypatch, workflow_jobs_dict, shared_db
     ):
@@ -652,6 +674,7 @@ class TestUpdateBestModel:
 
 @pytest.mark.unit
 class TestStorePredictionsAndCleanup:
+    @pytest.mark.unit
     def test_stores_predictions_and_removes_checkpoints(
         self, tmp_path, monkeypatch, shared_db
     ):
@@ -688,6 +711,7 @@ class TestStorePredictionsAndCleanup:
             "training_stagetwo_compiled.model",
         ]
 
+    @pytest.mark.unit
     def test_no_cleanup_when_compiled_model_missing(
         self, tmp_path, monkeypatch, shared_db
     ):
@@ -774,6 +798,7 @@ class TestTrainMlip:
         )
         write(str(workdir / "test_set.xyz"), [_atoms()], format="extxyz")
 
+    @pytest.mark.unit
     def test_submits_all_fits_when_none_cached(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -804,6 +829,7 @@ class TestTrainMlip:
         assert kwargs["fit_dir"] == str(Path("results/al_loop_0/training/fit_0"))
         assert kwargs["seed"] == 803
 
+    @pytest.mark.unit
     def test_reuses_cached_fits_and_only_submits_missing(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -824,6 +850,7 @@ class TestTrainMlip:
 
         assert calls == [[1, 2]]  # fit_0 was cached
 
+    @pytest.mark.unit
     def test_failed_fit_retried_once_and_recovers(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -846,6 +873,7 @@ class TestTrainMlip:
         assert calls == [[0, 1, 2], [1]]
         assert [m.fit_idx for m in models] == [0, 1, 2]
 
+    @pytest.mark.unit
     def test_unevaluated_fit_counts_as_failed_and_is_retried(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -872,6 +900,7 @@ class TestTrainMlip:
         assert calls == [[0, 1, 2], [2]]
         assert len(models) == 3
 
+    @pytest.mark.unit
     def test_raises_when_retry_still_leaves_too_few(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -893,6 +922,7 @@ class TestTrainMlip:
 
         assert calls == [[0, 1, 2], [0]]
 
+    @pytest.mark.unit
     def test_recognizes_real_checkpoint_evaluation_on_restart(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -927,6 +957,7 @@ class TestTrainMlip:
 
         mock_submit_n.assert_not_called()
 
+    @pytest.mark.unit
     def test_raises_when_fewer_than_three_succeed(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -945,6 +976,7 @@ class TestTrainMlip:
         ):
             wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
 
+    @pytest.mark.unit
     def test_phase_done_reloads_cached_models_without_training(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -997,6 +1029,7 @@ def _model(fit_idx: int) -> TrainedModel:
 
 @pytest.mark.unit
 class TestPredict:
+    @pytest.mark.unit
     def test_one_batch_one_result_per_model(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1024,6 +1057,7 @@ class TestPredict:
         assert mock_submit.call_args.args[0] is predict_with_model
         assert [r["model"] for r in result] == ["model_2.pt", "model_0.pt"]
 
+    @pytest.mark.unit
     def test_raises_when_a_model_fails(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1075,6 +1109,7 @@ class TestGenerateCandidates:
         record = records[events.index("few_candidates_generated")]
         assert record.data == {"n": 3, "per_loop": 2}
 
+    @pytest.mark.unit
     def test_runs_generator_with_model_and_filters_short_bonds(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1102,6 +1137,7 @@ class TestGenerateCandidates:
 
 @pytest.mark.unit
 class TestHighAccuracyEvaluate:
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("force_ceiling", "relax"), [("default", True), (5.0, True), (None, False)]
     )
@@ -1136,6 +1172,7 @@ class TestHighAccuracyEvaluate:
         assert seen["structures"][0].info["job_id"] == 0
         assert ("fmax" in seen["config"]) is relax
 
+    @pytest.mark.unit
     def test_done_step_reloads_saved_results_without_dft(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1161,6 +1198,7 @@ class TestHighAccuracyEvaluate:
         assert {a.info["config_type"] for a in result} == {"high_sd"}
         assert {a.info["al_loop"] for a in result} == {2}
 
+    @pytest.mark.unit
     def test_second_call_in_same_loop_raises(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1174,6 +1212,7 @@ class TestHighAccuracyEvaluate:
 
         assert Path("results/al_loop_0/high_accuracy_eval.done").exists()
 
+    @pytest.mark.unit
     def test_labels_with_workflow_config_type_and_loop(
         self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
     ):
@@ -1195,6 +1234,7 @@ class TestHighAccuracyEvaluate:
 
 @pytest.mark.unit
 class TestInitializeTrainingSet:
+    @pytest.mark.unit
     def test_db_path_calls_initialiser_and_evaluator(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1245,6 +1285,60 @@ def _labelled(i: int, config_type: str | None = "init_amorphous") -> Atoms:
     return a
 
 
+@pytest.mark.unit
+def test_selection_reuses_the_curation_tolerance(
+    tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+):
+    """The pre-DFT check uses the tolerance the last curation pass chose,
+    without probing again, and skips a candidate that copies a training
+    structure."""
+    from alomancy.core import active_learning_workflow as module
+
+    monkeypatch.chdir(tmp_path)
+    workflow_jobs_dict["general"]["dataset_kwargs"]["target_config_types"] = [
+        "init_amorphous"
+    ]
+    workflow_jobs_dict["general"]["redundancy_kwargs"] = {"tolerance": 0.05}
+    wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+    shared_db.add_structures(
+        [_labelled(i * 10) for i in range(4)], split="train", skip_duplicates=False
+    )
+    wf._curate_dataset()
+
+    probes: list[int] = []
+    real = module.redundancy_tolerance
+    monkeypatch.setattr(
+        module,
+        "redundancy_tolerance",
+        lambda *a, **kw: probes.append(1) or real(*a, **kw),
+    )
+    copy, new = _labelled(0), _labelled(5)
+    select = wf.non_redundant_selector([copy, new])
+
+    assert select is not None
+    assert select([0, 1], 1) == [1]
+    assert probes == []
+
+    # Too few non-redundant candidates: the skipped copy at the end of the
+    # ranking still counts as replaced.
+    import logging
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    module.logger.addHandler(handler)
+    try:
+        assert select([1, 0], 2) == [1]
+    finally:
+        module.logger.removeHandler(handler)
+    (replaced,) = [
+        r
+        for r in records
+        if getattr(r, "event", None) == "selection_redundant_replaced"
+    ]
+    assert replaced.data["n"] == 1
+
+
 def _no_needs_initialiser() -> MagicMock:
     initialiser = MagicMock()
     initialiser.compute_needs.return_value = {
@@ -1259,6 +1353,7 @@ def _no_needs_initialiser() -> MagicMock:
 
 @pytest.mark.unit
 class TestParseStartFrom:
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("start_from", "mode"),
         [
@@ -1268,6 +1363,12 @@ class TestParseStartFrom:
             ({"xyz": "a.xyz"}, "single_xyz"),
             ({"xyz": ["a.xyz", "b.xyz"]}, "single_xyz"),
             ({"database": "old/global_database"}, "database"),
+            ({"database": ["a/global_database", "b/global_database"]}, "database"),
+            ({"xyz": "a.xyz", "database": "db"}, "combined"),
+            (
+                {"train_xyz": "a.xyz", "test_xyz": "b.xyz", "xyz": ["c.xyz"]},
+                "combined",
+            ),
         ],
     )
     def test_mode_detected_from_keys(self, start_from, mode):
@@ -1275,12 +1376,14 @@ class TestParseStartFrom:
 
         assert _parse_start_from(start_from)[0] == mode
 
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("start_from", "match"),
         [
             ({"train_xyz": "a.xyz"}, "must be given together"),
-            ({"xyz": "a.xyz", "database": "db"}, "more than one data source"),
-            ({"train_xyz": "a", "test_xyz": "b", "xyz": "c"}, "more than one"),
+            ({"database": []}, "database must be a path or a list"),
+            ({"train_xyz": ["a.xyz"], "test_xyz": [3]}, "test_xyz must be a path"),
+            ({"xyz": ["a.xyz", ""]}, "xyz must be a path"),
             ({"databse": "db"}, "Unknown general.start_from"),
             ({"database": "db", "metadata_map": {"energy": "e"}}, "only applies"),
             ({"xyz": []}, "path or a list"),
@@ -1292,6 +1395,25 @@ class TestParseStartFrom:
         with pytest.raises(ValueError, match=match):
             _parse_start_from(start_from)
 
+    @pytest.mark.unit
+    def test_every_source_is_normalised_to_a_list(self):
+        from alomancy.core.active_learning_workflow import _parse_start_from
+
+        _mode, parsed = _parse_start_from(
+            {
+                "database": "db",
+                "train_xyz": "a.xyz",
+                "test_xyz": ["b.xyz", "c.xyz"],
+                "xyz": Path("d.xyz"),
+            }
+        )
+
+        assert parsed["database"] == ["db"]
+        assert parsed["train_xyz"] == ["a.xyz"]
+        assert parsed["test_xyz"] == ["b.xyz", "c.xyz"]
+        assert parsed["xyz"] == ["d.xyz"]
+
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("section", "key", "replacement"),
         [
@@ -1324,7 +1446,7 @@ def _starting_a_run_examples() -> list[dict]:
 @pytest.mark.unit
 def test_docs_start_examples_build_workflows(tmp_path, minimal_jobs_dict, shared_db):
     """Every YAML example in docs/starting_a_run.md is a valid config, and
-    together they cover all four start modes."""
+    together they cover every start mode."""
     from alomancy.core.committee_uncertainty_workflow import build_workflow
 
     examples = _starting_a_run_examples()
@@ -1336,7 +1458,7 @@ def test_docs_start_examples_build_workflows(tmp_path, minimal_jobs_dict, shared
         wf = build_workflow(jobs_dict=jobs_dict)
         wf.db = shared_db
         modes.add(wf.start_mode)
-    assert modes == {"split_files", "single_xyz", "database", "cold"}
+    assert modes == {"split_files", "single_xyz", "database", "combined", "cold"}
 
 
 @pytest.mark.unit
@@ -1357,6 +1479,7 @@ class TestStartModes:
     def _targets(jobs_dict, *types):
         jobs_dict["general"]["dataset_kwargs"]["target_config_types"] = list(types)
 
+    @pytest.mark.unit
     def test_split_files_keep_their_split(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1378,6 +1501,7 @@ class TestStartModes:
         assert splits == ["test"] * 2 + ["train"] * 3
         assert Path("results/initialization/train_set.xyz").exists()
 
+    @pytest.mark.unit
     def test_foreign_split_files_get_normalized_labels(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1405,6 +1529,7 @@ class TestStartModes:
             assert atoms.info["REF_energy"] < 0
             assert atoms.arrays["REF_forces"].shape == (2, 3)
 
+    @pytest.mark.unit
     def test_single_xyz_split_by_test_ratio_over_targets(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1423,6 +1548,7 @@ class TestStartModes:
         assert len(train) + len(test) == 13
         assert test and all(a.info["config_type"] == "init_amorphous" for a in test)
 
+    @pytest.mark.unit
     def test_single_xyz_of_external_structures_raises(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1436,6 +1562,7 @@ class TestStartModes:
         with pytest.raises(ValueError, match=r"'external'.*target_config_types"):
             self._init(wf)
 
+    @pytest.mark.unit
     def test_single_xyz_external_allowed_when_targeted(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1451,6 +1578,7 @@ class TestStartModes:
         assert test
         assert {a.info["config_type"] for a in train + test} == {"external"}
 
+    @pytest.mark.unit
     def test_reimport_is_idempotent(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1474,6 +1602,7 @@ class TestStartModes:
         a.symbols[1] = "Li"
         return a
 
+    @pytest.mark.unit
     def test_xyz_import_excludes_structures_with_other_elements(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1496,6 +1625,7 @@ class TestStartModes:
         for atoms in shared_db.get_all_as_atoms() + train + test:
             assert set(atoms.get_chemical_symbols()) == {"H"}
 
+    @pytest.mark.unit
     def test_database_import_excludes_structures_with_other_elements(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1544,6 +1674,7 @@ class TestStartModes:
         (record,) = shared_db.imported_sources.values()
         assert record["n_added"] == 0
 
+    @pytest.mark.unit
     def test_database_copy_keeps_splits_and_leaves_source_alone(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1573,6 +1704,65 @@ class TestStartModes:
         assert not any(k.startswith("model_") for a in copied for k in a.info)
         assert GlobalDatabase(str(tmp_path / "old_run" / "global_database")).size == 3
 
+    @pytest.mark.unit
+    def test_databases_and_xyz_files_combine(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """Every source is imported; databases first, so their isolated-atom
+        energy wins over an xyz file's, and their split tags are kept."""
+        from alomancy.database.global_database import GlobalDatabase
+
+        def isolated(energy: float) -> Atoms:
+            a = Atoms("H", cell=[6] * 3, pbc=True)
+            a.info["REF_energy"] = energy
+            a.arrays["REF_forces"] = np.zeros((1, 3))
+            a.info["config_type"] = "IsolatedAtom"
+            return a
+
+        monkeypatch.chdir(tmp_path)
+        first = GlobalDatabase(str(tmp_path / "run_a" / "global_database"))
+        first.add_structures([_labelled(0), isolated(-0.5)], split="train")
+        first.add_structures([_labelled(1)], split="test")
+        second = GlobalDatabase(str(tmp_path / "run_b" / "global_database"))
+        second.add_structures([_labelled(2)], split="train")
+        write("one.xyz", [_labelled(i) for i in range(3, 8)], format="extxyz")
+        write(
+            "two.xyz",
+            [*(_labelled(i) for i in range(8, 13)), isolated(-0.6)],
+            format="extxyz",
+        )
+        self._targets(workflow_jobs_dict, "init_amorphous")
+        workflow_jobs_dict["general"]["dataset_kwargs"]["test_ratio"] = 0.2
+        wf = _make_workflow(
+            tmp_path,
+            workflow_jobs_dict,
+            shared_db,
+            start_from={
+                "database": ["run_a/global_database", "run_b/global_database"],
+                "xyz": ["one.xyz", "two.xyz"],
+            },
+        )
+        assert wf.start_mode == "combined"
+
+        train, test = self._init(wf)
+        self._init(wf)  # a restart imports nothing again
+
+        # 3 + 1 from the databases, 10 from the files; the files' H atom is
+        # a duplicate of the first database's.
+        assert shared_db.size == 14
+        assert len(train) + len(test) == 14
+        assert shared_db.get_isolated_atom_energies() == {"H": -0.5}
+        from_databases = sorted(
+            a.info["split"]
+            for a in shared_db.get_all_as_atoms()
+            if "source_database" in a.info
+            and a.info.get("config_type") == "init_amorphous"
+        )
+        assert from_databases == ["test", "train", "train"]
+        from_files = [a for a in test if "source_dataset_sha256" in a.info]
+        assert len(from_files) == 2
+
+    @pytest.mark.unit
     def test_warm_start_generates_only_missing_targets(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1597,6 +1787,7 @@ class TestStartModes:
         assert shared_db.size == 7
         assert len(train) + len(test) == 7
 
+    @pytest.mark.unit
     def test_warm_start_with_nothing_missing_skips_generation(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1612,6 +1803,7 @@ class TestStartModes:
 
         initialiser.generate.assert_not_called()
 
+    @pytest.mark.unit
     def test_no_initialization_section_uses_imported_data_only(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1630,6 +1822,7 @@ class TestStartModes:
         initialiser.generate.assert_not_called()
         assert len(train) + len(test) == 6
 
+    @pytest.mark.unit
     def test_cold_start_without_initialization_section_raises(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1649,6 +1842,7 @@ class TestStartModes:
 
 @pytest.mark.unit
 class TestQualityFilterAndForceCeilingConfig:
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         ("force_ceiling", "expected_fmax"),
         [("default", 100.0), (5.0, 5.0), (None, None)],
@@ -1685,6 +1879,7 @@ class TestQualityFilterAndForceCeilingConfig:
 
         assert configs[0].get("fmax") == expected_fmax
 
+    @pytest.mark.unit
     @pytest.mark.parametrize("bad", [0, -1.0, float("nan"), "100", True])
     def test_invalid_force_ceiling_raises(
         self, tmp_path, workflow_jobs_dict, shared_db, bad
@@ -1693,6 +1888,7 @@ class TestQualityFilterAndForceCeilingConfig:
         with pytest.raises(ValueError, match="force_ceiling"):
             _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
 
+    @pytest.mark.unit
     @pytest.mark.parametrize("name", ["train_filter", "test_filter"])
     def test_invalid_split_filter_raises(
         self, tmp_path, workflow_jobs_dict, shared_db, name
@@ -1701,6 +1897,7 @@ class TestQualityFilterAndForceCeilingConfig:
         with pytest.raises(ValueError, match=f"general.{name}.max_force"):
             _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
 
+    @pytest.mark.unit
     def test_filters_resolved_with_defaults_and_not_unknown_keys(
         self, tmp_path, workflow_jobs_dict, shared_db
     ):
@@ -1738,6 +1935,7 @@ class TestRun:
         wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db, **overrides)
         return wf
 
+    @pytest.mark.unit
     def test_loop_count(self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db):
         monkeypatch.chdir(tmp_path)
         wf = self._wf_with_mocks(tmp_path, workflow_jobs_dict, shared_db)
@@ -1758,6 +1956,7 @@ class TestRun:
 
         assert len(train_calls) == 2  # num_of_al_loops=2
 
+    @pytest.mark.unit
     def test_start_loop_respected(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1782,6 +1981,7 @@ class TestRun:
 
         assert len(train_calls) == 2  # loops 2 and 3 only
 
+    @pytest.mark.unit
     def test_base_names_correct_for_loops(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1804,6 +2004,7 @@ class TestRun:
 
         assert train_calls == ["al_loop_0", "al_loop_1"]
 
+    @pytest.mark.unit
     def test_train_only_stops_before_generation(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1827,6 +2028,7 @@ class TestRun:
 
         assert generate_calls == []
 
+    @pytest.mark.unit
     def test_resumes_from_last_complete_loop(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1870,36 +2072,44 @@ class TestRun:
 
 @pytest.mark.unit
 class TestIsUserSpecified:
+    @pytest.mark.unit
     def test_absent_key_is_not_user_specified(self):
         assert _is_user_specified({}, "mace_kwargs.max_num_epochs") is False
 
+    @pytest.mark.unit
     def test_present_nested_key_is_user_specified(self):
         raw = {"mace_kwargs": {"max_num_epochs": 40}}
         assert _is_user_specified(raw, "mace_kwargs.max_num_epochs") is True
 
+    @pytest.mark.unit
     def test_sibling_key_not_present_is_not_user_specified(self):
         raw = {"mace_kwargs": {"batch_size": 8}}
         assert _is_user_specified(raw, "mace_kwargs.max_num_epochs") is False
 
+    @pytest.mark.unit
     def test_nested_key_written_by_user_is_user_specified(self):
         raw = {"qe_kwargs": {"system": {"input_dft": "pbe"}}}
         assert _is_user_specified(raw, "qe_kwargs.system.input_dft") is True
 
+    @pytest.mark.unit
     def test_nested_sibling_default_is_not_user_specified(self):
         # get_qe_input_data merges per namelist, so ecutwfc keeps its
         # default even though the user wrote another key under "system".
         raw = {"qe_kwargs": {"system": {"input_dft": "pbe"}}}
         assert _is_user_specified(raw, "qe_kwargs.system.ecutwfc") is False
 
+    @pytest.mark.unit
     def test_top_level_key_present(self):
         assert _is_user_specified({"trainer": "mace"}, "trainer") is True
 
+    @pytest.mark.unit
     def test_top_level_key_absent(self):
         assert _is_user_specified({}, "trainer") is False
 
 
 @pytest.mark.unit
 class TestResolveEffectivePhaseDict:
+    @pytest.mark.unit
     def test_initialization_merges_defaults_per_namespace(self):
         phase_dict = {
             "dimer_kwargs": {"num_of_dimers_per_combo": 3},
@@ -1913,6 +2123,7 @@ class TestResolveEffectivePhaseDict:
         assert "stretch_compress_targets_kwargs" in effective
         assert "isolated_atom_kwargs" in effective
 
+    @pytest.mark.unit
     def test_training_merges_mace_defaults_and_e0s_placeholder(self):
         phase_dict = {"trainer": "mace", "mace_kwargs": {"max_num_epochs": 40}}
         effective = _resolve_effective_phase_dict("training", phase_dict)
@@ -1921,21 +2132,25 @@ class TestResolveEffectivePhaseDict:
         assert mk["energy_key"] == "REF_energy"  # default
         assert mk["E0s"] == "<resolved at train time from IsolatedAtom structures>"
 
+    @pytest.mark.unit
     def test_training_e0s_not_placeholder_when_user_sets_it(self):
         phase_dict = {"trainer": "mace", "mace_kwargs": {"E0s": {"H": -1.0}}}
         effective = _resolve_effective_phase_dict("training", phase_dict)
         assert effective["mace_kwargs"]["E0s"] == {"H": -1.0}
 
+    @pytest.mark.unit
     def test_structure_generation_merges_md_defaults(self):
         phase_dict = {"generator": "md", "md_kwargs": {"steps": 500}}
         effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
         assert effective["md_kwargs"]["steps"] == 500
         assert effective["md_kwargs"]["temperature"] == 300  # default
 
+    @pytest.mark.unit
     def test_general_defaults_num_of_structures_per_loop(self):
         effective = _resolve_effective_phase_dict("general", {})
         assert effective["num_of_structures_per_loop"] == 50
 
+    @pytest.mark.unit
     def test_structure_generation_ezga_defaults(self):
         phase_dict = {"generator": "ezga", "ezga_kwargs": {"population_size": 10}}
         effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
@@ -1943,6 +2158,7 @@ class TestResolveEffectivePhaseDict:
         assert ek["population_size"] == 10
         assert ek["max_generations"] == 2  # default
 
+    @pytest.mark.unit
     def test_high_accuracy_evaluation_merges_qe_defaults(self):
         phase_dict = {
             "evaluator": "qe",
@@ -1956,6 +2172,7 @@ class TestResolveEffectivePhaseDict:
         assert system["ecutwfc"] == 40.0  # per-namelist merge keeps defaults
         assert effective["qe_kwargs"]["control"]["calculation"] == "scf"  # default
 
+    @pytest.mark.unit
     def test_high_accuracy_evaluation_merges_vasp_defaults(self):
         phase_dict = {"evaluator": "vasp", "vasp_kwargs": {"encut": 600}}
         effective = _resolve_effective_phase_dict(
@@ -1965,11 +2182,13 @@ class TestResolveEffectivePhaseDict:
         assert vk["encut"] == 600
         assert vk["pp"] == "PBE"  # default
 
+    @pytest.mark.unit
     def test_does_not_mutate_input_phase_dict(self):
         phase_dict = {"generator": "md", "md_kwargs": {"steps": 500}}
         _resolve_effective_phase_dict("structure_generation", phase_dict)
         assert phase_dict == {"generator": "md", "md_kwargs": {"steps": 500}}
 
+    @pytest.mark.unit
     def test_general_merges_dataset_and_workflow_kwargs_defaults(self):
         phase_dict = {
             "al_workflow": "committee_uncertainty",
@@ -1984,6 +2203,7 @@ class TestResolveEffectivePhaseDict:
         )
         assert effective["elements"] == ["H"]  # untouched sibling
 
+    @pytest.mark.unit
     def test_general_defaults_al_workflow_to_committee_uncertainty(self):
         phase_dict = {"elements": ["H"]}
         effective = _resolve_effective_phase_dict("general", phase_dict)
@@ -1992,6 +2212,7 @@ class TestResolveEffectivePhaseDict:
             effective["committee_uncertainty_kwargs"]["num_of_models_in_committee"] == 3
         )
 
+    @pytest.mark.unit
     def test_general_random_selection_has_no_workflow_block(self):
         effective = _resolve_effective_phase_dict(
             "general", {"al_workflow": "random_selection"}
@@ -2023,6 +2244,7 @@ class TestDisplayWorkflowSummary:
             al_logger.removeHandler(handler)
         return "\n".join(records)
 
+    @pytest.mark.unit
     def test_marks_user_specified_values_and_shows_defaults(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2037,6 +2259,21 @@ class TestDisplayWorkflowSummary:
         assert "md_kwargs.temperature: 300\n" in summary + "\n"
         assert "md_kwargs.temperature: 300  [user-specified]" not in summary
 
+    @pytest.mark.unit
+    def test_hpc_table_shows_the_executable(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """`alomancy list-hpc` leaves the executable out; the run's own
+        startup table is where it is shown."""
+        monkeypatch.chdir(tmp_path)
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+
+        summary = self._capture(wf.display_workflow_summary)
+
+        assert "--- HPC Profiles ---" in summary
+        assert "executable" in summary.split("--- HPC Profiles ---")[1]
+
+    @pytest.mark.unit
     def test_max_time_never_marked(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2049,6 +2286,7 @@ class TestDisplayWorkflowSummary:
         assert "max_time: 12:00:00\n" in summary + "\n"
         assert "max_time: 12:00:00  [user-specified]" not in summary
 
+    @pytest.mark.unit
     def test_empty_but_present_initialization_still_shown(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2065,6 +2303,7 @@ class TestDisplayWorkflowSummary:
         assert "--- Initialisation (initialization) ---" in summary
         assert "dimer_kwargs.enabled: True" in summary
 
+    @pytest.mark.unit
     def test_general_block_shown_first_with_defaults_and_markers(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2088,6 +2327,7 @@ class TestDisplayWorkflowSummary:
 
 @pytest.mark.unit
 class TestFlattenSettingsDepth:
+    @pytest.mark.unit
     def test_flattens_three_levels_deep(self):
         d = {"a": {"b": {"c": 1}}}
         assert _flatten_settings(d) == [("a.b.c", 1)]
@@ -2118,6 +2358,7 @@ class TestPhaseDecorator:
         wf.ran = []
         return wf
 
+    @pytest.mark.unit
     def test_runs_then_marks_done(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2128,6 +2369,7 @@ class TestPhaseDecorator:
         assert wf.ran == [1]
         assert Path("results/al_loop_0/probe.done").exists()
 
+    @pytest.mark.unit
     def test_done_phase_uses_loader(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2139,6 +2381,7 @@ class TestPhaseDecorator:
         assert wf.probe(_ctx(0), 2) == "loaded 2"
         assert wf.ran == []
 
+    @pytest.mark.unit
     def test_second_call_in_same_loop_raises(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2170,6 +2413,7 @@ class TestTrainModelsEdgeCases:
         write(str(workdir / "train_set.xyz"), [_atoms() for _ in range(5)])
         write(str(workdir / "test_set.xyz"), [_atoms()])
 
+    @pytest.mark.unit
     def test_single_seed_single_model(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2193,6 +2437,7 @@ class TestTrainModelsEdgeCases:
         recorded = Path("results/al_loop_0/training/fit_0/fit_seed.json")
         assert json.loads(recorded.read_text()) == {"seed": 42}
 
+    @pytest.mark.unit
     def test_min_successful_one_tolerates_failures(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2214,6 +2459,7 @@ class TestTrainModelsEdgeCases:
         assert calls == [[0, 1], [0]]
         assert [m.fit_idx for m in models] == [1]
 
+    @pytest.mark.unit
     def test_cached_fit_with_other_seed_is_reused_with_warning(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):

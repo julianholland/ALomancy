@@ -100,13 +100,15 @@ def validate_redundancy_kwargs(cfg: Any) -> dict[str, Any]:
         )
     settings = {**REDUNDANCY_KWARGS_DEFAULTS, **cfg}
     tolerance = settings["tolerance"]
+    # Finite: .inf flags all but one structure, .nan flags nothing.
     if tolerance is not None and (
         isinstance(tolerance, bool)
         or not isinstance(tolerance, (int, float))
+        or not np.isfinite(tolerance)
         or tolerance < 0
     ):
         raise ValueError(
-            "general.redundancy_kwargs.tolerance must be null or a number >= 0."
+            "general.redundancy_kwargs.tolerance must be null or a finite number >= 0."
         )
     steps = settings["probe_steps_per_structure"]
     if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
@@ -144,16 +146,23 @@ def _distance_matrix(descriptor_array: np.ndarray):
     return dda
 
 
-def tolerance_sweep(descriptor_array: np.ndarray, steps: int) -> dict[float, int]:
+def tolerance_sweep(
+    descriptor_array: np.ndarray, steps: int, distance_matrix: Any = None
+) -> dict[float, int]:
     """{tolerance: structures kept} for *steps* tolerances from 0 to the
     largest distance from the first structure, where one is kept.
 
     Counts are DistanceMatrix's (deduplicate_lib >= 0.1.3): structures in
     order, each kept unless within the tolerance of one already kept -- the
     same rule the flagging uses. Starts at 0, so exact duplicates (distance
-    0) are flagged from the first step above it.
+    0) are flagged from the first step above it. *distance_matrix*, a
+    DistanceMatrix already built for descriptor_array, is reused.
     """
-    dda = _distance_matrix(descriptor_array)
+    dda = (
+        distance_matrix
+        if distance_matrix is not None
+        else _distance_matrix(descriptor_array)
+    )
     distances = dda.get_filled_distance_matrix()
     top = float(distances[0].max()) * (1 + 1e-9) if len(distances) > 1 else 0.0
     sweep: dict[float, int] = {}
@@ -210,6 +219,7 @@ def probe_redundancy_tolerance(
     descriptor_array: np.ndarray,
     dimensions: int = 128,
     settings: dict[str, Any] | None = None,
+    distance_matrix: Any = None,
 ) -> tuple[float | None, dict[str, Any] | None]:
     """The duplicate tolerance for *descriptor_array* and the record of the
     probe behind it (see tolerance_sweep and choose_tolerance; with
@@ -231,7 +241,7 @@ def probe_redundancy_tolerance(
             _MAX_PROBE_STEPS,
         )
     )
-    sweep = tolerance_sweep(descriptor_array, steps)
+    sweep = tolerance_sweep(descriptor_array, steps, distance_matrix)
     if settings["tolerance"] is not None:
         tolerance: float | None = float(settings["tolerance"])
         outcome = "fixed"
@@ -265,18 +275,40 @@ def _write_probe_record(path: Path, record: dict[str, Any]) -> None:
 
 
 def _pool_indices(all_containers: list, config_list: list[str]) -> list[int]:
-    """Positions of the structures redundancy removal compares: in the
-    training set (global_database.is_in_training_set, so never one already
-    flagged, quality-filtered or rejected by curation) and of a listed
-    config_type."""
+    """Positions of the structures redundancy removal compares: of a listed
+    config_type and in the training set apart from any duplicate flag
+    (global_database.is_in_training_set, so never one quality-filtered or
+    rejected by curation). Earlier duplicates are compared again, so the
+    pool -- and the tolerance probed on it -- doesn't depend on what an
+    earlier pass flagged."""
     from alomancy.database.global_database import is_in_training_set
 
     return [
         i
         for i, c in enumerate(all_containers)
-        if is_in_training_set(c.AtomPositionManager.metadata)
+        if is_in_training_set({**c.AtomPositionManager.metadata, "is_duplicate": False})
         and c.AtomPositionManager.metadata.get("config_type") in config_list
     ]
+
+
+def _rewrite_duplicate_flags(
+    db: Any, all_containers: list, config_list: list[str], duplicates: set[int]
+) -> tuple[int, int]:
+    """Set is_duplicate on every structure of a listed config_type to
+    whether it is in *duplicates*, writing only the values that change.
+    Returns (newly flagged, cleared)."""
+    updates = {}
+    for i, c in enumerate(all_containers):
+        metadata = c.AtomPositionManager.metadata
+        if metadata.get("config_type") not in config_list:
+            continue
+        flag = i in duplicates
+        if bool(metadata.get("is_duplicate", False)) != flag:
+            updates[i] = {"is_duplicate": flag}
+    if updates:
+        db.set_metadata_bulk(updates)
+    n_new = sum(1 for u in updates.values() if u["is_duplicate"])
+    return n_new, len(updates) - n_new
 
 
 def remove_redundancy_from_partition(
@@ -285,17 +317,20 @@ def remove_redundancy_from_partition(
     dimensions: int = 128,
     probe_path: Path | None = None,
     settings: dict[str, Any] | None = None,
-) -> None:
-    """Flag near-duplicate structures in the training set of *db*.
+) -> float | None:
+    """Flag near-duplicate structures in the training set of *db* and
+    return the tolerance used (None when nothing was compared or no
+    tolerance qualified).
 
-    Compared: the structures in the training set whose config_type is in
-    config_list (_pool_indices); anything already out of the training set
-    never counts as an original. In DB order, each is kept unless it is
-    within the tolerance of one already kept, so every group of
-    near-duplicates keeps its earliest member. Flagged structures get
-    is_duplicate=True -- never deleted (the DB is a full DFT archive), but
-    excluded from get_train_atoms() and so from the train xyz files.
-    Flags are never cleared here (GlobalDatabase.clear_duplicate_flags).
+    Compared: the structures of config_list in the training set, earlier
+    duplicates included (_pool_indices); anything quality-filtered or
+    rejected by curation never counts as an original. In DB order, each is
+    kept unless it is within the tolerance of one already kept, so every
+    group of near-duplicates keeps its earliest member. Flagged structures
+    get is_duplicate=True -- never deleted (the DB is a full DFT archive),
+    but excluded from get_train_atoms() and so from the train xyz files.
+    Every flag of config_list is rewritten on each pass, so repeating a
+    pass on the same data changes nothing and stale flags are cleared.
 
     Args:
         db: GlobalDatabase instance.
@@ -315,7 +350,7 @@ def remove_redundancy_from_partition(
         c.AtomPositionManager.metadata.get("split") == "train" for c in all_containers
     ):
         logger.warning("No train-split structures in DB — skipping redundancy removal.")
-        return
+        return None
 
     pool = _pool_indices(all_containers, config_list)
     if not pool:
@@ -323,13 +358,21 @@ def remove_redundancy_from_partition(
             "No training structures matching config_list %s — nothing to dedup.",
             config_list,
         )
-        return
+        _rewrite_duplicate_flags(db, all_containers, config_list, set())
+        return None
 
     descriptor_array = _cached_descriptors(db, all_containers, pool, dimensions)
+    # Built once: the probe sweeps it and the flagging below reuses it.
+    dda = _distance_matrix(descriptor_array)
     tolerance, record = probe_redundancy_tolerance(
-        descriptor_array, dimensions, settings
+        descriptor_array, dimensions, settings, distance_matrix=dda
     )
     if tolerance is None:
+        _n_new, n_cleared = _rewrite_duplicate_flags(
+            db, all_containers, config_list, set()
+        )
+        if n_cleared:
+            logger.info("Cleared %d earlier duplicate flag(s).", n_cleared)
         if record is not None:
             if record["outcome"] == "cap_exceeded":
                 cap = record["settings"]["max_flagged_fraction"]
@@ -355,42 +398,73 @@ def remove_redundancy_from_partition(
                 )
             if probe_path is not None:
                 _write_probe_record(probe_path, {**record, "n_flagged": 0})
-        return
+        return None
 
-    dda = _distance_matrix(descriptor_array)
     dda.tolerance = tolerance
     dda.get_dataset_unique_structures()
     kept = set(map(int, dda.get_unique_vector_indices()))
-    duplicate_global = [pool[j] for j in range(len(pool)) if j not in kept]
+    duplicates = {pool[j] for j in range(len(pool)) if j not in kept}
+    n_new, n_cleared = _rewrite_duplicate_flags(
+        db, all_containers, config_list, duplicates
+    )
 
     logger.info(
-        "Redundancy removal: %d/%d structures flagged as duplicates (tolerance=%.4f).",
-        len(duplicate_global),
+        "Redundancy removal: %d/%d structures flagged as duplicates (%d new, %d "
+        "cleared; tolerance=%.4f).",
+        len(duplicates),
         len(pool),
+        n_new,
+        n_cleared,
         tolerance,
         extra={
             "event": "redundancy_flagged",
             "data": {
-                "n": len(duplicate_global),
+                "n": len(duplicates),
                 "total": len(pool),
+                "n_new": n_new,
+                "n_cleared": n_cleared,
                 "tolerance": float(tolerance),
             },
         },
     )
     if probe_path is not None and record is not None:
-        _write_probe_record(probe_path, {**record, "n_flagged": len(duplicate_global)})
-    if duplicate_global:
-        db.flag_as_duplicates(duplicate_global)
+        _write_probe_record(probe_path, {**record, "n_flagged": len(duplicates)})
+    return tolerance
 
 
 def training_reference(db, config_list: list[str], dimensions: int = 128) -> np.ndarray:
-    """Descriptors of the structures redundancy removal compares against
-    (_pool_indices), for checking candidates before they reach the DB."""
+    """Descriptors of the structures of config_list kept in the training
+    set: after a redundancy pass, exactly the rows a new structure is
+    compared against. For checking candidates before they reach the DB."""
+    from alomancy.database.global_database import is_in_training_set
+
+    all_containers = list(db.partition.list_containers())
+    kept = [
+        i
+        for i, c in enumerate(all_containers)
+        if is_in_training_set(c.AtomPositionManager.metadata)
+        and c.AtomPositionManager.metadata.get("config_type") in config_list
+    ]
+    if not kept:
+        return np.empty((0, dimensions))
+    return _cached_descriptors(db, all_containers, kept, dimensions)
+
+
+def redundancy_tolerance(
+    db: Any,
+    config_list: list[str],
+    dimensions: int = 128,
+    settings: dict[str, Any] | None = None,
+) -> float | None:
+    """The tolerance a redundancy pass would choose now (probed on the same
+    pool), without flagging anything."""
     all_containers = list(db.partition.list_containers())
     pool = _pool_indices(all_containers, config_list)
     if not pool:
-        return np.empty((0, dimensions))
-    return _cached_descriptors(db, all_containers, pool, dimensions)
+        return None
+    descriptors = _cached_descriptors(db, all_containers, pool, dimensions)
+    tolerance, _record = probe_redundancy_tolerance(descriptors, dimensions, settings)
+    return tolerance
 
 
 def select_non_redundant(

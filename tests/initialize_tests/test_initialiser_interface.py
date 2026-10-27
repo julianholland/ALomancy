@@ -39,6 +39,7 @@ def _atoms(n=2):
 
 @pytest.mark.unit
 class TestComputeNeeds:
+    @pytest.mark.unit
     def test_reads_targets_from_structure_type_namespaces(self):
         db = _mock_db({})
         config = {
@@ -50,6 +51,7 @@ class TestComputeNeeds:
         assert needs["isolated_atoms"] == ["H", "O"]
         assert needs["amorphous_override"] == 10
 
+    @pytest.mark.unit
     def test_uses_defaults_when_not_specified(self):
         db = _mock_db({})
         needs = compute_needs(db, {}, ["H"])
@@ -57,6 +59,7 @@ class TestComputeNeeds:
         # here since config doesn't override them.
         assert needs["amorphous_override"] == 100
 
+    @pytest.mark.unit
     def test_nothing_needed_when_db_already_satisfies_targets(self):
         db = _mock_db(
             {
@@ -69,6 +72,7 @@ class TestComputeNeeds:
         assert needs["isolated_atoms"] == []
         assert needs["amorphous_override"] == 0
 
+    @pytest.mark.unit
     def test_disabled_sub_tasks_need_nothing_regardless_of_configured_count(self):
         db = _mock_db({})
         config = {
@@ -84,17 +88,20 @@ class TestComputeNeeds:
 
 @pytest.mark.unit
 class TestOutputPathsAndReadExistingResult:
+    @pytest.mark.unit
     def test_output_paths_is_the_generated_structures_file(self):
         paths = output_paths({}, base_name="al_loop_0", name="initialization")
         assert paths == [
             Path("results/al_loop_0/initialization_structures_generated.xyz")
         ]
 
+    @pytest.mark.unit
     def test_read_existing_result_raises_when_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ValueError, match="No cached"):
             read_existing_result({}, base_name="al_loop_0", name="initialization")
 
+    @pytest.mark.unit
     def test_read_existing_result_reads_generated_structures(
         self, tmp_path, monkeypatch
     ):
@@ -111,6 +118,7 @@ class TestGenerate:
     def _config(self, **overrides):
         return dict(overrides)
 
+    @pytest.mark.unit
     def test_full_generation_when_no_needs_given(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
@@ -131,6 +139,7 @@ class TestGenerate:
         assert call_kwargs["dimer_override"] is None
         assert call_kwargs["mp_structures"] is True  # config default, no needs given
 
+    @pytest.mark.unit
     def test_enabled_flags_read_from_their_own_namespaces(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         config = self._config(
@@ -161,6 +170,7 @@ class TestGenerate:
         assert call_kwargs["num_of_trimers_per_combo"] == 0
         assert call_kwargs["num_of_amorphous_structures"] == 0
 
+    @pytest.mark.unit
     def test_enabled_defaults_to_true_for_dimer_trimer_amorphous(
         self, tmp_path, monkeypatch
     ):
@@ -186,6 +196,7 @@ class TestGenerate:
         assert call_kwargs["num_of_trimers_per_combo"] == 3
         assert call_kwargs["num_of_amorphous_structures"] == 20
 
+    @pytest.mark.unit
     def test_stretch_compress_targets_kwargs_is_a_top_level_namespace(
         self, tmp_path, monkeypatch
     ):
@@ -213,6 +224,7 @@ class TestGenerate:
         assert call_kwargs["num_of_stretch_compress_per_target"] == 7
         assert call_kwargs["max_lattice_deformation"] == 0.5
 
+    @pytest.mark.unit
     def test_stretch_compress_targets_disabled_forces_count_to_zero(
         self, tmp_path, monkeypatch
     ):
@@ -236,6 +248,7 @@ class TestGenerate:
 
         assert mock_create.call_args.kwargs["num_of_stretch_compress_per_target"] == 0
 
+    @pytest.mark.unit
     def test_target_config_types_and_seed_passed_through(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
@@ -255,6 +268,7 @@ class TestGenerate:
         assert call_kwargs["target_config_types"] == ["init_MP", "init_amorphous"]
         assert call_kwargs["rattle_seed"] == 42
 
+    @pytest.mark.unit
     def test_rattle_disabled_by_default(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:
@@ -272,6 +286,7 @@ class TestGenerate:
         assert call_kwargs["num_of_rattled_per_target"] == 0
         assert call_kwargs["rattle_standard_deviation"] is None
 
+    @pytest.mark.unit
     def test_rattle_enabled_reads_its_own_namespace(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         config = self._config(
@@ -296,6 +311,7 @@ class TestGenerate:
         assert call_kwargs["num_of_rattled_per_target"] == 9
         assert call_kwargs["rattle_standard_deviation"] == 0.03
 
+    @pytest.mark.unit
     def test_rattle_enabled_without_standard_deviation_raises(
         self, tmp_path, monkeypatch
     ):
@@ -318,6 +334,7 @@ class TestGenerate:
                 max_time="1H",
             )
 
+    @pytest.mark.unit
     def test_partial_generation_when_needs_given(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         needs = {
@@ -347,6 +364,7 @@ class TestGenerate:
         assert call_kwargs["mp_structures"] is False
         assert call_kwargs["single_atoms"] is True  # bool(["H"])
 
+    @pytest.mark.unit
     def test_creates_work_dir(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         with patch(f"{_MODULE}.create_initialization_atoms_list") as mock_create:

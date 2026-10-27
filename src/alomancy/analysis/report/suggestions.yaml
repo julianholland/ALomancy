@@ -76,6 +76,17 @@ fewer_candidates:
     Generate more: raise md_kwargs.steps or
     structure_selection_kwargs.num_of_md_starts.
 
+selection_redundant_shortfall:
+  threshold: 0.01
+  severity: warning
+  suggestion: >-
+    Only {n} of {candidates} candidates were not redundant with the training
+    set or each other, for {desired} requested, so fewer structures went to
+    DFT. Check the redundancy tolerance probe below first: a large tolerance
+    rejects distinct candidates (set general.redundancy_kwargs.tolerance).
+    If the tolerance is sensible, the candidates are too alike: start MD
+    from more varied seeds (structure_selection_kwargs) or run it hotter.
+
 few_candidates_generated:
   threshold: 0.01
   severity: warning

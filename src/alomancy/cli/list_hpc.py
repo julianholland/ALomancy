@@ -18,7 +18,7 @@ def list_hpc(check_remote: bool = False) -> str:
             "Run 'alomancy add-hpc' to add one."
         )
     # The executable path is long and only matters to the run itself; the
-    # run's startup HPC table (same row builder) keeps it.
+    # run's startup HPC table (_SUMMARY_HPC_COLUMNS) shows it.
     rows = [
         {
             key: value

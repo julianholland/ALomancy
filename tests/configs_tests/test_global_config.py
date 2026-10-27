@@ -5,12 +5,14 @@ import pytest
 
 @pytest.mark.unit
 class TestExpyreConfigConstants:
+    @pytest.mark.unit
     def test_expyre_config_lives_under_alomancy_dir(self):
         from alomancy.configs.global_config import ALOMANCY_DIR, EXPYRE_CONFIG
 
         assert EXPYRE_CONFIG.parent == ALOMANCY_DIR
         assert EXPYRE_CONFIG.name == "expyre_config.json"
 
+    @pytest.mark.unit
     def test_legacy_expyre_config_is_the_pre_isolation_path(self):
         from pathlib import Path
 

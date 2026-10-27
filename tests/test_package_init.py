@@ -12,6 +12,7 @@ from alomancy import _pin_local_expyre_root, _seed_local_expyre_root
 
 @pytest.mark.unit
 class TestSeedLocalExpyreRoot:
+    @pytest.mark.unit
     def test_copies_canonical_master_into_run_local_expyre(self, tmp_path, monkeypatch):
         import alomancy as alomancy_module
 
@@ -31,6 +32,7 @@ class TestSeedLocalExpyreRoot:
             "systems": {"raven": {"host": "raven"}}
         }
 
+    @pytest.mark.unit
     def test_falls_back_to_legacy_path_when_canonical_missing(
         self, tmp_path, monkeypatch
     ):
@@ -51,6 +53,7 @@ class TestSeedLocalExpyreRoot:
         copied = run_dir / ".expyre" / "config.json"
         assert json.loads(copied.read_text()) == {"systems": {"old": {"host": "old"}}}
 
+    @pytest.mark.unit
     def test_noop_when_neither_config_source_exists(self, tmp_path, monkeypatch):
         import alomancy as alomancy_module
 
@@ -68,6 +71,7 @@ class TestSeedLocalExpyreRoot:
 
         assert not (run_dir / ".expyre").exists()
 
+    @pytest.mark.unit
     def test_noop_when_run_local_expyre_already_exists(self, tmp_path, monkeypatch):
         """Idempotent: never overwrites an existing run-local .expyre, so a
         rerun (or a user's deliberately customized one) is left alone."""
@@ -91,6 +95,7 @@ class TestSeedLocalExpyreRoot:
             "systems": {"custom": {"host": "custom"}}
         }
 
+    @pytest.mark.unit
     def test_noop_when_run_local_underscore_expyre_already_exists(
         self, tmp_path, monkeypatch
     ):
@@ -108,6 +113,7 @@ class TestSeedLocalExpyreRoot:
 
         assert not (run_dir / ".expyre").exists()
 
+    @pytest.mark.unit
     def test_survives_copy_failure(self, tmp_path, monkeypatch):
         """A best-effort setup step must never raise -- package import
         cannot hard-fail over a transient filesystem issue."""
@@ -243,6 +249,7 @@ class TestRsyncRetryWarningFilter:
     inside its own warnings.catch_warnings() block since pytest's warnings
     plugin resets the filter list to "always" around every test."""
 
+    @pytest.mark.unit
     def test_rsync_retry_warning_is_silenced(self):
         from expyre.subprocess import FailedSubprocessWarning
 
@@ -258,6 +265,7 @@ class TestRsyncRetryWarningFilter:
             )
             assert caught == []
 
+    @pytest.mark.unit
     def test_final_giveup_warning_still_surfaces(self):
         """The terminal 'giving up' warning (which precedes expyre raising a
         real RuntimeError) must never be silenced -- only the in-progress
@@ -277,6 +285,7 @@ class TestRsyncRetryWarningFilter:
             )
             assert len(caught) == 1
 
+    @pytest.mark.unit
     def test_unrelated_subprocess_retry_warning_still_surfaces(self):
         """Only rsync retry chatter is filtered -- an unrelated transient
         subprocess retry (e.g. ssh during job submission/status polling)

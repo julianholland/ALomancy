@@ -35,12 +35,14 @@ class TestCreateVaspCommand:
             "max_mem_per_node": "90G",
         }
 
+    @pytest.mark.unit
     def test_vasp_path_in_command(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import create_vasp_command
 
         cmd = create_vasp_command(self._para_info(), "/usr/bin/vasp_std")
         assert "/usr/bin/vasp_std" in cmd
 
+    @pytest.mark.unit
     def test_ntasks_in_command(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import create_vasp_command
 
@@ -49,6 +51,7 @@ class TestCreateVaspCommand:
 
 @pytest.mark.unit
 class TestGetVaspInputKwargs:
+    @pytest.mark.unit
     def test_required_defaults_present(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import get_vasp_input_kwargs
 
@@ -56,16 +59,19 @@ class TestGetVaspInputKwargs:
         for key in ("encut", "ediff", "nsw", "ibrion", "prec"):
             assert key in result
 
+    @pytest.mark.unit
     def test_single_point_nsw_zero(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import get_vasp_input_kwargs
 
         assert get_vasp_input_kwargs({})["nsw"] == 0
 
+    @pytest.mark.unit
     def test_single_point_ibrion_minus_one(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import get_vasp_input_kwargs
 
         assert get_vasp_input_kwargs({})["ibrion"] == -1
 
+    @pytest.mark.unit
     def test_overrides_applied(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import get_vasp_input_kwargs
 
@@ -73,6 +79,7 @@ class TestGetVaspInputKwargs:
         assert result["encut"] == 700
         assert result["sigma"] == 0.2
 
+    @pytest.mark.unit
     def test_unset_defaults_preserved(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import get_vasp_input_kwargs
 
@@ -84,6 +91,7 @@ class TestGetVaspInputKwargs:
 
 @pytest.mark.unit
 class TestCreateVaspCalcObject:
+    @pytest.mark.unit
     def test_returns_vasp_instance(self):
         from ase.calculators.vasp import Vasp
 
@@ -94,6 +102,7 @@ class TestCreateVaspCalcObject:
         calc = create_vasp_calc_object(_cu_atoms(), _job_dict(), "/tmp/out")
         assert isinstance(calc, Vasp)
 
+    @pytest.mark.unit
     def test_sp_ibrion_minus_one(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -103,6 +112,7 @@ class TestCreateVaspCalcObject:
         assert calc.int_params["ibrion"] == -1
         assert calc.int_params["nsw"] == 0
 
+    @pytest.mark.unit
     def test_relaxation_sets_ibrion_and_nsw(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -114,6 +124,7 @@ class TestCreateVaspCalcObject:
         assert calc.int_params["ibrion"] == -1
         assert calc.int_params["nsw"] == 0
 
+    @pytest.mark.unit
     def test_ncore_derived_from_ranks_per_node(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -123,6 +134,7 @@ class TestCreateVaspCalcObject:
         calc = create_vasp_calc_object(_cu_atoms(), _job_dict(), "/tmp/out")
         assert calc.int_params.get("ncore") == 6
 
+    @pytest.mark.unit
     def test_vasp_input_kwargs_override_defaults(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -133,6 +145,7 @@ class TestCreateVaspCalcObject:
         calc = create_vasp_calc_object(_cu_atoms(), job, "/tmp/out")
         assert calc.float_params.get("encut") == 700
 
+    @pytest.mark.unit
     def test_pp_path_sets_vasp_pp_path_env_var(self, monkeypatch):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -144,6 +157,7 @@ class TestCreateVaspCalcObject:
         create_vasp_calc_object(_cu_atoms(), job, "/tmp/out")
         assert os.environ["VASP_PP_PATH"] == "/u/antia/pps/potpaw_PBE"
 
+    @pytest.mark.unit
     def test_no_pp_path_leaves_env_var_untouched(self, monkeypatch):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -153,6 +167,7 @@ class TestCreateVaspCalcObject:
         create_vasp_calc_object(_cu_atoms(), _job_dict(), "/tmp/out")
         assert "VASP_PP_PATH" not in os.environ
 
+    @pytest.mark.unit
     def test_non_periodic_molecule_forced_periodic(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -163,6 +178,7 @@ class TestCreateVaspCalcObject:
         create_vasp_calc_object(dimer, _job_dict(), "/tmp/out")
         assert dimer.pbc.all()
 
+    @pytest.mark.unit
     def test_non_periodic_molecule_gets_vacuum(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,
@@ -173,6 +189,7 @@ class TestCreateVaspCalcObject:
         # atoms span 1.0 Angstrom; default padding is 10 Angstrom per side
         assert (dimer.cell.cellpar()[:3] >= 20.0).all()
 
+    @pytest.mark.unit
     def test_already_periodic_atoms_unchanged(self):
         from alomancy.high_accuracy_evaluation.dft.run_vasp import (
             create_vasp_calc_object,

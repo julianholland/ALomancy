@@ -69,7 +69,10 @@ class _CandidateDistanceMatrix(DistanceMatrix):
     """DistanceMatrix whose unique count covers only the candidate rows
     (``first_candidate`` onwards), so deduplicate_lib's binary search
     targets the number of novel candidates rather than all unique rows.
-    Kept reference rows still count as neighbours."""
+
+    Every reference row counts as kept. DistanceMatrix's own rule (>= 0.1.3)
+    only lets kept rows block later ones, so a database row close to another
+    database row would stop blocking candidates near it."""
 
     def __init__(self, dataset_array: np.ndarray, first_candidate: int) -> None:
         super().__init__(
@@ -78,8 +81,15 @@ class _CandidateDistanceMatrix(DistanceMatrix):
         self.first_candidate = first_candidate
 
     def get_dataset_unique_structures(self) -> int:
-        super().get_dataset_unique_structures()
-        return int(self.unique_vector_indices[self.first_candidate :].sum())
+        self.pre_dda_processing()
+        n = self.vector_count
+        distances = self.distance_matrix[:n, :n]
+        unique = np.zeros(n, dtype=bool)
+        unique[: min(self.first_candidate, n)] = True
+        for i in range(self.first_candidate, n):
+            unique[i] = not np.any(distances[i, :i][unique[:i]] < self.tolerance)
+        self.unique_vector_indices = unique
+        return int(unique[self.first_candidate :].sum())
 
 
 def select_novel_indices(
@@ -89,10 +99,10 @@ def select_novel_indices(
     at the largest tolerance that keeps at most *n* candidates; returns
     (indices, tolerance).
 
-    DistanceMatrix (deduplicate_lib >= 0.1.3) keeps rows in order, each
-    unless it is within the tolerance of a row already kept. Reference rows
-    go first, so a candidate close to the database is never kept, and a
-    cluster of candidates contributes its first member.
+    Every reference row counts as kept; candidates follow in order, each
+    kept unless it is within the tolerance of a reference row or of a
+    candidate already kept. So a candidate close to the database is never
+    kept, and a cluster of candidates contributes its first member.
     """
     if len(candidates) <= n:
         return list(range(len(candidates))), 0.0

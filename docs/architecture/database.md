@@ -12,7 +12,7 @@ A sage_lib `Partition` with `storage="hybrid"` (HDF5 + SQLite). It persists `ato
 
 **A DB replaced under a live run is restored on the next write.** When another process opens the DB read-write while a run holds it, sage_lib's `HybridStorage` reads HDF5's lock error as corruption: it renames the live `db_objects.h5`/`db_index.sqlite` (and its -wal/-shm files) to `*.corrupted_<ts>` and creates empty ones. The run's handles still point at the renamed (often since deleted) files, so its writes succeed but never reach disk. Every write method is wrapped in `_guarded_write`:
 - **Detect:** `db_replaced()` compares the (device, inode) of each path with the one recorded when it was opened (`_open`).
-- **Restore:** `_recover_from_open_handles` commits, checkpoints SQLite (`wal_checkpoint(TRUNCATE)`), moves whatever is at the paths to `*.replaced_<ts>` (never deleted), copies the open files back through their descriptors (`_fds_by_inode` lists them from `/proc/self/fd` on Linux, `/dev/fd` on macOS; `_copy_fd` reads with `os.pread` so the open descriptor's position doesn't move), reopens, checks the structure count, and logs an ERROR (event `database_recovered`).
+- **Restore:** `_recover_from_open_handles` commits, checkpoints SQLite (`wal_checkpoint(TRUNCATE)`), moves whatever is at the paths to `*.replaced_<ts>` (never deleted; SQLite sidecars become `<db>.replaced_<ts>-wal`/`-shm`, so the copy still opens with its WAL), copies the open files back through their descriptors (`_fds_by_inode` lists them from `/proc/self/fd` on Linux, `/dev/fd` on macOS; `_copy_fd` reads with `os.pread` so the open descriptor's position doesn't move), reopens, checks the structure count, and logs an ERROR (event `database_recovered`).
 - **Failed write:** if it raises and the DB turns out to be replaced, it recovers and retries once, provided no structures were added.
 - **Open files not found:** a `RuntimeError` saying how to copy them back by hand (`/proc/<pid>/fd` on Linux, `lsof -p <pid>` elsewhere).
 
@@ -26,7 +26,7 @@ Construction is SQLite fsync-bound (3–6 s on btrfs, ~5 ms on tmpfs); tests sha
 - `add_structures()` dedups `IsolatedAtom` and `init_MP` by `(config_type, formula)`; everything else is always added.
 - `count_all_by_config_type_and_formula()` is one O(N) scan returning `{config_type: {formula: count}}`; use it instead of repeated `count_by_config_type_and_formula()` calls.
 - `get_train_atoms`/`get_test_atoms` skip quality-filtered structures by default (`exclude_quality_filtered=True`); `exclude_duplicates=True` skips redundancy-flagged ones. The training-set rule is `is_in_training_set(metadata)`, shared with redundancy removal.
-- Metadata writes from outside the class go through `set_metadata_bulk` (split filters, curation), so they're guarded like the rest. `clear_duplicate_flags(config_types=None)` undoes redundancy flags; the workflow never calls it.
+- Metadata writes from outside the class go through `set_metadata_bulk` (split filters, curation), so they're guarded like the rest. `clear_duplicate_flags(config_types=None)` undoes redundancy flags; the workflow never calls it (each redundancy pass rewrites the flags of the types it deduplicates itself, `core_workflow.md`).
 
 ## Descriptors, predictions, imports
 

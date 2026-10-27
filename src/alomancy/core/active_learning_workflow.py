@@ -61,9 +61,10 @@ lives as a direct child of `general` (see
 `_GENERAL_KWARGS_DEFAULTS`), the same non-nested level as `al_workflow`/
 `elements`, since none of these are specific to one AL workflow. Every key
 falls back to its old constructor default. Where the run's first
-structures come from is `general.start_from` (warm start from train/test
-xyz files, a single xyz file, or a former run's database; cold start when
-absent -- see `_parse_start_from` and docs/starting_a_run.md).
+structures come from is `general.start_from` (warm start from any mix of
+train/test xyz files, xyz files to split and former runs' databases, each
+key a path or a list; cold start when absent -- see `_parse_start_from` and
+docs/starting_a_run.md).
 `general.train_filter`/`general.test_filter` exclude poor-quality DFT
 structures from each split (utils/split_filter.py; the train filter's
 `max_force` defaults to 100 eV/Angstrom, everything else is off), and
@@ -246,7 +247,7 @@ from alomancy.utils.remote_ssh import (
 from alomancy.utils.remove_redundancy import (
     REDUNDANCY_KWARGS_DEFAULTS,
     descriptors_for_atoms,
-    probe_redundancy_tolerance,
+    redundancy_tolerance,
     remove_redundancy_from_partition,
     select_non_redundant,
     training_reference,
@@ -288,6 +289,9 @@ _SUMMARY_HPC_COLUMNS = (
     "partitions",
     "ranks_per_node",
     "max_mem_per_node",
+    # Left out of `alomancy list-hpc` (long); shown here so the run's log
+    # says which DFT/MLIP binary each profile uses.
+    "executable",
 )
 # The best model keeps its trainer's own extension (.model for MACE, .pth
 # for SevenNet), so a loader chosen by extension gets the right format.
@@ -550,23 +554,41 @@ def _find_removed_keys(jobs_dict: dict) -> list[str]:
     return found
 
 
-# general.start_from: where the run's first structures come from. Which
-# source keys are present picks the mode (see docs/starting_a_run.md).
-_START_FROM_KEYS = frozenset(
-    {"train_xyz", "test_xyz", "xyz", "database", "metadata_map"}
-)
+# general.start_from: where the run's first structures come from. Each
+# source key takes a path or a list of paths, and sources can be combined
+# (see docs/starting_a_run.md).
+_START_FROM_SOURCE_KEYS = ("database", "train_xyz", "test_xyz", "xyz")
+_START_FROM_KEYS = frozenset({*_START_FROM_SOURCE_KEYS, "metadata_map"})
 START_MODE_SPLIT_FILES = "split_files"
 START_MODE_SINGLE_XYZ = "single_xyz"
 START_MODE_DATABASE = "database"
+START_MODE_COMBINED = "combined"
 START_MODE_COLD = "cold"
+
+
+def _start_from_paths(key: str, value: Any) -> list[str]:
+    """general.start_from.<key> as a non-empty list of path strings."""
+    paths = [value] if isinstance(value, str | os.PathLike) else value
+    if (
+        not isinstance(paths, list)
+        or not paths
+        or not all(isinstance(p, str | os.PathLike) and str(p) for p in paths)
+    ):
+        raise ValueError(
+            f"general.start_from.{key} must be a path or a list of paths, "
+            f"got {value!r}."
+        )
+    return [str(p) for p in paths]
 
 
 def _parse_start_from(start_from: Any) -> tuple[str, dict]:
     """Validate general.start_from and return ``(mode, start_from)``.
 
-    Modes: train_xyz + test_xyz -> split_files; xyz (a path or list of
-    paths) -> single_xyz; database -> database; none -> cold. More than one
-    source, or half of the train/test pair, raises ValueError.
+    Every source key (database, train_xyz/test_xyz, xyz) takes a path or a
+    list of paths and is returned as a list. Sources can be combined. The
+    mode names what was given: split_files (train_xyz + test_xyz),
+    single_xyz (xyz), database, combined (more than one of these) or cold
+    (none). Half of the train/test pair raises ValueError.
     """
     if start_from is None:
         start_from = {}
@@ -582,40 +604,31 @@ def _parse_start_from(start_from: Any) -> tuple[str, dict]:
     if has_train != has_test:
         raise ValueError(
             "general.start_from.train_xyz and test_xyz must be given together "
-            "(use start_from.xyz for a single file to be split)."
-        )
-    sources = [
-        name
-        for name, present in (
-            ("train_xyz + test_xyz", has_train),
-            ("xyz", "xyz" in start_from),
-            ("database", "database" in start_from),
-        )
-        if present
-    ]
-    if len(sources) > 1:
-        raise ValueError(
-            f"general.start_from has more than one data source ({', '.join(sources)}); "
-            "choose one."
+            "(use start_from.xyz for files to be split)."
         )
     if "metadata_map" in start_from and not (has_train or "xyz" in start_from):
         raise ValueError(
             "general.start_from.metadata_map only applies to xyz imports "
             "(train_xyz/test_xyz or xyz)."
         )
-    if has_train:
-        return START_MODE_SPLIT_FILES, start_from
-    if "xyz" in start_from:
-        xyz = start_from["xyz"]
-        paths = [xyz] if isinstance(xyz, str) else xyz
-        if not isinstance(paths, list) or not paths:
-            raise ValueError(
-                "general.start_from.xyz must be a path or a list of paths."
-            )
-        return START_MODE_SINGLE_XYZ, {**start_from, "xyz": paths}
-    if "database" in start_from:
-        return START_MODE_DATABASE, start_from
-    return START_MODE_COLD, start_from
+    parsed = dict(start_from)
+    for key in _START_FROM_SOURCE_KEYS:
+        if key in parsed:
+            parsed[key] = _start_from_paths(key, parsed[key])
+    kinds = [
+        mode
+        for mode, present in (
+            (START_MODE_DATABASE, "database" in parsed),
+            (START_MODE_SPLIT_FILES, has_train),
+            (START_MODE_SINGLE_XYZ, "xyz" in parsed),
+        )
+        if present
+    ]
+    if not kinds:
+        return START_MODE_COLD, parsed
+    if len(kinds) > 1:
+        return START_MODE_COMBINED, parsed
+    return kinds[0], parsed
 
 
 # general keys every workflow accepts; a workflow adds its own KWARGS_KEY.
@@ -1080,6 +1093,9 @@ class ActiveLearningWorkflow(ABC):
         self._db: GlobalDatabase | None = None
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
+        # Set by each curation pass; the pre-DFT selection reuses it.
+        self._redundancy_tolerance: float | None = None
+        self._redundancy_curated = False
         self.redundancy_kwargs = validate_redundancy_kwargs(
             general_config.get("redundancy_kwargs")
         )
@@ -1390,17 +1406,20 @@ class ActiveLearningWorkflow(ABC):
 
     def _import_start_data(self) -> None:
         """Bring general.start_from's data into the global DB. Every mode
-        then continues through the same DB-driven initialization."""
-        if self.start_mode == START_MODE_SPLIT_FILES:
-            self._import_xyz(self.start_from["train_xyz"], split="train")
-            self._import_xyz(self.start_from["test_xyz"], split="test")
-        elif self.start_mode == START_MODE_SINGLE_XYZ:
-            for path in self.start_from["xyz"]:
-                self._import_xyz(path)
-        elif self.start_mode == START_MODE_DATABASE:
-            self.db.import_from_database(
-                self.start_from["database"], elements=self._required_elements()
-            )
+        then continues through the same DB-driven initialization.
+
+        Databases are imported first, then train_xyz/test_xyz, then xyz,
+        each list in order. Exact-duplicate types (IsolatedAtom, init_MP)
+        keep the first import's copy, so a former run's isolated-atom
+        energies win over an xyz file's."""
+        for path in self.start_from.get("database", []):
+            self.db.import_from_database(path, elements=self._required_elements())
+        for path in self.start_from.get("train_xyz", []):
+            self._import_xyz(path, split="train")
+        for path in self.start_from.get("test_xyz", []):
+            self._import_xyz(path, split="test")
+        for path in self.start_from.get("xyz", []):
+            self._import_xyz(path)
         logger.info(
             "Start mode: %s (global DB now holds %d structures).",
             self.start_mode,
@@ -1539,7 +1558,7 @@ class ActiveLearningWorkflow(ABC):
 
         target_config_types = set(self.dataset_kwargs["target_config_types"])
         if (
-            self.start_mode == START_MODE_SINGLE_XYZ
+            self.start_from.get("xyz")
             and not test_xyzs
             and EXTERNAL_CONFIG_TYPE not in target_config_types
             and any(a.info.get("config_type") == EXTERNAL_CONFIG_TYPE for a in untagged)
@@ -1626,8 +1645,8 @@ class ActiveLearningWorkflow(ABC):
     def _apply_split_filters(self) -> None:
         """Re-flag train/test structures against general.train_filter /
         general.test_filter. Always runs (a disabled filter clears old
-        flags), after redundancy removal and before the next loop reads the
-        splits."""
+        flags), before curation and redundancy removal, so those only see
+        structures that pass the filters."""
         apply_split_filter(self.db, "train", self.train_filter)
         apply_split_filter(self.db, "test", self.test_filter)
 
@@ -1782,7 +1801,7 @@ class ActiveLearningWorkflow(ABC):
         """Everything before the first loop: curation-policy check, pre-run
         checks, then resume from the database or build the initial
         train/test set (cold/warm start, see general.start_from), followed
-        by redundancy removal, the train/test filters and curation. Returns
+        by the train/test filters, curation and redundancy removal. Returns
         the first loop to run."""
         if self.jobs_dict.get("dataset_curation"):
             policy_path = Path("results/curation_policy.json")
@@ -1831,12 +1850,13 @@ class ActiveLearningWorkflow(ABC):
         if self.jobs_dict.get("dataset_curation"):
             curate_database(self.db, self.jobs_dict["dataset_curation"])
         if self.remove_redundancy:
-            remove_redundancy_from_partition(
+            self._redundancy_tolerance = remove_redundancy_from_partition(
                 self.db,
                 config_list=self._redundancy_config_types(),
                 probe_path=Path("results", base_name, _REDUNDANCY_PROBE_FILENAME),
                 settings=self.redundancy_kwargs,
             )
+            self._redundancy_curated = True
 
     def _redundancy_config_types(self) -> list[str]:
         """config_types redundancy removal deduplicates."""
@@ -1849,26 +1869,36 @@ class ActiveLearningWorkflow(ABC):
     ) -> Callable[[list[int], int], list[int]] | None:
         """A selector for *candidates* that, given their indices best
         first and a count n, returns the first n that redundancy removal
-        wouldn't flag at the end of the loop (select_non_redundant), so no
-        DFT is spent on them. None when redundancy removal is off or no
-        tolerance qualifies on the current training set."""
+        wouldn't flag (select_non_redundant), so no DFT is spent on them.
+        Uses the tolerance the last curation pass chose (every start and
+        every loop end run one before selection), probing the same pool
+        only if none has run in this process. None when redundancy removal
+        is off or no tolerance qualifies on the current training set."""
         if not self.remove_redundancy:
             return None
-        reference = training_reference(self.db, self._redundancy_config_types())
-        tolerance, _record = probe_redundancy_tolerance(
-            reference, settings=self.redundancy_kwargs
-        )
+        if self._redundancy_curated:
+            tolerance = self._redundancy_tolerance
+        else:
+            tolerance = redundancy_tolerance(
+                self.db,
+                self._redundancy_config_types(),
+                settings=self.redundancy_kwargs,
+            )
         if tolerance is None:
             logger.info(
                 "No redundancy tolerance on the current training set; "
                 "selection is not checked for redundancy."
             )
             return None
+        reference = training_reference(self.db, self._redundancy_config_types())
         descriptors = descriptors_for_atoms(candidates)
 
         def select(ranked: list[int], n: int) -> list[int]:
             chosen = select_non_redundant(descriptors[ranked], reference, tolerance, n)
-            replaced = (chosen[-1] + 1 - len(chosen)) if chosen else 0
+            # The walk stops at the n-th accepted pick, or reads every
+            # candidate when there aren't n.
+            examined = chosen[-1] + 1 if len(chosen) == n else len(ranked)
+            replaced = examined - len(chosen)
             if replaced:
                 logger.info(
                     "Replaced %d redundant pick(s) with the next candidates in "
@@ -2396,8 +2426,8 @@ class ActiveLearningWorkflow(ABC):
         self.db.add_structures(new_test_data, split="test", skip_duplicates=False)
 
     def finish_loop(self, ctx: LoopContext) -> None:
-        """End of a loop: redundancy removal, train/test filters and
-        curation on the grown database, then mark the loop done."""
+        """End of a loop: train/test filters, curation and redundancy
+        removal on the grown database, then mark the loop done."""
         self._curate_dataset(ctx.base_name)
         self._mark_phase_done(ctx.base_name, "loop")
         if self.report:

@@ -18,12 +18,17 @@ Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP
 - [x] `GlobalDatabase.clear_duplicate_flags`
 - [x] `exempt_config_types` for `train_filter` / `test_filter`
 - [x] Best-model relative (percentage) error plot in the report
+- [x] `start_from`: any number of databases and xyz files, each key a path or a list, combined
+- [x] Redundancy removal: a repeated pass changes nothing (flagged structures stay in the pool, flags rewritten each pass); the pre-DFT check reuses the loop's tolerance
+- [x] 1.0.3 review fixes: empty-selection restart crash, novelty selection near database rows, relative energy error without formation energies, recovered WAL naming, `selection_redundant_shortfall` event, finite `tolerance`, committee selection cut, executable in the startup HPC table, guarded `clear()`/migration, per-test marks
 
 ## 1.1 — production reliability and paper plots
 - [ ] DFT failure triage: classify, retry the retryable, report DFT yield per loop
 - [ ] Retry failed committee prediction jobs once, with a minimum
 - [ ] Prediction jobs ending with "remote status done but no _succeeded or _error" (committee_mace_qe, loop 3): find the cause
-- [ ] A loop that selects no structures for DFT: check that DFT and adding to the database handle an empty list, or skip them
+- [ ] Read-only database opens for readers (`alomancy results --replot`, `start_from.database` source, migration): a read-write open of a live run's DB makes sage_lib swap in empty files; an import from a live run records "0 imported" for good. A read-only open of a held DB fails with a lock error, so readers must catch it
+- [ ] Redundancy plateau rule: on a pool without duplicates it still flags a few distinct structures (lowest non-all-kept plateau), and on a highly redundant pool the cap vetoes the plateau instead of picking a more persistent one
+- [ ] EZGA report section: uses the ignored `structure_generation.name` for its path and reads `run_ezga_kwargs` instead of `ezga_kwargs`
 - [ ] Redundancy descriptor: `char_vec_128` has no usable plateau on amorphous data (the cap hits); try a per-atom-normalised RDF or SOAP
 - [ ] Upstream sage_lib: don't treat an HDF5 lock error as corruption (it renames the live files)
 - [ ] Validate EZGA settings at construction; EZGA `kwargs_schema`

@@ -29,6 +29,9 @@ EVENT_DESCRIPTIONS = {
     "redundancy_flagged": "redundancy removal passes",
     "redundancy_cap_hit": "redundancy removal skipped (would flag too many)",
     "selection_redundant_replaced": "redundant picks replaced before DFT",
+    "selection_redundant_shortfall": "too few non-redundant candidates",
+    "config_key_ignored": "config keys no longer read (ignored)",
+    "database_recovered": "database restored after being replaced on disk",
     "fit_retry": "model fits retried",
     "fit_missing": "model fits missing after retry",
     "fewer_candidates": "fewer candidates than requested",
@@ -87,11 +90,19 @@ def _percent_error_lines(model: dict) -> list[str]:
         if values:
             parts.append(f"{split} {values}")
     lines = [f"Median relative error: {'; '.join(parts)}."] if parts else []
-    lines.append(
-        f"Energies with |formation energy| < {PERCENT_ENERGY_FLOOR} eV/atom and "
-        f"atoms with |F| < {PERCENT_FORCE_FLOOR} eV/Å are left out; force error "
-        "is |ΔF|/|F| per atom."
-    )
+    if model.get("percent_error_formation", True):
+        lines.append(
+            f"Energies with |formation energy| < {PERCENT_ENERGY_FLOOR} eV/atom "
+            f"and atoms with |F| < {PERCENT_FORCE_FLOOR} eV/Å are left out; force "
+            "error is |ΔF|/|F| per atom."
+        )
+    else:
+        lines.append(
+            "No relative energy error: there is no isolated-atom energy for every "
+            f"element, so no formation energies. Atoms with |F| < "
+            f"{PERCENT_FORCE_FLOOR} eV/Å are left out; force error is |ΔF|/|F| "
+            "per atom."
+        )
     return lines
 
 

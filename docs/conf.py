@@ -53,8 +53,9 @@ source_suffix = {
 master_doc = "index"
 
 # docs/architecture/ holds contributor notes on each subsystem (indexed from
-# CLAUDE.md), read on GitHub rather than published.
-exclude_patterns = ["_build", "architecture"]
+# CLAUDE.md), and docs/general_reports/ notes from real runs; both are read
+# on GitHub rather than published.
+exclude_patterns = ["_build", "architecture", "general_reports"]
 
 # HTML theme
 html_theme = "sphinx_rtd_theme"

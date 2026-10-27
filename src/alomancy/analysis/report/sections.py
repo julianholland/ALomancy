@@ -251,7 +251,8 @@ def committee_section(
     stats: dict, *, base_name: str, plots_dir: Path | None
 ) -> Section | None:
     """Committee uncertainty: force std-dev of every candidate, with the
-    cut that the selected structures sit above."""
+    cut that the selected structures sit above (the lowest selected one;
+    redundant picks skipped before DFT can leave gaps above it)."""
     import polars as pl
 
     from alomancy.analysis.report.plots import histogram
@@ -262,9 +263,14 @@ def committee_section(
     df = pl.read_csv(path)
     if "max_std_dev" not in df.columns or df.is_empty():
         return None
-    selected = (stats.get("dft") or {}).get("submitted") or 0
     values = df["max_std_dev"].sort(descending=True).to_list()
-    cut = values[min(selected, len(values)) - 1] if selected else None
+    if "selected" in df.columns:
+        chosen = df.filter(pl.col("selected"))["max_std_dev"]
+        selected = len(chosen)
+        cut = min(chosen.to_list()) if selected else None
+    else:  # written before the selection was recorded: assume the top N
+        selected = (stats.get("dft") or {}).get("submitted") or 0
+        cut = values[min(selected, len(values)) - 1] if selected else None
     section = Section(
         "Selection: committee uncertainty",
         [

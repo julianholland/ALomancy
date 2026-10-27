@@ -245,8 +245,10 @@ def test_descriptor_cache_is_dimension_specific(tmp_path, monkeypatch):
 
     calls = _count_descriptor_calls(monkeypatch)
     remove_redundancy_from_partition(db, config_list=["init_amorphous"], dimensions=64)
-    # Every structure still compared gets a fresh 64-long descriptor.
-    assert len(calls) == still_in_training
+    # Every structure compared (earlier duplicates included) gets a fresh
+    # 64-long descriptor.
+    assert len(calls) == 3
+    assert still_in_training <= 3
 
 
 @pytest.mark.unit
@@ -398,6 +400,8 @@ def test_fixed_tolerance_overrides_the_probe(tmp_path):
         {"no_such_key": 1},
         {"tolerance": -1.0},
         {"tolerance": "0.2"},
+        {"tolerance": float("inf")},
+        {"tolerance": float("nan")},
         {"probe_steps_per_structure": 0},
         {"min_plateau_width": 1.0},
         {"max_flagged_fraction": 0.0},
@@ -412,28 +416,33 @@ def test_bad_redundancy_kwargs_are_rejected(cfg):
 
 
 # ---------------------------------------------------------------------------
-# Only structures still in the training set are compared
+# Which structures are compared, and flags rewritten on every pass
 # ---------------------------------------------------------------------------
+
+_BASE = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+_NEAR1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
+
+
+def _flags(db) -> list[bool]:
+    return [
+        bool(c.AtomPositionManager.metadata.get("is_duplicate", False))
+        for c in db.partition.list_containers()
+    ]
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "out_of_training", [{"is_duplicate": True}, {"is_quality_filtered": True}]
-)
-def test_structure_out_of_training_never_flags_another(tmp_path, out_of_training):
-    """base is already out of the training set; near1, its near-copy, is
-    now the earliest of its group and must be kept."""
+def test_quality_filtered_structure_never_flags_another(tmp_path):
+    """base is out of the training set; near1, its near-copy, is now the
+    earliest of its group and must be kept."""
     from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
 
-    base = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
-    near1 = [[0.0001, 0.0, 0.0], [2.0001, 0.0, 0.0]]
     db = GlobalDatabase(str(tmp_path / "db"))
     db.add_structures(
-        [_make_s2(base), _make_s2(near1), *_distinct_s2(4)[2:]],
+        [_make_s2(_BASE), _make_s2(_NEAR1), *_distinct_s2(4)[2:]],
         split="train",
         skip_duplicates=False,
     )
-    db.set_metadata_bulk({0: out_of_training})
+    db.set_metadata_bulk({0: {"is_quality_filtered": True}})
 
     remove_redundancy_from_partition(
         db, config_list=["init_amorphous"], settings={"tolerance": 0.5}
@@ -442,6 +451,89 @@ def test_structure_out_of_training_never_flags_another(tmp_path, out_of_training
     kept = db.get_train_atoms()
     assert len(kept) == 3
     assert any(np.isclose(a.positions[0, 0], 0.0001) for a in kept)
+
+
+@pytest.mark.unit
+def test_earlier_duplicate_flag_is_reevaluated(tmp_path):
+    """A stale flag (e.g. from deduplicate-lib 0.1.2) on base is rewritten:
+    base is the earliest of its group, so it is kept and near1 flagged."""
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(
+        [_make_s2(_BASE), _make_s2(_NEAR1), *_distinct_s2(4)[2:]],
+        split="train",
+        skip_duplicates=False,
+    )
+    db.set_metadata_bulk({0: {"is_duplicate": True}})
+
+    remove_redundancy_from_partition(
+        db, config_list=["init_amorphous"], settings={"tolerance": 0.5}
+    )
+
+    assert _flags(db) == [False, True, False, False]
+
+
+@pytest.mark.unit
+def test_repeated_passes_change_nothing(tmp_path):
+    """With no new data, every pass after the first chooses the same
+    tolerance and flags the same structures (no ratchet)."""
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    rng = np.random.default_rng(0)
+    lengths = rng.uniform(1.5, 4.5, size=30)
+    structures = [_make_s2([[0.0, 0.0, 0.0], [d, 0.0, 0.0]]) for d in lengths]
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(structures, split="train", skip_duplicates=False)
+
+    outcomes = []
+    for _ in range(4):
+        tolerance = remove_redundancy_from_partition(db, config_list=["init_amorphous"])
+        outcomes.append((tolerance, _flags(db)))
+
+    assert all(outcome == outcomes[0] for outcome in outcomes[1:])
+
+
+@pytest.mark.unit
+def test_no_tolerance_clears_earlier_flags(tmp_path):
+    """When no tolerance qualifies, nothing is flagged: flags from an
+    earlier pass are cleared too."""
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    near2 = [[0.0002, 0.0, 0.0], [2.0002, 0.0, 0.0]]
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(
+        [_make_s2(p) for p in (_BASE, _NEAR1, near2)] + _distinct_s2(4)[2:],
+        split="train",
+        skip_duplicates=False,
+    )
+    db.set_metadata_bulk({1: {"is_duplicate": True}, 2: {"is_duplicate": True}})
+
+    tolerance = remove_redundancy_from_partition(
+        db, config_list=["init_amorphous"], settings={"max_flagged_fraction": 0.3}
+    )
+
+    assert tolerance is None
+    assert not any(_flags(db))
+
+
+@pytest.mark.unit
+def test_other_config_types_keep_their_flags(tmp_path):
+    from alomancy.utils.remove_redundancy import remove_redundancy_from_partition
+
+    other = _make_s2(_BASE)
+    other.info["config_type"] = "init_dimer"
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures(
+        [other, *_distinct_s2(4)[1:]], split="train", skip_duplicates=False
+    )
+    db.set_metadata_bulk({0: {"is_duplicate": True}})
+
+    remove_redundancy_from_partition(
+        db, config_list=["init_amorphous"], settings={"tolerance": 0.01}
+    )
+
+    assert _flags(db)[0] is True
 
 
 # ---------------------------------------------------------------------------

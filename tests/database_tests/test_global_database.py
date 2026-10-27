@@ -1330,6 +1330,24 @@ class TestReplacedDatabaseRecovery:
         assert GlobalDatabase(str(db_path)).size == 3
 
     @pytest.mark.unit
+    def test_moved_aside_wal_stays_paired_with_its_database(self, tmp_path):
+        """SQLite only reads '<name>-wal' with '<name>', so the moved-aside
+        copy must be '<db>.replaced_<ts>-wal', not '<db>-wal.replaced_<ts>'."""
+        db_path = tmp_path / "db"
+        db = GlobalDatabase(str(db_path))
+        db.add_structures([_c_atoms(-1.0)])
+        self._replace_like_sage_lib(db_path, delete_backups=True)
+        root = db_path / "hybrid_local"
+        # What another process still writing to the replacement leaves.
+        (root / "db_index.sqlite-wal").write_bytes(b"other process")
+
+        db.add_structures([_c_atoms(-2.0)])
+
+        (wal,) = root.glob("db_index.sqlite.replaced_*-wal")
+        assert wal.read_bytes() == b"other process"
+        assert (root / wal.name.removesuffix("-wal")).exists()
+
+    @pytest.mark.unit
     def test_recovery_without_proc_uses_dev_fd(self, tmp_path, monkeypatch):
         """macOS has no /proc: the open files are found through /dev/fd."""
         import os

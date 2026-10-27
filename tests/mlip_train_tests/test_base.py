@@ -157,41 +157,50 @@ def test_kwargs_merge_defaults_and_effective_kwargs():
 
 @pytest.mark.unit
 class TestResolveIsolatedAtomEnergies:
+    @pytest.mark.unit
     def test_database_energies_used_when_unset(self):
         assert EMTTrainer({}).resolve_isolated_atom_energies(["Cu"], {"Cu": -3.0}) == {
             "Cu": -3.0
         }
 
+    @pytest.mark.unit
     def test_explicit_setting_wins(self):
         trainer = EMTTrainer({"emt_test_kwargs": {"reference": {"Cu": -1.0}}})
         assert trainer.resolve_isolated_atom_energies(["Cu"], {"Cu": -3.0}) == {
             "Cu": -1.0
         }
 
+    @pytest.mark.unit
     def test_string_passes_through_unchecked(self):
         trainer = EMTTrainer({"emt_test_kwargs": {"reference": "average"}})
         assert trainer.resolve_isolated_atom_energies(["Cu", "O"], None) == "average"
 
+    @pytest.mark.unit
     def test_atomic_number_keys_cover_elements(self):
         trainer = EMTTrainer({"emt_test_kwargs": {"reference": {29: -1.0}}})
         assert trainer.resolve_isolated_atom_energies(["Cu"], None) == {29: -1.0}
 
+    @pytest.mark.unit
     def test_missing_element_raises(self):
         with pytest.raises(ValueError, match=r"emt_test_kwargs\.reference.*\['O'\]"):
             EMTTrainer({}).resolve_isolated_atom_energies(["Cu", "O"], {"Cu": -3.0})
 
+    @pytest.mark.unit
     def test_no_source_with_elements_raises(self):
         with pytest.raises(ValueError, match="IsolatedAtom"):
             EMTTrainer({}).resolve_isolated_atom_energies(["Cu"], {})
 
+    @pytest.mark.unit
     def test_no_source_and_no_elements_gives_none(self):
         assert EMTTrainer({}).resolve_isolated_atom_energies(None, None) is None
 
+    @pytest.mark.unit
     def test_backend_without_the_setting_skips_everything(self, monkeypatch):
         monkeypatch.setattr(EMTTrainer, "ISOLATED_ATOM_ENERGIES_KWARG", None)
         assert EMTTrainer({}).resolve_isolated_atom_energies(["Cu"], {}) is None
         assert "reference" not in EMTTrainer({}).effective_kwargs()
 
+    @pytest.mark.unit
     def test_resolved_energies_reach_fit(self, tmp_path, splits):
         EMTTrainer({}).train(
             splits["train"],

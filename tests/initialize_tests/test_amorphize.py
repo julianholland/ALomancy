@@ -6,6 +6,7 @@ import pytest
 
 @pytest.mark.unit
 class TestCreateAmorphousAtomsList:
+    @pytest.mark.unit
     def test_returns_correct_count(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -14,6 +15,7 @@ class TestCreateAmorphousAtomsList:
         )
         assert len(result) == 3
 
+    @pytest.mark.unit
     def test_zero_structures_returns_empty(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -22,6 +24,7 @@ class TestCreateAmorphousAtomsList:
         )
         assert result == []
 
+    @pytest.mark.unit
     def test_config_type(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -30,6 +33,7 @@ class TestCreateAmorphousAtomsList:
         )
         assert all(a.info["config_type"] == "init_amorphous" for a in result)
 
+    @pytest.mark.unit
     def test_needs_relaxation_true(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -38,6 +42,7 @@ class TestCreateAmorphousAtomsList:
         )
         assert all(a.info["needs_relaxation"] is True for a in result)
 
+    @pytest.mark.unit
     def test_correct_atom_count_per_structure(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -46,6 +51,7 @@ class TestCreateAmorphousAtomsList:
         )
         assert all(len(a) == 3 for a in result)
 
+    @pytest.mark.unit
     def test_reproducibility_with_same_seed(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -58,6 +64,7 @@ class TestCreateAmorphousAtomsList:
         for a1, a2 in zip(r1, r2):
             np.testing.assert_allclose(a1.positions, a2.positions)
 
+    @pytest.mark.unit
     def test_custom_composition_list(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -72,6 +79,7 @@ class TestCreateAmorphousAtomsList:
         assert len(result) == 2
         assert all(len(a) == 2 for a in result)
 
+    @pytest.mark.unit
     def test_pbc_set(self):
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
@@ -80,6 +88,7 @@ class TestCreateAmorphousAtomsList:
         )
         assert all(result[0].get_pbc())
 
+    @pytest.mark.unit
     def test_fewer_compositions_than_structures_fills_by_sampling(self):
         """When compositions < num_structures, extras are sampled from existing."""
         from alomancy.initialize.amorphize import create_amorphous_atoms_list
