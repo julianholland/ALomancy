@@ -30,7 +30,8 @@ structure_generation:
   hpc: "my_gpu_hpc"
   ezga_kwargs:
     max_generations: 10
-    population_size: 20
+    multiobjective:
+      size: 20                         # about max_generations x size structures
 
 high_accuracy_evaluation:
   evaluator: "vasp"

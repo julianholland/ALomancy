@@ -28,10 +28,8 @@ Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP
 - [ ] Prediction jobs ending with "remote status done but no _succeeded or _error" (committee_mace_qe, loop 3): find the cause
 - [ ] Read-only database opens for readers (`alomancy results --replot`, `start_from.database` source, migration): a read-write open of a live run's DB makes sage_lib swap in empty files; an import from a live run records "0 imported" for good. A read-only open of a held DB fails with a lock error, so readers must catch it
 - [ ] Redundancy plateau rule: on a pool without duplicates it still flags a few distinct structures (lowest non-all-kept plateau), and on a highly redundant pool the cap vetoes the plateau instead of picking a more persistent one
-- [ ] EZGA report section: uses the ignored `structure_generation.name` for its path and reads `run_ezga_kwargs` instead of `ezga_kwargs`
 - [ ] Redundancy descriptor: `char_vec_128` has no usable plateau on amorphous data (the cap hits); try a per-atom-normalised RDF or SOAP
 - [ ] Upstream sage_lib: don't treat an HDF5 lock error as corruption (it renames the live files)
-- [ ] Validate EZGA settings at construction; EZGA `kwargs_schema`
 - [ ] Pin a tested `expyre-wfl` range; test the patched expyre attributes exist
 - [ ] Plotting overhaul: each plot at the right level (run-level like timings at the top, plug-in plots with their plug-in); `plots: true` calls every relevant module's plotting; `plot_loop` in the base class
 - [ ] Plot the distribution of committee uncertainty
@@ -44,7 +42,7 @@ Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP
 - [ ] Catch ExPyRe/wfl output and replace it with a structure status line
 - [ ] Sort out the pseudopotential setup: central repository (SSSP default, lowercase-element names, named set + per-element overrides)
 - [ ] Manual check that VASP converged
-- [ ] Example configs for VASP, EZGA, NPT MD; EZGA docs page (#44)
+- [ ] Example configs for VASP, NPT MD (EZGA done in 1.0.4: `docs/ezga.md`)
 - [ ] Installation docs: dependency stack and pins
 - [ ] `docs/deprecations.md`: legacy shims with removal planned for 2.0
 - [ ] mypy and docs build gate CI; stop filtering all warnings in tests

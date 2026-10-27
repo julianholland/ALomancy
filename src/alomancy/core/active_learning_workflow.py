@@ -119,10 +119,10 @@ generator-agnostic (`structure_generation.num_of_structures_to_generate`,
 `structure_generation.structure_selection_kwargs` for the skeleton's own
 `filter_eligible_structures` pre-filter, called once before any generator
 dispatch) stay at the top `structure_generation` level rather than being
-duplicated per-generator; MD-specific settings that would make no sense
-for EZGA (`select_diverse_seeds`' own `structure_selection_kwargs` --
-`num_of_md_starts`/`enforce_chemical_diversity`/`seed`) live
-nested inside `md_kwargs` instead. Which calculator drives MD or EZGA
+duplicated per-generator; each generator's own seed choice
+(`select_diverse_seeds`' `structure_selection_kwargs`: MD's
+`num_of_md_starts`, EZGA's `num_of_seeds`) lives nested inside its
+`md_kwargs`/`ezga_kwargs` instead. Which calculator drives MD or EZGA
 is not a generator setting at all: generators get a `CalculatorSpec` for
 the model `training.trainer` trained (`calculator_spec`). `training.max_num_epochs`
 likewise moves inside `mace_kwargs`: it's a MACE-specific training
@@ -1148,9 +1148,29 @@ class ActiveLearningWorkflow(ABC):
                     },
                 },
             )
+        self._validate_generator_kwargs(jobs_dict.get("structure_generation"))
         # After setup_logging so the warnings reach the console/log file.
         self._warn_about_unread_keys()
         self.validate_settings()
+
+    def _validate_generator_kwargs(self, sg_config: Any) -> None:
+        """Run the structure generator's own construction-time check
+        (registry entry validate_kwargs, e.g. EZGA's), which may store its
+        resolved settings back into *sg_config*. An unknown generator is
+        reported by the config-key check, not here."""
+        if not isinstance(sg_config, dict):
+            return
+        try:
+            entry = resolve("structure_generator", sg_config.get("generator", "md"))
+        except ValueError:
+            return
+        validate = getattr(entry, "validate_kwargs", None)
+        if validate is not None:
+            validate(
+                sg_config,
+                elements=self._required_elements(),
+                seed=self.seed,
+            )
 
     def _warn_about_unread_keys(self) -> None:
         """Warn about every config key the run will never read (configs/
@@ -2273,6 +2293,8 @@ class ActiveLearningWorkflow(ABC):
             name=_STRUCTURE_GENERATION_NAME,
             hpc=sg_config["hpc"],
             max_time=sg_config["max_time"],
+            elements=list(self.jobs_dict.get("general", {}).get("elements") or []),
+            seed=self.seed,
         )
         kept: list[Atoms] = filter_structures_by_min_bond_distance(candidates)
         per_loop = self.num_of_structures_per_loop

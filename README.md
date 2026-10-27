@@ -133,9 +133,10 @@ training:
 ```yaml
 structure_generation:
   generator: "ezga"
-  ezga_kwargs:
-    max_generations: 10
-    population_size: 20
+  ezga_kwargs:            # EZGA's own config; ALomancy adds the model and paths
+    max_generations: 20
+    multiobjective:
+      size: 50            # 20 x 50 structures, at least num_of_structures_to_generate
 ```
 
 ...or keep MD but run it at constant pressure:
@@ -215,7 +216,7 @@ structure_generation:
   same evaluation, best-model selection and plots as MACE.
 - **MD**: Langevin NVT or Langevin NPT (variable cell) with reproducible
   per-run seeds. Optional full-resolution trajectories.
-- **EZGA**: genetic-algorithm structure search with configurable mutations
+- **EZGA**: genetic-algorithm structure search (EZGA's own config, optional HiSE supercell escalation); walkthrough in `docs/ezga.md`
   (rattle, strain, add, remove).
 - **Quantum ESPRESSO / VASP**: single points, or geometry optimisation below
   a force ceiling. 

@@ -15,8 +15,8 @@ architecture:
    already-eligible population, assigns per-job diversity metadata
    (``md_seed``) and provenance tagging (``config_type``/``job_id``), and
    handles reuse-with-replacement when the requested concurrency exceeds
-   the pool size. EZGA does not call this -- it uses the eligible
-   population directly (population-based genetic search).
+   the pool size. EZGA calls it too, capped at the pool size so it never
+   pads with duplicates, to pick its ``num_of_seeds`` starting structures.
 """
 
 import logging

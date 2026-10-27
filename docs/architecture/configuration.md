@@ -26,7 +26,7 @@ Anything that would otherwise fail hours into a run is checked when the workflow
 - **ignored** if it's an old key no longer read (a phase's `name`; event `config_key_ignored`);
 - else **unrecognised** (one combined WARNING, event `config_key_unrecognised`).
 
-External packages' settings (`mace_kwargs`, `sevennet_kwargs`, `ezga_kwargs`, `qe_kwargs`, `vasp_kwargs`) and pass-through blocks (`hpc`, filters, `start_from`, `quality_gate`, `dataset_curation`) are `OPEN`: too many keys to list, or validated elsewhere.
+External packages' settings (`mace_kwargs`, `sevennet_kwargs`, `ezga_kwargs`, `qe_kwargs`, `vasp_kwargs`) and pass-through blocks (`hpc`, filters, `start_from`, `quality_gate`, `dataset_curation`) are `OPEN`: too many keys to list, or validated elsewhere. `ezga_kwargs` is checked at construction by EZGA's own schema, through the generator's registry hook `validate_kwargs` (`structure_generation.md`).
 
 A module whose settings ALomancy owns should register a `kwargs_schema`, and a new key a section reads must be added to its schema. `tests/test_example_configs.py` builds every example config, the README config and its one-line edits, and every config block in `docs/examples.md` and `docs/starting_a_run.md`, failing on any config warning.
 

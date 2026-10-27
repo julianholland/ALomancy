@@ -1,0 +1,65 @@
+# Committee uncertainty with MACE, exploring with EZGA (a genetic algorithm)
+# and HiSE (hierarchical supercell escalation) instead of MD. Each loop:
+# EZGA searches from 8 diverse training structures with the best model,
+# in the training cells, then tiled 2x1x1, then 2x2x1 with a short MD
+# burst at 300-600 K; the committee scores the last stage's
+# structures and the most uncertain go to DFT.
+# Walkthrough: docs/ezga.md (this file is its config, checked by
+# tests/test_example_configs.py).
+#
+# HPC profiles ('my_gpu_hpc', 'my_cpu_hpc') come from ~/.alomancy/hpc_config.yaml
+# (create them with `alomancy add-hpc`). Run: `alomancy run committee_mace_ezga_hise.yaml`.
+
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["Cu", "O"]
+  num_of_al_loops: 10
+  num_of_structures_per_loop: 25     # selected for DFT each loop
+  verbose: 1
+  dataset_kwargs:
+    target_config_types: ["init_MP", "init_amorphous"]
+    test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 3    # minimum 3
+
+initialization:
+  max_time: "2H"
+  hpc: "my_cpu_hpc"
+  amorphous_kwargs:
+    num_of_amorphous_structures: 50
+    num_of_atoms_per_amorphous: 10   # small seeds: 2x2x1 makes them 40 atoms
+    densities_list: [5.0, 7.0]
+
+training:
+  trainer: "mace"
+  max_time: "5H"
+  hpc: "my_gpu_hpc"
+  mace_kwargs:
+    max_num_epochs: "dynamic"        # resolved from the training-set size
+
+structure_generation:
+  generator: "ezga"
+  num_of_structures_to_generate: 250 # candidates the committee scores per loop
+  max_time: "12H"                    # walltime of the one EZGA job
+  hpc: "my_gpu_hpc"                  # EZGA relaxes with the model: use a GPU
+  structure_selection_kwargs:        # which training structures may seed EZGA
+    selectable_configs: ["init_MP", "init_amorphous"]  # (+ earlier loops' picks)
+  ezga_kwargs:                      # EZGA's own config, plus ALomancy's two keys
+    structure_selection_kwargs:
+      num_of_seeds: 8                # diverse training structures to start from
+    hise:
+      supercells: [[1, 1, 1], [2, 1, 1], [2, 2, 1]]  # a new cell each stage
+      overrides:                     # one value per stage
+        max_generations: [20, 10, 2]
+        multiobjective.size: [100, 100, 250]
+        simulator.calculator:        # ase_calculator settings, over the defaults
+          - {}
+          - {}
+          - {nvt_steps: 40, T: [300, 600]}
+
+high_accuracy_evaluation:
+  evaluator: "qe"
+  max_time: "30m"
+  max_go_time: "4H"
+  force_ceiling: 100.0
+  hpc: "my_cpu_hpc"

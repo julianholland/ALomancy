@@ -4,6 +4,32 @@ This page tracks deprecated features and breaking changes planned for future
 ALomancy releases, so users can migrate ahead of time. See `CHANGELOG.md` for
 changes that have already shipped.
 
+## Shipped in 1.0.4
+
+### `structure_generation.ezga_kwargs` is EZGA's own config
+
+- **Status**: changed in 1.0.4
+- **What changed**: `ezga_kwargs` used to hold five ALomancy settings that
+  ALomancy translated into a fixed EZGA config (with Pd hard-coded). It now
+  is EZGA's own config, the dict EZGA's YAML file holds; ALomancy adds only
+  what it owns (the trained model as calculator, seeds, paths, `resume`,
+  `rng`). The old keys raise with their new home:
+  - `population_size` → `multiobjective.size`;
+  - `mutation_operators` → `mutation_funcs` (EZGA's list of mutation
+    factories);
+  - `min_atoms` / `max_atoms` → the `min_atoms` / `max_atoms` arguments of
+    `alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove` /
+    `bounded_mutation_add`, or `structure_generation.structure_selection_kwargs.atom_number_range`
+    (which also bounds the default mutations).
+- **Migrate**: drop the old keys. The defaults (population 100,
+  `max_generations` derived from `num_of_structures_to_generate`, mutations
+  for every element in `general.elements`) need nothing else; to set them
+  yourself, `max_generations × multiobjective.size` must be at least
+  `num_of_structures_to_generate`, and mutations are EZGA
+  `mutation_funcs` entries (see `examples/ezga_use/input_files/standard_config.yaml`).
+  EZGA now runs on `structure_generation.hpc` (`local: true` keeps it in the
+  driver process), so run `alomancy upgrade-hpc` first.
+
 ## Shipped in 1.0.0
 
 ### `max_batch_size` job-dict key removed

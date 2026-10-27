@@ -2152,11 +2152,11 @@ class TestResolveEffectivePhaseDict:
 
     @pytest.mark.unit
     def test_structure_generation_ezga_defaults(self):
-        phase_dict = {"generator": "ezga", "ezga_kwargs": {"population_size": 10}}
+        phase_dict = {"generator": "ezga", "ezga_kwargs": {"max_generations": 10}}
         effective = _resolve_effective_phase_dict("structure_generation", phase_dict)
         ek = effective["ezga_kwargs"]
-        assert ek["population_size"] == 10
-        assert ek["max_generations"] == 2  # default
+        assert ek["max_generations"] == 10
+        assert ek["variation"]["crossover_probability"] == 0.0  # default
 
     @pytest.mark.unit
     def test_high_accuracy_evaluation_merges_qe_defaults(self):

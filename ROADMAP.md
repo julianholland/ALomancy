@@ -40,8 +40,6 @@ Goal: long HPC runs that don't need babysitting, and the figures the paper needs
   missing forces), retry the retryable ones, report DFT yield per loop.
 - **Retry prediction jobs.** One failed committee prediction job after MD currently
   raises with no retry. Retry once, with a minimum, as training already does.
-- **Validate EZGA settings at construction.** EZGA kwargs are only checked when EZGA
-  runs, hours in; register a `kwargs_schema` so typos are caught at startup too.
 - **Guard expyre internals.** We patch expyre internals but accept any
   `expyre-wfl>=0.1.0`. Pin a tested range and test that the patched attributes still exist.
 - **Plotting overhaul, first.** Plotting is wired in five places today. One dispatcher
@@ -71,7 +69,7 @@ Goal: a cleaner plugin architecture, and an install other groups can get working
   queued / running / done / failed line per phase.
 - **Central pseudopotential repository** (design below).
 - **VASP convergence check.** Detect a hit NELM limit from OSZICAR/OUTCAR.
-- **Example configs and docs.** Examples for VASP, EZGA and NPT MD; an EZGA docs page (#44).
+- **Example configs and docs.** Examples for VASP and NPT MD (EZGA's walkthrough, `docs/ezga.md`, shipped in 1.0.4).
 - **Installation docs.** The dependency stack: why each pin exists, the triton cache, when
   the remote needs a reinstall.
 - **Deprecation schedule.** List every legacy shim in `docs/deprecations.md` with removal

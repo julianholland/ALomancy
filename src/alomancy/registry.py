@@ -138,6 +138,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_EZGA_KWARGS_DEFAULTS",
+    validate_kwargs="validate_kwargs",
     report_section="report_section",
 )
 

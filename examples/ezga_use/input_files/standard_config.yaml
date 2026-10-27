@@ -53,41 +53,42 @@ training:
 # examples/basic_use/. Set structure_generation.generator: "ezga" to switch;
 # everything downstream (bond-distance filtering, committee force-std-dev
 # scoring, DFT evaluation) is unchanged either way -- EZGA only replaces how
-# candidate structures are produced. Unlike MD, EZGA runs entirely in the
-# local driver process (no remote submission of its own) and only exercises
-# the single best-fit committee model (device="cpu", hardcoded) to relax
-# candidates internally, so md_kwargs is not used here.
+# candidate structures are produced.
+#
+# ezga_kwargs is EZGA's own config (what its YAML file holds). ALomancy adds
+# the calculator (this loop's best model, built on the node and wrapped in
+# EZGA's ase_calculator with the simulator.calculator settings below), the
+# seeds, the output/database paths, resume and rng (from general.seed).
+# Leave out any section to use ALomancy's defaults, taken from the EZGA
+# wiki's MLIP active-learning example: population (multiobjective.size) 100,
+# max_generations derived to give twice num_of_structures_to_generate, full
+# relaxations (fmax 0.05, up to 100 steps), selection temperature 0.05,
+# collision_factor 0.6, composition niching, and mutations for every element
+# in general.elements (rattle, strain, add/remove per element, swaps for
+# every pair). The search runs as one job on structure_generation.hpc; the
+# candidates are the most recent generations' structures in EZGA's database.
 structure_generation:
   generator: "ezga"
   num_of_structures_to_generate: 500  # candidate pool (default 10x per loop)
   max_time: "10H"
   structure_selection_kwargs:
     chem_formula_list: null
-    atom_number_range: [2, 21]  # must stay within ezga_kwargs' min_atoms/max_atoms below
+    atom_number_range: [2, 21]  # seed filter; also bounds the default add/remove
   ezga_kwargs:
-    max_generations: 2
-    population_size: 2
-    min_atoms: 2
-    max_atoms: 21
-    mutation_operators:
-      rattle:
-        enabled: true
-        std: 0.05
-        species: ["Na"]
-      random_strain:
-        enabled: true
-        max_strain: 0.02
-      add:
-        enabled: true
-        species: ["Na"]
-        bound: ["Na", "C"]
-        collision_tolerance: 2.0
-        slab: false
-      remove:
-        enabled: true
-        species: "Na"
-      remove_add:
-        enabled: false
+    structure_selection_kwargs:  # ALomancy's: how many training structures seed EZGA
+      num_of_seeds: 8
+    # Optional, as in the wiki: HiSE stages in growing supercells, the last
+    # with a short MD burst (300-600 K across the population) for
+    # force-rich structures. Only the last stage's structures become
+    # candidates (docs/ezga.md).
+    # hise:
+    #   supercells: [[1, 1, 1], [2, 1, 1]]
+    #   overrides:
+    #     max_generations: [10, 2]
+    #     multiobjective.size: [100, 250]
+    #     simulator.calculator:      # ase_calculator settings per stage
+    #       - {}
+    #       - {nvt_steps: 40, T: [300, 600]}
   hpc: 'raccoon_small'
 
 high_accuracy_evaluation:

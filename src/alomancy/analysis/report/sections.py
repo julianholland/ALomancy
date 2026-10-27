@@ -83,8 +83,10 @@ def _md_temperature_plot(
     """Temperature against step for every MD run, one panel each, from the
     runs' own ASE MD logs (``md_output_<i>/*.log``: one
     row per step, ``T[K]`` last). Runs without a log are skipped."""
+    import inspect
+
     from alomancy.analysis.report.plots import md_runs
-    from alomancy.structure_generation.md.md_wfl import _MD_KWARGS_DEFAULTS
+    from alomancy.structure_generation.md.md_wfl import _MD_KWARGS_DEFAULTS, run_md
 
     settings = {**_MD_KWARGS_DEFAULTS, **md_kwargs}
     equilibration = int(settings.get("equilibration_steps") or 0)
@@ -120,33 +122,50 @@ def _md_temperature_plot(
         target_temperature=float(settings["temperature"]),
         requested_steps=int(settings["steps"]),
         equilibration_steps=equilibration,
+        equilibration_temperature=float(
+            settings.get(
+                "equilibration_temperature",
+                inspect.signature(run_md)
+                .parameters["equilibration_temperature"]
+                .default,
+            )
+        ),
     )
     return path
 
 
 def ezga_section(
-    stats: dict,  # noqa: ARG001 -- uniform signature
+    stats: dict,
     *,
-    base_name: str,
+    base_name: str,  # noqa: ARG001 -- uniform signature
     plots_dir: Path | None,  # noqa: ARG001
     config: dict,
 ) -> Section | None:
-    """EZGA generator: generations, population and candidates returned."""
-    from ase.io import read
-
-    sg = config.get("structure_generation", {})
-    path = Path("results", base_name, sg.get("name", "structure_generation"), "ezga")
-    candidates = path / "ezga_candidates.xyz"
-    if not candidates.exists():
+    """EZGA generator: seeds, generations, structures generated and the
+    candidates taken (ezga_summary), and the main search settings."""
+    summaries = stats["events"]["data"].get("ezga_summary") or []
+    if not summaries:
         return None
-    kwargs = sg.get("run_ezga_kwargs", {})
-    n = len(read(candidates, ":", format="extxyz"))
+    summary = summaries[-1]
+    ezga_kwargs = config.get("structure_generation", {}).get("ezga_kwargs", {})
+    size = (ezga_kwargs.get("multiobjective") or {}).get("size", "n/a")
+    mutations = [
+        str(m.get("type") or m.get("factory") or m).rsplit(".", 1)[-1]
+        if isinstance(m, dict)
+        else str(m).rsplit(".", 1)[-1]
+        for m in ezga_kwargs.get("mutation_funcs") or []
+    ]
     return Section(
         "Structure generation: EZGA",
         [
-            f"- Generations: {kwargs.get('max_generations', 'default')}, "
-            f"population: {kwargs.get('population_size', 'default')}",
-            f"- Candidates returned: {n}",
+            f"- Seeds: {summary.get('seeds')}, generations run: "
+            f"{summary.get('generations')} "
+            f"(max_generations {ezga_kwargs.get('max_generations', 'n/a')}, "
+            f"population {size})",
+            f"- Structures generated: {summary.get('generated')}, taken as "
+            f"candidates: {summary.get('candidates')} (newest first, back to "
+            f"generation {summary.get('oldest_generation_used')})",
+            f"- Mutations: {', '.join(mutations) or 'none'}",
         ],
     )
 
