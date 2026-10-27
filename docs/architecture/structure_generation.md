@@ -2,6 +2,8 @@
 
 `src/alomancy/structure_generation/`: candidate generation (MD or EZGA) and committee-uncertainty selection. Generators are registered under `structure_generator` (`structure_generation.generator`, default `"md"`).
 
+Every generator's `generate(seed_atoms, calculator_spec, config, *, base_name, name, hpc, max_time, elements, seed)` gets `general.elements` and `general.seed` (MD ignores both). A generator may register `validate_kwargs(sg_config, *, elements, seed)`. `ActiveLearningWorkflow._validate_generator_kwargs` calls it at construction, and it may store resolved settings back into `sg_config`. EZGA uses it.
+
 ## Generators use the trained MLIP
 
 `generate_candidates` passes the generator a `CalculatorSpec` (`mlip.md`), not a model path: plain data that pickles into remote jobs, since a live (often GPU-resident) calculator must not cross the ExPyRe boundary. `spec.build(device=None)` calls the trainer's `get_calculator` where the calculator is needed: on the node for MD (`md_wfl._run_md_with_spec`) and EZGA (`run_ezga`). `run_md` takes the calculator as a required argument and has no MACE fallback. The removed `md_kwargs.trainer`/`trainer_config` (default `"mace"`) made a SevenNet run hand its `.pth` to MACE (`'dict' object has no attribute 'to'` in every MD job); they're in `_REMOVED_KEYS`. `tests/core_tests/test_active_learning_workflow.py::test_md_explores_with_the_calculator_of_the_trained_mlip` guards this. MD and EZGA changes need a remote reinstall.

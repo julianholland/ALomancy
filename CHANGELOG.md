@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.4] - 2026-10-27
 
 ### Changed
 - **`structure_generation.ezga_kwargs` is now EZGA's own config** (breaking; `docs/deprecations.md`). Write any EZGA setting there as in EZGA's YAML; ALomancy adds the calculator (the loop's best model wrapped in EZGA's `ase_calculator`, configured by `simulator.calculator`), seeds, paths, `resume` and `rng` (`general.seed`), and setting those raises. `population_size`, `mutation_operators`, `min_atoms` and `max_atoms` are gone and raise naming their new home.
