@@ -205,7 +205,8 @@ def bounded_mutation_remove(
 def _default_kwargs(elements: list[str], atom_number_range: Any) -> dict[str, Any]:
     """The defaults, with every species-dependent setting from
     general.elements and the add/remove limits from the seed filter's
-    atom_number_range (unbounded when it isn't set)."""
+    atom_number_range (unbounded when it isn't set, or with HiSE: _resolve
+    passes None)."""
     min_atoms = max_atoms = None
     if atom_number_range and tuple(atom_number_range) != (0, 0):
         min_atoms, max_atoms = (int(n) for n in atom_number_range)
@@ -344,8 +345,14 @@ def _resolve(sg_config: dict, elements: list[str]) -> dict[str, Any]:
             + "; ".join(problems)
             + ". ALomancy sets these itself."
         )
-    atom_number_range = (sg_config.get("structure_selection_kwargs") or {}).get(
-        "atom_number_range"
+    # The seed filter's range is sized for the seeds; HiSE tiles them into
+    # larger cells, where it would refuse every add and remove.
+    atom_number_range = (
+        None
+        if "hise" in user
+        else (sg_config.get("structure_selection_kwargs") or {}).get(
+            "atom_number_range"
+        )
     )
     resolved = _merge(_default_kwargs(elements, atom_number_range), user)
     size: Any = (resolved.get("multiobjective") or {}).get("size")
@@ -431,6 +438,28 @@ def validate_kwargs(sg_config: dict, *, elements: list[str], seed: int) -> None:
     from ezga.factory import load_config
     from ezga.simulator.ase_calculator import ase_calculator
 
+    user = sg_config.get("ezga_kwargs") or {}
+    atom_number_range = (sg_config.get("structure_selection_kwargs") or {}).get(
+        "atom_number_range"
+    )
+    if (
+        isinstance(user, dict)
+        and "hise" in user
+        and "mutation_funcs" not in user
+        and atom_number_range
+        and tuple(atom_number_range) != (0, 0)
+    ):
+        logger.warning(
+            "structure_generation.structure_selection_kwargs.atom_number_range "
+            "%s only filters EZGA's seeds here: with HiSE the structures are "
+            "tiled into larger cells, so the default add/remove mutations are "
+            "unbounded. Write mutation_funcs to bound them per your cells.",
+            list(atom_number_range),
+            extra={
+                "event": "ezga_atom_range_seeds_only",
+                "data": {"atom_number_range": list(atom_number_range)},
+            },
+        )
     resolved = _resolve(sg_config, elements)
     _check_species(resolved.get("mutation_funcs"), set(elements), "mutation_funcs")
     _check_species(resolved.get("evaluator"), set(elements), "evaluator")

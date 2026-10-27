@@ -204,3 +204,29 @@ def test_md_temperature_axis_stops_at_three_times_the_target(monkeypatch, tmp_pa
 def test_md_temperature_axis_is_free_without_a_target(monkeypatch, tmp_path):
     ax = _md_axes(monkeypatch, tmp_path, [[0, 10, 5000]], target=0.0)
     assert ax.get_ylim()[1] > 5000
+
+
+@pytest.mark.unit
+def test_md_temperature_cap_covers_a_hotter_equilibration(monkeypatch, tmp_path):
+    """Melt-quench: equilibration at 2000 K, production at 300 K. The cap
+    follows the hotter phase, so healthy runs aren't clipped or flagged."""
+    from alomancy.analysis.report import plots
+
+    captured = {}
+    monkeypatch.setattr(
+        plots, "_save", lambda fig, path: captured.update(ax=fig.axes[0])
+    )
+    plots.md_runs(
+        [np.array([2000.0, 2050.0, 300.0, 310.0])],
+        [1],
+        tmp_path / "md.png",
+        run_labels=["run 0"],
+        title="t",
+        target_temperature=300.0,
+        requested_steps=1,
+        equilibration_steps=2,
+        equilibration_temperature=2000.0,
+    )
+    ax = captured["ax"]
+    assert ax.get_ylim() == (0.0, 6000.0)
+    assert ax.get_legend().get_texts()[0].get_text() == "run 0"

@@ -174,7 +174,7 @@ Your values are merged over these. A dict merges key by key, so
 `simulator: {calculator: {steps_max: 20}}` keeps `fmax`. A list replaces the
 default, so `mutation_funcs` is either all yours or all the defaults. If
 `structure_selection_kwargs.atom_number_range` is set, it also bounds the
-default add and remove mutations.
+default add and remove mutations, except with HiSE (below).
 
 ### HiSE: supercell escalation and the MD burst
 
@@ -229,8 +229,11 @@ them. The candidates come from the 2×2×1 stage, so they have four times
 their seed's atoms. That is why the amorphous structures here are 10 atoms
 (`num_of_atoms_per_amorphous`, default 20): they become 40-atom DFT
 structures. Choose `supercells`, and the seed sizes, for the cells you want
-to pay DFT for. Note that `atom_number_range` also caps the default add mutation
-in every stage, so leave it off when stages tile beyond it.
+to pay DFT for. With HiSE, `atom_number_range` only filters the seeds: the
+default add and remove mutations are unbounded, because the range is sized
+for the seeds and the stages tile beyond it. Setting both logs
+`ezga_atom_range_seeds_only` at startup. To bound atom counts per stage,
+write your own `mutation_funcs`.
 
 ## What you get
 

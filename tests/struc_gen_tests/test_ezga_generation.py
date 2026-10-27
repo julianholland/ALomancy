@@ -433,3 +433,29 @@ def test_most_recent_is_reproducible_and_returns_all_when_short():
     first = [a.info["i"] for a in most_recent(offspring, 7, seed=3)]
     assert first == [a.info["i"] for a in most_recent(offspring, 7, seed=3)]
     assert len(most_recent(offspring, 50, seed=3)) == 10
+
+
+@pytest.mark.unit
+def test_with_hise_the_seed_range_does_not_bound_the_default_mutations(ezga_events):
+    sg = _sg(
+        _hise(max_generations=[10, 10]),
+        structure_selection_kwargs={"atom_number_range": [2, 20]},
+    )
+    validate_kwargs(sg, elements=_ELEMENTS, seed=1)
+    bounded = [m for m in sg["ezga_kwargs"]["mutation_funcs"] if "bounded" in m["type"]]
+    assert bounded
+    assert all(m.get("max_atoms") is None for m in bounded)
+    assert all(m.get("min_atoms") is None for m in bounded)
+    events = [r.event for r in ezga_events if getattr(r, "event", None)]
+    assert events == ["ezga_atom_range_seeds_only"]
+
+
+@pytest.mark.unit
+def test_with_hise_and_own_mutations_there_is_no_range_warning(ezga_events):
+    mutation = {"type": "ezga.variation.mutation.mutation_rattle", "std": 0.1}
+    sg = _sg(
+        {**_hise(max_generations=[10, 10]), "mutation_funcs": [mutation]},
+        structure_selection_kwargs={"atom_number_range": [2, 20]},
+    )
+    validate_kwargs(sg, elements=_ELEMENTS, seed=1)
+    assert not [r for r in ezga_events if getattr(r, "event", None)]

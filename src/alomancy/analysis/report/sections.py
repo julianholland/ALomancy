@@ -83,8 +83,10 @@ def _md_temperature_plot(
     """Temperature against step for every MD run, one panel each, from the
     runs' own ASE MD logs (``md_output_<i>/*.log``: one
     row per step, ``T[K]`` last). Runs without a log are skipped."""
+    import inspect
+
     from alomancy.analysis.report.plots import md_runs
-    from alomancy.structure_generation.md.md_wfl import _MD_KWARGS_DEFAULTS
+    from alomancy.structure_generation.md.md_wfl import _MD_KWARGS_DEFAULTS, run_md
 
     settings = {**_MD_KWARGS_DEFAULTS, **md_kwargs}
     equilibration = int(settings.get("equilibration_steps") or 0)
@@ -120,6 +122,14 @@ def _md_temperature_plot(
         target_temperature=float(settings["temperature"]),
         requested_steps=int(settings["steps"]),
         equilibration_steps=equilibration,
+        equilibration_temperature=float(
+            settings.get(
+                "equilibration_temperature",
+                inspect.signature(run_md)
+                .parameters["equilibration_temperature"]
+                .default,
+            )
+        ),
     )
     return path
 

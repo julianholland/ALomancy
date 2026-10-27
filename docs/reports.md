@@ -28,7 +28,7 @@ and a warning is logged.
 | Best model | Energy and force parity of this loop's best model (train and test), and its relative error: signed energy % and per-atom force % (\|ΔF\|/\|F\|) against the DFT value, with the median per split. Energies with \|formation energy\| < 0.05 eV/atom and atoms with \|F\| < 0.1 eV/Å are left out. |
 | Training set | Structures per `config_type`: train, test, excluded as redundant, excluded by the quality filters (with reasons). Plus the redundancy tolerance probe: structures kept against the duplicate tolerance (`char_vec_128` descriptor, Euclidean distance), with the plateaus it looks for shaded, the tolerance it chose marked and the structures removed per step (the gradient) on a second axis, from `results/<loop>/redundancy_probe.json` |
 | DFT | Returned vs submitted, single points vs relaxations, how many relaxations reached the force ceiling, BFGS steps vs the step budget, average DFT time per structure, largest force after DFT, DFT phase wall-clock and queue time |
-| Module sections | From the configured trainer, generator and evaluator, e.g. MD frames per run and every MD run's temperature against step (overlaid, y-axis up to 3× the target), the best fit's training curve, GO-step and DFT-time histograms |
+| Module sections | From the configured trainer, generator and evaluator, e.g. MD frames per run and every MD run's temperature against step (overlaid, y-axis up to 3× the higher of the target and equilibration temperatures), the best fit's training curve, GO-step and DFT-time histograms |
 | Workflow section | e.g. the committee's force std-dev distribution with the selection cut, or the novelty tolerance |
 | Warnings and events | Count per event code, and the most frequent other warnings |
 

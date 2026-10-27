@@ -27,6 +27,7 @@ EVENT_DESCRIPTIONS = {
     "ezga_summary": "EZGA summary",
     "ezga_restarted": "unfinished EZGA search moved aside and restarted",
     "ezga_few_structures_configured": "EZGA makes under 2x to-generate (config)",
+    "ezga_atom_range_seeds_only": "atom_number_range only filters EZGA seeds (HiSE)",
     "short_bond_excluded": "structures dropped for a short bond",
     "quality_filtered": "train/test quality filter passes",
     "redundancy_flagged": "redundancy removal passes",
