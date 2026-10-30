@@ -252,6 +252,8 @@ high_accuracy_evaluation:
     hpc: 'my_gpu_hpc'
   ```
 
+  `md_kwargs.snapshot_oversample` (default 10) makes each MD run record that many times more snapshots than candidates are needed. Every snapshot stays in `md_output_i/structure_generation.xyz` as a viewable trajectory (each frame's MD step in `md_frame`). The candidates are the physical frames (no seed frame, no bond under 0.5 Å), spread evenly over each run, up to `num_of_structures_to_generate`; a run that goes unstable early still contributes the frames it recorded before that. Set it to 1 for the old one-snapshot-per-candidate behaviour.
+
   `mlip_relaxation` (off by default) relaxes every generated candidate with the loop's best model before selection, so the committee (or random/novelty selection) chooses among relaxed structures, the ones DFT starts from, instead of raw MD snapshots. A candidate whose relaxation fails or ends with a bond shorter than 0.5 Å is dropped (warning `mlip_relax_dropped`); if the whole relaxation job fails, the unrelaxed candidates are used (warning `mlip_relax_fallback`). DFT still relaxes anything whose forces exceed `high_accuracy_evaluation.force_ceiling`. EZGA candidates are already relaxed by EZGA, so this is meant for MD. It adds a remote function: run `alomancy upgrade-hpc` before switching it on.
 
   ```yaml
