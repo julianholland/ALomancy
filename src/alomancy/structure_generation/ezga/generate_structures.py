@@ -110,9 +110,17 @@ _SPECIES_KEYS = {
     "species_add",
     "species_remove",
     "bound",
+    "molecule",
     "IDs",
     "ID1",
     "ID2",
+}
+
+_MOLECULE_KEYS = {
+    "species",
+    "species_add",
+    "species_remove",
+    "molecule",
 }
 
 # hise.overrides keys (dot paths) ALomancy owns, as at the top level.
@@ -202,12 +210,52 @@ def bounded_mutation_remove(
     return _bounded(mutation_remove(species=species), min_atoms, None)
 
 
-def _default_kwargs(elements: list[str], atom_number_range: Any) -> dict[str, Any]:
+def bounded_mutation_remove_molecule(
+    molecule: str,
+    min_atoms: int | None = None,
+) -> Callable[..., Any]:
+    from collections import Counter
+
+    from ezga.utils.chemistry import unit_stoichiometry
+    from ezga.variation.mutation_adsorbates import identify_adsorbates
+
+    target = Counter(unit_stoichiometry(molecule))
+
+    def in_molecule(idx: int, structure: Any) -> bool:
+        return structure.AtomPositionManager.atomLabelsList[idx] in target
+
+    def mutation(structure: Any, rng: np.random.Generator | None = None) -> Any:
+        rng = rng or np.random.default_rng()
+        found = [
+            fragment
+            for fragment in identify_adsorbates(structure, [in_molecule])
+            if Counter(fragment.labels) == target
+        ]
+        if not found:
+            return None
+        child = copy.deepcopy(structure)
+        child.AtomPositionManager.remove_atom(found[rng.integers(len(found))].indices)
+        return child
+
+    return _bounded(mutation, min_atoms, None)
+
+
+def structure_elements(elements: list[str], molecules: list[str] | None) -> list[str]:
+    from ezga.utils.chemistry import unit_stoichiometry
+
+    in_molecules = {elem for mol in molecules or [] for elem in unit_stoichiometry(mol)}
+    return [elem for elem in elements if elem not in in_molecules]
+
+
+def _default_kwargs(
+    elements: list[str], atom_number_range: Any, molecules: list[str] | None = None
+) -> dict[str, Any]:
     """The defaults, with every species-dependent setting from
     general.elements and the add/remove limits from the seed filter's
     atom_number_range (unbounded when it isn't set, or with HiSE: _resolve
     passes None)."""
     min_atoms = max_atoms = None
+    framework = structure_elements(elements, molecules)
     if atom_number_range and tuple(atom_number_range) != (0, 0):
         min_atoms, max_atoms = (int(n) for n in atom_number_range)
     mutations: list[dict[str, Any]] = [
@@ -218,7 +266,7 @@ def _default_kwargs(elements: list[str], atom_number_range: Any) -> dict[str, An
         },
         {"type": "ezga.variation.mutation.mutation_random_strain", "max_strain": 0.02},
     ]
-    for element in elements:
+    for element in framework:
         mutations += [
             {
                 "type": f"{_MODULE}.bounded_mutation_add",
@@ -233,8 +281,23 @@ def _default_kwargs(elements: list[str], atom_number_range: Any) -> dict[str, An
         ]
     mutations += [
         {"type": "ezga.variation.mutation.mutation_swap", "ID1": a, "ID2": b}
-        for a, b in itertools.permutations(elements, 2)
+        for a, b in itertools.permutations(framework, 2)
     ]
+    for molecule in molecules or []:
+        mutations += [
+            {
+                "type": f"{_MODULE}.bounded_mutation_add",
+                "species": [molecule],
+                "max_atoms": max_atoms,
+                "bound": framework,
+                "slab": True,
+            },
+            {
+                "type": f"{_MODULE}.bounded_mutation_remove_molecule",
+                "molecule": molecule,
+                "min_atoms": min_atoms,
+            },
+        ]
     return {
         **copy.deepcopy(_EZGA_KWARGS_DEFAULTS),
         "mutation_funcs": mutations,
@@ -263,33 +326,36 @@ def _merge(defaults: dict, user: dict) -> dict:
     return merged
 
 
-def _check_species(value: Any, elements: set[str], where: str) -> None:
+def _check_species(
+    value: Any, elements: set[str], molecules: set[str], where: str
+) -> None:
     """Raise on a species name outside general.elements anywhere in a
     mutation or evaluator entry."""
     if isinstance(value, dict):
         for key, item in value.items():
             if key in _SPECIES_KEYS and item is not None:
+                allowed = elements | molecules if key in _MOLECULE_KEYS else elements
                 names = [item] if isinstance(item, str) else item
                 if isinstance(names, list | tuple):
-                    unknown = sorted(
-                        {n for n in names if isinstance(n, str)} - elements
-                    )
+                    unknown = sorted({n for n in names if isinstance(n, str)} - allowed)
                     if unknown:
                         raise ValueError(
                             f"structure_generation.ezga_kwargs.{where}: {key} "
                             f"{unknown} not in general.elements {sorted(elements)}."
                         )
-            _check_species(item, elements, where)
+            _check_species(item, elements, molecules, where)
     elif isinstance(value, list | tuple):
         for item in value:
-            _check_species(item, elements, where)
+            _check_species(item, elements, molecules, where)
 
 
 def _positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
-def _resolve(sg_config: dict, elements: list[str]) -> dict[str, Any]:
+def _resolve(
+    sg_config: dict, elements: list[str], molecules: list[str] | None = None
+) -> dict[str, Any]:
     """ezga_kwargs merged over the defaults, after rejecting removed and
     ALomancy-owned keys. Idempotent: resolving the result changes nothing."""
     user = sg_config.get("ezga_kwargs") or {}
@@ -354,7 +420,7 @@ def _resolve(sg_config: dict, elements: list[str]) -> dict[str, Any]:
             "atom_number_range"
         )
     )
-    resolved = _merge(_default_kwargs(elements, atom_number_range), user)
+    resolved = _merge(_default_kwargs(elements, atom_number_range, molecules), user)
     size: Any = (resolved.get("multiobjective") or {}).get("size")
     if "max_generations" not in resolved and _positive_int(size):
         to_generate = sg_config.get("num_of_structures_to_generate") or 0
@@ -429,7 +495,13 @@ def _calculator_settings(ezga_kwargs: dict[str, Any]) -> dict[str, Any]:
     return dict(ezga_kwargs.get("simulator", {}).get("calculator", {}))
 
 
-def validate_kwargs(sg_config: dict, *, elements: list[str], seed: int) -> None:
+def validate_kwargs(
+    sg_config: dict,
+    *,
+    elements: list[str],
+    seed: int,
+    molecules: list[str] | None = None,
+) -> None:
     """Construction-time check (registry hook): resolve ezga_kwargs and
     store the result back into *sg_config*, so the summary and generate()
     see the full config. EZGA's own schema (pydantic, unknown keys
@@ -460,9 +532,16 @@ def validate_kwargs(sg_config: dict, *, elements: list[str], seed: int) -> None:
                 "data": {"atom_number_range": list(atom_number_range)},
             },
         )
-    resolved = _resolve(sg_config, elements)
-    _check_species(resolved.get("mutation_funcs"), set(elements), "mutation_funcs")
-    _check_species(resolved.get("evaluator"), set(elements), "evaluator")
+    resolved = _resolve(sg_config, elements, molecules)
+    _check_species(
+        resolved.get("mutation_funcs"),
+        set(elements),
+        set(molecules or []),
+        "mutation_funcs",
+    )
+    _check_species(
+        resolved.get("evaluator"), set(elements), set(molecules or []), "evaluator"
+    )
 
     selection = resolved["structure_selection_kwargs"]
     unknown = set(selection) - _SELECTION_KEYS
@@ -706,6 +785,7 @@ def generate(
     hpc: dict,
     max_time: str,
     elements: list[str],
+    molecules: list[str] | None = None,
     seed: int = 803,
 ) -> list[Atoms]:
     """Run one EZGA search from diverse seeds as a remote job (or locally
@@ -715,7 +795,7 @@ def generate(
     if candidates_path.exists():
         return list(read_xyz(candidates_path))
 
-    ezga_kwargs = _resolve(config, elements)
+    ezga_kwargs = _resolve(config, elements, molecules)
     seeds = _seeds(
         seed_atoms,
         ezga_kwargs["structure_selection_kwargs"],

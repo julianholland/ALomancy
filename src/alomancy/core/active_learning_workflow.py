@@ -635,6 +635,7 @@ def _parse_start_from(start_from: Any) -> tuple[str, dict]:
 _GENERAL_KNOWN_KEYS = set(_GENERAL_KWARGS_DEFAULTS) | {
     "al_workflow",
     "elements",
+    "molecules",
     "start_from",
     "train_filter",
     "test_filter",
@@ -1169,6 +1170,7 @@ class ActiveLearningWorkflow(ABC):
             validate(
                 sg_config,
                 elements=self._required_elements(),
+                molecules=self._required_molecules(),
                 seed=self.seed,
             )
 
@@ -1424,6 +1426,45 @@ class ActiveLearningWorkflow(ABC):
             )
         return list(elements)
 
+    def _required_molecules(self) -> list[str]:
+        """Return general.molecules (optional, default [])
+        after checking that SAGE can build it."""
+        molecules = self.jobs_dict.get("general", {}).get("molecules") or []
+        if not isinstance(molecules, list) or not all(
+            isinstance(molecule, str) for molecule in molecules
+        ):
+            raise ValueError(
+                'general.molecules requires a list of molecules, e.g.["CO"]'
+            )
+        if not molecules:
+            return []
+
+        from sage_lib.partition.Partition import Partition
+
+        elements = set(self._required_elements())
+        for molecule in molecules:
+            partition = Partition()
+            partition.add_empty()
+            try:
+                partition[0].AtomPositionManager.build(molecule)
+            except Exception as exc:
+                raise ValueError(
+                    f"general.molecules: SAGE cannot build {molecule!r} ({exc})."
+                ) from exc
+            labels = list(partition[0].AtomPositionManager.atomLabelsList)
+            if len(labels) < 2:
+                raise ValueError(
+                    f"general.molecules: {molecule!r} builds {labels}, not a "
+                    "molecule (names are case-sensitive: 'co' is cobalt)."
+                )
+            missing = sorted(set(labels) - elements)
+            if missing:
+                raise ValueError(
+                    f"general.molecules: {molecule!r} contains {missing}, which "
+                    f"are not in general.elements {sorted(elements)}."
+                )
+        return list(molecules)
+
     def _import_start_data(self) -> None:
         """Bring general.start_from's data into the global DB. Every mode
         then continues through the same DB-driven initialization.
@@ -1459,6 +1500,7 @@ class ActiveLearningWorkflow(ABC):
 
         initialiser_entry = resolve("initialiser", "default")
         elements = self._required_elements()
+        molecules = self._required_molecules()
 
         if self.db.size > 0:
             logger.info(
@@ -1474,7 +1516,9 @@ class ActiveLearningWorkflow(ABC):
                 self.db.size,
             )
         elif _needs_anything(
-            needs := initialiser_entry.compute_needs(self.db, init_config, elements)
+            needs := initialiser_entry.compute_needs(
+                self.db, init_config, elements, molecules
+            )
         ):
             logger.info(
                 "DB check: %d structure(s) already evaluated. Generating missing "
@@ -1504,6 +1548,7 @@ class ActiveLearningWorkflow(ABC):
                     base_name=base_name,
                     name=_INITIALIZATION_NAME,
                     elements=elements,
+                    molecules=molecules,
                     hpc=init_config.get("hpc"),
                     max_time=init_config.get("max_time"),
                     needs=needs,
@@ -2294,6 +2339,7 @@ class ActiveLearningWorkflow(ABC):
             hpc=sg_config["hpc"],
             max_time=sg_config["max_time"],
             elements=list(self.jobs_dict.get("general", {}).get("elements") or []),
+            molecules=list(self.jobs_dict.get("general", {}).get("molecules") or []),
             seed=self.seed,
         )
         kept: list[Atoms] = filter_structures_by_min_bond_distance(candidates)
