@@ -202,6 +202,9 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     read_existing_result as _read_evaluated_structures,
 )
+from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
+    read_initial_frames,
+)
 from alomancy.mlip.base import (
     ALomancyTrainer,
     CalculatorSpec,
@@ -217,8 +220,13 @@ from alomancy.mlip.evaluation import (
 from alomancy.mlip.predict import predict_with_model
 from alomancy.registry import registered, resolve
 from alomancy.remote_submission.executor import acquire_local_expyre_lock, submit_n
+from alomancy.structure_generation.mlip_relax import (
+    relax_with_model,
+    resolve_mlip_relaxation,
+)
 from alomancy.utils.clean_structures import (
     clean_structures,
+    drop_unwritable_info,
     filter_structures_by_min_bond_distance,
 )
 from alomancy.utils.dataset_curation import (
@@ -228,7 +236,7 @@ from alomancy.utils.dataset_curation import (
     structure_domain,
     validate_policy,
 )
-from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled
+from alomancy.utils.file_saving_and_parsing import read_atoms_file_if_enabled, read_xyz
 from alomancy.utils.import_structures import (
     EXTERNAL_CONFIG_TYPE,
     file_sha256,
@@ -883,6 +891,8 @@ class LoopContext:
     test: list[Atoms]
     train_only: bool
     plots_dir: Path
+    # The extra training after the last AL loop (see iterate_loops).
+    final: bool = False
 
 
 _StepT = TypeVar("_StepT", bound=Callable[..., Any])
@@ -955,6 +965,26 @@ def phase(
         return cast(_StepT, wrapper)
 
     return decorator
+
+
+_MLIP_RELAXED_FILENAME = "mlip_relaxed_structures.xyz"
+
+
+def _mlip_relaxed_path(ctx: LoopContext) -> Path:
+    return Path(
+        "results", ctx.base_name, _STRUCTURE_GENERATION_NAME, _MLIP_RELAXED_FILENAME
+    )
+
+
+def _load_mlip_relaxed(
+    self: "ActiveLearningWorkflow",  # noqa: ARG001 -- loader signature
+    ctx: LoopContext,
+    *_args: Any,
+    **_kwargs: Any,
+) -> list[Atoms]:
+    """mlip_relax.done loader: the structures the step sent on to DFT."""
+    structures: list[Atoms] = read_xyz(_mlip_relaxed_path(ctx))
+    return structures
 
 
 def _load_high_accuracy_results(
@@ -1123,6 +1153,9 @@ class ActiveLearningWorkflow(ABC):
                 "high_accuracy_evaluation.force_ceiling must be a positive number "
                 f"(eV/Angstrom) or null, got {self.force_ceiling!r}."
             )
+        self.mlip_relaxation = resolve_mlip_relaxation(
+            (jobs_dict.get("structure_generation") or {}).get("mlip_relaxation")
+        )
         self.num_of_structures_per_loop, to_generate = _resolve_structure_counts(
             general_kwargs["num_of_structures_per_loop"],
             jobs_dict.get("structure_generation"),
@@ -1538,8 +1571,10 @@ class ActiveLearningWorkflow(ABC):
                 high_accuracy_structures[0].info.get("config_type"),
             )
 
+            # The starting frames of the initial structures' geometry
+            # optimisations go in too; the train/test filters decide later.
             high_accuracy_structures = clean_structures(
-                high_accuracy_structures,
+                high_accuracy_structures + read_initial_frames(base_name),
                 base_name,
                 override_config_type=False,
                 already_computed=True,
@@ -1938,11 +1973,19 @@ class ActiveLearningWorkflow(ABC):
         """Yield one LoopContext per loop from *start* to num_of_al_loops,
         reading the current train/test splits from the database and writing
         them to results/<loop>/train_set.xyz / test_set.xyz. A loop already
-        marked done (loop.done) is skipped."""
-        for loop in range(start, self.num_of_al_loops):
+        marked done (loop.done) is skipped.
+
+        Then one more, ``al_loop_<num_of_al_loops>`` with ``final=True``
+        (and ``train_only``): a run ends by training on the last loop's
+        DFT structures, which would otherwise never reach a model. It has
+        no sentinel of its own: train_mlip.done makes a restart reload its
+        models instead of retraining, and raising num_of_al_loops later
+        simply carries on with that loop."""
+        for loop in range(start, self.num_of_al_loops + 1):
             base_name = f"al_loop_{loop}"
             if self._phase_done(base_name, "loop"):
                 continue
+            final = loop == self.num_of_al_loops
             set_current_loop(loop)
             train_xyzs = self.db.get_train_atoms()
             test_xyzs = self.db.get_test_atoms()
@@ -1980,8 +2023,9 @@ class ActiveLearningWorkflow(ABC):
                 workdir=workdir,
                 train=train_xyzs,
                 test=test_xyzs,
-                train_only=self.train_only,
+                train_only=self.train_only or final,
                 plots_dir=loop_plots_dir,
+                final=final,
             )
 
     def train_models(
@@ -2297,6 +2341,10 @@ class ActiveLearningWorkflow(ABC):
             seed=self.seed,
         )
         kept: list[Atoms] = filter_structures_by_min_bond_distance(candidates)
+        if self.mlip_relaxation is not None and kept:
+            # Selection scores what DFT will start from: the relaxed
+            # candidates (see structure_generation.md).
+            kept = self._mlip_relax(ctx, model, kept)
         per_loop = self.num_of_structures_per_loop
         if len(kept) < 2 * per_loop:
             logger.warning(
@@ -2351,6 +2399,89 @@ class ActiveLearningWorkflow(ABC):
                     f"Prediction failed for fit_{m.fit_idx} on {ctx.base_name}."
                 )
         return list(results)
+
+    @phase("mlip_relax", load=_load_mlip_relaxed)
+    def _mlip_relax(
+        self, ctx: LoopContext, model: TrainedModel, structures: list[Atoms]
+    ) -> list[Atoms]:
+        """Relax the candidates with *model* (the loop's best) before any
+        selection scores them: one remote job on the structure-generation
+        HPC. A candidate whose relaxation fails, or ends with a bond under
+        0.5 Å, is dropped; if the whole job fails, the unrelaxed candidates
+        go on (with a warning) so the loop isn't lost."""
+        settings = self.mlip_relaxation
+        if settings is None:  # generate_candidates checks; keeps mypy narrowed
+            return structures
+        sg_config = self.jobs_dict["structure_generation"]
+        remote_info = get_remote_info(
+            {
+                "hpc": sg_config["hpc"],
+                "name": "mlip_relax",
+                "max_time": sg_config["max_time"],
+            },
+            input_files=[model.model_path],
+        )
+        (result,) = submit_n(
+            relax_with_model,
+            [
+                {
+                    "function_kwargs": {
+                        "structure_list": structures,
+                        "model_path": model.model_path,
+                        "trainer": self.training_config.get("trainer", "mace"),
+                        "trainer_config": self.training_config,
+                        "fmax": settings["fmax"],
+                        "steps": settings["steps"],
+                        "optimizer": settings["optimizer"],
+                    }
+                }
+            ],
+            remote_info,
+        )
+        if result is None:
+            logger.warning(
+                "MLIP relaxation job for %s failed; continuing with the %d "
+                "unrelaxed candidate(s).",
+                ctx.base_name,
+                len(structures),
+                extra={
+                    "event": "mlip_relax_fallback",
+                    "data": {"n": len(structures), "total": len(structures)},
+                },
+            )
+            out = list(structures)
+        else:
+            relaxed_ok = [a for a in result if a is not None]
+            out = filter_structures_by_min_bond_distance(relaxed_ok)
+            dropped = len(structures) - len(out)
+            converged = sum(bool(a.info.get("mlip_relax_converged")) for a in out)
+            logger.info(
+                "MLIP relaxation: %d of %d candidate(s) relaxed (%d converged to "
+                "fmax %.3g eV/Å).",
+                len(out),
+                len(structures),
+                converged,
+                settings["fmax"],
+            )
+            if dropped:
+                logger.warning(
+                    "MLIP relaxation failed or ended with a bond under 0.5 Å for "
+                    "%d of %d candidate(s); they are dropped.",
+                    dropped,
+                    len(structures),
+                    extra={
+                        "event": "mlip_relax_dropped",
+                        "data": {"n": dropped, "total": len(structures)},
+                    },
+                )
+        path = _mlip_relaxed_path(ctx)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write(
+            str(path),
+            [drop_unwritable_info(a.copy()) for a in out],
+            format="extxyz",
+        )
+        return out
 
     # Same sentinel name as the evaluator module's own (_PHASE =
     # "high_accuracy_eval"), so runs written before this step used @phase
@@ -2410,12 +2541,33 @@ class ActiveLearningWorkflow(ABC):
 
     def add_to_dataset(
         self,
-        ctx: LoopContext,  # noqa: ARG002 -- uniform step signature
+        ctx: LoopContext,
         structures: list[Atoms],
     ) -> None:
         """Add newly labelled structures to the database: split by
         dataset_kwargs.test_ratio, or with fixed_test all go to training
-        except known held-out geometries (kept as "diagnostic")."""
+        except known held-out geometries (kept as "diagnostic"). The
+        starting frames of this loop's DFT geometry optimisations follow
+        their relaxed structure's split; the train/test filters at the end
+        of the loop decide whether they are used."""
+        splits = self._add_new_structures(structures)
+        initial = self._label_new_structures(ctx, read_initial_frames(ctx.base_name))
+        by_split: dict[str, list[Atoms]] = {}
+        for atoms in initial:
+            split = splits.get(atoms.info.get("job_id"), "train")
+            by_split.setdefault(split, []).append(atoms)
+        for split, frames in by_split.items():
+            self.db.add_structures(frames, split=split, skip_duplicates=False)
+        if initial:
+            logger.info(
+                "Added %d geometry-optimisation starting frame(s) (%s).",
+                len(initial),
+                ", ".join(f"{len(v)} {k}" for k, v in sorted(by_split.items())),
+            )
+
+    def _add_new_structures(self, structures: list[Atoms]) -> dict[Any, str]:
+        """add_to_dataset's split and add; returns each structure's split
+        keyed by its job_id."""
         if self.dataset_kwargs["fixed_test"]:
             archive = self.db.get_all_as_atoms()
             known = {geometry_digest(a) for a in archive}
@@ -2438,6 +2590,7 @@ class ActiveLearningWorkflow(ABC):
             )
             new_test_data: list[Atoms] = []
         else:
+            diagnostic = []
             new_train_data, new_test_data = split_atoms_list_into_test_and_train(
                 structures,
                 test_fraction=self.dataset_kwargs["test_ratio"],
@@ -2446,12 +2599,45 @@ class ActiveLearningWorkflow(ABC):
 
         self.db.add_structures(new_train_data, split="train", skip_duplicates=False)
         self.db.add_structures(new_test_data, split="test", skip_duplicates=False)
+        return {
+            atoms.info.get("job_id"): split
+            for split, group in (
+                ("train", new_train_data),
+                ("test", new_test_data),
+                ("diagnostic", diagnostic),
+            )
+            for atoms in group
+            if atoms.info.get("job_id") is not None
+        }
+
+    def finish_final_training(self, ctx: LoopContext) -> None:
+        """End of the run's closing training (``ctx.final``): write its
+        report. results/best_model/ was already updated by train_models;
+        nothing is marked done (see iterate_loops)."""
+        logger.info(
+            "Final training on the structures from all %d AL loop(s) complete; "
+            "the best model is in results/best_model/.",
+            ctx.loop,
+        )
+        self._write_loop_report(ctx)
 
     def finish_loop(self, ctx: LoopContext) -> None:
         """End of a loop: train/test filters, curation and redundancy
         removal on the grown database, then mark the loop done."""
         self._curate_dataset(ctx.base_name)
         self._mark_phase_done(ctx.base_name, "loop")
+        self._write_loop_report(ctx)
+        logger.debug(
+            "Completed AL loop %d, retraining with %d structures.",
+            ctx.loop,
+            len(ctx.train),
+        )
+        if self.plots and self.log_file is not None:
+            from alomancy.analysis.timing_plots import timing_plots
+
+            timing_plots(self.log_file, Path("results", "current_plots"))
+
+    def _write_loop_report(self, ctx: LoopContext) -> None:
         if self.report:
             try:
                 from alomancy.analysis.report import write_loop_report
@@ -2464,15 +2650,6 @@ class ActiveLearningWorkflow(ABC):
                     exc,
                     exc_info=True,
                 )
-        logger.debug(
-            "Completed AL loop %d, retraining with %d structures.",
-            ctx.loop,
-            len(ctx.train),
-        )
-        if self.plots and self.log_file is not None:
-            from alomancy.analysis.timing_plots import timing_plots
-
-            timing_plots(self.log_file, Path("results", "current_plots"))
 
     def report_sections(
         self,

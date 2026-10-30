@@ -178,6 +178,7 @@ def test_run_trains_one_model_per_loop(tmp_path, jobs_dict, monkeypatch, shared_
         ("select", 0),
         ("train", [803], {}),
         ("select", 0),
+        ("train", [803], {}),  # closing training on the last DFT
     ]
 
 

@@ -19,8 +19,10 @@ from ase.io import write as ase_write
 
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     high_accuracy_evaluation,
+    initial_frames_path,
     output_paths,
     read_existing_result,
+    read_initial_frames,
 )
 from alomancy.remote_submission.submitters import ASE_OUTPUT_PREFIX
 
@@ -342,3 +344,52 @@ class TestHighAccuracyEvaluation:
 
         submitted = mock_sub.call_args.kwargs["input_atoms_list"]
         assert len(submitted) == 1
+
+
+def _fake_go_submit(*, base_name, input_atoms_list, batch, **_kwargs):
+    """_fake_submit, plus a GO starting frame for every even job."""
+    _fake_submit(base_name=base_name, input_atoms_list=input_atoms_list, batch=batch)
+    for i, atoms in enumerate(input_atoms_list):
+        if i % 2:
+            continue
+        d = Path(
+            f"results/{base_name}/high_accuracy_evaluation/batch_{batch}",
+            f"{ASE_OUTPUT_PREFIX}_{i}",
+        )
+        initial = atoms.copy()
+        initial.info["geometry_initial"] = True
+        initial.calc = SinglePointCalculator(
+            initial, energy=-2.0, forces=np.ones((len(initial), 3))
+        )
+        ase_write(
+            str(d / "high_accuracy_evaluation_initial.xyz"), initial, format="extxyz"
+        )
+
+
+@pytest.mark.unit
+class TestInitialFrames:
+    @pytest.mark.unit
+    def test_go_starting_frames_are_collected_beside_the_results(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_go_submit):
+            result = _call([_atoms() for _ in range(3)], tmp_path)
+
+        assert len(result) == 3
+        assert not any(a.info.get("geometry_initial") for a in result)
+        frames = read_initial_frames("test_loop")
+        assert len(frames) == 2
+        assert all(a.info["geometry_initial"] for a in frames)
+        assert all(a.info["REF_energy"] == -2.0 for a in frames)
+        assert initial_frames_path("test_loop").exists()
+
+    @pytest.mark.unit
+    def test_no_starting_frames_without_go_moves(self, tmp_path, monkeypatch):
+        """SP jobs, unmoved GO jobs and jobs from before this change
+        write none: an empty collection, not an error."""
+        monkeypatch.chdir(tmp_path)
+        with patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit):
+            _call([_atoms() for _ in range(2)], tmp_path)
+        assert read_initial_frames("test_loop") == []
+        assert read_initial_frames("never_evaluated") == []

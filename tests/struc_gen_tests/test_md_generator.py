@@ -186,7 +186,7 @@ class TestGenerate:
         assert mock_submit_n.call_count == 1
         job_configs = mock_submit_n.call_args.args[1]
         assert len(job_configs) == 3
-        assert len(result) == 6  # 3 runs x 2 frames
+        assert len(result) == 3  # 3 runs x 2 frames, minus each run's seed frame
         assert mock_get_remote_info.call_args.args[0] == {
             "hpc": {"hpc_name": "test"},
             "name": "md",
@@ -436,7 +436,7 @@ class TestGenerateFailedRuns:
         result, calls = _md_generate(tmp_path, lambda i, a: 3 if i == 0 else 2)
 
         assert calls == [[0, 1, 2]]  # nothing replaced
-        assert len(result) == 3 + 2 + 2
+        assert len(result) == 2 + 1 + 1  # frames minus each run's seed frame
 
     @pytest.mark.unit
     def test_runs_that_never_stepped_are_replaced_once_with_unused_seeds(
@@ -454,7 +454,7 @@ class TestGenerateFailedRuns:
         original_sources = {a.info["source"] for a in seeds[:3]}
         assert not original_sources & {a.info["source"] for a in seeds[3:]}
         assert len({a.info["md_seed"] for a in seeds}) == 5
-        assert len(result) == 2 + 2 + 2  # runs 0, 3 and 4
+        assert len(result) == 1 + 1 + 1  # runs 0, 3 and 4, seed frames excluded
 
     @pytest.mark.unit
     def test_replacements_carry_the_item_of_the_run_they_replace(
@@ -476,7 +476,7 @@ class TestGenerateFailedRuns:
         result, calls = _md_generate(tmp_path, lambda i, a: 0 if i in (1, 3) else 2)
 
         assert calls == [[0, 1, 2], [3]]  # one replacement round only
-        assert len(result) == 2 + 2  # runs 0 and 2
+        assert len(result) == 1 + 1  # runs 0 and 2, seed frames excluded
 
     @pytest.mark.unit
     def test_all_runs_failing_raises_and_caches_nothing(self, tmp_path, monkeypatch):
@@ -509,3 +509,110 @@ class TestGenerateFailedRuns:
 
         assert calls == [[1, 2]]
         assert submitted_sources == [1, 2]  # the saved seeds, not new ones
+
+
+# --- picking candidates from an oversampled trajectory --------------------------
+
+
+def _frames(steps):
+    out = []
+    for step in steps:
+        a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[10] * 3, pbc=True)
+        a.info["md_frame"] = step
+        out.append(a)
+    return out
+
+
+@pytest.mark.unit
+def test_spread_frames_keeps_the_ends_and_spaces_the_rest():
+    from alomancy.structure_generation.md.md_wfl import spread_frames
+
+    frames = _frames(range(0, 100, 10))  # steps 0..90
+    picked = [f.info["md_frame"] for f in spread_frames(frames, 4)]
+    assert picked == [0, 30, 60, 90]
+    assert spread_frames(frames, 20) == frames
+    assert spread_frames(frames, 0) == []
+
+
+@pytest.mark.unit
+def test_spread_frames_follows_md_steps_across_gaps():
+    """Frames removed by the bond filter leave gaps; spacing is by MD step,
+    not by position in the list."""
+    from alomancy.structure_generation.md.md_wfl import spread_frames
+
+    frames = _frames([0, 10, 20, 30, 90, 100])
+    picked = [f.info["md_frame"] for f in spread_frames(frames, 3)]
+    assert picked == [0, 30, 100]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("available", "total", "expected"),
+    [
+        ([10, 10, 10], 12, [4, 4, 4]),
+        ([1, 10, 10], 12, [1, 6, 5]),
+        ([2, 3, 0], 50, [2, 3, 0]),
+        ([5, 5], 7, [4, 3]),
+    ],
+)
+def test_share_out_passes_short_runs_remainder_on(available, total, expected):
+    from alomancy.structure_generation.md.md_wfl import share_out
+
+    shares = share_out(available, total)
+    assert shares == expected
+    assert sum(shares) == min(total, sum(available))
+    assert all(s <= a for s, a in zip(shares, available, strict=True))
+
+
+@pytest.mark.unit
+def test_generate_picks_spread_physical_frames_and_keeps_the_trajectory(
+    tmp_path, monkeypatch
+):
+    """Each run's file is its whole trajectory (left untouched); the
+    candidates leave out the seed frame and collapsed frames, and are
+    spread over each run up to num_of_structures_to_generate."""
+    monkeypatch.chdir(tmp_path)
+
+    def trajectory(collapse_after):
+        frames = []
+        for step in range(0, 110, 10):  # 11 frames, step 0 = the seed
+            d = 1.0 if step <= collapse_after else 0.2
+            a = Atoms("H2", positions=[[0, 0, 0], [0, 0, d]], cell=[10] * 3, pbc=True)
+            a.info["md_frame"] = step
+            frames.append(a)
+        return frames
+
+    def fake_submit_n(function, job_configs, remote_info, **kwargs):
+        for jc in job_configs:
+            out_dir = Path(jc["function_kwargs"]["out_dir"])
+            index = int(out_dir.name.rsplit("_", 1)[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # run 0 stays physical; run 1 collapses after step 40
+            frames = trajectory(100 if index == 0 else 40)
+            write(str(out_dir / "md.xyz"), frames, format="extxyz")
+        return [None] * len(job_configs)
+
+    with (
+        patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n),
+        patch(f"{_MODULE}.get_remote_info"),
+    ):
+        result = generate(
+            seed_atoms=_distinct_seeds(10),
+            calculator_spec=_SPEC,
+            config={
+                "num_of_structures_to_generate": 8,
+                "md_kwargs": {"structure_selection_kwargs": {"num_of_md_starts": 2}},
+            },
+            base_name="al_loop_0",
+            name="md",
+            hpc={},
+            max_time="1H",
+        )
+
+    by_run = {0: [], 1: []}
+    for a in result:
+        by_run[a.info["md_run"]].append(a.info["md_frame"])
+    assert by_run == {0: [10, 40, 70, 100], 1: [10, 20, 30, 40]}
+    assert all(
+        len(read(_MD_DIR / f"md_output_{i}" / "md.xyz", ":")) == 11 for i in (0, 1)
+    )

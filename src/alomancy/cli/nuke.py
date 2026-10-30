@@ -47,8 +47,17 @@ def nuke_expyre_results(
         print("Aborting.")
         return
 
-    for item in expyre_results_dir.iterdir():
-        if item.name == "config.json":
+    wipe_local_expyre(expyre_results_dir)
+
+
+def wipe_local_expyre(
+    expyre_dir: Path, keep: tuple[str, ...] = ("config.json", "alomancy.lock")
+) -> None:
+    """Delete everything in an ExPyRe directory (jobs.db, stage dirs)
+    except `keep`: config.json, so the run still finds its systems, and the
+    run lock, which a live run may hold (remote_submission/executor.py)."""
+    for item in expyre_dir.iterdir():
+        if item.name in keep:
             continue
         if item.is_file() or item.is_symlink():
             item.unlink()

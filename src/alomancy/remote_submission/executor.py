@@ -1,6 +1,7 @@
 import fcntl
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -14,6 +15,7 @@ from typing import Any, Union, cast
 from expyre.func import ExPyRe, ExPyReJobDiedError, ExPyReTimeoutError
 
 from alomancy.configs.remote_info import RemoteInfo
+from alomancy.remote_submission import progress
 
 logger = logging.getLogger(__name__)
 
@@ -281,12 +283,36 @@ def _ensure_expyre_sync_serialized() -> None:
                 # Another thread already ran a full sync for this host
                 # while we waited for the lock -- nothing left to do.
                 return None
-            result = orig_sync(self, *args, **kwargs)
+            try:
+                result = orig_sync(self, *args, **kwargs)
+            except Exception as exc:
+                progress.TRACKER.sync_failed(sys_name, exc)
+                raise
             _sync_generations[sys_name] = _sync_generations.get(sys_name, 0) + 1
+            progress.TRACKER.synced(sys_name, _remote_statuses(sys_name))
             return result
 
     ExPyRe.sync_remote_results_status = _locked_sync
     _expyre_sync_patched = True
+
+
+def _remote_statuses(sys_name: str) -> dict[str, str]:
+    """{expyre job id: remote_status} for the system's ongoing jobs, as the
+    sync just recorded them in expyre's DB (for the live status panel)."""
+    from expyre import config as expyre_config
+
+    if expyre_config.db is None:
+        return {}
+    try:
+        return {
+            job["id"]: job["remote_status"]
+            for job in expyre_config.db.jobs(
+                system=re.escape(sys_name), status="ongoing"
+            )
+        }
+    except Exception as exc:  # status display must never break polling
+        logger.debug("Could not read remote statuses for %s: %s", sys_name, exc)
+        return {}
 
 
 def _ensure_expyre_db_thread_safe() -> None:
@@ -393,21 +419,41 @@ def _get_results_with_resume(
     transport RuntimeError, then later an ExPyReTimeoutError) must not let
     an already-elevated shared count cause the *other* exception type to
     exhaust its own, independent budget prematurely.
+
+    Time in the queue doesn't count: a timeout while the job has never
+    started (status still 'submitted') resumes without using an attempt,
+    so a long queue (a per-user running-job cap with many jobs submitted)
+    can't fail jobs that never ran. A job held forever then waits forever;
+    `alomancy status` shows it queued and `alomancy cancel` stops it.
     """
     transport_attempts = 0
     timeout_attempts = 0
+    queued_since = time.time()
     while True:
         try:
             # job.get_results() is untyped third-party code (returns Any);
             # cast() documents the actual contract without runtime cost.
             return cast(
                 "tuple[Any, str, str]",
-                job.get_results(timeout=timeout, check_interval=check_interval),
+                # quiet: expyre otherwise writes a status letter per poll
+                # per thread to stderr; progress.py shows the status instead.
+                job.get_results(
+                    timeout=timeout, check_interval=check_interval, quiet=True
+                ),
             )
         except Exception as exc:
             status = getattr(job, "status", None)
             if status not in _RESUMABLE_JOB_STATUSES:
                 raise
+            if isinstance(exc, ExPyReTimeoutError) and status == "submitted":
+                logger.info(
+                    "Job %d still queued after %.1f h; waiting on (queue time "
+                    "doesn't count toward the job's time limit).",
+                    job_display_index + 1,
+                    (time.time() - queued_since) / 3600,
+                    extra={"event": "job_still_queued", "data": _item_data(job)},
+                )
+                continue
             if isinstance(exc, ExPyReTimeoutError):
                 timeout_attempts += 1
                 attempt, retry_limit = timeout_attempts, _TIMEOUT_RETRY_LIMIT
@@ -450,6 +496,9 @@ class RemoteJobExecutor:
     def __init__(self, remote_info: RemoteInfo):
         self.remote_info = remote_info
         self.jobs = []
+        # The live-status batch (progress.TRACKER) of the jobs being run;
+        # -1 (no batch) until run_all_jobs_bounded registers one.
+        self._batch_id = -1
 
     def submit_job(
         self,
@@ -490,6 +539,7 @@ class RemoteJobExecutor:
         # What the job computes ("fit_0", "md_run_3", ...); a retry of the
         # same thing carries the same item. See _item_data.
         job._alomancy_item = item
+        job._alomancy_loop = progress.loop_from_paths(final_output_files)
         self.jobs.append(job)
         return job
 
@@ -599,6 +649,12 @@ class RemoteJobExecutor:
                 )
                 job._alomancy_lock_timeout = lock_timeout
             logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
+            progress.TRACKER.submitted(
+                self._batch_id,
+                index,
+                getattr(job, "remote_id", None),
+                getattr(job, "id", None),
+            )
 
             result, stdout, stderr = _get_results_with_resume(
                 job,
@@ -657,6 +713,7 @@ class RemoteJobExecutor:
                 logger.debug("Job %d stdout:\n%s", index + 1, stdout)
             if stderr:
                 logger.debug("Job %d stderr:\n%s", index + 1, stderr)
+            progress.TRACKER.finished(self._batch_id, index, ok=True)
             return index, result
         except Exception as exc:
             logger.warning(
@@ -671,6 +728,7 @@ class RemoteJobExecutor:
                 },
             )
             logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)
+            progress.TRACKER.finished(self._batch_id, index, ok=False)
             self._salvage_partial_output(index, job)
             return index, None
 
@@ -766,20 +824,45 @@ class RemoteJobExecutor:
         )
 
         results: list[Any] = [None] * len(self.jobs)
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(self._run_single_job, i, job): i
-                for i, job in enumerate(self.jobs)
-            }
-            for future in as_completed(futures):
-                index = futures[future]
-                try:
-                    index, result = future.result()
-                    results[index] = result
-                except Exception as exc:
-                    logger.error(
-                        "Job %d worker raised unexpectedly: %s", index + 1, exc
-                    )
+        self._batch_id = progress.TRACKER.register(
+            getattr(self.remote_info, "job_name", None) or "remote jobs",
+            [
+                (
+                    getattr(job, "_alomancy_item", None) or getattr(job, "name", ""),
+                    self.remote_info.sys_name,
+                )
+                for job in self.jobs
+            ],
+            loop=next(
+                (
+                    loop
+                    for job in self.jobs
+                    if (loop := getattr(job, "_alomancy_loop", None)) is not None
+                ),
+                None,
+            ),
+            check_interval=getattr(self.remote_info, "check_interval", 10),
+        )
+        try:
+            with (
+                progress.ProgressMonitor(),
+                ThreadPoolExecutor(max_workers=max_workers) as pool,
+            ):
+                futures = {
+                    pool.submit(self._run_single_job, i, job): i
+                    for i, job in enumerate(self.jobs)
+                }
+                for future in as_completed(futures):
+                    index = futures[future]
+                    try:
+                        index, result = future.result()
+                        results[index] = result
+                    except Exception as exc:
+                        logger.error(
+                            "Job %d worker raised unexpectedly: %s", index + 1, exc
+                        )
+        finally:
+            progress.TRACKER.unregister(self._batch_id)
 
         return results
 

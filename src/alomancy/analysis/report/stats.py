@@ -140,12 +140,18 @@ def _dataset_stats(db: Any, loop: int) -> dict[str, Any]:
     reasons: Counter = Counter()
     new: Counter = Counter()
     new_reasons: Counter = Counter()
+    # GO starting frames (geometry_initial) are counted on their own: they
+    # are mostly high-force by design and would skew the new-structure
+    # filter statistics.
+    initial: Counter = Counter()
     flagged_total = 0
     for container in db.partition.list_containers():
         meta = container.AtomPositionManager.metadata
         al_loop = meta.get("al_loop")
         if al_loop is not None and int(al_loop) > loop:
             continue
+        this_loop = al_loop is not None and int(al_loop) == loop
+        starting_frame = bool(meta.get("geometry_initial", False))
         if meta.get("is_duplicate", False):
             status = "redundant"
             flagged_total += 1
@@ -153,13 +159,13 @@ def _dataset_stats(db: Any, loop: int) -> dict[str, Any]:
             status = "quality_filtered"
             for reason in meta.get("quality_filter_reasons") or []:
                 reasons[reason] += 1
-                if al_loop is not None and int(al_loop) == loop:
+                if this_loop and not starting_frame:
                     new_reasons[reason] += 1
         else:
             status = meta.get("split") or "unsplit"
         composition[meta.get("config_type", "unknown")][status] += 1
-        if al_loop is not None and int(al_loop) == loop:
-            new[status] += 1
+        if this_loop:
+            (initial if starting_frame else new)[status] += 1
     totals: Counter = Counter()
     for counts in composition.values():
         totals.update(counts)
@@ -170,6 +176,7 @@ def _dataset_stats(db: Any, loop: int) -> dict[str, Any]:
         "redundant_total": flagged_total,
         "new_this_loop": dict(new),
         "new_quality_filter_reasons": dict(new_reasons),
+        "initial_frames_this_loop": dict(initial),
     }
 
 

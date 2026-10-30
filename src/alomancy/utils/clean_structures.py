@@ -50,6 +50,23 @@ def recover_swallowed_model_energy(atoms: Atoms) -> bool:
     return False
 
 
+def _computed_stress(structure: Atoms, label_source: str) -> np.ndarray | None:
+    """The stress label for *structure*: from the calculator's results only
+    (never ``get_stress()``, which on a file-based calculator such as QE's
+    reruns the whole calculation when stress wasn't computed), or, for
+    ``label_source="reference"``, an existing ``REF_stresses`` first. With
+    ``"calculator"`` an ``info`` value is ignored: it may be stale, copied
+    from the structure an MD frame started from."""
+    if label_source == "reference" and "REF_stresses" in structure.info:
+        return np.asarray(structure.info["REF_stresses"], dtype=float)
+    results = getattr(structure.calc, "results", None) or {}
+    stress = results.get("stress")
+    if stress is None:
+        return None
+    stress = np.asarray(stress, dtype=float)
+    return stress if np.isfinite(stress).all() else None
+
+
 def clean_structures(
     structures: list[Atoms],
     config_type: str,
@@ -108,17 +125,16 @@ def clean_structures(
             structure_copy.info["REF_energy"] = energy
             structure_copy.arrays["REF_forces"] = forces
 
-            if "REF_stresses" in structure.info:
-                structure_copy.info["REF_stresses"] = structure.info["REF_stresses"]
+            stress = _computed_stress(structure, label_source)
+            if stress is not None:
+                structure_copy.info["REF_stresses"] = stress
             else:
-                try:
-                    structure_copy.info["REF_stresses"] = structure.get_stress()
-                except Exception:
-                    # Stress is not always physically meaningful (e.g.
-                    # non-periodic structures) or available (e.g. a
-                    # calculator that didn't compute it) -- unlike
-                    # REF_energy/REF_forces this is never fatal.
-                    n_no_stress += 1
+                # Stress is not always physically meaningful (e.g.
+                # non-periodic structures) or available (e.g. a calculator
+                # that didn't compute it) -- unlike REF_energy/REF_forces
+                # this is never fatal.
+                structure_copy.info.pop("REF_stresses", None)
+                n_no_stress += 1
 
         if override_config_type or "config_type" not in structure.info:
             logger.debug("Setting config_type to '%s'.", config_type)

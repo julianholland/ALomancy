@@ -111,9 +111,10 @@ alomancy run config.yaml
 
 Each loop trains a committee of three MACE models, runs MD with the best one,
 sends the 50 structures the committee disagrees on most to Quantum ESPRESSO,
-adds them to the training set and starts again. Stop it at any point and run
-the same command again: it picks up where it left off, down to the step
-within a loop.
+adds them to the training set and starts again. Stop it at any point
+(`alomancy cancel` in the run's directory also cancels its queued HPC jobs)
+and run the same command again: it picks up where it left off, down to the
+step within a loop.
 
 More complete, tested configs are in [`examples/configs/`](https://github.com/julianholland/ALomancy/tree/master/examples/configs).
 
@@ -258,6 +259,8 @@ time isn't spent on structures the training filter would throw away.
 | `alomancy add-hpc` | Interactive wizard to add an HPC system |
 | `alomancy list-hpc [--check-remote]` | List configured HPC systems (and their installed ALomancy version) |
 | `alomancy upgrade-hpc` | Upgrade ALomancy on one or more HPC systems |
+| `alomancy status [--watch]` | Show the run's remote jobs: done/running/queued per HPC and when each last sent data |
+| `alomancy cancel [--yes]` | Stop the run in this directory, cancel its HPC jobs, optionally delete its ExPyRe folders |
 | `alomancy nuke` | Delete local ExPyRe job state |
 
 ## Extending ALomancy

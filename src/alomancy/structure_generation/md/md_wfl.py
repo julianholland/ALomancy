@@ -13,6 +13,7 @@ from ase.units import GPa, fs
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.mlip.base import CalculatorSpec
 from alomancy.remote_submission.executor import submit_n
+from alomancy.utils.clean_structures import filter_structures_by_min_bond_distance
 from alomancy.utils.dataset_curation import geometry_digest
 from alomancy.utils.seed_selection import mark_structures_for_dft, select_diverse_seeds
 
@@ -62,6 +63,7 @@ def run_md(
     equilibration_steps: int = 0,
     equilibration_temperature: float = 300.0,
     traj_interval: int | None = None,
+    snapshot_oversample: int = 10,
 ):
     """
     ensemble : {"nvt", "npt"}
@@ -81,6 +83,13 @@ def run_md(
         The ASE calculator that drives the dynamics: the trained model's own
         calculator, built on the remote node by ``_run_md_with_spec`` from a
         ``CalculatorSpec``.
+    snapshot_oversample : int
+        Snapshots are recorded this many times more often than the
+        candidates finally needed (default 10). Every snapshot stays in
+        ``out_dir/<name>.xyz`` (with ``info["md_frame"]``, the MD step) as
+        a viewable trajectory; ``generate`` then keeps the physical ones
+        and picks frames spread out over each run. A run that goes
+        unstable early still yields several usable frames this way.
     traj_interval : int, optional
         When set, every ``traj_interval``-th production MD step is appended
         to ``out_dir/md_trajectory.xyz`` (extxyz), a full-resolution record
@@ -97,6 +106,16 @@ def run_md(
         raise ValueError(
             f"md_kwargs.traj_interval must be a positive integer or null, got "
             f"{traj_interval!r}."
+        )
+
+    if (
+        isinstance(snapshot_oversample, bool)
+        or not isinstance(snapshot_oversample, int)
+        or snapshot_oversample < 1
+    ):
+        raise ValueError(
+            "md_kwargs.snapshot_oversample must be a positive integer, got "
+            f"{snapshot_oversample!r}."
         )
 
     num_of_structures_to_generate = structure_generation_job_dict[
@@ -206,8 +225,12 @@ def run_md(
 
         dyn.attach(_write_traj_frame, interval=traj_interval)
 
-    # num_of_structures_to_generate snapshots in total, across all runs.
-    snapshot_interval = steps * total_md_runs // num_of_structures_to_generate
+    # snapshot_oversample x num_of_structures_to_generate snapshots in
+    # total, across all runs; generate() picks the candidates from them.
+    snapshot_interval = max(
+        1,
+        steps * total_md_runs // (num_of_structures_to_generate * snapshot_oversample),
+    )
 
     for _ in range(steps // snapshot_interval):
         # recording -- happens before any force check/dynamics step below,
@@ -219,12 +242,14 @@ def run_md(
         # it (e.g. by letting an exception propagate and kill the whole
         # remote job with nothing recovered) would throw away the most
         # informative candidate this run produced.
+        frame = dyn.atoms.copy()
+        frame.info["md_frame"] = int(dyn.nsteps)
         write(
             str(Path(out_dir, f"{structure_generation_job_dict['name']}.xyz")),
-            dyn.atoms.copy(),
+            frame,
             append=True,
         )
-        atom_traj_list.append(dyn.atoms.copy())
+        atom_traj_list.append(frame)
 
         # force check -- also catches non-finite (NaN/Inf) forces, which a
         # bare ">" comparison silently lets through (e.g. `np.nan > 1000`
@@ -552,16 +577,36 @@ def generate(
             "Nothing was cached, so a restart will retry."
         )
 
-    structure_list: list[Atoms] = []
+    # Each run's file is its whole (oversampled) trajectory and stays as
+    # it is; the candidates are its physical frames, spread over the run.
     frames_per_run = []
+    recorded: list[Atoms] = []
     for i in completed:
         frames = read(out_dir(i) / target_file, ":", format="extxyz")
         frames_per_run.append(len(frames))
-        structure_list.extend(frames)
+        for position, frame in enumerate(frames[1:], start=1):  # 0 = the seed
+            frame.info["md_run"] = i
+            frame.info.setdefault("md_frame", position)
+            recorded.append(frame)
+    physical = filter_structures_by_min_bond_distance(recorded)
+    by_run: dict[int, list[Atoms]] = {i: [] for i in completed}
+    for frame in physical:
+        by_run[frame.info["md_run"]].append(frame)
+    valid_per_run = [len(by_run[i]) for i in completed]
+    target = config.get("num_of_structures_to_generate") or sum(valid_per_run)
+    shares = share_out(valid_per_run, target)
+    structure_list: list[Atoms] = [
+        frame
+        for i, k in zip(completed, shares, strict=True)
+        for frame in spread_frames(by_run[i], k)
+    ]
     logger.info(
-        "MD for %s: %d run(s) completed, %d candidate frame(s).",
+        "MD for %s: %d run(s) completed, %d frame(s) recorded, %d physical, "
+        "%d candidate(s) picked.",
         base_name,
         len(completed),
+        sum(frames_per_run),
+        len(physical),
         len(structure_list),
         extra={
             "event": "md_summary",
@@ -570,6 +615,8 @@ def generate(
                 "completed": len(completed),
                 "replaced": len(replaced) + len(not_started),
                 "frames_per_run": frames_per_run,
+                "valid_per_run": valid_per_run,
+                "selected_per_run": shares,
                 "candidates": len(structure_list),
             },
         },
@@ -578,6 +625,48 @@ def generate(
     candidates_path.parent.mkdir(parents=True, exist_ok=True)
     write(candidates_path, structure_list, format="extxyz")
     return structure_list
+
+
+def spread_frames(frames: list[Atoms], k: int) -> list[Atoms]:
+    """*k* of a run's *frames* (in MD order), spread as far apart in MD step
+    (``info["md_frame"]``) as possible: the first and last, and the rest
+    nearest to evenly spaced steps between. All of them when k >= len."""
+    if k <= 0:
+        return []
+    if k >= len(frames):
+        return list(frames)
+    steps = np.array(
+        [float(f.info.get("md_frame", i)) for i, f in enumerate(frames)], dtype=float
+    )
+    chosen: set[int] = set()
+    for target in np.linspace(steps[0], steps[-1], k):
+        for j in np.argsort(np.abs(steps - target), kind="stable"):
+            if int(j) not in chosen:
+                chosen.add(int(j))
+                break
+    return [frames[j] for j in sorted(chosen)]
+
+
+def share_out(available: list[int], total: int) -> list[int]:
+    """How many candidates each run gives towards *total*: equal shares,
+    capped at what a run has, with the remainder passed to runs that have
+    more. Never more than a run's *available* frames."""
+    shares = [0] * len(available)
+    remaining = total
+    open_runs = [i for i, n in enumerate(available) if n > 0]
+    while remaining > 0 and open_runs:
+        share = max(1, remaining // len(open_runs))
+        still_open = []
+        for i in open_runs:
+            take = min(share, available[i] - shares[i], remaining)
+            shares[i] += take
+            remaining -= take
+            if shares[i] < available[i]:
+                still_open.append(i)
+            if remaining == 0:
+                break
+        open_runs = still_open
+    return shares
 
 
 def _replacement_seeds(

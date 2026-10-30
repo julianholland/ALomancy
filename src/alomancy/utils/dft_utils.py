@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from ase import Atoms
+from ase.calculators.singlepoint import SinglePointCalculator
 from ase.io import write
 from ase.optimize import BFGS
 
@@ -57,6 +58,12 @@ def refresh_dft_labels(atoms: Atoms, source: str = "DFT") -> Atoms:
     clean = clean_structures([atoms], "DFT", label_source="calculator")[0]
     atoms.info["REF_energy"] = clean.info["REF_energy"]
     atoms.set_array("REF_forces", clean.arrays["REF_forces"].copy())
+    # Stress too: replace or drop whatever the structure carried in (an MD
+    # frame inherits its seed's info), so it never outlives its source.
+    if "REF_stresses" in clean.info:
+        atoms.info["REF_stresses"] = clean.info["REF_stresses"]
+    else:
+        atoms.info.pop("REF_stresses", None)
     atoms.info["REF_label_source"] = source
     if getattr(atoms.calc, "converged", None) is True:
         atoms.info["dft_converged"] = True
@@ -72,6 +79,32 @@ def refresh_dft_labels(atoms: Atoms, source: str = "DFT") -> Atoms:
 def _write_dft_result(atoms: Atoms, out_dir: str, name: str) -> None:
     write(Path(out_dir, f"{name}.xyz"), atoms, format="extxyz")
     logger.debug("Writing structures to %s as %s.xyz", out_dir, name)
+
+
+INITIAL_FRAME_SUFFIX = "_initial"
+_SNAPSHOT_PROPERTIES = ("energy", "free_energy", "forces", "stress")
+_RUN_STATISTICS = (
+    "geometry_converged",
+    "geometry_steps",
+    "geometry_max_steps",
+    "geometry_fmax_target",
+    "dft_wall_time_s",
+)
+
+
+def _snapshot(atoms: Atoms) -> Atoms:
+    """A copy of *atoms* holding the DFT results already computed for its
+    current geometry, read from calc.results only: asking the live
+    calculator for a property it didn't compute (e.g. stress with QE
+    tstress off) would rerun the whole calculation."""
+    results = atoms.calc.results
+    copy: Atoms = atoms.copy()
+    copy.calc = SinglePointCalculator(
+        copy, **{k: results[k] for k in _SNAPSHOT_PROPERTIES if k in results}
+    )
+    for key in _RUN_STATISTICS:
+        copy.info.pop(key, None)
+    return copy
 
 
 def _run_sp(
@@ -109,6 +142,11 @@ def _run_go(
     fmax = job_dict.get("fmax", 0.05)
     steps = job_dict.get("max_num_of_relax_steps", 200)
     start = time.perf_counter()
+    # Step 0 is a full DFT calculation of the unrelaxed geometry; BFGS's
+    # first step reuses this cached result, so keeping it costs nothing.
+    input_structure.get_forces()
+    initial = _snapshot(input_structure)
+    dft_converged = getattr(input_structure.calc, "converged", None)
     converged = opt.run(fmax=fmax, steps=steps)
     wall_time = time.perf_counter() - start
     if not converged:
@@ -127,5 +165,14 @@ def _run_go(
     input_structure.info["geometry_max_steps"] = int(steps)
     input_structure.info["geometry_fmax_target"] = float(fmax)
     input_structure.info["dft_wall_time_s"] = wall_time
+    input_structure.info["geometry_step"] = int(opt.nsteps)
     _write_dft_result(input_structure, out_dir, job_dict["name"])
+    if opt.nsteps > 0 and dft_converged is not False:
+        # The starting geometry is training data too (filters decide).
+        refresh_dft_labels(initial, str(Path(out_dir).resolve()))
+        if dft_converged:
+            initial.info["dft_converged"] = True
+        initial.info["geometry_step"] = 0
+        initial.info["geometry_initial"] = True
+        _write_dft_result(initial, out_dir, job_dict["name"] + INITIAL_FRAME_SUFFIX)
     return input_structure

@@ -92,6 +92,91 @@ def histogram(
     _save(fig, path)
 
 
+def selection_rank_plot(
+    values: list[float],
+    selected: list[bool],
+    path: Path,
+    *,
+    title: str,
+    ylabel: str,
+    cut: float | None,
+    unit: str = "",
+) -> None:
+    """Candidates ranked by score (1 = highest) on a log axis, coloured
+    selected / skipped (unselected but at or above the cut, e.g. redundant)
+    / not selected, with the cut and the selected ranks shaded. Unlike a
+    histogram, an outlier can't squash the rest into one bin, and the share
+    selected is the shaded width. Zeros (no log value) sit on a floor below
+    the smallest positive score and are counted in the legend."""
+    setup_alomancy_style()
+    fig, ax = plt.subplots(figsize=(7, 4))
+    scores = np.asarray(values, dtype=float)
+    chosen = np.asarray(selected, dtype=bool)
+    order = np.argsort(-scores, kind="stable")
+    scores, chosen = scores[order], chosen[order]
+    ranks = np.arange(1, len(scores) + 1)
+    positive = scores[scores > 0]
+    floor = float(positive.min()) / 2 if positive.size else 1e-3
+    zero = scores <= 0
+    shown = np.where(zero, floor, scores)
+    size = float(np.clip(2000 / max(len(scores), 1), 4, 30))
+
+    if chosen.any():
+        ax.axvspan(0.5, ranks[chosen].max() + 0.5, color=PALETTE[0], alpha=0.08, lw=0)
+    skipped = ~chosen & (scores >= cut) if cut is not None else np.zeros_like(chosen)
+    groups = [
+        ("selected", chosen, PALETTE[0], "none"),
+        ("skipped (e.g. redundant)", skipped, STATUS_COLORS["redundant"], "#6B7280"),
+        ("not selected", ~chosen & ~skipped, STATUS_COLORS["unsplit"], "none"),
+    ]
+    for label, mask, color, edge in groups:
+        for is_zero in (False, True):
+            part = mask & (zero == is_zero)
+            if not part.any():
+                continue
+            text = f"{label}, score 0 (n={int(part.sum())})" if is_zero else label
+            ax.scatter(
+                ranks[part],
+                shown[part],
+                s=size,
+                color=color,
+                edgecolors=edge,
+                linewidths=0.6,
+                marker="v" if is_zero else "o",
+                label=text,
+                zorder=3,
+            )
+    if cut is not None and cut > 0:
+        ax.axhline(cut, color=STAGE2_COLOR, linestyle="--", linewidth=1.5)
+        # Below the line at the left: every selected point is above it.
+        ax.annotate(
+            f"selection cut {cut:.3g}{f' {unit}' if unit else ''}",
+            xy=(0, cut),
+            xycoords=("axes fraction", "data"),
+            xytext=(4, -11),
+            textcoords="offset points",
+            ha="left",
+            fontsize=8,
+            color="#374151",
+        )
+    ax.set_yscale("log")
+    if len(shown):
+        lowest = min(float(shown.min()), cut if cut and cut > 0 else np.inf)
+        ax.set_ylim(bottom=lowest / 3)
+    ax.set_xlim(0.5, max(len(scores), 1) + 0.5)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    n, total = int(chosen.sum()), len(scores)
+    share = f" ({100 * n / total:.0f} %)" if total else ""
+    ax.set_title(f"{title}\n{n} of {total} selected{share}")
+    ax.set_xlabel("Rank (1 = highest)")
+    ax.set_ylabel(ylabel)
+    ax.grid(True, axis="y")
+    if ax.get_legend_handles_labels()[0]:
+        # Upper right is empty on a descending curve.
+        ax.legend(fontsize=8, loc="upper right")
+    _save(fig, path)
+
+
 def bar_per_item(
     values: list[float], path: Path, *, title: str, xlabel: str, ylabel: str
 ) -> None:
@@ -350,15 +435,23 @@ def composition(
 def parity(
     predictions: dict[str, tuple], path: Path, *, title: str, energy_label: str
 ) -> None:
-    """Energy and force parity for one model, train and test overlaid.
+    """Energy and force parity for one model, train and test overlaid, plus
+    a stress panel (GPa) when any split has stress pairs.
 
     *predictions* is GlobalDatabase.get_model_predictions' shape:
-    {split: (e_ref, e_pred, f_ref, f_pred)}."""
+    {split: (e_ref, e_pred, f_ref, f_pred[, s_ref, s_pred])}."""
+    from alomancy.analysis.mlip_plots import stress_pairs
+
     setup_alomancy_style()
-    fig, (ax_e, ax_f) = plt.subplots(1, 2, figsize=(10, 4.6))
     splits = [s for s in ("train", "test") if s in predictions]
+    with_stress = any(len(stress_pairs(predictions[s])[0]) for s in splits)
+    fig, axes = plt.subplots(
+        1, 3 if with_stress else 2, figsize=(15 if with_stress else 10, 4.6)
+    )
+    ax_e, ax_f = axes[0], axes[1]
+    ax_s = axes[2] if with_stress else None
     for i, split in enumerate(splits):
-        e_ref, e_pred, f_ref, f_pred = predictions[split]
+        e_ref, e_pred, f_ref, f_pred = predictions[split][:4]
         color = PALETTE[i]
         e_mae = (
             float(np.mean(np.abs(np.asarray(e_pred) - np.asarray(e_ref))))
@@ -388,10 +481,24 @@ def parity(
             edgecolors="none",
             label=f"{split} (MAE {f_mae:.3f} eV/Å)",
         )
-    for ax, unit in (
+        s_ref, s_pred = stress_pairs(predictions[split])
+        if ax_s is not None and len(s_ref):
+            ax_s.scatter(
+                s_ref,
+                s_pred,
+                s=10,
+                alpha=0.6,
+                color=color,
+                edgecolors="none",
+                label=f"{split} (MAE {float(np.mean(np.abs(s_pred - s_ref))):.3f} GPa)",
+            )
+    panels = [
         (ax_e, f"{energy_label} (eV/atom)"),
         (ax_f, "force component (eV/Å)"),
-    ):
+    ]
+    if ax_s is not None:
+        panels.append((ax_s, "stress component (GPa)"))
+    for ax, unit in panels:
         lo, hi = ax.get_xlim()
         lo, hi = min(lo, ax.get_ylim()[0]), max(hi, ax.get_ylim()[1])
         ax.plot([lo, hi], [lo, hi], color=DIAGONAL_COLOR, linewidth=1, zorder=0)
@@ -429,7 +536,7 @@ def percent_errors(
         if split not in predictions:
             continue
         e_ref, e_pred, f_ref, f_pred = (
-            np.asarray(v, dtype=float).reshape(-1) for v in predictions[split]
+            np.asarray(v, dtype=float).reshape(-1) for v in predictions[split][:4]
         )
         entry: dict[str, tuple[np.ndarray, np.ndarray, int]] = {}
         if formation_energy:

@@ -218,7 +218,9 @@ def plot_training_curves(
 
 
 def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | None:
-    """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft, f_pred).
+    """Read a MACE eval predictions xyz and return (e_dft, e_pred, f_dft,
+    f_pred, s_dft, s_pred); the stress arrays (Voigt components, GPa) are
+    empty unless structures carry both REF_stresses and model_stress.
 
     Written by ALomancyTrainer.evaluate after training, on the remote node. Looks for
     model_energy / model_forces keys. Returns None if the file has no usable rows.
@@ -261,7 +263,9 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
             )
             use_e0 = False
 
-    e_dft, e_pred, f_dft, f_pred = [], [], [], []
+    from alomancy.mlip.evaluation import stress_pair_gpa
+
+    e_dft, e_pred, f_dft, f_pred, s_dft, s_pred = [], [], [], [], [], []
     for atoms in rows:
         n = len(atoms)
         shift = sum(e0_map[s] for s in atoms.get_chemical_symbols()) if use_e0 else 0.0
@@ -270,13 +274,29 @@ def _parse_eval_xyz(path: Path, e0: dict[str, float] | None = None) -> tuple | N
         if "REF_forces" in atoms.arrays and "model_forces" in atoms.arrays:
             f_dft.extend(atoms.arrays["REF_forces"].flatten().tolist())
             f_pred.extend(atoms.arrays["model_forces"].flatten().tolist())
+        stress = stress_pair_gpa(
+            atoms.info.get("REF_stresses"), atoms.info.get("model_stress")
+        )
+        if stress is not None:
+            s_dft.extend(stress[0])
+            s_pred.extend(stress[1])
 
     return (
         np.array(e_dft),
         np.array(e_pred),
         np.array(f_dft),
         np.array(f_pred),
+        np.array(s_dft),
+        np.array(s_pred),
     )
+
+
+def stress_pairs(result: tuple) -> tuple[np.ndarray, np.ndarray]:
+    """The (DFT, model) stress arrays of a parity tuple, empty for a tuple
+    without them (energy/force-only sources)."""
+    if len(result) >= 6:
+        return np.asarray(result[4], dtype=float), np.asarray(result[5], dtype=float)
+    return np.array([]), np.array([])
 
 
 _BEST_STAR_COLOR = "#D4AF37"
@@ -309,17 +329,26 @@ def _draw_parity_figure(
     file_suffix: str,
     energy_label: str = "energy",
 ) -> None:
-    fig, axes = plt.subplots(n_fits, 2, figsize=(8, 4 * n_fits), squeeze=False)
+    # A stress column only when some fit has stress pairs.
+    with_stress = any(
+        r is not None and len(stress_pairs(r)[0]) for r in results_per_fit
+    )
+    n_cols = 3 if with_stress else 2
+    fig, axes = plt.subplots(
+        n_fits, n_cols, figsize=(4 * n_cols, 4 * n_fits), squeeze=False
+    )
     fig.suptitle(f"{name} — {set_label} Set Parity  [{base_name}]", y=1.01)
     energy_maes: dict[int, float] = {}
     force_maes: dict[int, float] = {}
+    stress_maes: dict[int, float] = {}
 
     for i, result in enumerate(results_per_fit):
         ax_e, ax_f = axes[i, 0], axes[i, 1]
+        ax_s = axes[i, 2] if with_stress else None
         row_title = f"fit_{i}  (seed {seed + i})"
 
         if result is None:
-            for ax in (ax_e, ax_f):
+            for ax in [a for a in (ax_e, ax_f, ax_s) if a is not None]:
                 ax.text(
                     0.5,
                     0.5,
@@ -329,8 +358,30 @@ def _draw_parity_figure(
                     transform=ax.transAxes,
                 )
         else:
-            e_dft_arr, e_pred_arr, f_dft_arr, f_pred_arr = result
+            e_dft_arr, e_pred_arr, f_dft_arr, f_pred_arr = result[:4]
             color = PALETTE[i % len(PALETTE)]
+            s_dft_arr, s_pred_arr = stress_pairs(result)
+            if ax_s is not None and len(s_dft_arr):
+                mae_s = float(np.mean(np.abs(s_dft_arr - s_pred_arr)))
+                stress_maes[i] = mae_s
+                lim_s = (
+                    min(s_dft_arr.min(), s_pred_arr.min()),
+                    max(s_dft_arr.max(), s_pred_arr.max()),
+                )
+                ax_s.scatter(
+                    s_dft_arr, s_pred_arr, s=6, alpha=0.5, color=color, rasterized=True
+                )
+                ax_s.plot(
+                    lim_s, lim_s, color=DIAGONAL_COLOR, linestyle="--", linewidth=0.8
+                )
+                ax_s.text(
+                    0.05,
+                    0.95,
+                    f"MAE = {mae_s:.3f} GPa",
+                    transform=ax_s.transAxes,
+                    va="top",
+                    fontsize=8,
+                )
 
             if len(e_dft_arr):
                 mae_e = np.mean(np.abs(e_dft_arr - e_pred_arr))
@@ -380,12 +431,18 @@ def _draw_parity_figure(
         ax_f.set_xlabel("DFT forces (eV/Å)")
         ax_f.set_ylabel("Model forces (eV/Å)")
         ax_f.set_title(f"{row_title} — Forces")
+        if ax_s is not None:
+            ax_s.set_xlabel("DFT stress (GPa)")
+            ax_s.set_ylabel("Model stress (GPa)")
+            ax_s.set_title(f"{row_title} — Stress")
 
     # Per column: the energy and force winners may be different fits.
     if energy_maes:
         _add_best_star(axes[min(energy_maes, key=energy_maes.__getitem__), 0])
     if force_maes:
         _add_best_star(axes[min(force_maes, key=force_maes.__getitem__), 1])
+    if stress_maes:
+        _add_best_star(axes[min(stress_maes, key=stress_maes.__getitem__), 2])
 
     fig.tight_layout()
     add_logo_watermark(fig)
@@ -405,7 +462,8 @@ def parity_predictions(
     fit_dir: Path,
     e0: dict[str, float] | None = None,
 ) -> dict[str, tuple]:
-    """One fit's parity data, {split: (e_ref, e_pred, f_ref, f_pred)} for
+    """One fit's parity data, {split: (e_ref, e_pred, f_ref, f_pred, s_ref,
+    s_pred)} (stress may be empty) for
     "train"/"test": from the database's stored predictions, and for every
     split the database lacks, from the fit's own {split}_pred.xyz. A split
     is never dropped just because the other one is in the database."""

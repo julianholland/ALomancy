@@ -40,13 +40,28 @@ Fields that matter:
 
 `_run_single_job`: acquire the per-host ssh lock → `job.start()` → release → `_get_results_with_resume` → log stdout/stderr at DEBUG → compute queue time from `_expyre_job_started`'s mtime (logged as `Job N queue_time=… s.`, parsed by the timing plot) → return `(index, result)`. It never lets an exception escape; its failure handler logs the full traceback at DEBUG in `results/alomancy.log`.
 
+## Live job status
+
+`progress.py` (`remote_submission/`) replaces expyre's own progress output. `_get_results_with_resume` passes `quiet=True`, so expyre no longer writes a status letter per poll per thread.
+
+- **`TRACKER`** (`JobTracker`) holds one batch per active `run_all_jobs_bounded`: phase (`remote_info.job_name`), loop (from the jobs' `results/al_loop_N` output paths, `loop_from_paths`) and a row per job.
+  - `_run_single_job` marks each job submitted (with its remote id), and done or failed.
+  - The `_locked_sync` patch calls `TRACKER.synced(sys_name, _remote_statuses(sys_name))` after every successful sync. That records "last data" for the HPC and moves jobs between queued and running from expyre's DB. A failed sync calls `sync_failed` and re-raises unchanged; a coalesced (skipped) sync records nothing.
+- **`ProgressMonitor`** wraps the pool and renders one `snapshot()`:
+  - **On a terminal** (and unless `ALOMANCY_LIVE=0`, set by `alomancy run --no-live`): a rich `Live` panel that redraws itself. The console log handler is pointed at rich's stdout proxy, so log lines print above the panel.
+  - **Otherwise:** an INFO `Remote jobs: ...` summary line every 5 minutes.
+  - **Always:** `results/remote_status.json`, written atomically every 5 s and marked `finished` at the end. `alomancy status` renders it.
+  - Nested monitors share the outermost panel.
+- "Last data" is flagged stale after 3 check intervals without a sync.
+- `tests/conftest.py` sets `progress.STATUS_FILE = None`, so tests never write into the repository's `results/`. The file is only written when its directory exists.
+
 ## Resume and resubmit
 
 **Transient failures are resumed on the same job object, never treated as permanent** (`_get_results_with_resume`). A `get_results()` exception is retried while `job.status` is in `_RESUMABLE_JOB_STATUSES`:
 - the ongoing statuses `created`/`submitted`/`started` (expyre raised from transport, e.g. an rsync "No space left on device", before updating the status for that poll);
 - plus `succeeded`: expyre sets it *before* copying outputs back to `cwd`, so a local ENOSPC during the copy-out still reads `succeeded`; the remote side is done, so re-entering `get_results()` just retries the copy.
 
-Transport exceptions get up to `_TRANSPORT_RETRY_LIMIT` (5) retries with exponential backoff from `_TRANSPORT_RETRY_BACKOFF_SECONDS`; `ExPyReTimeoutError` gets `_TIMEOUT_RETRY_LIMIT` (1). The two budgets are separate counters, so an interleaved sequence of both can't exhaust the wrong one. Once `job.status` is `failed`/`died` (expyre's only terminal statuses, set before it raises), the exception re-raises immediately.
+Transport exceptions get up to `_TRANSPORT_RETRY_LIMIT` (5) retries with exponential backoff from `_TRANSPORT_RETRY_BACKOFF_SECONDS`; `ExPyReTimeoutError` gets `_TIMEOUT_RETRY_LIMIT` (1), but only once the job has started: a timeout while `job.status` is still `submitted` (expyre never saw `_expyre_job_started`) resumes without using an attempt (INFO event `job_still_queued`), so queue time never counts toward the wait limit. Raven and viper allow 8 running and 300 submitted jobs per user, so with a high `max_num_of_concurrent_jobs` most jobs wait in the queue; good_c's DFT jobs once all failed this way after 2 × 30 h of queueing. The two budgets are separate counters, so an interleaved sequence of both can't exhaust the wrong one. Once `job.status` is `failed`/`died` (expyre's only terminal statuses, set before it raises), the exception re-raises immediately.
 
 **Died jobs** (`ExPyReJobDiedError`): `_salvage_partial_output` first copies whatever the dead job's registered outputs already hold from its stage dir (it never raises), then, only if `RemoteInfo.resubmit_killed_jobs` is `True`, one fresh resubmission with `job.start(force_rerun=True)`. Salvage must come first: `force_rerun` wipes only the *remote* stage dir and reuses the local one, so the replacement's synced output would overwrite anything not yet salvaged. Off by default because a scheduler-killed job (OOM, walltime, node failure) usually needs different resources, not an identical retry.
 

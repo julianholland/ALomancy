@@ -318,3 +318,18 @@ def shared_db(_session_global_database):
     """
     _session_global_database.clear()
     return _session_global_database
+
+
+# ---------------------------------------------------------------------------
+# Live job status file
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_remote_status_file(monkeypatch):
+    """Tests run executors from the repository root, which has a results/
+    directory: keep remote_status.json out of it. Tests of the status file
+    pass their own path."""
+    from alomancy.remote_submission import progress
+
+    monkeypatch.setattr(progress, "STATUS_FILE", None)

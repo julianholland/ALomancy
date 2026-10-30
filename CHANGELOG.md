@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **A live panel of remote jobs** replaces expyre's stream of `q`/`r` status letters. It redraws itself in the run's terminal while log lines scroll above it.
+  - For each batch it shows a bar of jobs done, running, queued and still to submit. For each HPC it shows the job counts, when data last came back (flagged when overdue) and how long the oldest job has been queued, plus the slowest running job.
+  - Without a terminal, a one-line summary is logged every 5 minutes. `alomancy run --no-live` turns the panel off.
+- **`alomancy status [--watch]`** shows the same panel from any terminal, read from `results/remote_status.json`, which the run rewrites every 5 s. It also says when the run isn't running or the file has stopped updating.
+- `rich` is now a direct dependency (it was already installed through ezga-lib).
+- **`alomancy cancel`** stops the run in the current directory and cancels its queued and running remote jobs. It finds the run's process through its lock (`.expyre/alomancy.lock`), sends SIGTERM (then SIGKILL), and cancels the jobs through ExPyRe, as `xpr rm -c` does.
+  - It then asks each job's scheduler until the job is gone, re-cancelling any that remain. Only jobs confirmed gone are marked failed, so a restart resubmits them; any it can't confirm are listed with a ready `scancel` line.
+  - When everything has stopped, it offers (after confirmation) to delete the run's ExPyRe folders: `.expyre/` locally, keeping `config.json`, and remotely the run's folder under `rundir`, only on the HPC systems the run's log (`results/alomancy.log`) shows it submitted jobs to.
+  - Run outside a run directory, it stops with an error and removes the `.expyre/` that importing alomancy just created there.
+
+- **The starting frame of every DFT geometry optimisation is kept.** Step 0 of the relaxation is a full DFT calculation of the unrelaxed structure (energy, forces, and stress when computed), but only the relaxed frame used to be stored. It is now saved next to the result (`<name>_initial.xyz`, collected in `results/<loop>/high_accuracy_eval_initial_frames.xyz`) and added to the database with `geometry_initial: True`, in the same train/test split as its relaxed structure. The train/test filters decide whether it is used: under the default `train_filter.max_force: 100`, most are stored but excluded, since a relaxation only starts above `force_ceiling`. No extra DFT is run. The loop report counts them on their own line. **Remote reinstall needed** (`alomancy upgrade-hpc`).
+- **`structure_generation.mlip_relaxation`** (off by default) relaxes every generated candidate with the loop's best model (`fmax`, `steps`, `optimizer`: FIRE, BFGS or LBFGS) **before** selection, so the order is MD frames → MLIP relaxation → committee uncertainty (or random/novelty) → select → DFT. A candidate whose relaxation fails or ends with a bond under 0.5 Å is dropped (warning `mlip_relax_dropped`); if the whole job fails, the unrelaxed candidates are used (warning `mlip_relax_fallback`). Switching it on mid-loop takes effect from the next loop. **Remote reinstall needed** (`alomancy upgrade-hpc`) before switching it on.
+
+- **Every run ends on a training step.** After the last AL loop, the models are trained once more (in `al_loop_<num_of_al_loops>`) on everything including the last loop's DFT structures, which previously never reached a model. A finished run that is restarted runs only this training. Raising `num_of_al_loops` afterwards carries on from that loop, reusing its trained models.
+- **MD records 10× more snapshots and picks spread-out physical frames** (`md_kwargs.snapshot_oversample`, default 10). Each run's full set of snapshots stays in `md_output_i/<name>.xyz` as a viewable trajectory, with each frame's MD step in `md_frame`. The candidates leave out the seed frame and frames with a bond under 0.5 Å, then are spread over each run (short runs give what they have, the rest come from longer ones), up to `num_of_structures_to_generate`. In yun_an's recent loops only 43–75 of 100 candidates survived, because runs collapsed between the old 1000-step snapshots and about half of the survivors were the seeds themselves. **Remote reinstall needed** (`alomancy upgrade-hpc`).
+- **Stress parity plots.** Models trained with `mace_kwargs.compute_stress: true` get a third stress panel (GPa) in the parity figures, the report and `alomancy results --replot`. Model stress is now stored in the database next to energy and forces.
+
+### Fixed
+- **DFT jobs no longer run pw.x twice when stress isn't computed.** With QE's `tstress` off, labelling a result asked ASE for stress, which reran the whole pw.x calculation (about 2 minutes per job in yun_an), still got none, and ignored the error. Stress now comes only from what the calculation produced. A structure also no longer keeps a stale `REF_stresses` inherited from the structure its MD started from. **Remote reinstall needed** (`alomancy upgrade-hpc`).
+- **Time in the HPC queue no longer counts toward a job's 30 h wait limit.** A job that hasn't started is waited on indefinitely (event `job_still_queued`); once it starts, the existing limit applies. This matters with many jobs queued behind a per-user running-job cap (8 on raven and viper).
+
+### Changed
+- **The report's committee selection plot (`committee_force_std_dev.png`) is now a rank plot** instead of a histogram. Candidates are sorted by force std dev (log axis) and coloured selected, skipped (above the cut but not selected, e.g. redundant) or not selected, with the cut line and the selected ranks shaded. Zeros are drawn on a floor and counted.
+  - An outlier (e.g. 4101 eV/Å against a pool under 15) no longer squashes every candidate into one bin, which made the cut look like it caught all structures or none.
+  - The title and the report line give the share selected ("100 of 145 selected (69 %)").
+
 ## [1.0.4] - 2026-10-27
 
 ### Changed

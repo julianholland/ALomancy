@@ -101,7 +101,7 @@ After the import, every mode follows the same path:
 1. **Import into this run's database** (`results/global_database`). Imports are idempotent. Each xyz file's SHA-256 (and a database's path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in `general.elements` are dropped at import, with one warning per source giving the count (event `start_from_elements_excluded`). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to `general.elements` later does not bring back structures that an earlier import excluded. To get them, start a fresh run.
 2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section. Leave the `initialization` section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (`initialization: {}`) to use the defaults.
 3. **Split into train/test** (next section) and write `results/initialization/train_set.xyz` / `test_set.xyz`.
-4. **Start the AL loop.**
+4. **Start the AL loop.** After the last loop (`general.num_of_al_loops`), the run trains once more, in `results/al_loop_<num_of_al_loops>/`, so the structures DFT labelled in the last loop reach a model. `results/best_model/` then holds that final model.
 
 Once any AL loop has finished, a restart resumes from the database. `start_from` is not consulted again, and neither is the initialization step.
 
@@ -152,6 +152,29 @@ The old start-up keys now stop the run with an error that names the replacement:
 | `initialization.reset_extra_splits` | Not needed. Imported files always drop the old run's splits and flags. |
 
 Two behaviors differ from the old fast path. `initial_train_file_path`/`initial_test_file_path` used to be loaded as-is, with no gap filling. The same files under `train_xyz`/`test_xyz` now also get missing initialization structures generated. Set `enabled: false` on the structure types you don't want.
+
+## Watching a run
+
+While the run waits on HPC jobs, its terminal shows a panel that redraws itself. The panel has:
+- a bar of jobs done, running, queued and still to submit;
+- for each HPC: the job counts, when data last came back from it (⚠ when that is overdue), and how long the oldest job has been queued;
+- the slowest running job.
+
+Log lines scroll above the panel. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. `alomancy run --no-live` turns the panel off.
+
+From any other terminal, `alomancy status` in the run's directory shows the same panel; `alomancy status --watch` keeps it updating until Ctrl-C.
+
+## Stopping a run
+
+Run `alomancy cancel` in the run's directory (where you ran `alomancy run`):
+
+1. It stops the run's process.
+2. It cancels the run's queued and running HPC jobs, and checks with the scheduler that each one is gone. A job it can't confirm is listed with the command to cancel it by hand.
+3. It offers to delete the run's ExPyRe folders: `.expyre/` locally (`config.json` is kept) and the run's folder on each HPC system it submitted jobs to (read from `results/alomancy.log`).
+
+Restarting with `alomancy run` afterwards picks up where the run left off and resubmits the cancelled jobs. `--yes` skips the first confirmation; deleting folders is always asked.
+
+Ctrl-C is not enough while the run waits on HPC jobs. The run keeps polling those jobs and does not exit until they finish or its wait times out, and the jobs stay queued.
 
 ## Common errors and fixes
 

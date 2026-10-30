@@ -14,6 +14,7 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from sage_lib.partition.Partition import Partition
 from sage_lib.single_run.SingleRun import SingleRun
 
+from alomancy.mlip.evaluation import stress_pair_gpa
 from alomancy.utils.clean_structures import drop_unwritable_info
 from alomancy.utils.import_structures import filter_by_elements
 
@@ -542,14 +543,20 @@ class GlobalDatabase:
 
         predictions: {global_db_id: {"energy": float, "forces": list[list[float]]}}
         Writes keys model_energy_loop_{loop_idx}_fit_{fit_idx} and
-        model_forces_loop_{loop_idx}_fit_{fit_idx} into each container's
-        metadata. Named generically (not mace_*) since the trainer backend
+        model_forces_loop_{loop_idx}_fit_{fit_idx} (and model_stress_...,
+        Voigt 6 in eV/Å^3, when the prediction has "stress") into each
+        container's metadata. Named generically (not mace_*) since the trainer backend
         is no longer assumed to be MACE -- see the module registry.
         """
         id_meta_map = {
             gid: {
                 f"model_energy_loop_{loop_idx}_fit_{fit_idx}": p["energy"],
                 f"model_forces_loop_{loop_idx}_fit_{fit_idx}": p["forces"],
+                **(
+                    {f"model_stress_loop_{loop_idx}_fit_{fit_idx}": p["stress"]}
+                    if p.get("stress") is not None
+                    else {}
+                ),
             }
             for gid, p in predictions.items()
         }
@@ -579,8 +586,10 @@ class GlobalDatabase:
     ) -> dict[str, tuple] | None:
         """Retrieve stored trainer predictions for parity plotting, split by train/test.
 
-        Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)} where
-        each element is a numpy array (f values flat eV/Å). Energy values are
+        Returns {"train": (e_dft, e_pred, f_dft, f_pred, s_dft, s_pred),
+        "test": (...)} where each element is a numpy array (f values flat
+        eV/Å; s values flat Voigt components in GPa, empty when no structure
+        has both a DFT and a model stress). Energy values are
         per-atom eV/atom; if `e0` (element -> isolated-atom energy) is given,
         each structure's per-element E0 sum is subtracted before dividing by
         atom count, yielding formation energy per atom instead of raw energy
@@ -591,10 +600,13 @@ class GlobalDatabase:
         """
         energy_key = f"model_energy_loop_{loop_idx}_fit_{fit_idx}"
         forces_key = f"model_forces_loop_{loop_idx}_fit_{fit_idx}"
+        stress_key = f"model_stress_loop_{loop_idx}_fit_{fit_idx}"
 
         buckets: dict[str, dict] = {
-            "train": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
-            "test": {"e_dft": [], "e_pred": [], "f_dft": [], "f_pred": []},
+            split: {
+                k: [] for k in ("e_dft", "e_pred", "f_dft", "f_pred", "s_dft", "s_pred")
+            }
+            for split in ("train", "test")
         }
         points: dict[str, list[dict]] = {"train": [], "test": []}
         found = False
@@ -619,6 +631,9 @@ class GlobalDatabase:
                     np.array(apm.metadata[forces_key]).flatten().tolist()
                     if apm.forces is not None
                     else []
+                ),
+                "stress": stress_pair_gpa(
+                    apm.metadata.get("_REF_stresses"), apm.metadata.get(stress_key)
                 ),
             }
             points[bucket_key].append(point)
@@ -655,6 +670,9 @@ class GlobalDatabase:
                 bucket["e_pred"].append((p["e_pred_total"] - shift) / p["n"])
                 bucket["f_dft"].extend(p["f_dft"])
                 bucket["f_pred"].extend(p["f_pred"])
+                if p["stress"] is not None:
+                    bucket["s_dft"].extend(p["stress"][0])
+                    bucket["s_pred"].extend(p["stress"][1])
 
         return {
             split: (
@@ -662,6 +680,8 @@ class GlobalDatabase:
                 np.array(b["e_pred"]),
                 np.array(b["f_dft"]),
                 np.array(b["f_pred"]),
+                np.array(b["s_dft"]),
+                np.array(b["s_pred"]),
             )
             for split, b in buckets.items()
             if b["e_dft"]
