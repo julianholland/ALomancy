@@ -94,6 +94,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.remote_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_remote_info</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CalculatorSpec</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">submit_n</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">filter_structures_by_min_bond_distance</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dataset_curation</span><span class="w"> </span><span class="kn">import</span> <span class="n">geometry_digest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.seed_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">mark_structures_for_dft</span><span class="p">,</span> <span class="n">select_diverse_seeds</span>
 
@@ -145,6 +146,7 @@
     <span class="n">equilibration_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="n">equilibration_temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">300.0</span><span class="p">,</span>
     <span class="n">traj_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">snapshot_oversample</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    ensemble : {"nvt", "npt"}</span>
@@ -164,6 +166,13 @@
 <span class="sd">        The ASE calculator that drives the dynamics: the trained model's own</span>
 <span class="sd">        calculator, built on the remote node by ``_run_md_with_spec`` from a</span>
 <span class="sd">        ``CalculatorSpec``.</span>
+<span class="sd">    snapshot_oversample : int</span>
+<span class="sd">        Snapshots are recorded this many times more often than the</span>
+<span class="sd">        candidates finally needed (default 10). Every snapshot stays in</span>
+<span class="sd">        ``out_dir/&lt;name&gt;.xyz`` (with ``info["md_frame"]``, the MD step) as</span>
+<span class="sd">        a viewable trajectory; ``generate`` then keeps the physical ones</span>
+<span class="sd">        and picks frames spread out over each run. A run that goes</span>
+<span class="sd">        unstable early still yields several usable frames this way.</span>
 <span class="sd">    traj_interval : int, optional</span>
 <span class="sd">        When set, every ``traj_interval``-th production MD step is appended</span>
 <span class="sd">        to ``out_dir/md_trajectory.xyz`` (extxyz), a full-resolution record</span>
@@ -180,6 +189,16 @@
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">"md_kwargs.traj_interval must be a positive integer or null, got "</span>
             <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">traj_interval</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">snapshot_oversample</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">snapshot_oversample</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">snapshot_oversample</span> <span class="o">&lt;</span> <span class="mi">1</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"md_kwargs.snapshot_oversample must be a positive integer, got "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">snapshot_oversample</span><span class="si">!r}</span><span class="s2">."</span>
         <span class="p">)</span>
 
     <span class="n">num_of_structures_to_generate</span> <span class="o">=</span> <span class="n">structure_generation_job_dict</span><span class="p">[</span>
@@ -289,8 +308,12 @@
 
         <span class="n">dyn</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">_write_traj_frame</span><span class="p">,</span> <span class="n">interval</span><span class="o">=</span><span class="n">traj_interval</span><span class="p">)</span>
 
-    <span class="c1"># num_of_structures_to_generate snapshots in total, across all runs.</span>
-    <span class="n">snapshot_interval</span> <span class="o">=</span> <span class="n">steps</span> <span class="o">*</span> <span class="n">total_md_runs</span> <span class="o">//</span> <span class="n">num_of_structures_to_generate</span>
+    <span class="c1"># snapshot_oversample x num_of_structures_to_generate snapshots in</span>
+    <span class="c1"># total, across all runs; generate() picks the candidates from them.</span>
+    <span class="n">snapshot_interval</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+        <span class="mi">1</span><span class="p">,</span>
+        <span class="n">steps</span> <span class="o">*</span> <span class="n">total_md_runs</span> <span class="o">//</span> <span class="p">(</span><span class="n">num_of_structures_to_generate</span> <span class="o">*</span> <span class="n">snapshot_oversample</span><span class="p">),</span>
+    <span class="p">)</span>
 
     <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span> <span class="o">//</span> <span class="n">snapshot_interval</span><span class="p">):</span>
         <span class="c1"># recording -- happens before any force check/dynamics step below,</span>
@@ -302,12 +325,14 @@
         <span class="c1"># it (e.g. by letting an exception propagate and kill the whole</span>
         <span class="c1"># remote job with nothing recovered) would throw away the most</span>
         <span class="c1"># informative candidate this run produced.</span>
+        <span class="n">frame</span> <span class="o">=</span> <span class="n">dyn</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">frame</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"md_frame"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">dyn</span><span class="o">.</span><span class="n">nsteps</span><span class="p">)</span>
         <span class="n">write</span><span class="p">(</span>
             <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">structure_generation_job_dict</span><span class="p">[</span><span class="s1">'name'</span><span class="p">]</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">)),</span>
-            <span class="n">dyn</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+            <span class="n">frame</span><span class="p">,</span>
             <span class="n">append</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">atom_traj_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dyn</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+        <span class="n">atom_traj_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
 
         <span class="c1"># force check -- also catches non-finite (NaN/Inf) forces, which a</span>
         <span class="c1"># bare "&gt;" comparison silently lets through (e.g. `np.nan &gt; 1000`</span>
@@ -644,16 +669,36 @@
             <span class="s2">"Nothing was cached, so a restart will retry."</span>
         <span class="p">)</span>
 
-    <span class="n">structure_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># Each run's file is its whole (oversampled) trajectory and stays as</span>
+    <span class="c1"># it is; the candidates are its physical frames, spread over the run.</span>
     <span class="n">frames_per_run</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">recorded</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completed</span><span class="p">:</span>
         <span class="n">frames</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">/</span> <span class="n">target_file</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
         <span class="n">frames_per_run</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">))</span>
-        <span class="n">structure_list</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>  <span class="c1"># 0 = the seed</span>
+            <span class="n">frame</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"md_run"</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="n">frame</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"md_frame"</span><span class="p">,</span> <span class="n">position</span><span class="p">)</span>
+            <span class="n">recorded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+    <span class="n">physical</span> <span class="o">=</span> <span class="n">filter_structures_by_min_bond_distance</span><span class="p">(</span><span class="n">recorded</span><span class="p">)</span>
+    <span class="n">by_run</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completed</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="n">physical</span><span class="p">:</span>
+        <span class="n">by_run</span><span class="p">[</span><span class="n">frame</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"md_run"</span><span class="p">]]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+    <span class="n">valid_per_run</span> <span class="o">=</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">by_run</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completed</span><span class="p">]</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"num_of_structures_to_generate"</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">sum</span><span class="p">(</span><span class="n">valid_per_run</span><span class="p">)</span>
+    <span class="n">shares</span> <span class="o">=</span> <span class="n">share_out</span><span class="p">(</span><span class="n">valid_per_run</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+    <span class="n">structure_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">frame</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">completed</span><span class="p">,</span> <span class="n">shares</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="n">spread_frames</span><span class="p">(</span><span class="n">by_run</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">k</span><span class="p">)</span>
+    <span class="p">]</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-        <span class="s2">"MD for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%d</span><span class="s2"> run(s) completed, </span><span class="si">%d</span><span class="s2"> candidate frame(s)."</span><span class="p">,</span>
+        <span class="s2">"MD for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%d</span><span class="s2"> run(s) completed, </span><span class="si">%d</span><span class="s2"> frame(s) recorded, </span><span class="si">%d</span><span class="s2"> physical, "</span>
+        <span class="s2">"</span><span class="si">%d</span><span class="s2"> candidate(s) picked."</span><span class="p">,</span>
         <span class="n">base_name</span><span class="p">,</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">completed</span><span class="p">),</span>
+        <span class="nb">sum</span><span class="p">(</span><span class="n">frames_per_run</span><span class="p">),</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">physical</span><span class="p">),</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
         <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
             <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_summary"</span><span class="p">,</span>
@@ -662,6 +707,8 @@
                 <span class="s2">"completed"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">completed</span><span class="p">),</span>
                 <span class="s2">"replaced"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">replaced</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span>
                 <span class="s2">"frames_per_run"</span><span class="p">:</span> <span class="n">frames_per_run</span><span class="p">,</span>
+                <span class="s2">"valid_per_run"</span><span class="p">:</span> <span class="n">valid_per_run</span><span class="p">,</span>
+                <span class="s2">"selected_per_run"</span><span class="p">:</span> <span class="n">shares</span><span class="p">,</span>
                 <span class="s2">"candidates"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
             <span class="p">},</span>
         <span class="p">},</span>
@@ -670,6 +717,54 @@
     <span class="n">candidates_path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">write</span><span class="p">(</span><span class="n">candidates_path</span><span class="p">,</span> <span class="n">structure_list</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">structure_list</span></div>
+
+
+
+<div class="viewcode-block" id="spread_frames">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.spread_frames">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">spread_frames</span><span class="p">(</span><span class="n">frames</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">k</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""*k* of a run's *frames* (in MD order), spread as far apart in MD step</span>
+<span class="sd">    (``info["md_frame"]``) as possible: the first and last, and the rest</span>
+<span class="sd">    nearest to evenly spaced steps between. All of them when k &gt;= len."""</span>
+    <span class="k">if</span> <span class="n">k</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">k</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+        <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"md_frame"</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span>
+    <span class="p">)</span>
+    <span class="n">chosen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">target</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">steps</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">steps</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">k</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">steps</span> <span class="o">-</span> <span class="n">target</span><span class="p">),</span> <span class="n">kind</span><span class="o">=</span><span class="s2">"stable"</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">chosen</span><span class="p">:</span>
+                <span class="n">chosen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">j</span><span class="p">))</span>
+                <span class="k">break</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">frames</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">chosen</span><span class="p">)]</span></div>
+
+
+
+<div class="viewcode-block" id="share_out">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.share_out">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">share_out</span><span class="p">(</span><span class="n">available</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">total</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""How many candidates each run gives towards *total*: equal shares,</span>
+<span class="sd">    capped at what a run has, with the remainder passed to runs that have</span>
+<span class="sd">    more. Never more than a run's *available* frames."""</span>
+    <span class="n">shares</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">available</span><span class="p">)</span>
+    <span class="n">remaining</span> <span class="o">=</span> <span class="n">total</span>
+    <span class="n">open_runs</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">available</span><span class="p">)</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="k">while</span> <span class="n">remaining</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">open_runs</span><span class="p">:</span>
+        <span class="n">share</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">remaining</span> <span class="o">//</span> <span class="nb">len</span><span class="p">(</span><span class="n">open_runs</span><span class="p">))</span>
+        <span class="n">still_open</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">open_runs</span><span class="p">:</span>
+            <span class="n">take</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">share</span><span class="p">,</span> <span class="n">available</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">shares</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">remaining</span><span class="p">)</span>
+            <span class="n">shares</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">take</span>
+            <span class="n">remaining</span> <span class="o">-=</span> <span class="n">take</span>
+            <span class="k">if</span> <span class="n">shares</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">available</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+                <span class="n">still_open</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">remaining</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="n">open_runs</span> <span class="o">=</span> <span class="n">still_open</span>
+    <span class="k">return</span> <span class="n">shares</span></div>
 
 
 

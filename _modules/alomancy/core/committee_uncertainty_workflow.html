@@ -180,6 +180,9 @@
                 <span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seeds</span><span class="p">(</span><span class="n">committee_size</span><span class="p">),</span> <span class="n">min_successful</span><span class="o">=</span><span class="n">_MIN_COMMITTEE_SIZE</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">plot_loop</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">final</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">finish_final_training</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+                <span class="k">return</span>
             <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">train_only</span><span class="p">:</span>
                 <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
                     <span class="s2">"Initial committee training complete; train_only stops before generation."</span>

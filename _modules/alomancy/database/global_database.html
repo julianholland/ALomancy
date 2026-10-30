@@ -95,6 +95,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">sage_lib.partition.Partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partition</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">sage_lib.single_run.SingleRun</span><span class="w"> </span><span class="kn">import</span> <span class="n">SingleRun</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="n">stress_pair_gpa</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">drop_unwritable_info</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.import_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">filter_by_elements</span>
 
@@ -681,14 +682,20 @@
 
 <span class="sd">        predictions: {global_db_id: {"energy": float, "forces": list[list[float]]}}</span>
 <span class="sd">        Writes keys model_energy_loop_{loop_idx}_fit_{fit_idx} and</span>
-<span class="sd">        model_forces_loop_{loop_idx}_fit_{fit_idx} into each container's</span>
-<span class="sd">        metadata. Named generically (not mace_*) since the trainer backend</span>
+<span class="sd">        model_forces_loop_{loop_idx}_fit_{fit_idx} (and model_stress_...,</span>
+<span class="sd">        Voigt 6 in eV/Å^3, when the prediction has "stress") into each</span>
+<span class="sd">        container's metadata. Named generically (not mace_*) since the trainer backend</span>
 <span class="sd">        is no longer assumed to be MACE -- see the module registry.</span>
 <span class="sd">        """</span>
         <span class="n">id_meta_map</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">gid</span><span class="p">:</span> <span class="p">{</span>
                 <span class="sa">f</span><span class="s2">"model_energy_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"energy"</span><span class="p">],</span>
                 <span class="sa">f</span><span class="s2">"model_forces_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"forces"</span><span class="p">],</span>
+                <span class="o">**</span><span class="p">(</span>
+                    <span class="p">{</span><span class="sa">f</span><span class="s2">"model_stress_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"stress"</span><span class="p">]}</span>
+                    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"stress"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                    <span class="k">else</span> <span class="p">{}</span>
+                <span class="p">),</span>
             <span class="p">}</span>
             <span class="k">for</span> <span class="n">gid</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
         <span class="p">}</span>
@@ -724,8 +731,10 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Retrieve stored trainer predictions for parity plotting, split by train/test.</span>
 
-<span class="sd">        Returns {"train": (e_dft, e_pred, f_dft, f_pred), "test": (...)} where</span>
-<span class="sd">        each element is a numpy array (f values flat eV/Å). Energy values are</span>
+<span class="sd">        Returns {"train": (e_dft, e_pred, f_dft, f_pred, s_dft, s_pred),</span>
+<span class="sd">        "test": (...)} where each element is a numpy array (f values flat</span>
+<span class="sd">        eV/Å; s values flat Voigt components in GPa, empty when no structure</span>
+<span class="sd">        has both a DFT and a model stress). Energy values are</span>
 <span class="sd">        per-atom eV/atom; if `e0` (element -&gt; isolated-atom energy) is given,</span>
 <span class="sd">        each structure's per-element E0 sum is subtracted before dividing by</span>
 <span class="sd">        atom count, yielding formation energy per atom instead of raw energy</span>
@@ -736,10 +745,13 @@
 <span class="sd">        """</span>
         <span class="n">energy_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"model_energy_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span>
         <span class="n">forces_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"model_forces_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">stress_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"model_stress_loop_</span><span class="si">{</span><span class="n">loop_idx</span><span class="si">}</span><span class="s2">_fit_</span><span class="si">{</span><span class="n">fit_idx</span><span class="si">}</span><span class="s2">"</span>
 
         <span class="n">buckets</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">"train"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"e_dft"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"e_pred"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"f_dft"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"f_pred"</span><span class="p">:</span> <span class="p">[]},</span>
-            <span class="s2">"test"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"e_dft"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"e_pred"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"f_dft"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"f_pred"</span><span class="p">:</span> <span class="p">[]},</span>
+            <span class="n">split</span><span class="p">:</span> <span class="p">{</span>
+                <span class="n">k</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"e_dft"</span><span class="p">,</span> <span class="s2">"e_pred"</span><span class="p">,</span> <span class="s2">"f_dft"</span><span class="p">,</span> <span class="s2">"f_pred"</span><span class="p">,</span> <span class="s2">"s_dft"</span><span class="p">,</span> <span class="s2">"s_pred"</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">split</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"train"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">)</span>
         <span class="p">}</span>
         <span class="n">points</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"train"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"test"</span><span class="p">:</span> <span class="p">[]}</span>
         <span class="n">found</span> <span class="o">=</span> <span class="kc">False</span>
@@ -764,6 +776,9 @@
                     <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">forces_key</span><span class="p">])</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
                     <span class="k">if</span> <span class="n">apm</span><span class="o">.</span><span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="k">else</span> <span class="p">[]</span>
+                <span class="p">),</span>
+                <span class="s2">"stress"</span><span class="p">:</span> <span class="n">stress_pair_gpa</span><span class="p">(</span>
+                    <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_REF_stresses"</span><span class="p">),</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">stress_key</span><span class="p">)</span>
                 <span class="p">),</span>
             <span class="p">}</span>
             <span class="n">points</span><span class="p">[</span><span class="n">bucket_key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">point</span><span class="p">)</span>
@@ -800,6 +815,9 @@
                 <span class="n">bucket</span><span class="p">[</span><span class="s2">"e_pred"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">p</span><span class="p">[</span><span class="s2">"e_pred_total"</span><span class="p">]</span> <span class="o">-</span> <span class="n">shift</span><span class="p">)</span> <span class="o">/</span> <span class="n">p</span><span class="p">[</span><span class="s2">"n"</span><span class="p">])</span>
                 <span class="n">bucket</span><span class="p">[</span><span class="s2">"f_dft"</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">"f_dft"</span><span class="p">])</span>
                 <span class="n">bucket</span><span class="p">[</span><span class="s2">"f_pred"</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">"f_pred"</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">p</span><span class="p">[</span><span class="s2">"stress"</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">bucket</span><span class="p">[</span><span class="s2">"s_dft"</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">"stress"</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+                    <span class="n">bucket</span><span class="p">[</span><span class="s2">"s_pred"</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="s2">"stress"</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
 
         <span class="k">return</span> <span class="p">{</span>
             <span class="n">split</span><span class="p">:</span> <span class="p">(</span>
@@ -807,6 +825,8 @@
                 <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">"e_pred"</span><span class="p">]),</span>
                 <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">"f_dft"</span><span class="p">]),</span>
                 <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">"f_pred"</span><span class="p">]),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">"s_dft"</span><span class="p">]),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="s2">"s_pred"</span><span class="p">]),</span>
             <span class="p">)</span>
             <span class="k">for</span> <span class="n">split</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">buckets</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="s2">"e_dft"</span><span class="p">]</span>

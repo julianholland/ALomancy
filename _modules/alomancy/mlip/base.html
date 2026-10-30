@@ -125,6 +125,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">read</span><span class="p">,</span> <span class="n">write</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_voigt_stress</span><span class="p">,</span>
     <span class="n">prediction_metrics</span><span class="p">,</span>
     <span class="n">read_evaluation</span><span class="p">,</span>
     <span class="n">save_evaluation</span><span class="p">,</span>
@@ -664,7 +665,9 @@
 <a class="viewcode-back" href="../../../api/mlip.html#alomancy.mlip.base.read_predictions">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">read_predictions</span><span class="p">(</span><span class="n">fit_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Per-structure predictions from a fit's train_pred.xyz/test_pred.xyz,</span>
-<span class="sd">    as {global_db_id: {"energy": float, "forces": list}}; {} if none."""</span>
+<span class="sd">    as {global_db_id: {"energy": float, "forces": list[, "stress": list]}}</span>
+<span class="sd">    ("stress", Voigt 6 in eV/Å^3, only where the model predicted it);</span>
+<span class="sd">    {} if none."""</span>
     <span class="n">preds</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"train"</span><span class="p">,</span> <span class="s2">"test"</span><span class="p">):</span>
         <span class="n">xyz</span> <span class="o">=</span> <span class="n">fit_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">_pred.xyz"</span>
@@ -686,6 +689,9 @@
                 <span class="s2">"energy"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"model_energy"</span><span class="p">]),</span>
                 <span class="s2">"forces"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">forces</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span> <span class="k">if</span> <span class="n">forces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[],</span>
             <span class="p">}</span>
+            <span class="n">stress</span> <span class="o">=</span> <span class="n">_voigt_stress</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_stress"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">preds</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">gid</span><span class="p">)][</span><span class="s2">"stress"</span><span class="p">]</span> <span class="o">=</span> <span class="n">stress</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">n_skipped</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
                 <span class="s2">"</span><span class="si">%d</span><span class="s2"> of </span><span class="si">%d</span><span class="s2"> structure(s) in </span><span class="si">%s</span><span class="s2"> have no model_energy or "</span>

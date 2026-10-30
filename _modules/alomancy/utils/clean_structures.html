@@ -137,6 +137,23 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_computed_stress</span><span class="p">(</span><span class="n">structure</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">label_source</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The stress label for *structure*: from the calculator's results only</span>
+<span class="sd">    (never ``get_stress()``, which on a file-based calculator such as QE's</span>
+<span class="sd">    reruns the whole calculation when stress wasn't computed), or, for</span>
+<span class="sd">    ``label_source="reference"``, an existing ``REF_stresses`` first. With</span>
+<span class="sd">    ``"calculator"`` an ``info`` value is ignored: it may be stale, copied</span>
+<span class="sd">    from the structure an MD frame started from."""</span>
+    <span class="k">if</span> <span class="n">label_source</span> <span class="o">==</span> <span class="s2">"reference"</span> <span class="ow">and</span> <span class="s2">"REF_stresses"</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">structure</span><span class="o">.</span><span class="n">calc</span><span class="p">,</span> <span class="s2">"results"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">stress</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"stress"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">stress</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">stress</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">stress</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">stress</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span>
+
+
 <div class="viewcode-block" id="clean_structures">
 <a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.clean_structures">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">clean_structures</span><span class="p">(</span>
@@ -197,17 +214,16 @@
             <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">energy</span>
             <span class="n">structure_copy</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">forces</span>
 
-            <span class="k">if</span> <span class="s2">"REF_stresses"</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
-                <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span>
+            <span class="n">stress</span> <span class="o">=</span> <span class="n">_computed_stress</span><span class="p">(</span><span class="n">structure</span><span class="p">,</span> <span class="n">label_source</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">stress</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">stress</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">get_stress</span><span class="p">()</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="c1"># Stress is not always physically meaningful (e.g.</span>
-                    <span class="c1"># non-periodic structures) or available (e.g. a</span>
-                    <span class="c1"># calculator that didn't compute it) -- unlike</span>
-                    <span class="c1"># REF_energy/REF_forces this is never fatal.</span>
-                    <span class="n">n_no_stress</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="c1"># Stress is not always physically meaningful (e.g.</span>
+                <span class="c1"># non-periodic structures) or available (e.g. a calculator</span>
+                <span class="c1"># that didn't compute it) -- unlike REF_energy/REF_forces</span>
+                <span class="c1"># this is never fatal.</span>
+                <span class="n">structure_copy</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"REF_stresses"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">n_no_stress</span> <span class="o">+=</span> <span class="mi">1</span>
 
         <span class="k">if</span> <span class="n">override_config_type</span> <span class="ow">or</span> <span class="s2">"config_type"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Setting config_type to '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span> <span class="n">config_type</span><span class="p">)</span>

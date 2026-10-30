@@ -86,6 +86,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.singlepoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">SinglePointCalculator</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">write</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">BFGS</span>
 
@@ -143,6 +144,12 @@
     <span class="n">clean</span> <span class="o">=</span> <span class="n">clean_structures</span><span class="p">([</span><span class="n">atoms</span><span class="p">],</span> <span class="s2">"DFT"</span><span class="p">,</span> <span class="n">label_source</span><span class="o">=</span><span class="s2">"calculator"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span> <span class="o">=</span> <span class="n">clean</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_energy"</span><span class="p">]</span>
     <span class="n">atoms</span><span class="o">.</span><span class="n">set_array</span><span class="p">(</span><span class="s2">"REF_forces"</span><span class="p">,</span> <span class="n">clean</span><span class="o">.</span><span class="n">arrays</span><span class="p">[</span><span class="s2">"REF_forces"</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+    <span class="c1"># Stress too: replace or drop whatever the structure carried in (an MD</span>
+    <span class="c1"># frame inherits its seed's info), so it never outlives its source.</span>
+    <span class="k">if</span> <span class="s2">"REF_stresses"</span> <span class="ow">in</span> <span class="n">clean</span><span class="o">.</span><span class="n">info</span><span class="p">:</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span> <span class="o">=</span> <span class="n">clean</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_stresses"</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"REF_stresses"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"REF_label_source"</span><span class="p">]</span> <span class="o">=</span> <span class="n">source</span>
     <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">calc</span><span class="p">,</span> <span class="s2">"converged"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
         <span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"dft_converged"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
@@ -159,6 +166,32 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_write_dft_result</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">write</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.xyz"</span><span class="p">),</span> <span class="n">atoms</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Writing structures to </span><span class="si">%s</span><span class="s2"> as </span><span class="si">%s</span><span class="s2">.xyz"</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+
+<span class="n">INITIAL_FRAME_SUFFIX</span> <span class="o">=</span> <span class="s2">"_initial"</span>
+<span class="n">_SNAPSHOT_PROPERTIES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"energy"</span><span class="p">,</span> <span class="s2">"free_energy"</span><span class="p">,</span> <span class="s2">"forces"</span><span class="p">,</span> <span class="s2">"stress"</span><span class="p">)</span>
+<span class="n">_RUN_STATISTICS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"geometry_converged"</span><span class="p">,</span>
+    <span class="s2">"geometry_steps"</span><span class="p">,</span>
+    <span class="s2">"geometry_max_steps"</span><span class="p">,</span>
+    <span class="s2">"geometry_fmax_target"</span><span class="p">,</span>
+    <span class="s2">"dft_wall_time_s"</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_snapshot</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Atoms</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A copy of *atoms* holding the DFT results already computed for its</span>
+<span class="sd">    current geometry, read from calc.results only: asking the live</span>
+<span class="sd">    calculator for a property it didn't compute (e.g. stress with QE</span>
+<span class="sd">    tstress off) would rerun the whole calculation."""</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">calc</span><span class="o">.</span><span class="n">results</span>
+    <span class="n">copy</span><span class="p">:</span> <span class="n">Atoms</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">copy</span><span class="o">.</span><span class="n">calc</span> <span class="o">=</span> <span class="n">SinglePointCalculator</span><span class="p">(</span>
+        <span class="n">copy</span><span class="p">,</span> <span class="o">**</span><span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">_SNAPSHOT_PROPERTIES</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">results</span><span class="p">}</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">_RUN_STATISTICS</span><span class="p">:</span>
+        <span class="n">copy</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">copy</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_run_sp</span><span class="p">(</span>
@@ -196,6 +229,11 @@
     <span class="n">fmax</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fmax"</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
     <span class="n">steps</span> <span class="o">=</span> <span class="n">job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_num_of_relax_steps"</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
     <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+    <span class="c1"># Step 0 is a full DFT calculation of the unrelaxed geometry; BFGS's</span>
+    <span class="c1"># first step reuses this cached result, so keeping it costs nothing.</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">get_forces</span><span class="p">()</span>
+    <span class="n">initial</span> <span class="o">=</span> <span class="n">_snapshot</span><span class="p">(</span><span class="n">input_structure</span><span class="p">)</span>
+    <span class="n">dft_converged</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">input_structure</span><span class="o">.</span><span class="n">calc</span><span class="p">,</span> <span class="s2">"converged"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="n">converged</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">fmax</span><span class="o">=</span><span class="n">fmax</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="n">steps</span><span class="p">)</span>
     <span class="n">wall_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
@@ -214,7 +252,16 @@
     <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_max_steps"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">steps</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_fmax_target"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">fmax</span><span class="p">)</span>
     <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"dft_wall_time_s"</span><span class="p">]</span> <span class="o">=</span> <span class="n">wall_time</span>
+    <span class="n">input_structure</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_step"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">opt</span><span class="o">.</span><span class="n">nsteps</span><span class="p">)</span>
     <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">input_structure</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">opt</span><span class="o">.</span><span class="n">nsteps</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">dft_converged</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">False</span><span class="p">:</span>
+        <span class="c1"># The starting geometry is training data too (filters decide).</span>
+        <span class="n">refresh_dft_labels</span><span class="p">(</span><span class="n">initial</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_dir</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()))</span>
+        <span class="k">if</span> <span class="n">dft_converged</span><span class="p">:</span>
+            <span class="n">initial</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"dft_converged"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">initial</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_step"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">initial</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"geometry_initial"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">_write_dft_result</span><span class="p">(</span><span class="n">initial</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">job_dict</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span> <span class="o">+</span> <span class="n">INITIAL_FRAME_SUFFIX</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">input_structure</span>
 </pre></div>
 
