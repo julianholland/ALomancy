@@ -575,3 +575,66 @@ def training_curve(df: Any, path: Path, *, title: str) -> None:
     ax.set_title(title)
     ax.grid(True)
     _save(fig, path)
+
+
+def stacked_counts(
+    groups: list[str],
+    series: dict[str, list[int]],
+    path: Path,
+    *,
+    title: str,
+    xlabel: str,
+    ylabel: str = "Count",
+    colors: dict[str, str] | None = None,
+    totals: list[int] | None = None,
+) -> None:
+    """One column per x label, the series stacked bottom to top in order.
+    *colors* fixes some series' colour (e.g. greys for excluded data), the
+    rest take the palette in order, so the same series list gives the same
+    colours in every figure. *totals*, if given, are written above the
+    columns. No grid, white background, legend inside top left (the top
+    right corner is the watermark's)."""
+    setup_alomancy_style()
+    colors = colors or {}
+    # Capped width: the watermark scales with it (add_logo_watermark).
+    fig, ax = plt.subplots(figsize=(min(16.0, max(7.0, 0.3 * len(groups) + 2)), 4.5))
+    x = np.arange(len(groups))
+    bottom = np.zeros(len(groups))
+    palette = iter(PALETTE * (1 + len(series) // len(PALETTE)))
+    for label, values in series.items():
+        ax.bar(
+            x,
+            values,
+            0.8,
+            bottom=bottom,
+            color=colors.get(label) or next(palette),
+            label=label,
+            **_GAP,
+        )
+        bottom += values
+    if totals is not None:
+        for xi, top, total in zip(x, bottom, totals, strict=True):
+            ax.annotate(
+                str(total),
+                xy=(xi, top),
+                xytext=(0, 2),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                color="#374151",
+            )
+    ax.set_xticks(x, groups, rotation=90 if len(groups) > 12 else 0)
+    ax.set_xlim(-0.6, len(groups) - 0.4)
+    # Headroom for the totals and the legend.
+    ax.set_ylim(0, 1.35 * max(bottom.max(), 1))
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(False)
+    fig.set_facecolor("white")
+    ax.set_facecolor("white")
+    if len(series) > 1:
+        ax.legend(fontsize=8, loc="upper left", ncol=2, framealpha=0.8)
+    _save(fig, path)

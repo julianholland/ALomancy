@@ -202,6 +202,132 @@ def _dft_stats(base_name: str, events: dict, force_ceiling: float | None) -> dic
     }
 
 
+def _operator_counts(structures: list[Atoms], names: list[str]) -> dict[str, int]:
+    """How many of *structures* each EZGA operator produced: crossover, or
+    each mutation in ezga_mutation_list (indices into mutation_funcs).
+    Structures from before ezga_mutation_list was recorded count as
+    "mutation"."""
+    counts: Counter = Counter()
+    for atoms in structures:
+        operation = atoms.info.get("ezga_operation")
+        if operation is None:
+            continue
+        mutations = np.atleast_1d(atoms.info.get("ezga_mutation_list", []))
+        if operation == "crossover" or not mutations.size:
+            counts[operation] += 1
+            continue
+        for i in mutations:
+            i = int(i)
+            counts[names[i] if 0 <= i < len(names) else f"mut_{i}"] += 1
+    return dict(counts)
+
+
+def _offspring_key(atoms: Atoms) -> tuple[int, float] | None:
+    """(generation, model energy): what a high-SD structure shares with its
+    entry in EZGA's database."""
+    energy = atoms.info.get("ezga_energy")
+    if energy is None or "ezga_generation" not in atoms.info:
+        return None
+    return int(atoms.info["ezga_generation"]), round(float(energy), 6)
+
+
+def _seed_types(db: Any) -> dict[int, str]:
+    """global_db_id -> config_type of every structure in the database, to
+    name the seed an EZGA structure descends from."""
+    types = {}
+    for container in db.partition.list_containers():
+        meta = container.AtomPositionManager.metadata
+        if meta.get("global_db_id") is not None:
+            types[int(meta["global_db_id"])] = meta.get("config_type", "unknown")
+    return types
+
+
+def _ezga_duplicates(logger_dir: Path) -> dict[int, int]:
+    """Duplicates EZGA filtered out per generation (hash collisions with a
+    structure it already had, every operator). Its logger/gen_*_full.json
+    hold running totals: a generation's count is the difference from the
+    previous file."""
+    totals = {}
+    for path in logger_dir.glob("gen_*_full.json"):
+        record = json.loads(path.read_text())
+        variation = record.get("variation_stats") or {}
+        totals[int(record["generation"])] = sum(
+            variation.get("mutation_hashcolition_counts") or []
+        ) + sum(variation.get("crossover_hashcolition_counts") or [])
+    duplicates, previous = {}, 0
+    for generation in sorted(totals):
+        duplicates[generation] = int(totals[generation] - previous)
+        previous = totals[generation]
+    return duplicates
+
+
+def _ezga_generation_stats(
+    base_name: str, mutation_funcs: list, seed_types: dict[int, str]
+) -> dict | None:
+    """EZGA's run per generation (structures generated, duplicates filtered,
+    operators applied) and the structures selected for DFT (high_sd_structures.xyz) by the
+    config_type of their seed. None when the loop didn't use EZGA or hasn't
+    reached selection; never raises."""
+    from alomancy.structure_generation.ezga.generate_structures import read_offspring
+
+    path = Path("results", base_name, "structure_generation")
+    db_path = path / "ezga" / "db"
+    selected_path = path / "high_sd_structures.xyz"
+    if not (db_path.exists() and selected_path.exists()):
+        return None
+    try:
+        offspring = read_offspring(db_path)
+        high_sd = read(selected_path, ":")
+        duplicates = _ezga_duplicates(path / "ezga" / "logger")
+    except Exception as exc:
+        logger.warning(
+            "Loop report: could not read EZGA output for %s: %s", base_name, exc
+        )
+        return None
+    if not offspring:
+        return None
+    names = [
+        str(m.get("type") or m.get("factory") or m).rsplit(".", 1)[-1]
+        if isinstance(m, dict)
+        else str(m).rsplit(".", 1)[-1]
+        for m in mutation_funcs
+    ]
+
+    by_generation: dict[int, list[Atoms]] = defaultdict(list)
+    for atoms in offspring:
+        by_generation[atoms.info["ezga_generation"]].append(atoms)
+    # high_sd_structures.xyz may lack the mutations and the seed (written
+    # before they were recorded): take them from the database entry.
+    lookup = {_offspring_key(a): a for a in offspring}
+    selected = [lookup[k] for k in map(_offspring_key, high_sd) if k in lookup]
+    by_seed: dict[str, list[Atoms]] = defaultdict(list)
+    for atoms in selected:
+        seed = atoms.info.get("ezga_seed_db_id")
+        by_seed[seed_types.get(seed, "unknown")].append(atoms)
+
+    return {
+        "operator_names": [*names, "crossover"],
+        "by_generation": {
+            str(g): {
+                "generated": len(s),
+                "duplicates": duplicates.get(g),
+                "operators": _operator_counts(s, names),
+            }
+            for g, s in sorted(by_generation.items())
+        },
+        "selected": len(selected),
+        "selected_unmatched": len(high_sd) - len(selected),
+        "operators": _operator_counts(selected, names),
+        "generations_selected": sorted(
+            int(a.info["ezga_generation"]) for a in selected
+        ),
+        "by_seed_type": {
+            t: {"selected": len(s), "operators": _operator_counts(s, names)}
+            for t, s in sorted(by_seed.items())
+        },
+    }
+
+
 def _events_for_loop(log_file: str | None, loop: int) -> dict[str, Any]:
     events_path = (
         Path(log_file).with_name(EVENTS_FILENAME)
@@ -256,6 +382,16 @@ def collect_loop_stats(workflow: Any, loop: int) -> dict[str, Any]:
     base_name = f"al_loop_{loop}"
     jobs = workflow.jobs_dict
     events = _events_for_loop(workflow.log_file, loop)
+    generation = jobs.get("structure_generation", {})
+    ezga = (
+        _ezga_generation_stats(
+            base_name,
+            (generation.get("ezga_kwargs") or {}).get("mutation_funcs") or [],
+            _seed_types(workflow.db),
+        )
+        if generation.get("generator") == "ezga"
+        else None
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "loop": loop,
@@ -279,6 +415,7 @@ def collect_loop_stats(workflow: Any, loop: int) -> dict[str, Any]:
         "dataset": _dataset_stats(workflow.db, loop),
         "redundancy_probe": _redundancy_probe_stats(base_name),
         "dft": _dft_stats(base_name, events, workflow.force_ceiling),
+        "ezga": ezga,
         "timing": _timing_for_loop(workflow.log_file, loop),
         "events": events,
     }

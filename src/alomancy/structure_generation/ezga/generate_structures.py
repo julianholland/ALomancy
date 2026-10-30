@@ -672,8 +672,11 @@ def read_offspring(db_path: Path) -> list[Atoms]:
     containers with a generation number (the seeds have none) and the
     newest run_uid. A HiSE stage's database also holds the earlier stages'
     structures, carried with their own run_uid and generation numbers.
-    Geometry only, plus ezga_generation / ezga_operation / ezga_energy (the
-    model's energy, not a label)."""
+    Geometry only, plus ezga_generation / ezga_operation /
+    ezga_mutation_list (indices into mutation_funcs; mutation children
+    only, a crossover child's list is its parent's) / ezga_seed_db_id (the
+    global_db_id of the seed it descends from) / ezga_energy (the model's
+    energy, not a label)."""
     from alomancy.database.global_database import atoms_from_container, read_storage
 
     generated = []
@@ -695,6 +698,11 @@ def read_offspring(db_path: Path) -> list[Atoms]:
         atoms.info["ezga_generation"] = int(metadata["generation"])
         if isinstance(metadata.get("operation"), str):
             atoms.info["ezga_operation"] = metadata["operation"]
+        mutations = np.atleast_1d(metadata.get("mutation_list", []))
+        if metadata.get("operation") == "mutation" and mutations.size:
+            atoms.info["ezga_mutation_list"] = [int(i) for i in mutations]
+        if metadata.get("global_db_id") is not None:
+            atoms.info["ezga_seed_db_id"] = int(metadata["global_db_id"])
         energy = container.AtomPositionManager.energy
         if energy is not None and np.isfinite(energy):
             atoms.info["ezga_energy"] = float(energy)
