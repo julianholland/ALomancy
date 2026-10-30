@@ -252,6 +252,16 @@ high_accuracy_evaluation:
     hpc: 'my_gpu_hpc'
   ```
 
+  `mlip_relaxation` (off by default) relaxes every generated candidate with the loop's best model before selection, so the committee (or random/novelty selection) chooses among relaxed structures, the ones DFT starts from, instead of raw MD snapshots. A candidate whose relaxation fails or ends with a bond shorter than 0.5 Å is dropped (warning `mlip_relax_dropped`); if the whole relaxation job fails, the unrelaxed candidates are used (warning `mlip_relax_fallback`). DFT still relaxes anything whose forces exceed `high_accuracy_evaluation.force_ceiling`. EZGA candidates are already relaxed by EZGA, so this is meant for MD. It adds a remote function: run `alomancy upgrade-hpc` before switching it on.
+
+  ```yaml
+  structure_generation:
+    mlip_relaxation:
+      fmax: 0.05          # eV/Å (default 0.05)
+      steps: 200          # optimiser step budget (default 200)
+      optimizer: "FIRE"   # "FIRE" (default), "BFGS" or "LBFGS"
+  ```
+
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
 - **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored.

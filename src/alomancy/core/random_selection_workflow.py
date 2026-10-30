@@ -56,6 +56,9 @@ class RandomSelectionWorkflow(ActiveLearningWorkflow):
     def run(self) -> None:
         for ctx in self.iterate_loops(self.prepare_run()):
             (model,) = self.train_models(ctx, self.seeds(1))
+            if ctx.final:
+                self.finish_final_training(ctx)
+                return
             if ctx.train_only:
                 logger.info(
                     "Initial training complete; train_only stops before generation."

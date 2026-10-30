@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 
 
@@ -14,6 +15,14 @@ def main() -> None:
         help="Run the AL workflow described by a YAML config",
     )
     run.add_argument("config", type=Path, help="Path to the run's YAML config")
+    run.add_argument(
+        "--no-live",
+        action="store_true",
+        help=(
+            "Don't draw the live remote-job panel in this terminal (a summary "
+            "line is logged every few minutes instead)"
+        ),
+    )
 
     rep = sub.add_parser(
         "report",
@@ -97,11 +106,42 @@ def main() -> None:
         ),
     )
 
+    status = sub.add_parser(
+        "status",
+        help="Show the remote jobs of the run in this directory",
+    )
+    status.add_argument(
+        "--watch", "-w", action="store_true", help="Redraw until Ctrl-C"
+    )
+    status.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        metavar="S",
+        help="Seconds between redraws with --watch (default: 5)",
+    )
+
+    cancel = sub.add_parser(
+        "cancel",
+        help=(
+            "Stop the run in this directory, cancel its queued/running remote "
+            "jobs and optionally delete its ExPyRe folders"
+        ),
+    )
+    cancel.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help=("Stop and cancel without asking (deleting folders is always asked)"),
+    )
+
     args = parser.parse_args()
 
     if args.command == "run":
         from alomancy import ALomancy
 
+        if args.no_live:
+            os.environ["ALOMANCY_LIVE"] = "0"
         ALomancy(args.config).run()
     elif args.command == "report":
         from alomancy.cli.report import completed_loops, write_reports
@@ -135,6 +175,18 @@ def main() -> None:
             replot_results(args.results_dir.resolve(), no_parity=args.no_parity)
         else:
             res.print_help()
+    elif args.command == "status":
+        import sys
+
+        from alomancy.cli.status import show_status
+
+        sys.exit(show_status(Path.cwd(), watch=args.watch, interval=args.interval))
+    elif args.command == "cancel":
+        import sys
+
+        from alomancy.cli.cancel import cancel_run
+
+        sys.exit(cancel_run(Path.cwd(), assume_yes=args.yes))
     elif args.command == "nuke":
         from alomancy.cli.nuke import nuke_expyre_results, resolve_default_expyre_dir
 

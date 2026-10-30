@@ -29,6 +29,7 @@ dependencies = [
     "ezga-lib>=1.2,<1.3",
     "pyyaml>=6.0",
     "tqdm>=4.60.0",
+    "rich>=13",
     "matplotlib>=3.5.0",
     "expyre-wfl>=0.1.0",
     "mp_api>=0.40.0",

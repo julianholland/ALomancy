@@ -1954,7 +1954,7 @@ class TestRun:
         ):
             wf.run()
 
-        assert len(train_calls) == 2  # num_of_al_loops=2
+        assert len(train_calls) == 3  # num_of_al_loops=2, plus the final training
 
     @pytest.mark.unit
     def test_start_loop_respected(
@@ -1979,7 +1979,7 @@ class TestRun:
         ):
             wf.run()
 
-        assert len(train_calls) == 2  # loops 2 and 3 only
+        assert len(train_calls) == 3  # loops 2 and 3, plus the final training
 
     @pytest.mark.unit
     def test_base_names_correct_for_loops(
@@ -2002,7 +2002,7 @@ class TestRun:
         ):
             wf.run()
 
-        assert train_calls == ["al_loop_0", "al_loop_1"]
+        assert train_calls == ["al_loop_0", "al_loop_1", "al_loop_2"]
 
     @pytest.mark.unit
     def test_train_only_stops_before_generation(
@@ -2060,9 +2060,77 @@ class TestRun:
             wf.run()
 
         # Resumed past loop 0 -- initialize_training_set is skipped entirely,
-        # and only loops 1, 2 run.
+        # and only loops 1, 2 run, then the final training (al_loop_3).
         assert init_calls == []
-        assert len(train_calls) == 2
+        assert len(train_calls) == 3
+
+    @pytest.mark.unit
+    def test_run_ends_on_training_the_last_loops_structures(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """The last AL loop's DFT structures reach a model: after loop
+        num_of_al_loops - 1, one more training (al_loop_<n>, final) runs
+        and nothing is generated or marked done."""
+        monkeypatch.chdir(tmp_path)
+        wf = self._wf_with_mocks(tmp_path, workflow_jobs_dict, shared_db)
+        contexts = []
+        generated = []
+        with (
+            patch.object(wf, "_initialize_training_set", return_value=([], [])),
+            patch.object(
+                wf,
+                "train_models",
+                side_effect=lambda ctx, *a, **kw: contexts.append(ctx) or [],
+            ),
+            patch.object(
+                wf,
+                "select_uncertain",
+                side_effect=lambda ctx, *a, **kw: generated.append(ctx.loop) or [],
+            ),
+            patch(f"{_MODULE}._evaluator_orchestrate", return_value=[]),
+            patch(f"{_MODULE}.write"),
+        ):
+            wf.run()
+
+        assert [c.final for c in contexts] == [False, False, True]
+        assert contexts[-1].base_name == "al_loop_2"
+        assert generated == [0, 1]
+        assert not Path("results/al_loop_2/loop.done").exists()
+
+    @pytest.mark.unit
+    def test_more_loops_after_a_finished_run_carry_on_from_the_final_loop(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """Raising num_of_al_loops after a finished run: the loop that held
+        the final training now generates and runs DFT (its trained models
+        are reused through train_mlip.done), then a new final training."""
+        monkeypatch.chdir(tmp_path)
+        for loop in (0, 1):
+            Path(f"results/al_loop_{loop}").mkdir(parents=True)
+            Path(f"results/al_loop_{loop}/loop.done").write_text("done\n")
+        wf = self._wf_with_mocks(
+            tmp_path, workflow_jobs_dict, shared_db, num_of_al_loops=3
+        )
+        contexts = []
+        generated = []
+        with (
+            patch.object(
+                wf,
+                "train_models",
+                side_effect=lambda ctx, *a, **kw: contexts.append(ctx) or [],
+            ),
+            patch.object(
+                wf,
+                "select_uncertain",
+                side_effect=lambda ctx, *a, **kw: generated.append(ctx.loop) or [],
+            ),
+            patch(f"{_MODULE}._evaluator_orchestrate", return_value=[]),
+            patch(f"{_MODULE}.write"),
+        ):
+            wf.run()
+
+        assert [(c.loop, c.final) for c in contexts] == [(2, False), (3, True)]
+        assert generated == [2]
 
 
 # ---------------------------------------------------------------------------
@@ -2769,3 +2837,82 @@ def test_md_explores_with_the_calculator_of_the_trained_mlip(
 
     assert _NotMaceTrainer.built_on == [str(model_file)] * 2  # once per MD run
     assert len(candidates) > 0
+
+
+def _dft_frame(x: float, job_id: int, force: float = 0.0, initial: bool = False):
+    a = Atoms("H2", positions=[[0, 0, 0], [x, 0, 0]], cell=[8, 8, 8], pbc=True)
+    a.info["job_id"] = job_id
+    if initial:
+        a.info["geometry_initial"] = True
+    forces = np.zeros((2, 3))
+    forces[0, 0], forces[1, 0] = force, -force
+    a.calc = SinglePointCalculator(a, energy=-x, forces=forces)
+    a.info["REF_energy"] = -x
+    a.arrays["REF_forces"] = forces
+    return a
+
+
+@pytest.mark.unit
+class TestAddToDatasetInitialFrames:
+    """GO starting frames are stored with their relaxed partner's split;
+    the train filter, not the add step, decides whether they are used."""
+
+    @pytest.mark.unit
+    def test_initial_frames_follow_their_final_frames_split(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+        wf.dataset_kwargs["test_ratio"] = 0.5
+        finals = [_dft_frame(0.7 + 0.05 * i, job_id=i) for i in range(10)]
+        initial = [
+            _dft_frame(1.5 + 0.05 * i, job_id=i, force=5.0, initial=True)
+            for i in range(0, 10, 2)
+        ]
+        loop_dir = Path("results/al_loop_0")
+        loop_dir.mkdir(parents=True)
+        write(str(loop_dir / "high_accuracy_eval_initial_frames.xyz"), initial)
+
+        wf.add_to_dataset(_ctx(0), wf._label_new_structures(_ctx(0), finals))
+
+        stored = shared_db.get_all_as_atoms()
+        assert len(stored) == 15
+        split_of = {
+            a.info["job_id"]: a.info["split"]
+            for a in stored
+            if not a.info.get("geometry_initial")
+        }
+        assert set(split_of.values()) == {"train", "test"}
+        for a in stored:
+            if a.info.get("geometry_initial"):
+                assert a.info["split"] == split_of[a.info["job_id"]]
+                assert a.info["al_loop"] == 0
+                assert a.info["config_type"] == wf.NEW_STRUCTURE_CONFIG_TYPE
+
+    @pytest.mark.unit
+    def test_train_filter_decides_whether_initial_frames_train(
+        self, tmp_path, minimal_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        wf = _make_workflow(tmp_path, minimal_jobs_dict, shared_db)
+        wf.dataset_kwargs["test_ratio"] = 0.0
+        loop_dir = Path("results/al_loop_0")
+        loop_dir.mkdir(parents=True)
+        write(
+            str(loop_dir / "high_accuracy_eval_initial_frames.xyz"),
+            [_dft_frame(1.5, job_id=0, force=50.0, initial=True)],
+        )
+        wf.add_to_dataset(
+            _ctx(0), wf._label_new_structures(_ctx(0), [_dft_frame(0.74, 0)])
+        )
+
+        wf.train_filter = {**wf.train_filter, "max_force": 10.0}
+        wf._apply_split_filters()
+        train = shared_db.get_train_atoms()
+        assert len(shared_db.get_all_as_atoms()) == 2
+        assert not any(a.info.get("geometry_initial") for a in train)
+
+        wf.train_filter = {**wf.train_filter, "max_force": 100.0}
+        wf._apply_split_filters()
+        train = shared_db.get_train_atoms()
+        assert sum(bool(a.info.get("geometry_initial")) for a in train) == 1

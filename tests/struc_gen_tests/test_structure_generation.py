@@ -1170,7 +1170,9 @@ class TestMolecularDynamics:
     """Test molecular dynamics functionality."""
 
     @staticmethod
-    def _run_emt_md(tmp_path, to_generate, steps=40, total_md_runs=1):
+    def _run_emt_md(
+        tmp_path, to_generate, steps=40, total_md_runs=1, snapshot_oversample=1
+    ):
         from ase.build import bulk
         from ase.calculators.emt import EMT
 
@@ -1189,7 +1191,25 @@ class TestMolecularDynamics:
             out_dir=str(tmp_path),
             steps=steps,
             calculator=EMT(),
+            snapshot_oversample=snapshot_oversample,
         )
+
+    @pytest.mark.unit
+    def test_oversampled_snapshots_form_a_trajectory_with_md_steps(self, tmp_path):
+        """snapshot_oversample records that many times more frames, each
+        tagged with its MD step, as one viewable trajectory."""
+        from ase.io import read
+
+        self._run_emt_md(tmp_path, 4, steps=40, snapshot_oversample=5)
+        frames = read(tmp_path / "structure_generation.xyz", ":")
+        assert len(frames) == 20
+        assert [f.info["md_frame"] for f in frames] == list(range(0, 40, 2))
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("bad", [0, -2, 1.5, True])
+    def test_bad_snapshot_oversample_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="snapshot_oversample"):
+            self._run_emt_md(tmp_path, 4, snapshot_oversample=bad)
 
     @pytest.mark.unit
     @pytest.mark.parametrize(

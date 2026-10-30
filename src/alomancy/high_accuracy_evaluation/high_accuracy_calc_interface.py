@@ -49,7 +49,7 @@ from alomancy.utils.clean_structures import (
     filter_structures_by_min_bond_distance,
     wrap_structures_into_cell,
 )
-from alomancy.utils.dft_utils import refresh_dft_labels
+from alomancy.utils.dft_utils import INITIAL_FRAME_SUFFIX, refresh_dft_labels
 from alomancy.utils.file_saving_and_parsing import read_xyz
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,44 @@ _LEGACY_EVALUATOR_KWARGS_KEY = {
 
 def _sentinel_results_path(base_name: str) -> Path:
     return Path("results", base_name, "high_accuracy_eval_results.xyz")
+
+
+def initial_frames_path(base_name: str) -> Path:
+    """Where the starting frames of this call's geometry optimisations are
+    collected (step 0 of each GO that moved its structure)."""
+    return Path("results", base_name, "high_accuracy_eval_initial_frames.xyz")
+
+
+def _collect_initial_frames(eval_dir: Path, base_name: str, name: str) -> None:
+    """Gather every job's ``<name>_initial.xyz`` (written by ``_run_go``)
+    into ``initial_frames_path``. Jobs run before this existed, and SP or
+    unmoved GO jobs, have none."""
+    frames = [
+        refresh_dft_labels(read(p, format="extxyz"), str(p))
+        for p in sorted(
+            eval_dir.glob(
+                f"batch_*/{ASE_OUTPUT_PREFIX}_*/{name}{INITIAL_FRAME_SUFFIX}.xyz"
+            )
+        )
+    ]
+    path = initial_frames_path(base_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write(path, frames, format="extxyz")
+    if frames:
+        logger.info(
+            "Kept the starting frame of %d geometry optimisation(s) in %s.",
+            len(frames),
+            path,
+        )
+
+
+def read_initial_frames(base_name: str) -> list[Atoms]:
+    """The GO starting frames collected for *base_name*; empty when none
+    were kept (or the evaluation predates them)."""
+    path = initial_frames_path(base_name)
+    if not path.exists():
+        return []
+    return [refresh_dft_labels(a, str(path)) for a in read_xyz(path)]
 
 
 def _phase_done(base_name: str) -> bool:
@@ -173,6 +211,7 @@ def high_accuracy_evaluation(
                 "Skipping remote submission and reusing these structures.",
                 len(found_structures),
             )
+            _collect_initial_frames(eval_dir, base_name, name)
             return [
                 refresh_dft_labels(read(p, format="extxyz"), str(p))
                 for p in found_structures
@@ -276,5 +315,6 @@ def high_accuracy_evaluation(
 
     sentinel_results.parent.mkdir(parents=True, exist_ok=True)
     write(sentinel_results, high_accuracy_structures, format="extxyz")
+    _collect_initial_frames(eval_dir, base_name, name)
     _mark_phase_done(base_name)
     return high_accuracy_structures

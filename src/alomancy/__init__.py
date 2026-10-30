@@ -84,10 +84,17 @@ def _pin_local_expyre_root(cwd: Path) -> None:
         os.environ["EXPYRE_ROOT"] = str(root)
 
 
+# The ExPyRe directory this process created (None if it found one already
+# there). `alomancy cancel` removes it again when the cwd turns out not to
+# be a run directory, so a mistaken invocation leaves nothing behind.
+_SEEDED_EXPYRE_ROOT: Path | None = None
+
+
 def _seed_local_expyre_root(cwd: Path) -> Path | None:
     """Core logic for _ensure_local_expyre_root, without the pytest/
     EXPYRE_ROOT guard -- see that function's docstring. Returns the run's
     ExPyRe directory, or None if there is none."""
+    global _SEEDED_EXPYRE_ROOT
     for name in (".expyre", "_expyre"):
         if (cwd / name).exists():
             return cwd / name
@@ -101,6 +108,7 @@ def _seed_local_expyre_root(cwd: Path) -> Path | None:
         shutil.copyfile(master, cwd / ".expyre" / "config.json")
     except OSError:
         return None
+    _SEEDED_EXPYRE_ROOT = cwd / ".expyre"
     return cwd / ".expyre"
 
 

@@ -52,7 +52,12 @@ def md_section(
             f"{summary.get('replaced', 0)} seed(s) replaced)",
             f"- Candidate frames: {summary.get('candidates')} "
             f"(per completed run: median {_fmt(float(np.median(frames)) if frames else None)}, "
-            f"min {min(frames) if frames else 'n/a'})",
+            f"min {min(frames) if frames else 'n/a'})"
+            if "valid_per_run" not in summary
+            else f"- Frames: {sum(frames)} recorded, "
+            f"{sum(summary['valid_per_run'])} physical (no bond < 0.5 Å, seed "
+            f"frames left out), {summary.get('candidates')} picked as candidates, "
+            "spread over each run",
             f"- Ensemble {md_kwargs.get('ensemble', 'nvt')}, "
             f"T = {md_kwargs.get('temperature', 'default')} K, "
             f"timestep {md_kwargs.get('timestep_fs', 'default')} fs",
@@ -274,7 +279,7 @@ def committee_section(
     redundant picks skipped before DFT can leave gaps above it)."""
     import polars as pl
 
-    from alomancy.analysis.report.plots import histogram
+    from alomancy.analysis.report.plots import selection_rank_plot
 
     path = Path("results", base_name, "structure_generation", "std_dev_forces.csv")
     if not path.exists():
@@ -282,31 +287,34 @@ def committee_section(
     df = pl.read_csv(path)
     if "max_std_dev" not in df.columns or df.is_empty():
         return None
-    values = df["max_std_dev"].sort(descending=True).to_list()
+    df = df.sort("max_std_dev", descending=True)
+    values = df["max_std_dev"].to_list()
     if "selected" in df.columns:
-        chosen = df.filter(pl.col("selected"))["max_std_dev"]
-        selected = len(chosen)
-        cut = min(chosen.to_list()) if selected else None
+        mask = df["selected"].fill_null(False).to_list()
     else:  # written before the selection was recorded: assume the top N
-        selected = (stats.get("dft") or {}).get("submitted") or 0
-        cut = values[min(selected, len(values)) - 1] if selected else None
+        n = (stats.get("dft") or {}).get("submitted") or 0
+        mask = [i < n for i in range(len(values))]
+    chosen = [v for v, keep in zip(values, mask, strict=True) if keep]
+    selected = len(chosen)
+    cut = min(chosen) if chosen else None
+    share = 100 * selected / len(values)
     section = Section(
         "Selection: committee uncertainty",
         [
             f"- {len(values)} candidates scored; {selected} selected "
-            f"(max force std dev ≥ {_fmt(cut)} eV/Å)."
+            f"({share:.0f} %; max force std dev ≥ {_fmt(cut)} eV/Å)."
         ],
     )
     if plots_dir is not None:
         out = plots_dir / "committee_force_std_dev.png"
-        histogram(
+        selection_rank_plot(
             values,
+            mask,
             out,
             title=f"Committee force std dev of candidates [{base_name}]",
-            xlabel="Max per-atom force std dev (eV/Å)",
-            marker=cut,
-            marker_label="selection cut" if cut is not None else None,
-            log_y=True,
+            ylabel="Max per-atom force std dev (eV/Å)",
+            cut=cut,
+            unit="eV/Å",
         )
         section.plots.append(out)
     return section
