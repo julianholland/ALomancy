@@ -31,6 +31,7 @@ def compute_initialization_needs(
     num_of_dimers_per_combo: int,
     num_of_trimers_per_combo: int,
     num_of_amorphous_structures: int,
+    molecules: list[str] | None = None,
 ) -> dict:
     """
     Compare DB contents against initialization targets and return what still
@@ -90,6 +91,7 @@ def compute_initialization_needs(
 def create_initialization_atoms_list(
     work_dir: str,
     elements: list[str],
+    molecules: list[str] | None = None,
     mp_structures: bool = True,
     single_atoms: bool = True,
     num_of_dimers_per_combo: int = 10,

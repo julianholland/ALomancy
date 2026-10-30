@@ -385,6 +385,7 @@ def generate(
     hpc: dict,
     max_time: str,
     elements: list[str] | None = None,  # noqa: ARG001 -- MD needs no species
+    molecules: list[str] | None = None,  # noqa: ARG001 -- MD doesnt use molecules
     seed: int | None = None,  # noqa: ARG001 -- md_kwargs.structure_selection_kwargs.seed
 ) -> list[Atoms]:
     """Local orchestrator: select a diversity-maximizing subset of

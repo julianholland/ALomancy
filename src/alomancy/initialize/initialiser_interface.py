@@ -137,7 +137,12 @@ def _resolve_kwargs(config: dict, namespace: str) -> dict:
     }
 
 
-def compute_needs(db: "GlobalDatabase", config: dict, elements: list[str]) -> dict:
+def compute_needs(
+    db: "GlobalDatabase",
+    config: dict,
+    elements: list[str],
+    molecules: list[str] | None = None,
+) -> dict:
     """Compare DB contents against initialization targets (config's
     structure-type namespaces, plus the shared workflow.elements list) and
     return what still needs to be generated -- see
@@ -151,6 +156,7 @@ def compute_needs(db: "GlobalDatabase", config: dict, elements: list[str]) -> di
     return compute_initialization_needs(
         db=db,
         elements=elements,
+        molecules=molecules,
         _single_atoms=isolated_atom_kwargs["enabled"],
         mp_structures=mp_kwargs["enabled"],
         num_of_dimers_per_combo=(
@@ -190,6 +196,7 @@ def generate(
     base_name: str,
     name: str,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     elements: list[str],
+    molecules: list[str] | None = None,
     hpc: dict | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     max_time: str | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     needs: dict | None = None,
@@ -223,6 +230,7 @@ def generate(
     return create_initialization_atoms_list(
         work_dir=str(work_dir),
         elements=elements,
+        molecules=molecules,
         mp_structures=(
             needs["mp_structures"] if needs is not None else mp_kwargs["enabled"]
         ),
