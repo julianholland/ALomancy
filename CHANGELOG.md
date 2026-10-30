@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The training MAE plot (`training_mae_<base_name>.png`) caps its y-axes**, as the MD temperature plot does: each panel stops at 3× the worst fit's lowest MAE, so the first epochs' large errors no longer flatten the converged part. A fit whose MAE goes above the cap gives its peak in the legend.
+
+### Documentation
+- `docs/examples.md` has a new section, **Initialization in Full**, with every `initialization` setting commented. The quickstart now says its first block is a minimal sketch: the modules and HPC profiles should be named explicitly.
+
 ## [1.1.0] - 2026-10-30
 
 ### Added
