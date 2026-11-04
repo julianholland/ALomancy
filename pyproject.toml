@@ -71,6 +71,7 @@ dev = [
 
 [project.scripts]
 alomancy = "alomancy.cli.main:main"
+alomancy-rsh = "alomancy.utils.rsh:main"
 
 [project.urls]
 Homepage = "https://github.com/julianholland/ALomancy"

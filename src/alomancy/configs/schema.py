@@ -162,6 +162,8 @@ def config_schema(
         "max_go_time": None,
         "force_ceiling": None,
         "max_num_of_relax_steps": None,
+        "max_vdw_volume_ratio": None,
+        "vdw_exempt_config_types": None,
     }
     unused[("high_accuracy_evaluation",)] = {}
     for name in registered("dft_evaluator"):

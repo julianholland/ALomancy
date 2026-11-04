@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`start_from.database` no longer wipes the source run's database.** The import opened the source read-write. If that run was still going, sage_lib took the HDF5 lock error for corruption: it moved the live DB aside to `*.corrupted_<ts>`, left an empty one, and the import trained on nothing. The source is now opened read-only. A source still held open by its run raises at start (copy it with `cp -a`, or stop that run), and so does a source with no structures; neither is recorded as imported.
+- **An empty training set fails before submission**, not after the remote fit's queue wait ("Empty file … split_train.xyz").
+- **A dropped ssh connection no longer hangs a run.** On a host that only allows password/OTP login, once the shared ControlMaster connection died, the next squeue or rsync sat forever on a password prompt the live panel hid. Background ssh now goes through `alomancy-rsh` (BatchMode), which fails at once. Jobs then wait instead of failing: one `ssh_auth_lost` warning, and a banner in the live panel, say to run `ssh <host>` in another terminal, and polling picks up on its own once ssh works. Reinstall alomancy locally (`uv sync` / `pip install -e .`) so the `alomancy-rsh` script exists; no `alomancy upgrade-hpc` needed.
+- **NPT MD no longer sends blown-up cells to DFT.** A run is cut at its first frame whose volume per atom is above `md_kwargs.max_volume_ratio` (new, default 3, `null` turns it off) times its starting structure's; the frames stay in the trajectory but aren't candidates. When a run is cut, the warning `md_volume_expanded` suggests adding a small positive `md_kwargs.pressure` (e.g. 0.1 GPa) or using `nvt`. In yun_an loop 45, NPT runs at 0 GPa grew without bound, and 94 of 100 DFT jobs failed on the resulting cells. Driver only: no `alomancy upgrade-hpc` needed.
+
+- **No blown-up cell reaches DFT, whatever produced it.** A periodic structure whose volume is more than `high_accuracy_evaluation.max_vdw_volume_ratio` (new, default 10, `null` turns it off) times its atoms' van der Waals volume is dropped from the candidates before selection (so it can't take a DFT slot) and, as a final safety net, from anything else about to go to DFT (initialization, start data). Isolated atoms, dimers and trimers are exempt, as are the config types listed in `high_accuracy_evaluation.vdw_exempt_config_types` (new; e.g. molecules in a vacuum box). The warning `blown_up_excluded` suggests a small positive MD pressure, a higher ratio for genuine low-density crystals, or exempting the config type. Both ratio limits must be finite numbers above 1.
+- **A restarted DFT phase resubmits exactly the unfinished structures.** The pre-DFT bond and blown-up filters now run before the restart check, so structures they exclude no longer shift which ones count as finished.
+- **MD that yields no candidates fails instead of caching an empty list.** If every run expands past `max_volume_ratio` straight away, `generate` raises (suggesting a small positive pressure) and caches nothing, so a restart reruns MD. A seed whose cell has no finite, positive volume is no longer cut, and the `md_volume_expanded` warning only suggests `nvt` when the run isn't already NVT.
+
+### Added
+- **A run that has nothing left to do says why.** When every loop up to `general.num_of_al_loops` is already done, the warning `no_loops_to_run` explains that `num_of_al_loops` counts every loop in the results directory, not the loops this run adds, and gives how many completed loops it found (e.g. "already holds 10 completed AL loop(s) ... set it above 10").
+- **The loop report shows the structures added this loop**: a GIF of up to 6 of the final DFT geometries, each rocking gently so it can be seen from several angles, under "Structures evaluated with DFT this loop (final geometries)" (the DFT results as returned, before curation). An up-to-date GIF is reused rather than redrawn.
+
 ### Changed
+- **The live job panel uses the ALomancy colours**: done in the brand violet, running cyan, queued amber, still to submit a muted mid-violet, failures rose; each label in the summary has its bar segment's colour.
 - **The training MAE plot (`training_mae_<base_name>.png`) caps its y-axes**, as the MD temperature plot does: each panel stops at 3× the worst fit's lowest MAE, so the first epochs' large errors no longer flatten the converged part. A fit whose MAE goes above the cap gives its peak in the legend.
 
 ### Documentation

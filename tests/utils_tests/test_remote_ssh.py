@@ -397,3 +397,86 @@ class TestEnsureSshConnectivity:
             ensure_ssh_connectivity({"raven": {"hpc_name": "raven"}})  # must not raise
 
         assert any("no ssh binary" in r.message for r in caplog.records)
+
+
+class TestNonInteractiveSsh:
+    """A workflow's unattended ssh goes through alomancy-rsh (BatchMode), so
+    a call made after the ControlMaster died fails instead of waiting
+    forever on a password prompt nobody sees."""
+
+    @pytest.mark.unit
+    def test_rsh_execs_ssh_in_batch_mode_with_the_callers_arguments(self, tmp_path):
+        import os
+        import sys
+
+        fake_ssh = tmp_path / "ssh"
+        fake_ssh.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+        fake_ssh.chmod(0o755)
+        proc = subprocess.run(
+            [sys.executable, "-m", "alomancy.utils.rsh", "host", "bash", "-c", "true"],
+            env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert proc.stdout.split("\n")[:-1] == [
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=30",
+            "host",
+            "bash",
+            "-c",
+            "true",
+        ]
+
+    @pytest.mark.unit
+    def test_switches_default_ssh_on_expyre_systems_and_rsync(self):
+        from expyre.system import System
+
+        from alomancy.utils.remote_ssh import use_noninteractive_ssh
+
+        default = System(host="h", partitions=None, scheduler="slurm", remsh_cmd="ssh")
+        custom = System(
+            host="h2", partitions=None, scheduler="slurm", remsh_cmd="my-ssh"
+        )
+        env: dict[str, str] = {}
+        use_noninteractive_ssh(
+            env, systems={"a": default, "b": custom}, wrapper="/x/alomancy-rsh"
+        )
+
+        assert env["EXPYRE_RSH"] == "/x/alomancy-rsh"
+        assert default.remsh_cmd == "/x/alomancy-rsh"
+        assert default.scheduler.remsh_cmd == "/x/alomancy-rsh"
+        assert custom.remsh_cmd == "my-ssh"
+        assert custom.scheduler.remsh_cmd == "my-ssh"
+
+    @pytest.mark.unit
+    def test_user_set_expyre_rsh_is_kept(self):
+        from alomancy.utils.remote_ssh import use_noninteractive_ssh
+
+        env = {"EXPYRE_RSH": "mine"}
+        use_noninteractive_ssh(env, systems={}, wrapper="/x/alomancy-rsh")
+        assert env["EXPYRE_RSH"] == "mine"
+
+    @pytest.mark.unit
+    def test_missing_wrapper_warns_and_changes_nothing(self):
+        from expyre.system import System
+
+        from alomancy.utils import remote_ssh
+
+        records: list[logging.LogRecord] = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        remote_ssh.logger.addHandler(handler)
+        system = System(host="h", partitions=None, scheduler="slurm", remsh_cmd="ssh")
+        env: dict[str, str] = {}
+        try:
+            with patch.object(remote_ssh, "_find_rsh_wrapper", return_value=None):
+                remote_ssh.use_noninteractive_ssh(env, systems={"a": system})
+        finally:
+            remote_ssh.logger.removeHandler(handler)
+
+        assert env == {}
+        assert system.remsh_cmd == "ssh"
+        assert any("alomancy-rsh not found" in r.getMessage() for r in records)

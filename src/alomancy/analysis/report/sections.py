@@ -34,6 +34,16 @@ def _fmt(value: Any, spec: str = ".3g") -> str:
     return format(value, spec) if isinstance(value, int | float) else str(value)
 
 
+def _volume_clause(summary: dict) -> str:
+    """The MD frames line's note on the volume filter (md_wfl.generate)."""
+    ratio = summary.get("max_volume_ratio")
+    if ratio is None:
+        return ""
+    cut = sum(summary.get("expanded_per_run") or [])
+    after = f"; {cut} frame(s) cut after a run expanded past it" if cut else ""
+    return f", volume ≤ {ratio:g} x the seed's{after}"
+
+
 def md_section(
     stats: dict, *, base_name: str, plots_dir: Path | None, config: dict
 ) -> Section | None:
@@ -55,8 +65,9 @@ def md_section(
             f"min {min(frames) if frames else 'n/a'})"
             if "valid_per_run" not in summary
             else f"- Frames: {sum(frames)} recorded, "
-            f"{sum(summary['valid_per_run'])} physical (no bond < 0.5 Å, seed "
-            f"frames left out), {summary.get('candidates')} picked as candidates, "
+            f"{sum(summary['valid_per_run'])} physical (no bond < 0.5 Å"
+            f"{_volume_clause(summary)}, seed frames left out), "
+            f"{summary.get('candidates')} picked as candidates, "
             "spread over each run",
             f"- Ensemble {md_kwargs.get('ensemble', 'nvt')}, "
             f"T = {md_kwargs.get('temperature', 'default')} K, "

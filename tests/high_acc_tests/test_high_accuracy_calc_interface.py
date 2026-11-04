@@ -30,7 +30,8 @@ _MODULE = "alomancy.high_accuracy_evaluation.high_accuracy_calc_interface"
 
 
 def _config():
-    return {"evaluator": "qe"}
+    # Test atoms sit in roomy boxes; the blown-up-cell check is off here.
+    return {"evaluator": "qe", "max_vdw_volume_ratio": None}
 
 
 def _atoms(symbol="H"):
@@ -136,6 +137,7 @@ class TestHighAccuracyEvaluation:
                 tmp_path,
                 config={
                     "evaluator": "qe",
+                    "max_vdw_volume_ratio": None,
                     "qe_kwargs": {"system": {"input_dft": "pbe"}},
                 },
             )
@@ -157,7 +159,11 @@ class TestHighAccuracyEvaluation:
             _call(
                 [_atoms()],
                 tmp_path,
-                config={"evaluator": "vasp", "vasp_kwargs": {"encut": 520}},
+                config={
+                    "evaluator": "vasp",
+                    "vasp_kwargs": {"encut": 520},
+                    "max_vdw_volume_ratio": None,
+                },
             )
 
         job_dict = mock_sub.call_args.kwargs["function_kwargs"][
@@ -320,7 +326,11 @@ class TestHighAccuracyEvaluation:
             _call(
                 [go_atom],
                 tmp_path,
-                config={"evaluator": "qe", "max_go_time": "8H"},
+                config={
+                    "evaluator": "qe",
+                    "max_go_time": "8H",
+                    "max_vdw_volume_ratio": None,
+                },
                 allow_relaxation=True,
             )
 

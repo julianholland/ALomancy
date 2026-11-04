@@ -143,6 +143,44 @@ def test_a_failed_sync_is_recorded_without_advancing_last_data():
 
 
 @pytest.mark.unit
+def test_lost_ssh_login_is_shown_until_the_next_successful_sync():
+    """While ssh can't log in, the panel and summary say how to fix it; the
+    first new outage and its end are reported once each."""
+    tracker, batch = _tracker_with_batch(n=1)
+    tracker.submitted(batch, 0, "1", "id0")
+
+    assert tracker.mark_auth_lost("raven", "raven.mpcdf.mpg.de") is True
+    assert tracker.mark_auth_lost("raven", "raven.mpcdf.mpg.de") is False
+    snapshot = tracker.snapshot()
+    expected = "run `ssh raven.mpcdf.mpg.de` in another terminal"
+    assert expected in summary_line(snapshot)
+    assert expected in _text(render(snapshot), width=160)
+
+    assert tracker.synced("raven", {}) is True
+    assert tracker.synced("raven", {}) is False
+    snapshot = tracker.snapshot()
+    assert snapshot["auth_lost"] == {}
+    assert "ssh raven" not in summary_line(snapshot)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("message", "is_auth"),
+    [
+        ("jholl@10.1.2.3: Permission denied (keyboard-interactive).", True),
+        ("user@h: Permission denied (publickey,password).", True),
+        ("Host key verification failed.", True),
+        ('rsync: opendir "/x" failed: Permission denied (13)', False),
+        ("ssh: connect to host h port 22: Connection refused", False),
+    ],
+)
+def test_is_ssh_auth_failure(message, is_auth):
+    from alomancy.utils.rsh import is_ssh_auth_failure
+
+    assert is_ssh_auth_failure(RuntimeError(message)) is is_auth
+
+
+@pytest.mark.unit
 def test_unregistered_batches_disappear():
     tracker, batch = _tracker_with_batch()
     assert tracker.active()
@@ -189,6 +227,43 @@ def test_render_shows_phase_counts_hpcs_and_stale_flag():
     assert "raven" in text
     assert "⚠" in text
     assert "slowest running: go_0 (raven, 31549232)" in text
+
+
+@pytest.mark.unit
+def test_bars_and_labels_use_the_alomancy_colours():
+    """Each bar segment and its summary label are drawn in the ALomancy
+    colour scheme (analysis/palette.py), failures in rose."""
+    from rich.color import Color
+    from rich.text import Text
+
+    from alomancy.analysis.palette import ALOMANCY_PURPLE, PALETTE, PENDING_COLOR
+
+    tracker, batch = _tracker_with_batch(n=4)
+    tracker.submitted(batch, 0, "1", "id0")
+    tracker.submitted(batch, 1, "2", "id1")
+    tracker.synced("raven", {"id0": "running", "id1": "queued"})
+    group = render(tracker.snapshot())
+    bar = group.renderables[0].renderables[1]
+    assert isinstance(bar, Text)
+
+    colour_of = {}
+    for span in bar.spans:
+        text = bar.plain[span.start : span.end].strip()
+        # A bar segment is a run of one block character.
+        key = text[0] if set(text) <= set("█▓▒░") else text
+        colour_of.setdefault(key, span.style)
+    expected = {
+        "running": PALETTE[1],
+        "queued": PALETTE[3],
+        "to submit": PENDING_COLOR,
+        "▓": PALETTE[1],
+        "▒": PALETTE[3],
+    }
+    for text, colour in expected.items():
+        assert Color.parse(str(colour_of[text])) == Color.parse(colour), text
+    assert Color.parse(str(colour_of["done"])) == Color.parse(ALOMANCY_PURPLE)
+    header = group.renderables[0].renderables[0]
+    assert ALOMANCY_PURPLE.lower() in str(header.style).lower()
 
 
 @pytest.mark.unit

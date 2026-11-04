@@ -46,7 +46,10 @@ from alomancy.remote_submission.submitters import (
     ase_remote_submitter,
 )
 from alomancy.utils.clean_structures import (
+    filter_blown_up_structures,
     filter_structures_by_min_bond_distance,
+    resolve_max_vdw_volume_ratio,
+    resolve_vdw_exempt_config_types,
     wrap_structures_into_cell,
 )
 from alomancy.utils.dft_utils import INITIAL_FRAME_SUFFIX, refresh_dft_labels
@@ -200,6 +203,16 @@ def high_accuracy_evaluation(
 
     function_kwargs = {"high_accuracy_eval_job_dict": worker_config}
 
+    # Final safety net before any DFT is attempted. Applied before the
+    # restart check below: both filters are deterministic, so the outputs
+    # already found line up with the start of the filtered list.
+    structures = filter_structures_by_min_bond_distance(structures)
+    structures = filter_blown_up_structures(
+        structures,
+        resolve_max_vdw_volume_ratio(config),
+        resolve_vdw_exempt_config_types(config),
+    )
+
     eval_dir = Path("results", base_name, "high_accuracy_evaluation")
     if eval_dir.exists():
         found_structures = list(
@@ -228,9 +241,6 @@ def high_accuracy_evaluation(
                 "No previous results found. Submitting all %d structures.",
                 len(structures),
             )
-
-    # Final safety net before any DFT is attempted.
-    structures = filter_structures_by_min_bond_distance(structures)
 
     # MD trajectories can leave atoms drifted outside the periodic cell --
     # QE/VASP expect coordinates within the reference cell. Applied only to

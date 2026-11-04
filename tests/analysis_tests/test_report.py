@@ -87,6 +87,17 @@ def _write_dft_results(loop: int) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _small_structures_gif(monkeypatch):
+    """Every report renders the added-structures GIF; keep it to one
+    structure and two frames here (its own tests are in
+    test_structures_gif.py)."""
+    from alomancy.analysis.report import structures_gif
+
+    monkeypatch.setattr(structures_gif, "MAX_STRUCTURES", 1)
+    monkeypatch.setattr(structures_gif, "FRAMES_PER_STRUCTURE", 2)
+
+
 @pytest.fixture
 def jobs_dict(minimal_jobs_dict):
     minimal_jobs_dict["general"] = {
@@ -761,3 +772,23 @@ def test_redundancy_probe_plot_shows_structures_removed_per_step(tmp_path):
         t.get_text() for t in unique_ax.get_legend().get_texts()
     ]
     assert (tmp_path / "probe.png").exists()
+
+
+@pytest.mark.unit
+def test_report_shows_the_added_structures_gif_after_the_dft_section(finished_loop):
+    from alomancy.analysis.report.render import ADDED_STRUCTURES_TITLE
+
+    markdown = write_loop_report(finished_loop, 0).read_text()
+
+    assert Path("results/reports/al_loop_0/plots/added_structures.gif").exists()
+    dft = markdown.index("## DFT")
+    gif = markdown.index("(plots/added_structures.gif)")
+    assert dft < markdown.index(ADDED_STRUCTURES_TITLE) < gif
+    assert gif < markdown.index("## ", dft + 1)
+
+
+@pytest.mark.unit
+def test_report_has_no_gif_without_dft_results(finished_loop):
+    Path("results/al_loop_0/high_accuracy_eval_results.xyz").unlink()
+    markdown = write_loop_report(finished_loop, 0).read_text()
+    assert "added_structures.gif" not in markdown

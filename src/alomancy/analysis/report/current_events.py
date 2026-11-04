@@ -29,7 +29,9 @@ from typing import Any
 # The loop's steps, in the order a loop runs them.
 PHASE_ORDER = ("train_mlip", "generate_structures", "high_accuracy_eval")
 # Bookkeeping events: used here, never counted or shown in the report.
-INTERNAL_EVENTS = frozenset({"phase_started", "phase_completed", "job_succeeded"})
+INTERNAL_EVENTS = frozenset(
+    {"phase_started", "phase_completed", "job_succeeded", "ssh_auth_restored"}
+)
 _SUCCESS = "job_succeeded"
 _FAILURES = frozenset(
     {"job_failed", "job_died", "md_unfinished", "fit_missing", "fit_not_evaluated"}

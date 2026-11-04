@@ -394,7 +394,28 @@ class GlobalDatabase:
             logger.info("Database %s already imported; skipping.", source)
             return 0
 
-        atoms_list = GlobalDatabase(marker).get_all_as_atoms()
+        # Read-only: opening read-write while the source's own run holds it
+        # makes sage_lib take HDF5's lock error for corruption and rename
+        # that run's live DB aside (see "Replaced-DB detection" above).
+        try:
+            containers = read_storage(source / "hybrid_local")
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"No ALomancy database at {source}.") from exc
+        except OSError as exc:
+            if "lock" not in str(exc).lower():
+                raise
+            raise ValueError(
+                f"start_from.database {source} is open in another process "
+                "(most likely its run is still going). Stop that run, or copy "
+                "the database (cp -a) and point start_from.database at the copy."
+            ) from exc
+        if not containers:
+            raise ValueError(
+                f"start_from.database {source} holds no structures; nothing to "
+                "import. Check the path, and for *.corrupted_* files in "
+                f"{source / 'hybrid_local'}."
+            )
+        atoms_list = [atoms_from_container(c) for c in containers]
         if elements is not None:
             atoms_list = filter_by_elements(atoms_list, elements, source=marker)
         for atoms in atoms_list:

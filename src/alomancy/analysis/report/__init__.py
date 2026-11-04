@@ -149,12 +149,22 @@ def _core_plots(workflow: Any, stats: dict, plots_dir: Path) -> dict[str, Path]:
         )
         made["composition"] = path
 
+    def added_structures() -> None:
+        from alomancy.analysis.report.structures_gif import added_structures_gif
+
+        path = added_structures_gif(
+            stats["base_name"], plots_dir / "added_structures.gif"
+        )
+        if path is not None:
+            made["added_structures"] = path
+
     for name, fn in (
         ("MAE plot", mae),
         ("timing plot", timing),
         ("best-model parity plot", parity),
         ("redundancy probe plot", redundancy),
         ("composition plot", composition),
+        ("added-structures GIF", added_structures),
     ):
         _attempt(name, fn)
     return made

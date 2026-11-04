@@ -35,7 +35,7 @@ Construction is SQLite fsync-bound (3–6 s on btrfs, ~5 ms on tmpfs); tests sha
 - `store_descriptors` caches redundancy descriptors under `char_vec_128` (`core_workflow.md`).
 - `store_model_predictions` / `get_model_predictions(loop_idx, fit_idx, e0=None)`: per-loop, per-fit predictions under `model_energy_loop_{N}_fit_{i}` / `model_forces_loop_{N}_fit_{i}`; with `e0`, energies come back as formation energy per atom. `database/migrate_mace_prediction_keys.py` migrates the pre-1.0 `mace_*` keys and sentinel.
 - `get_isolated_atom_energies()` builds `{symbol: REF_energy}` from the `IsolatedAtom` structures.
-- `import_from_database`, `record_import`/`is_imported`/`imported_sources.json`: see `core_workflow.md` (start_from).
+- `import_from_database`, `record_import`/`is_imported`/`imported_sources.json`: see `core_workflow.md` (start_from). The source is opened read-only (`read_storage(source / "hybrid_local")`), never as a `GlobalDatabase`: opening it read-write while its own run holds it is exactly the rename described above. fine_tune_good_c did this to good_c's live DB, imported 0 structures and trained on an empty file. A source held open by another process raises `ValueError` (copy it with `cp -a` or stop its run), and so does one with no structures; neither is recorded as imported.
 
 ## Empty `info` values and extxyz
 
