@@ -17,6 +17,11 @@ uv sync            # creates .venv with alomancy (editable) + the dev tools
 Without uv: `pip install -e .` (add `pytest ruff mypy pre-commit` yourself;
 the dev tools are a uv dependency group, not a pip extra).
 
+> **Upgrading:** reinstall locally (`uv sync`, or `pip install -U alomancy`)
+> so the `alomancy-rsh` helper exists: background ssh goes through it, so a
+> dropped ssh connection fails at once instead of hanging on a hidden
+> password prompt. `alomancy upgrade-hpc` updates the HPC side.
+
 ## Dependencies
 
 - Python 3.10+

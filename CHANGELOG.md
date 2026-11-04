@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-04
 
 ### Added
 - **A run that has nothing left to do says why.** When every loop up to `general.num_of_al_loops` is already done, the warning `no_loops_to_run` explains that `num_of_al_loops` counts every loop in the results directory, not the loops this run adds, and gives how many completed loops it found (e.g. "already holds 10 completed AL loop(s) ... set it above 10").
