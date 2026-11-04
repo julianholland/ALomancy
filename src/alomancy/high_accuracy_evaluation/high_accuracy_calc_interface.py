@@ -32,10 +32,13 @@ only needs to gate whether to call it at all.
 """
 
 import copy
+import hashlib
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
+import numpy as np
 from ase import Atoms
 from ase.io import read, write
 
@@ -75,6 +78,68 @@ _LEGACY_EVALUATOR_KWARGS_KEY = {
 
 def _sentinel_results_path(base_name: str) -> Path:
     return Path("results", base_name, "high_accuracy_eval_results.xyz")
+
+
+# atoms.info key: dft_input_digest of the structure as it was sent to DFT.
+# The workers keep atoms.info, so each result names the input it came from,
+# and a restart knows exactly which structures are finished.
+DFT_INPUT_DIGEST_KEY = "dft_input_digest"
+
+
+def dft_input_digest(atoms: Atoms) -> str:
+    """Fingerprint of a structure's geometry that survives an extxyz round
+    trip: coordinates are hashed as extxyz writes them ("%.8f"), and
+    formatting a value read back from that gives the same string. (A
+    rounded-float hash such as dataset_curation.geometry_digest changes
+    for most structures after one write and read.) A restart compares
+    structures held in memory on the first attempt with ones read from
+    file, so this has to hold."""
+    h = hashlib.sha256()
+    h.update(np.ascontiguousarray(atoms.numbers).tobytes())
+    for array in (atoms.positions, atoms.cell.array):
+        h.update(" ".join(f"{x:.8f}" for x in array.ravel()).encode())
+    h.update(np.ascontiguousarray(atoms.pbc).tobytes())
+    return h.hexdigest()
+
+
+def _still_to_evaluate(structures: list[Atoms], found: list[Path]) -> list[Atoms]:
+    """The *structures* (stamped with DFT_INPUT_DIGEST_KEY) with no result
+    among the *found* output files of an earlier attempt.
+
+    Matched by digest, not position: jobs finish in any order, and a job
+    that failed in the middle must be retried, not the last one. Results
+    from before the digest was recorded fall back to the old positional
+    rule (the first len(found) structures are done). Results matching no
+    current structure mean the list changed since that attempt (filter or
+    DFT settings edited between restarts): they are kept, with a warning
+    (event dft_inputs_changed)."""
+    if not found:
+        return list(structures)
+    digests = [
+        cast(Atoms, read(p, index=0, format="extxyz")).info.get(DFT_INPUT_DIGEST_KEY)
+        for p in found
+    ]
+    if any(d is None for d in digests):
+        return list(structures[len(found) :])
+    done = set(digests)
+    current = {a.info[DFT_INPUT_DIGEST_KEY] for a in structures}
+    unmatched = done - current
+    if unmatched:
+        logger.warning(
+            "%d DFT result(s) from the previous attempt match none of the "
+            "structures now going to DFT: the structures changed since then, "
+            "most likely because filter or DFT settings were edited between "
+            "restarts. That isn't supported: the results come from different "
+            "settings. They are kept; only structures without a result are "
+            "submitted. To redo the phase with the new settings, delete %s.",
+            len(unmatched),
+            found[0].parent.parent.parent,
+            extra={
+                "event": "dft_inputs_changed",
+                "data": {"unmatched": len(unmatched), "found": len(found)},
+            },
+        )
+    return [a for a in structures if a.info[DFT_INPUT_DIGEST_KEY] not in done]
 
 
 def initial_frames_path(base_name: str) -> Path:
@@ -159,7 +224,6 @@ def high_accuracy_evaluation(
     hpc: dict,
     max_time: str,
     allow_relaxation: bool = False,
-    start_index: int = 0,
 ) -> list[Atoms]:
     """Orchestrate DFT evaluation of ``structures``.
 
@@ -204,8 +268,8 @@ def high_accuracy_evaluation(
     function_kwargs = {"high_accuracy_eval_job_dict": worker_config}
 
     # Final safety net before any DFT is attempted. Applied before the
-    # restart check below: both filters are deterministic, so the outputs
-    # already found line up with the start of the filtered list.
+    # restart check below, which matches the outputs already found to the
+    # filtered structures by digest (_still_to_evaluate).
     structures = filter_structures_by_min_bond_distance(structures)
     structures = filter_blown_up_structures(
         structures,
@@ -213,12 +277,15 @@ def high_accuracy_evaluation(
         resolve_vdw_exempt_config_types(config),
     )
 
+    for atoms in structures:
+        atoms.info[DFT_INPUT_DIGEST_KEY] = dft_input_digest(atoms)
     eval_dir = Path("results", base_name, "high_accuracy_evaluation")
     if eval_dir.exists():
         found_structures = list(
             eval_dir.glob(f"batch_*/{ASE_OUTPUT_PREFIX}_*/{name}.xyz")
         )
-        if len(found_structures) >= len(structures) + start_index:
+        pending = _still_to_evaluate(structures, found_structures)
+        if found_structures and not pending:
             logger.info(
                 "Found %d structures from previous high accuracy evaluation. "
                 "Skipping remote submission and reusing these structures.",
@@ -232,15 +299,17 @@ def high_accuracy_evaluation(
         elif found_structures:
             logger.info(
                 "Found %d structures from previous high accuracy evaluation. "
-                "These will be reused; the rest will be submitted as new remote jobs.",
+                "These will be reused; the other %d will be submitted as new "
+                "remote jobs.",
                 len(found_structures),
+                len(pending),
             )
-            structures = structures[len(found_structures) + start_index :]
         else:
             logger.info(
                 "No previous results found. Submitting all %d structures.",
                 len(structures),
             )
+        structures = pending
 
     # MD trajectories can leave atoms drifted outside the periodic cell --
     # QE/VASP expect coordinates within the reference cell. Applied only to

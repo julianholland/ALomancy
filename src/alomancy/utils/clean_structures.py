@@ -207,18 +207,48 @@ DEFAULT_MAX_VDW_VOLUME_RATIO = 10.0
 GAS_PHASE_CONFIG_TYPES = frozenset({"IsolatedAtom", "init_dimer", "init_trimer"})
 
 
-def vdw_volume_ratio(atoms: Atoms) -> float:
-    """Cell volume over the summed van der Waals sphere volumes of its
-    atoms (ase.data.vdw_radii; 1.5 x the covalent radius where ASE has no
-    vdW radius). Non-finite for a degenerate or non-finite cell."""
+def _vdw_volume(numbers: np.ndarray) -> float:
+    """Summed van der Waals sphere volume of atoms with these atomic
+    numbers (ase.data.vdw_radii; 1.5 x the covalent radius where ASE has no
+    vdW radius)."""
     from ase.data import covalent_radii, vdw_radii
 
-    radii = np.array([vdw_radii[z] for z in atoms.numbers], dtype=float)
+    numbers = np.asarray(numbers, dtype=int)
+    radii = np.array([vdw_radii[z] for z in numbers], dtype=float)
     missing = ~np.isfinite(radii)
-    radii[missing] = 1.5 * covalent_radii[atoms.numbers[missing]]
+    radii[missing] = 1.5 * covalent_radii[numbers[missing]]
+    return float(np.sum(4.0 / 3.0 * np.pi * radii**3))
+
+
+def vdw_volume_ratio(atoms: Atoms) -> float:
+    """Cell volume over the summed van der Waals sphere volumes of its
+    atoms (_vdw_volume). Non-finite for a degenerate or non-finite cell."""
     with np.errstate(all="ignore"):
         volume = abs(float(np.linalg.det(atoms.cell.array)))
-        return volume / float(np.sum(4.0 / 3.0 * np.pi * radii**3))
+        return volume / _vdw_volume(atoms.numbers)
+
+
+# 1 amu/Å^3 = 1.66054 g/cm^3, so a mass M (amu) at rho g/cm^3 fills
+# M / (rho * 0.6022) Å^3.
+_G_CM3_PER_AMU_A3 = 1.66054
+
+
+def vdw_volume_ratio_at_density(symbols: list[str], density_g_cm3: float) -> float:
+    """vdw_volume_ratio a cell of *symbols* would have at a mass density of
+    *density_g_cm3*: what filter_blown_up_structures will measure, known
+    before the cell exists."""
+    from ase.data import atomic_masses, atomic_numbers
+
+    numbers = np.array([atomic_numbers[s] for s in symbols])
+    mass = float(np.sum(atomic_masses[numbers]))
+    volume = mass * _G_CM3_PER_AMU_A3 / density_g_cm3
+    return volume / _vdw_volume(numbers)
+
+
+def density_for_vdw_volume_ratio(symbols: list[str], ratio: float) -> float:
+    """The mass density (g/cm^3) at which a cell of *symbols* has
+    vdw_volume_ratio *ratio* (the inverse of vdw_volume_ratio_at_density)."""
+    return vdw_volume_ratio_at_density(symbols, 1.0) / ratio
 
 
 def filter_blown_up_structures(

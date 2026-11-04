@@ -53,11 +53,24 @@ def check_remote_path_length(path: str, *, remote_rundir: str, context: str) -> 
     long for VASP/QE to open files in."""
     if len(path) <= MAX_REMOTE_OUTPUT_DIR_LEN:
         return
+    import alomancy
+
     note = (
         ""
         if remote_rundir.startswith("/")
         else " The remote rundir is relative to the remote $HOME, which is "
         "not counted, so the real path is longer still."
+    )
+    pinned = alomancy._LONG_RUNDIR_JOB_IDS
+    pinned_hint = (
+        f"\nThis run kept ExPyRe's long remote layout (<hostname>-<full local "
+        f"path>) because {len(pinned)} job(s) in .expyre/jobs.db are still "
+        f"submitted/started under it ({', '.join(pinned[:5])}"
+        f"{', ...' if len(pinned) > 5 else ''}). If they are no longer running "
+        "(e.g. left from before an upgrade), run `alomancy cancel` (or "
+        "`alomancy nuke`) and restart: the run then uses the short layout."
+        if pinned
+        else ""
     )
     raise ValueError(
         f"{context}: the remote DFT run directory would be {len(path)} "
@@ -66,8 +79,8 @@ def check_remote_path_length(path: str, *, remote_rundir: str, context: str) -> 
         f"  {path}\n"
         f"The first part, {remote_rundir!r}, is the HPC rundir (in "
         "~/.alomancy/expyre_config.json, set by `alomancy add-hpc`) plus this "
-        "run's directory below $HOME. Shorten the rundir, or run from a "
-        "directory with a shorter path."
+        "run's own directory name. Shorten the rundir, or run from a "
+        f"directory with a shorter path.{pinned_hint}"
     )
 
 

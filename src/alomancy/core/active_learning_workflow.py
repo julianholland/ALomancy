@@ -1233,7 +1233,9 @@ class ActiveLearningWorkflow(ABC):
     def _validate_initialiser_kwargs(self, init_config: Any) -> None:
         """The initialiser's construction-time check (registry entry
         validate_kwargs): molecule blocks and density ranges, which would
-        otherwise fail only once initialisation runs."""
+        otherwise fail only once initialisation runs, and warnings for
+        densities the blown-up filter would drop (so it gets this run's
+        max_vdw_volume_ratio and vdw_exempt_config_types)."""
         if not isinstance(init_config, dict):
             return
         validate = getattr(resolve("initialiser", "default"), "validate_kwargs", None)
@@ -1241,7 +1243,12 @@ class ActiveLearningWorkflow(ABC):
             # Not _required_elements: a config without initialisation
             # molecules needs no elements here.
             elements = self.jobs_dict.get("general", {}).get("elements") or []
-            validate(init_config, elements=list(elements))
+            validate(
+                init_config,
+                elements=list(elements),
+                max_vdw_volume_ratio=self.max_vdw_volume_ratio,
+                vdw_exempt_config_types=self.vdw_exempt_config_types,
+            )
 
     def _validate_remote_dft_path_length(self, hae_config: Any) -> None:
         """Fail now, not after training and MD, if the longest remote DFT
@@ -1249,9 +1256,14 @@ class ActiveLearningWorkflow(ABC):
         (submitters.MAX_REMOTE_OUTPUT_DIR_LEN). ase_remote_submitter checks
         the exact paths again before submitting each batch.
 
-        Worst case: the longest base_name this run uses, a 2-digit batch,
-        a 4-digit structure index and the longer of the evaluator's GO/SP
-        job names. Skipped when ExPyRe has no remote rundir for the HPC.
+        An early warning, not the last word: the per-batch check in
+        ase_remote_submitter sees the exact paths. Projected for the
+        longest base_name that runs DFT (initialization, and
+        al_loop_{num_of_al_loops - 1}: al_loop_{num_of_al_loops} only
+        trains), batch_9, a structure index as long as
+        num_of_structures_per_loop's (at least 3 digits) and the longer of
+        the evaluator's GO/SP job names. Skipped when ExPyRe has no remote
+        rundir for the HPC.
         """
         if not isinstance(hae_config, dict):
             return
@@ -1265,18 +1277,25 @@ class ActiveLearningWorkflow(ABC):
             entry = resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
         except ValueError:
             return  # reported by the config-key check
-        base_names = [f"al_loop_{self.start_loop + self.num_of_al_loops}"]
+        base_names = []
+        if self.num_of_al_loops > 0:
+            base_names.append(f"al_loop_{self.num_of_al_loops - 1}")
         if self.jobs_dict.get(_INITIALIZATION_NAME) is not None:
             base_names.append(_INITIALIZATION_NAME)
+        if not base_names:
+            return
         base_name = max(base_names, key=len)
-        job_name = max((dft_job_name(fn, 9999) for fn in (entry.sp, entry.go)), key=len)
+        index = int("9" * max(3, len(str(max(self.num_of_structures_per_loop - 1, 0)))))
+        job_name = max(
+            (dft_job_name(fn, index) for fn in (entry.sp, entry.go)), key=len
+        )
         out_dir = str(
             Path(
                 "results",
                 base_name,
                 _HIGH_ACCURACY_EVALUATION_NAME,
-                "batch_99",
-                f"{ASE_OUTPUT_PREFIX}_9999",
+                "batch_9",
+                f"{ASE_OUTPUT_PREFIX}_{index}",
             )
         )
         check_remote_path_length(
@@ -1648,7 +1667,6 @@ class ActiveLearningWorkflow(ABC):
                 hpc=self.jobs_dict["high_accuracy_evaluation"]["hpc"],
                 max_time=self.jobs_dict["high_accuracy_evaluation"]["max_time"],
                 allow_relaxation=True,
-                start_index=0,
             )
 
             if not high_accuracy_structures:
@@ -2655,7 +2673,6 @@ class ActiveLearningWorkflow(ABC):
             hpc=config["hpc"],
             max_time=config["max_time"],
             allow_relaxation=True,
-            start_index=0,
         )
         # Message text is parsed by analysis/timing_plots; keep it unchanged.
         logger.info(

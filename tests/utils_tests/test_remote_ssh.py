@@ -452,6 +452,25 @@ class TestNonInteractiveSsh:
         assert custom.scheduler.remsh_cmd == "my-ssh"
 
     @pytest.mark.unit
+    def test_wrapper_path_with_whitespace_raises_and_changes_nothing(self):
+        """ExPyRe splits the ssh command on whitespace: such a path would
+        break every background ssh and rsync."""
+        from expyre.system import System
+
+        from alomancy.utils.remote_ssh import use_noninteractive_ssh
+
+        system = System(host="h", partitions=None, scheduler="slurm", remsh_cmd="ssh")
+        env: dict[str, str] = {}
+        with pytest.raises(ValueError, match="whitespace"):
+            use_noninteractive_ssh(
+                env,
+                systems={"a": system},
+                wrapper="/home/u/My Projects/.venv/bin/alomancy-rsh",
+            )
+        assert env == {}
+        assert system.remsh_cmd == "ssh"
+
+    @pytest.mark.unit
     def test_user_set_expyre_rsh_is_kept(self):
         from alomancy.utils.remote_ssh import use_noninteractive_ssh
 

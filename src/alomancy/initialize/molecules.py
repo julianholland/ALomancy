@@ -131,14 +131,18 @@ def create_molecules_in_box_atoms_list(
     min_distance: float,
     max_attempts: int,
     seed: int,
-    skip: int = 0,
+    attempt: int = 0,
 ) -> list[Atoms]:
     """*num_of_structures* periodic cubic boxes of *num_of_molecules*
-    molecules in the ratio *molecules_ratio* (name -> relative amount), at
-    densities evenly spaced over *density_range* [min, max] g/cm^3. Each
-    box is sized so its density is exact. *skip* leaves out the first boxes
-    (lowest densities), for a restart that already has them; box i is the
-    same whatever *skip* is (its own rng, seeded with (seed, i))."""
+    molecules in the ratio *molecules_ratio* (name -> relative amount), each
+    at a density drawn uniformly at random from *density_range* [min, max]
+    g/cm^3 and sized so that density is exact.
+
+    *attempt* is how many boxes of this composition the database already
+    holds: box i uses its own rng seeded (seed, attempt, i), so a restart
+    that replaces boxes lost to DFT failures draws new ones instead of
+    repeating earlier ones, while the same database state always gives the
+    same boxes."""
     counts = molecule_counts(molecules_ratio, num_of_molecules)
     label = box_composition_label(molecules_ratio)
     molecules = {name: build_molecule(name) for name in counts}
@@ -147,11 +151,10 @@ def create_molecules_in_box_atoms_list(
     templates = [molecules[n] for n, c in counts.items() for _ in range(c)]
 
     boxes = []
-    for index, density in enumerate(
-        np.linspace(density_range[0], density_range[1], num_of_structures)
-    ):
-        if index < skip:
-            continue
+    for index in range(num_of_structures):
+        # One rng per box, so a box doesn't depend on which others are made.
+        rng = np.random.default_rng([seed, attempt, index])
+        density = float(rng.uniform(density_range[0], density_range[1]))
         side = (mass / (density * _AMU_PER_A3_TO_G_PER_CM3)) ** (1 / 3)
         if largest + min_distance > side:
             raise ValueError(
@@ -159,8 +162,6 @@ def create_molecules_in_box_atoms_list(
                 f"{label} at {density:g} g/cm^3 is too small for a molecule "
                 f"{largest:.2f} Å across; raise num_of_molecules."
             )
-        # One rng per box, so a box doesn't depend on which others are made.
-        rng = np.random.default_rng([seed, index])
         order = rng.permutation(len(templates))
         box = _pack_box(
             [templates[i] for i in order],

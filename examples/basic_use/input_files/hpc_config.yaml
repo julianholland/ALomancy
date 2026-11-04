@@ -10,6 +10,7 @@ raven:
     ranks_per_node: 72
     threads_per_rank: 1
     max_mem_per_node: "60GB"
+  max_num_of_concurrent_jobs: 20   # jobs started at once on this HPC
   pwx_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
   pp_path: "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency"
   pseudo_dict:
@@ -28,7 +29,8 @@ raven_gpu:
     ranks_per_node: 72
     threads_per_rank: 1
     max_mem_per_node: "60GB"
-  high_accuracy_executable_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
+  max_num_of_concurrent_jobs: 20   # jobs started at once on this HPC
+  pwx_path: "/raven/u/system/soft/SLE_15/packages/skylake/qe/gcc_13-13.1.0-openmpi_5.0-5.0.7/7_3_1/bin/pw.x"
   pp_path: "/u/jholl/pps/SSSP_1.3.0_PBE_efficiency"
   pseudo_dict:
     C: "C.pbe-n-kjpaw_psl.1.0.0.UPF"
@@ -46,6 +48,7 @@ raccoon_small:
     ranks_per_node: 32
     threads_per_rank: 1
     max_mem_per_node: "125GB"
+  max_num_of_concurrent_jobs: 20   # jobs started at once on this HPC
 
 raccoon_big:
   hpc_name: "fhi-raccoon"
@@ -59,3 +62,4 @@ raccoon_big:
     ranks_per_node: 64
     threads_per_rank: 1
     max_mem_per_node: "1TB"
+  max_num_of_concurrent_jobs: 20   # jobs started at once on this HPC

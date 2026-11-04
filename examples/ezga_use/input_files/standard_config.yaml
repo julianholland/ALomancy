@@ -40,10 +40,9 @@ initialization:
 training:
   trainer: "mace"
   max_time: "5H"
-  # Every mace_kwargs field below not shown already matches trainer.py's
-  # own _MACE_KWARGS_DEFAULTS -- E0s in particular needs no explicit value
-  # at all now, since it's auto-resolved from IsolatedAtom structures
-  # already in the GlobalDatabase.
+  # Every mace_kwargs field not shown uses trainer.py's _MACE_KWARGS_DEFAULTS.
+  # The isolated-atom reference energies need no value: they are resolved
+  # from the IsolatedAtom structures in the global database at train time.
   mace_kwargs:
     max_num_epochs: 80
   hpc: 'raccoon_big'

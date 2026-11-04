@@ -83,10 +83,11 @@ def test_fewer_molecules_than_species_raises():
 
 
 @pytest.mark.unit
-def test_boxes_hold_the_counts_at_evenly_spaced_exact_densities():
+def test_boxes_hold_the_counts_at_random_exact_densities_within_the_range():
     boxes = _boxes()
-    densities = np.linspace(0.8, 1.1, 4)
-    assert [b.info["density"] for b in boxes] == pytest.approx(densities)
+    densities = [b.info["density"] for b in boxes]
+    assert all(0.8 <= d <= 1.1 for d in densities)
+    assert len(set(densities)) == 4
     assert [_density(b) for b in boxes] == pytest.approx(densities, rel=1e-3)
     for box in boxes:
         # 8 H2O + 4 CH3OH
@@ -114,15 +115,18 @@ def test_atoms_of_different_molecules_keep_min_distance_under_minimum_image():
 
 
 @pytest.mark.unit
-def test_same_seed_same_boxes_and_skip_leaves_the_rest_unchanged():
+def test_same_attempt_same_boxes_and_a_new_attempt_new_ones():
+    """attempt = how many boxes the database holds: a restart replacing a box
+    that failed DFT draws a new box (new density too), never a copy of one
+    already labelled; the same database state gives the same boxes."""
     first, second = _boxes(), _boxes()
     assert all(
         np.allclose(a.positions, b.positions)
         for a, b in zip(first, second, strict=True)
     )
-    restarted = _boxes(skip=2)
-    assert len(restarted) == 2
-    assert np.allclose(restarted[0].positions, first[2].positions)
+    restarted = _boxes(num_of_structures=1, attempt=3)
+    assert len(restarted) == 1
+    assert restarted[0].info["density"] not in [b.info["density"] for b in first]
     assert not np.allclose(_boxes(seed=1)[0].positions, first[0].positions)
 
 
@@ -223,8 +227,12 @@ def test_create_with_overrides_makes_only_what_is_missing(tmp_path):
     molecules = [a for a in atoms if a.info["config_type"] == "init_molecule"]
     boxes = [a for a in atoms if a.info["config_type"] == "init_molecules_in_box"]
     assert [m.info["molecule"] for m in molecules] == ["smiles-O"]
-    # The highest density: the first three are taken as already done.
-    assert [b.info["density"] for b in boxes] == pytest.approx([1.1])
+    # One new box at a random density in the range, not a copy of one of
+    # the three the database already holds (attempt 3, not 0).
+    assert len(boxes) == 1
+    assert 0.8 <= boxes[0].info["density"] <= 1.1
+    first_attempt = _boxes(num_of_molecules=_BOX["num_of_molecules"])
+    assert boxes[0].info["density"] not in [b.info["density"] for b in first_attempt]
 
 
 @pytest.mark.unit

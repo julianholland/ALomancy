@@ -250,7 +250,7 @@ high_accuracy_evaluation:
         - molecules: {"smiles-O": 2, "smiles-CO": 1}   # water:methanol 2:1
           density_range: [0.8, 1.1]                    # g/cm^3
           num_of_molecules: 24
-          num_of_structures: 4                         # 0.8, 0.9, 1.0, 1.1
+          num_of_structures: 4                         # random densities in range
   ```
 
 - **training**: Trains the interatomic potential(s) the workflow needs (a committee for `committee_uncertainty`, one model for `random_selection` and `novelty_selection`). `trainer` selects the registered `mlip_trainer` backend: `"mace"` (default) or `"sevennet"`. Backend-specific settings go under `mace_kwargs` / `sevennet_kwargs` (SevenNet's own `model`/`train`/`data` input sections; requires `sevenn` on the training nodes). Complete, tested configs for each workflow and backend are in `examples/configs/`.
@@ -340,14 +340,14 @@ initialization:
     enabled: true
     num_of_amorphous_structures: 100   # total
     num_of_atoms_per_amorphous: 20     # atoms per cell
-    density_range: [1.75, 2.25]        # g/cm^3, [min, max]; one density per
-                                       # structure, evenly spaced (default [1.0, 1.0])
+    density_range: [1.75, 2.25]        # g/cm^3, [min, max]; each cell's density
+                                       # random within it (default [1.0, 1.0])
     # Fixed compositions: a list of cells, each a list of exactly
     # num_of_atoms_per_amorphous symbols, e.g. [["Li", "Li", ..., "S"], ...];
     # repeated or sampled to reach the total. null -> random mixes of
     # general.elements.
     composition_list: null
-    seed: 803                          # random seed for placement and compositions
+    # Placement, compositions and densities are seeded by general.seed.
 
   # Known crystals from the Materials Project that contain only
   # general.elements. Needs the MP_API_KEY environment variable to be set.
@@ -371,8 +371,8 @@ initialization:
 
   # Periodic boxes of molecules (config_type init_molecules_in_box; off by
   # default), e.g. liquids and mixtures. Each box_compositions entry gives the
-  # molecules and their ratio, and makes num_of_structures boxes at densities
-  # evenly spaced over its density_range, each sized so the density is exact.
+  # molecules and their ratio, and makes num_of_structures boxes, each at a
+  # random density within its density_range and sized so it is exact.
   # (Like the molecule_kwargs example, these need C and O in general.elements;
   # with H as well, water:methanol 2:1 is {"smiles-O": 2, "smiles-CO": 1}.)
   # The molecules are given random rotations and positions (seeded with
@@ -384,7 +384,7 @@ initialization:
       - molecules: {"CO": 2, "CO2": 1}   # CO:CO2 2:1
         density_range: [0.8, 1.1]      # g/cm^3, [min, max]
         num_of_molecules: 24           # per box, split by the ratio
-        num_of_structures: 4           # boxes at 0.8, 0.9, 1.0, 1.1
+        num_of_structures: 4           # 4 boxes, random densities in 0.8-1.1
       - molecules: {"CO": 1}           # pure CO
         density_range: [0.5, 0.5]
         num_of_molecules: 16
@@ -411,6 +411,7 @@ initialization:
 
 - Each `composition_list` entry must have exactly `num_of_atoms_per_amorphous` symbols.
 - `amorphous_kwargs.densities_list` is deprecated: use `density_range` (see [Deprecations](deprecations.md)).
+- Densities are in g/cm³, so the same number is very sparse for heavy elements: Pt at the default 1 g/cm³ fills 14× its atoms' van der Waals volume, and `high_accuracy_evaluation.max_vdw_volume_ratio` (default 10) would drop every such cell before DFT. ALomancy warns about this when the workflow is built (`init_density_too_low`), and about densities packing atoms tighter than any solid (`init_density_too_high`), naming the g/cm³ window to use. Random amorphous mixes are checked as an even mix of `general.elements`.
 - Molecule names, every `density_range` and the box settings are checked when the workflow is built, so a bad name fails at startup, not after DFT has started. A box too small for its largest molecule, or one that can't be packed in `max_attempts_per_molecule` tries, raises naming the composition and density: lower the density or `min_distance`, or raise `num_of_molecules`.
 - On a restart, molecules and boxes are counted per chemical formula, so only the missing ones are made again.
 - `general.dataset_kwargs.target_config_types` decides which structures are stretched, compressed and rattled.

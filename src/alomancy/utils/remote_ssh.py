@@ -218,7 +218,12 @@ def use_noninteractive_ssh(
     scancel) keep the `remsh_cmd` from the systems config, which
     `alomancy add-hpc` writes as "ssh". Both are switched; a user-set
     EXPYRE_RSH or a system with a custom remsh_cmd is left alone.
-    *systems* defaults to expyre.config.systems. Never raises."""
+    *systems* defaults to expyre.config.systems.
+
+    Raises ValueError only if the wrapper's path contains whitespace:
+    ExPyRe splits remsh_cmd and EXPYRE_RSH on whitespace, so every
+    background ssh and rsync would fail. Called before any job is
+    submitted."""
     wrapper = wrapper or _find_rsh_wrapper()
     if wrapper is None:
         logger.warning(
@@ -228,6 +233,15 @@ def use_noninteractive_ssh(
             sys.executable,
         )
         return
+    if any(ch.isspace() for ch in wrapper):
+        raise ValueError(
+            f"alomancy-rsh is installed at {wrapper!r}, a path with whitespace "
+            "in it. ExPyRe splits its ssh command on whitespace, so every "
+            "background ssh and rsync (squeue, sbatch, staging files) would "
+            "fail. Install alomancy in an environment whose path has no "
+            "spaces, or reach this one through a symlink without spaces and "
+            "run python from there."
+        )
     if systems is None:
         try:
             from expyre import config as expyre_config

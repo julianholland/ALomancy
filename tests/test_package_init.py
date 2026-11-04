@@ -360,7 +360,7 @@ class TestShortenRundirExtra:
     def test_rewrites_advr_rundir(self, tmp_path):
         from pathlib import Path
 
-        from alomancy import _shorten_rundir_extra
+        from alomancy import _host_tag, _shorten_rundir_extra
 
         stage = Path("/work/home/advr/Simulations/alomancy/test_5/.expyre")
         system = _expyre_system(stage)
@@ -370,13 +370,27 @@ class TestShortenRundirExtra:
         )
 
         changed = _shorten_rundir_extra(
-            {"raven_cpu": system}, stage, None, "unkownhost", Path("/work/home/advr")
+            {"raven_cpu": system},
+            stage,
+            "unkownhost",
+            Path("/work/home/advr"),
+            "ravenlogin01",
         )
 
         assert changed
+        tag = _host_tag("ravenlogin01")
+        assert len(tag) == 6
         assert system.remote_rundir == (
-            "/raven/ptmp/advr/alomancy_scratch/Simulations_alomancy_test_5"
+            f"/raven/ptmp/advr/alomancy_scratch/{tag}-Simulations_alomancy_test_5"
         )
+
+    @pytest.mark.unit
+    def test_host_tag_keeps_two_machines_apart(self):
+        from alomancy import _host_tag
+
+        assert _host_tag("laptop") != _host_tag("workstation")
+        assert _host_tag("laptop") == _host_tag("laptop")
+        assert len(_host_tag("a" * 200)) <= 8
 
     @pytest.mark.unit
     def test_unexpected_rundir_left_alone(self, tmp_path):
@@ -389,33 +403,53 @@ class TestShortenRundirExtra:
         )
         stage = tmp_path / "run" / ".expyre"
         assert not _shorten_rundir_extra(
-            {"r": system}, stage, None, "unkownhost", tmp_path
+            {"r": system}, stage, "unkownhost", tmp_path, "h"
         )
         assert system.remote_rundir == "/scratch/al"
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
-        ("status", "expect_changed"),
-        [("submitted", False), ("failed", False), ("processed", True)],
+        ("status", "pins"),
+        [
+            ("submitted", True),
+            ("started", True),
+            ("created", False),
+            ("succeeded", False),
+            ("failed", False),
+            ("died", False),
+            ("processed", False),
+        ],
     )
-    def test_unfinished_jobs_keep_old_layout(self, tmp_path, status, expect_changed):
-        """A resumed job's remote dir comes from the current remote_rundir, so
-        a run with jobs submitted under the old layout must keep it."""
+    def test_only_live_remote_jobs_pin_the_long_layout(self, tmp_path, status, pins):
+        """Only submitted/started jobs need their remote directory on resume.
+        A failed one (what `alomancy cancel` sets), or one orphaned in
+        'created', must not keep the run on the long layout for good."""
         from expyre.jobsdb import JobsDB
 
-        from alomancy import _shorten_rundir_extra
+        from alomancy import _jobs_pinning_long_layout
 
-        stage = tmp_path / "run" / ".expyre"
-        stage.mkdir(parents=True)
-        db = JobsDB(stage / "jobs.db")
-        db.add("job_0", name="sp_vasp_0", from_dir=str(stage / "x"), status=status)
-        system = _expyre_system(stage)
-        old = system.remote_rundir
-
-        changed = _shorten_rundir_extra(
-            {"r": system}, stage, db, "unkownhost", tmp_path
+        db = JobsDB(tmp_path / "jobs.db")
+        db.add("job_0", name="sp_vasp_0", from_dir=str(tmp_path / "x"), status=status)
+        db.add(
+            "job_1", name="sp_vasp_1", from_dir=str(tmp_path / "y"), status="processed"
         )
 
-        assert changed is expect_changed
-        expected = "/raven/ptmp/advr/alomancy_scratch/run" if expect_changed else old
-        assert system.remote_rundir == expected
+        assert _jobs_pinning_long_layout(db) == (("job_0",) if pins else ())
+        assert _jobs_pinning_long_layout(None) == ()
+
+
+@pytest.mark.unit
+def test_path_error_names_the_jobs_pinning_the_long_layout(monkeypatch):
+    import alomancy
+    from alomancy.remote_submission.submitters import check_remote_path_length
+
+    long_path = "/" + "x" * 300
+    monkeypatch.setattr(alomancy, "_LONG_RUNDIR_JOB_IDS", ())
+    with pytest.raises(ValueError) as plain:
+        check_remote_path_length(long_path, remote_rundir="/x", context="t")
+    assert "alomancy cancel" not in str(plain.value)
+
+    monkeypatch.setattr(alomancy, "_LONG_RUNDIR_JOB_IDS", ("run_sp_vasp_x_1",))
+    with pytest.raises(ValueError, match="alomancy cancel") as pinned:
+        check_remote_path_length(long_path, remote_rundir="/x", context="t")
+    assert "run_sp_vasp_x_1" in str(pinned.value)

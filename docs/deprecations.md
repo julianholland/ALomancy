@@ -6,12 +6,24 @@ changes that have already shipped.
 
 ## Deprecated (unreleased)
 
+### `initialization.amorphous_kwargs.seed`
+
+- **Status**: deprecated; accepted with a warning (`config_key_deprecated`) and ignored
+- **What changed**: the amorphous cells (and the molecule boxes, which used the
+  same seed) are seeded by `general.seed`, like every other random choice.
+  `amorphous_kwargs.seed` (default 803) is no longer read. With the defaults
+  nothing changes in which seed is used (`general.seed` also defaults to 803),
+  but the cells themselves differ from earlier versions, since their densities
+  are now drawn at random within `density_range`.
+- **Migrate**: remove `amorphous_kwargs.seed`; set `general.seed` to change the
+  cells.
+
 ### `initialization.amorphous_kwargs.densities_list`
 
 - **Status**: deprecated; still read, with a warning (`config_key_deprecated`)
 - **What changed**: amorphous densities are a range, `density_range: [min, max]`
-  (g/cm³), with one density per structure evenly spaced over it
-  (`np.linspace(min, max, num_of_amorphous_structures)`), the same form as
+  (g/cm³), each structure's density drawn uniformly at random from it, the
+  same form as
   `molecules_in_box_kwargs.box_compositions[].density_range`. A
   `densities_list` is read as `[min(list), max(list)]`; it used to split the
   structures equally between the listed densities.

@@ -18,8 +18,13 @@ def expyre_systems(monkeypatch):
     return systems
 
 
-def _workflow(jobs_dict):
-    return SimpleNamespace(start_loop=0, num_of_al_loops=5, jobs_dict=jobs_dict)
+def _workflow(jobs_dict, num_of_al_loops=5, per_loop=50):
+    return SimpleNamespace(
+        start_loop=0,
+        num_of_al_loops=num_of_al_loops,
+        num_of_structures_per_loop=per_loop,
+        jobs_dict=jobs_dict,
+    )
 
 
 def _hae(evaluator="vasp"):
@@ -58,3 +63,46 @@ def test_shortened_rundir_passes(expyre_systems):
 @pytest.mark.unit
 def test_unknown_hpc_is_skipped(expyre_systems):
     _validate(_workflow({}), _hae())
+
+
+def _rundir_system(length: int) -> System:
+    return System(
+        host="raven", partitions={}, scheduler="slurm", rundir="/" + "r" * (length - 1)
+    )
+
+
+@pytest.mark.unit
+def test_projection_uses_the_last_dft_loop_not_start_plus_total(expyre_systems):
+    """al_loop_{num_of_al_loops} only trains, and start_loop doesn't add to
+    the loop count: a run with 10 loops projects al_loop_9. The rundir is
+    sized so al_loop_9 just fits and the old al_loop_15 projection didn't."""
+    from alomancy.remote_submission.submitters import (
+        MAX_REMOTE_OUTPUT_DIR_LEN,
+        projected_remote_output_dir,
+    )
+
+    tail = "results/al_loop_9/high_accuracy_evaluation/batch_9/ase_output_999"
+    rundir_len = MAX_REMOTE_OUTPUT_DIR_LEN - len(
+        projected_remote_output_dir("", "go_vasp_999", tail)
+    )
+    expyre_systems["raven_cpu"] = _rundir_system(rundir_len)
+    workflow = _workflow({}, num_of_al_loops=10)
+    workflow.start_loop = 5
+    _validate(workflow, _hae())
+
+
+@pytest.mark.unit
+def test_index_width_follows_num_of_structures_per_loop(expyre_systems):
+    from alomancy.remote_submission.submitters import (
+        MAX_REMOTE_OUTPUT_DIR_LEN,
+        projected_remote_output_dir,
+    )
+
+    tail = "results/al_loop_4/high_accuracy_evaluation/batch_9/ase_output_999"
+    rundir_len = MAX_REMOTE_OUTPUT_DIR_LEN - len(
+        projected_remote_output_dir("", "go_vasp_999", tail)
+    )
+    expyre_systems["raven_cpu"] = _rundir_system(rundir_len)
+    _validate(_workflow({}, per_loop=50), _hae())  # 3-digit index: fits
+    with pytest.raises(ValueError):
+        _validate(_workflow({}, per_loop=5000), _hae())  # 4 digits: over

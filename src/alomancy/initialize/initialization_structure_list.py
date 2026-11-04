@@ -226,10 +226,11 @@ def create_initialization_atoms_list(
     rattle_standard_deviation
         Standard deviation (Angstrom) for ase.Atoms.rattle, applied to each
         target structure. Only read when num_of_rattled_per_target > 0.
+    seed
+        general.seed: seeds the amorphous cells and the molecule boxes.
     rattle_seed
         Base seed for rattle (copy i of a given target uses rattle_seed +
-        i); independent of `seed` above, which is amorphous generation's
-        own seed.
+        i); generate() passes general.seed here too.
     isolated_atoms_override
         If provided, only generate isolated atoms for these elements.
     dimer_override
@@ -240,8 +241,8 @@ def create_initialization_atoms_list(
         If provided, generate this many amorphous structures instead of
         num_of_amorphous_structures.
     density_range
-        [min, max] g/cm^3: the amorphous structures' densities, evenly
-        spaced over the range (default [1.0, 1.0]).
+        [min, max] g/cm^3: each amorphous structure's density is drawn
+        uniformly at random from the range (default [1.0, 1.0]).
     molecules
         Molecule names (formula or ``smiles-...``) to make one
         equilibrium structure of each, in vacuum (init_molecule).
@@ -347,6 +348,8 @@ def create_initialization_atoms_list(
             num_structures=amorphous_target,
             seed=seed,
             composition_list=composition_list,
+            # How many the DB already holds: new cells on every restart.
+            attempt=max(0, num_of_amorphous_structures - amorphous_target),
         )
     logger.info("Created %d amorphous structures.", len(amorphous_atoms_list))
 
@@ -369,24 +372,24 @@ def create_initialization_atoms_list(
     remaining = dict(box_override) if box_override is not None else None
     for index, composition in enumerate(box_compositions or []):
         num = composition["num_of_structures"]
-        skip = 0
+        still = num
         if remaining is not None:
             formula = _box_formula(composition)
             still = min(num, remaining.get(formula, 0))
             if still <= 0:
                 continue
             remaining[formula] -= still
-            skip = num - still
         box_atoms_list.extend(
             create_molecules_in_box_atoms_list(
                 molecules_ratio=composition["molecules"],
                 density_range=composition["density_range"],
                 num_of_molecules=composition["num_of_molecules"],
-                num_of_structures=num,
+                num_of_structures=still,
                 min_distance=box_min_distance,
                 max_attempts=box_max_attempts_per_molecule,
                 seed=seed + index,
-                skip=skip,
+                # How many the DB already holds: new boxes on every restart.
+                attempt=num - still,
             )
         )
     logger.info("Created %d boxes of molecules.", len(box_atoms_list))

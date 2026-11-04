@@ -18,6 +18,7 @@ def create_amorphous_atoms_list(
     seed: int = 803,
     composition_list: list[list[str]] | None = None,
     density_range: list[float] | None = None,
+    attempt: int = 0,
 ) -> list[Atoms]:
     """
     Create a list of amorphous atoms objects with given elements, atom number, and density.
@@ -28,10 +29,15 @@ def create_amorphous_atoms_list(
     elements (list[str]): List of element symbols to use in the amorphous structures.
     atom_number (int): Number of atoms in each structure.
     density (float): Density of every structure in g/cm^3; or
-    density_range ([min, max]): densities evenly spaced over the range, one
-        per structure (np.linspace(min, max, num_structures)).
+    density_range ([min, max]): each structure's density drawn uniformly at
+        random from the range.
     num_structures (int): Number of amorphous structures to generate.
     seed (int): Random seed for reproducibility.
+    attempt (int): How many amorphous structures the database already
+        holds. Part of the rng seed (seed, attempt), so a restart that
+        replaces structures lost to DFT failures draws new ones rather than
+        repeating the first ones, while the same database state always
+        gives the same structures.
     composition_list (None | list[list[str]]): Optional list of specific compositions to use. If None, random compositions will be generated.
 
     Returns:
@@ -49,16 +55,16 @@ def create_amorphous_atoms_list(
 
     """
     amorphous_atoms_list = []
-    if density_range is not None:
-        densities = list(
-            np.linspace(density_range[0], density_range[1], num_structures)
-        )
-    elif density is not None:
-        densities = [density] * num_structures
-    else:
+    if density_range is None and density is None:
         raise ValueError("create_amorphous_atoms_list needs density or density_range.")
     if num_structures > 0:
-        rng = np.random.default_rng(seed)
+        rng = np.random.default_rng([seed, attempt])
+        if density_range is not None:
+            densities = list(
+                rng.uniform(density_range[0], density_range[1], num_structures)
+            )
+        else:
+            densities = [density] * num_structures
         if composition_list is None:
             composition_tuple_list = list(
                 itertools.combinations_with_replacement(elements, atom_number)
