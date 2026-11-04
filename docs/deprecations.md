@@ -4,6 +4,20 @@ This page tracks deprecated features and breaking changes planned for future
 ALomancy releases, so users can migrate ahead of time. See `CHANGELOG.md` for
 changes that have already shipped.
 
+## Deprecated (unreleased)
+
+### `initialization.amorphous_kwargs.densities_list`
+
+- **Status**: deprecated; still read, with a warning (`config_key_deprecated`)
+- **What changed**: amorphous densities are a range, `density_range: [min, max]`
+  (g/cm³), with one density per structure evenly spaced over it
+  (`np.linspace(min, max, num_of_amorphous_structures)`), the same form as
+  `molecules_in_box_kwargs.box_compositions[].density_range`. A
+  `densities_list` is read as `[min(list), max(list)]`; it used to split the
+  structures equally between the listed densities.
+- **Migrate**: replace `densities_list: [1.0, 2.0, 3.0]` with
+  `density_range: [1.0, 3.0]`.
+
 ## Shipped in 1.0.4
 
 ### `structure_generation.ezga_kwargs` is EZGA's own config

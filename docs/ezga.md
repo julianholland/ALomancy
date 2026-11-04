@@ -63,7 +63,7 @@ initialization:
   amorphous_kwargs:
     num_of_amorphous_structures: 50
     num_of_atoms_per_amorphous: 10   # small seeds: 2x2x1 makes them 40 atoms
-    densities_list: [5.0, 7.0]
+    density_range: [5.0, 7.0]
 
 training:
   trainer: "mace"
@@ -167,7 +167,7 @@ wiki's active-learning example:
 | `population` | `filter_duplicates` on, `collision_factor` 0.6 |
 | `variation` | mutation rate 1.0, no crossover |
 | `simulator.calculator` | `fmax` 0.05, `steps_max` 100, FIRE |
-| `mutation_funcs` | rattle and strain; an add and a remove per element in `general.elements`; a swap for every pair of elements |
+| `mutation_funcs` | rattle and strain over `general.elements`; an add and a remove per element of `atom_mutation_elements` (default `general.elements`); a swap for every pair of those elements; then `extra_mutation_funcs` (see Mutations below) |
 | `evaluator` | composition feature over `general.elements`; energy per atom as the objective |
 
 Your values are merged over these. A dict merges key by key, so
@@ -175,6 +175,96 @@ Your values are merged over these. A dict merges key by key, so
 default, so `mutation_funcs` is either all yours or all the defaults. If
 `structure_selection_kwargs.atom_number_range` is set, it also bounds the
 default add and remove mutations, except with HiSE (below).
+
+### Mutations
+
+There are three ways to set EZGA's mutations. Molecules are always named
+explicitly: as a formula SAGE knows (`"CO"`, `"H2O"`) or as SMILES
+(`"smiles-C"` for methane, `"smiles-OB(O)c1ccccc1"` for phenylboronic acid).
+Every element of a molecule must be in `general.elements`. Mutation entries
+are EZGA `mutation_funcs` entries: a `type` (the factory's import path) and
+its arguments. ALomancy's own factories are
+`alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add`
+(`species`, `max_atoms`, `bound`, `slab`, `collision_tolerance`),
+`...bounded_mutation_remove` (`species`, `min_atoms`) and
+`...bounded_mutation_remove_molecule` (`molecule`, `min_atoms`, removes one
+whole molecule).
+
+**1. No molecules: the automatic mutations.** Write nothing about mutations.
+For `general.elements: ["Cu", "O"]` ALomancy makes: a rattle (0.05 Å) and a
+cell strain (2 %) over Cu and O; a bounded add and a bounded remove for Cu
+and for O; swaps Cu→O and O→Cu; the composition feature over Cu and O; and
+energy per atom as the objective. `structure_selection_kwargs.atom_number_range`
+bounds the adds and removes (not with HiSE).
+
+```yaml
+general:
+  elements: ["Cu", "O"]
+structure_generation:
+  generator: "ezga"
+  num_of_structures_to_generate: 200
+  structure_selection_kwargs:
+    atom_number_range: [8, 40]
+  ezga_kwargs:
+    local: true
+```
+
+**2. Molecules on top of the automatic mutations.** For methane on a Pd
+surface `general.elements` is `[Pd, H, C]`, but H and C should only move as
+CH4. `atom_mutation_elements: ["Pd"]` gives Pd alone the single-atom add,
+remove and swap mutations (rattle, strain and the composition feature still
+cover every element), and `extra_mutation_funcs` is appended to the
+defaults. Molecules in `extra_mutation_funcs` without `atom_mutation_elements`
+stop the run at startup: the default would add and remove H and C as single
+atoms.
+
+```yaml
+general:
+  elements: ["Pd", "H", "C"]
+structure_generation:
+  generator: "ezga"
+  num_of_structures_to_generate: 200
+  ezga_kwargs:
+    local: true
+    atom_mutation_elements: ["Pd"]
+    extra_mutation_funcs:
+      - type: "alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add"
+        species: ["smiles-C"]      # CH4
+        bound: ["Pd"]              # placed next to Pd atoms
+        slab: true                 # on the surface side of a slab
+        max_atoms: 60
+      - type: "alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove_molecule"
+        molecule: "smiles-C"
+        min_atoms: 20
+```
+
+**3. Molecules with every mutation written out.** `mutation_funcs` replaces
+the defaults entirely, so list everything you want, including the rattle,
+strain and Pd mutations. It can't be combined with `atom_mutation_elements`
+or `extra_mutation_funcs` (startup error).
+
+```yaml
+general:
+  elements: ["Pd", "H", "C"]
+structure_generation:
+  generator: "ezga"
+  num_of_structures_to_generate: 200
+  ezga_kwargs:
+    local: true
+    mutation_funcs:
+      - {type: "ezga.variation.mutation.mutation_rattle", std: 0.05, species: ["Pd", "H", "C"]}
+      - {type: "ezga.variation.mutation.mutation_random_strain", max_strain: 0.02}
+      - {type: "alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add", species: ["Pd"], max_atoms: 60}
+      - {type: "alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove", species: "Pd", min_atoms: 20}
+      - {type: "alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add", species: ["smiles-C"], bound: ["Pd"], slab: true, max_atoms: 60}
+      - {type: "alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove_molecule", molecule: "smiles-C", min_atoms: 20}
+```
+
+ALomancy doesn't look at the seeds or the initialisation section for
+molecules. If your seeds hold molecules (e.g. from
+`initialization.molecules_in_box_kwargs`) but EZGA gets no molecule
+mutations, set `atom_mutation_elements` yourself, or the defaults add and
+remove the molecules' elements one atom at a time.
 
 ### HiSE: supercell escalation and the MD burst
 

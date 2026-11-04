@@ -97,7 +97,7 @@ _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
         "enabled": True,
         "num_of_amorphous_structures": 100,
         "num_of_atoms_per_amorphous": 20,
-        "densities_list": None,
+        "density_range": [1.0, 1.0],
         "composition_list": None,
         "seed": 803,
     },
@@ -115,6 +115,26 @@ _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
         "enabled": False,
         "num_of_rattled_per_target": 5,
     },
+    # Off by default: enabling needs the molecules named (no default list).
+    "molecule_kwargs": {
+        "enabled": False,
+        "molecules": None,
+        "vacuum": 10.0,
+    },
+    "molecules_in_box_kwargs": {
+        "enabled": False,
+        "box_compositions": None,
+        "min_distance": 1.5,
+        "max_attempts_per_molecule": 1000,
+    },
+}
+
+# The keys of one molecules_in_box_kwargs.box_compositions entry.
+_BOX_COMPOSITION_KEYS = {
+    "molecules",
+    "density_range",
+    "num_of_molecules",
+    "num_of_structures",
 }
 
 
@@ -125,23 +145,153 @@ _CREATION_KWARGS_SCHEMA: dict[str, list[str]] = {
     for namespace, defaults in _CREATION_KWARGS_DEFAULTS.items()
 }
 _CREATION_KWARGS_SCHEMA["rattle_target_structures"].append("rattle_standard_deviation")
+# Deprecated (docs/deprecations.md): read as density_range [min, max].
+_CREATION_KWARGS_SCHEMA["amorphous_kwargs"].append("densities_list")
 
 
 def _resolve_kwargs(config: dict, namespace: str) -> dict:
     """config[namespace] (a direct child of the initialization section --
     see module docstring), with _CREATION_KWARGS_DEFAULTS[namespace] filled
-    in underneath for any key the user didn't override."""
-    return {
+    in underneath for any key the user didn't override. The deprecated
+    amorphous_kwargs.densities_list is read as density_range [min, max]
+    (validate_kwargs warns about it)."""
+    resolved = {
         **_CREATION_KWARGS_DEFAULTS[namespace],
         **config.get(namespace, {}),
     }
+    user = config.get(namespace) or {}
+    if (
+        namespace == "amorphous_kwargs"
+        and user.get("densities_list")
+        and "density_range" not in user
+    ):
+        densities = [float(d) for d in user["densities_list"]]
+        resolved["density_range"] = [min(densities), max(densities)]
+    resolved.pop("densities_list", None)
+    return resolved
+
+
+def _is_density_range(value: Any) -> bool:
+    return (
+        isinstance(value, list | tuple)
+        and len(value) == 2
+        and all(
+            isinstance(v, int | float) and not isinstance(v, bool) and v > 0
+            for v in value
+        )
+        and value[0] <= value[1]
+    )
+
+
+def _positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def validate_kwargs(config: dict, *, elements: list[str]) -> None:
+    """Construction-time check (registry hook) of the initialization
+    blocks that would otherwise fail only once initialisation runs: the
+    molecule blocks (named explicitly when enabled, every molecule built
+    by SAGE from general.elements), and every density_range. Warns about
+    the deprecated amorphous_kwargs.densities_list."""
+    from alomancy.utils.molecules import validate_molecules
+
+    amorphous = config.get("amorphous_kwargs") or {}
+    if "densities_list" in amorphous:
+        logger.warning(
+            "initialization.amorphous_kwargs.densities_list is deprecated: "
+            "use density_range [min, max] (structures evenly spaced over it). "
+            "Reading %s as density_range %s.",
+            amorphous["densities_list"],
+            _resolve_kwargs(config, "amorphous_kwargs")["density_range"],
+            extra={
+                "event": "config_key_deprecated",
+                "data": {"key": "initialization.amorphous_kwargs.densities_list"},
+            },
+        )
+    density_range = _resolve_kwargs(config, "amorphous_kwargs")["density_range"]
+    if not _is_density_range(density_range):
+        raise ValueError(
+            "initialization.amorphous_kwargs.density_range must be [min, max] "
+            f"g/cm^3 with 0 < min <= max, got {density_range!r}."
+        )
+
+    molecule_kwargs = _resolve_kwargs(config, "molecule_kwargs")
+    if molecule_kwargs["enabled"]:
+        where = "initialization.molecule_kwargs.molecules"
+        if not molecule_kwargs["molecules"]:
+            raise ValueError(
+                f"{where} is required when molecule_kwargs is enabled, e.g. "
+                "['CO', 'smiles-CCO']."
+            )
+        validate_molecules(molecule_kwargs["molecules"], elements, where)
+
+    box_kwargs = _resolve_kwargs(config, "molecules_in_box_kwargs")
+    if not box_kwargs["enabled"]:
+        return
+    where = "initialization.molecules_in_box_kwargs.box_compositions"
+    compositions = box_kwargs["box_compositions"]
+    if not compositions or not isinstance(compositions, list):
+        raise ValueError(
+            f"{where} is required when molecules_in_box_kwargs is enabled: a "
+            "list of {molecules: {name: ratio}, density_range: [min, max], "
+            "num_of_molecules, num_of_structures}."
+        )
+    for i, composition in enumerate(compositions):
+        at = f"{where}[{i}]"
+        if not isinstance(composition, dict):
+            raise ValueError(f"{at} must be a mapping, got {composition!r}.")
+        unknown = set(composition) - _BOX_COMPOSITION_KEYS
+        missing = _BOX_COMPOSITION_KEYS - set(composition)
+        if unknown or missing:
+            raise ValueError(
+                f"{at}: unknown keys {sorted(unknown)}, missing keys "
+                f"{sorted(missing)} (expected {sorted(_BOX_COMPOSITION_KEYS)})."
+            )
+        ratio = composition["molecules"]
+        if (
+            not isinstance(ratio, dict)
+            or not ratio
+            or not all(
+                isinstance(v, int | float) and not isinstance(v, bool) and v > 0
+                for v in ratio.values()
+            )
+        ):
+            raise ValueError(
+                f"{at}.molecules must map molecule names to positive ratios, "
+                f"e.g. {{'H2O': 2, 'smiles-CO': 1}}; got {ratio!r}."
+            )
+        validate_molecules(list(ratio), elements, f"{at}.molecules")
+        if not _is_density_range(composition["density_range"]):
+            raise ValueError(
+                f"{at}.density_range must be [min, max] g/cm^3 with "
+                f"0 < min <= max, got {composition['density_range']!r}."
+            )
+        if not _positive_int(composition["num_of_molecules"]) or (
+            composition["num_of_molecules"] < len(ratio)
+        ):
+            raise ValueError(
+                f"{at}.num_of_molecules must be an integer of at least the "
+                f"number of molecules ({len(ratio)}), got "
+                f"{composition['num_of_molecules']!r}."
+            )
+        if not _positive_int(composition["num_of_structures"]):
+            raise ValueError(
+                f"{at}.num_of_structures must be a positive integer, got "
+                f"{composition['num_of_structures']!r}."
+            )
+    for key in ("min_distance", "max_attempts_per_molecule"):
+        value = box_kwargs[key]
+        if not isinstance(value, int | float) or isinstance(value, bool) or value <= 0:
+            raise ValueError(
+                f"initialization.molecules_in_box_kwargs.{key} must be positive, "
+                f"got {value!r}."
+            )
 
 
 def compute_needs(
     db: "GlobalDatabase",
     config: dict,
     elements: list[str],
-    molecules: list[str] | None = None,
 ) -> dict:
     """Compare DB contents against initialization targets (config's
     structure-type namespaces, plus the shared workflow.elements list) and
@@ -153,10 +303,15 @@ def compute_needs(
     trimer_kwargs = _resolve_kwargs(config, "trimer_kwargs")
     amorphous_kwargs = _resolve_kwargs(config, "amorphous_kwargs")
     mp_kwargs = _resolve_kwargs(config, "mp_kwargs")
+    molecule_kwargs = _resolve_kwargs(config, "molecule_kwargs")
+    box_kwargs = _resolve_kwargs(config, "molecules_in_box_kwargs")
     return compute_initialization_needs(
         db=db,
         elements=elements,
-        molecules=molecules,
+        molecules=molecule_kwargs["molecules"] if molecule_kwargs["enabled"] else None,
+        box_compositions=(
+            box_kwargs["box_compositions"] if box_kwargs["enabled"] else None
+        ),
         _single_atoms=isolated_atom_kwargs["enabled"],
         mp_structures=mp_kwargs["enabled"],
         num_of_dimers_per_combo=(
@@ -196,7 +351,6 @@ def generate(
     base_name: str,
     name: str,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     elements: list[str],
-    molecules: list[str] | None = None,
     hpc: dict | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     max_time: str | None = None,  # noqa: ARG001 -- unused (no remote submission); uniform across module categories
     needs: dict | None = None,
@@ -226,11 +380,12 @@ def generate(
         config, "stretch_compress_targets_kwargs"
     )
     rattle_kwargs = _resolve_kwargs(config, "rattle_target_structures")
+    molecule_kwargs = _resolve_kwargs(config, "molecule_kwargs")
+    box_kwargs = _resolve_kwargs(config, "molecules_in_box_kwargs")
 
     return create_initialization_atoms_list(
         work_dir=str(work_dir),
         elements=elements,
-        molecules=molecules,
         mp_structures=(
             needs["mp_structures"] if needs is not None else mp_kwargs["enabled"]
         ),
@@ -255,7 +410,7 @@ def generate(
             if stretch_compress_targets_kwargs["enabled"]
             else 0
         ),
-        densities_list=amorphous_kwargs["densities_list"],
+        density_range=amorphous_kwargs["density_range"],
         max_lattice_deformation=stretch_compress_targets_kwargs[
             "max_lattice_deformation"
         ],
@@ -286,4 +441,13 @@ def generate(
         amorphous_override=(
             (needs["amorphous_override"] or None) if needs is not None else None
         ),
+        molecules=molecule_kwargs["molecules"] if molecule_kwargs["enabled"] else None,
+        molecule_vacuum=molecule_kwargs["vacuum"],
+        box_compositions=(
+            box_kwargs["box_compositions"] if box_kwargs["enabled"] else None
+        ),
+        box_min_distance=box_kwargs["min_distance"],
+        box_max_attempts_per_molecule=box_kwargs["max_attempts_per_molecule"],
+        molecule_override=needs.get("molecule_override") if needs is not None else None,
+        box_override=needs.get("box_override") if needs is not None else None,
     )

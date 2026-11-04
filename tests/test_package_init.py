@@ -303,3 +303,119 @@ class TestRsyncRetryWarningFilter:
                 stacklevel=2,
             )
             assert len(caught) == 1
+
+
+# --- Shortened ExPyRe remote rundir ("<host>-<cwd>" -> run path below $HOME) ---
+
+
+def _expyre_system(local_stage_dir, hostname="unkownhost"):
+    """A real expyre System built the way expyre/config.py's init builds it."""
+    from expyre.system import System
+
+    run_dir = local_stage_dir.parent
+    extra = hostname + "-" + str(run_dir).replace("/", "_")
+    return System(
+        host="raven",
+        partitions={},
+        scheduler="slurm",
+        rundir="/raven/ptmp/advr/alomancy_scratch",
+        rundir_extra=extra,
+    )
+
+
+class TestShortenRundirExtra:
+    @pytest.mark.unit
+    def test_short_extra_is_path_below_home(self, tmp_path):
+        from alomancy import _short_rundir_extra
+
+        home = tmp_path / "home"
+        assert (
+            _short_rundir_extra(home / "Simulations" / "alomancy" / "test_5", home)
+            == "Simulations_alomancy_test_5"
+        )
+
+    @pytest.mark.unit
+    def test_short_extra_follows_symlinked_home(self, tmp_path):
+        """$HOME=/home/u -> /work/home/u while the run path is the real one."""
+        from alomancy import _short_rundir_extra
+
+        real_home = tmp_path / "work" / "home" / "u"
+        (real_home / "sims").mkdir(parents=True)
+        link_home = tmp_path / "home_u"
+        link_home.symlink_to(real_home)
+        assert _short_rundir_extra(real_home / "sims", link_home) == "sims"
+
+    @pytest.mark.unit
+    def test_short_extra_outside_home_keeps_full_path(self, tmp_path):
+        from pathlib import Path
+
+        from alomancy import _short_rundir_extra
+
+        assert (
+            _short_rundir_extra(Path("/scratch/u/run1"), tmp_path / "home")
+            == "scratch_u_run1"
+        )
+
+    @pytest.mark.unit
+    def test_rewrites_advr_rundir(self, tmp_path):
+        from pathlib import Path
+
+        from alomancy import _shorten_rundir_extra
+
+        stage = Path("/work/home/advr/Simulations/alomancy/test_5/.expyre")
+        system = _expyre_system(stage)
+        assert system.remote_rundir == (
+            "/raven/ptmp/advr/alomancy_scratch/"
+            "unkownhost-_work_home_advr_Simulations_alomancy_test_5"
+        )
+
+        changed = _shorten_rundir_extra(
+            {"raven_cpu": system}, stage, None, "unkownhost", Path("/work/home/advr")
+        )
+
+        assert changed
+        assert system.remote_rundir == (
+            "/raven/ptmp/advr/alomancy_scratch/Simulations_alomancy_test_5"
+        )
+
+    @pytest.mark.unit
+    def test_unexpected_rundir_left_alone(self, tmp_path):
+        from expyre.system import System
+
+        from alomancy import _shorten_rundir_extra
+
+        system = System(
+            host="raven", partitions={}, scheduler="slurm", rundir="/scratch/al"
+        )
+        stage = tmp_path / "run" / ".expyre"
+        assert not _shorten_rundir_extra(
+            {"r": system}, stage, None, "unkownhost", tmp_path
+        )
+        assert system.remote_rundir == "/scratch/al"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("status", "expect_changed"),
+        [("submitted", False), ("failed", False), ("processed", True)],
+    )
+    def test_unfinished_jobs_keep_old_layout(self, tmp_path, status, expect_changed):
+        """A resumed job's remote dir comes from the current remote_rundir, so
+        a run with jobs submitted under the old layout must keep it."""
+        from expyre.jobsdb import JobsDB
+
+        from alomancy import _shorten_rundir_extra
+
+        stage = tmp_path / "run" / ".expyre"
+        stage.mkdir(parents=True)
+        db = JobsDB(stage / "jobs.db")
+        db.add("job_0", name="sp_vasp_0", from_dir=str(stage / "x"), status=status)
+        system = _expyre_system(stage)
+        old = system.remote_rundir
+
+        changed = _shorten_rundir_extra(
+            {"r": system}, stage, db, "unkownhost", tmp_path
+        )
+
+        assert changed is expect_changed
+        expected = "/raven/ptmp/advr/alomancy_scratch/run" if expect_changed else old
+        assert system.remote_rundir == expected

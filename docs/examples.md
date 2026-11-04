@@ -231,7 +231,27 @@ high_accuracy_evaluation:
 
 - **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `num_of_structures_per_loop` (default 50) is how many structures the selector sends to DFT each loop. `dataset_kwargs` sets the train/test split for every workflow: `target_config_types` (which config types count toward the split) and `test_ratio` (the fraction that goes to test). `remove_redundancy` (default true) flags near-duplicate training structures; `redundancy_kwargs` tunes how its tolerance is chosen: `tolerance` (set it directly), `max_flagged_fraction` (default 0.5: if the automatic choice would flag more, nothing is flagged), `min_plateau_width` and `probe_steps_per_structure`. Settings specific to one AL skeleton go in its own block, e.g. `committee_uncertainty_kwargs.num_of_models_in_committee` (how many committee members are trained in parallel).
 
-- **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures, and stretched/compressed MP structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`).
+- **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures (`density_range: [min, max]`), molecules, and stretched/compressed and rattled target structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`). Molecules are two more blocks, off by default: `molecule_kwargs` (single molecules in vacuum) and `molecules_in_box_kwargs` (periodic boxes of molecules at a density range), each naming its own molecules (below).
+
+  ```yaml
+  general:
+    elements: ["C", "H", "O"]
+    dataset_kwargs:
+      # Stretch/compress and rattle the molecules too (bond-length scans).
+      target_config_types: ["init_MP", "init_amorphous", "init_molecule"]
+      test_ratio: 0.1
+  initialization:
+    molecule_kwargs:
+      enabled: true
+      molecules: ["CO", "smiles-O", "smiles-CCO"]   # SAGE formula or SMILES
+    molecules_in_box_kwargs:
+      enabled: true
+      box_compositions:
+        - molecules: {"smiles-O": 2, "smiles-CO": 1}   # water:methanol 2:1
+          density_range: [0.8, 1.1]                    # g/cm^3
+          num_of_molecules: 24
+          num_of_structures: 4                         # 0.8, 0.9, 1.0, 1.1
+  ```
 
 - **training**: Trains the interatomic potential(s) the workflow needs (a committee for `committee_uncertainty`, one model for `random_selection` and `novelty_selection`). `trainer` selects the registered `mlip_trainer` backend: `"mace"` (default) or `"sevennet"`. Backend-specific settings go under `mace_kwargs` / `sevennet_kwargs` (SevenNet's own `model`/`train`/`data` input sections; requires `sevenn` on the training nodes). Complete, tested configs for each workflow and backend are in `examples/configs/`.
 

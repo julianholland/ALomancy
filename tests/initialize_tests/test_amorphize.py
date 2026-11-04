@@ -102,3 +102,27 @@ class TestCreateAmorphousAtomsList:
             composition_list=[["H", "H"]],
         )
         assert len(result) == 5
+
+
+@pytest.mark.unit
+def test_density_range_spaces_densities_evenly_one_per_structure():
+    from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
+    result = create_amorphous_atoms_list(
+        elements=["H"],
+        atom_number=4,
+        density_range=[0.5, 1.5],
+        num_structures=3,
+        seed=42,
+    )
+    densities = [a.get_masses().sum() / a.get_volume() / 0.6022 for a in result]
+    assert densities == pytest.approx([0.5, 1.0, 1.5])
+    assert [a.info["density"] for a in result] == pytest.approx([0.5, 1.0, 1.5])
+
+
+@pytest.mark.unit
+def test_neither_density_nor_range_raises():
+    from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
+    with pytest.raises(ValueError, match="density or density_range"):
+        create_amorphous_atoms_list(elements=["H"], atom_number=2, num_structures=1)
