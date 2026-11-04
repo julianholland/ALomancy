@@ -152,6 +152,7 @@ register(
     read_existing_result="read_existing_result",
     kwargs_defaults="_CREATION_KWARGS_DEFAULTS",
     kwargs_schema="_CREATION_KWARGS_SCHEMA",
+    validate_kwargs="validate_kwargs",
 )
 
 # AL workflows (general.al_workflow): each entry's workflow_class is an

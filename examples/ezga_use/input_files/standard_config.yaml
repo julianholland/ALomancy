@@ -31,7 +31,7 @@ initialization:
   amorphous_kwargs:
     num_of_amorphous_structures: 300
     num_of_atoms_per_amorphous: 20
-    densities_list: [1.0, 2.0, 3.0]
+    density_range: [1.0, 3.0]
   stretch_compress_targets_kwargs:
     num_of_stretch_compress_per_target: 5
     max_lattice_deformation: 0.2

@@ -77,7 +77,7 @@ initialization:
   hpc: "my_cpu_hpc"                  # a profile name from `alomancy add-hpc`
   amorphous_kwargs:
     num_of_amorphous_structures: 50
-    densities_list: [1.0, 2.0]
+    density_range: [1.0, 2.0]
 
 training:
   trainer: "mace"

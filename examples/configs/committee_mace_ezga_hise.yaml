@@ -28,7 +28,7 @@ initialization:
   amorphous_kwargs:
     num_of_amorphous_structures: 50
     num_of_atoms_per_amorphous: 10   # small seeds: 2x2x1 makes them 40 atoms
-    densities_list: [5.0, 7.0]
+    density_range: [5.0, 7.0]
 
 training:
   trainer: "mace"

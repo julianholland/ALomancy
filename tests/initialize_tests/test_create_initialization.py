@@ -737,7 +737,7 @@ class TestCreateInitializationAtomsList:
         assert len(result) == 3
 
     @pytest.mark.unit
-    def test_multiple_densities_calls_amorphous_per_density(self, tmp_path):
+    def test_density_range_is_passed_to_one_amorphous_call(self, tmp_path):
         from alomancy.initialize.initialization_structure_list import (
             create_initialization_atoms_list,
         )
@@ -761,10 +761,9 @@ class TestCreateInitializationAtomsList:
                 num_of_dimers_per_combo=0,
                 num_of_trimers_per_combo=0,
                 num_of_amorphous_structures=10,
-                densities_list=[0.8, 1.2],
+                density_range=[0.8, 1.2],
             )
 
-        assert mock_amorphous.call_count == 2
-        densities_used = [c.kwargs["density"] for c in mock_amorphous.call_args_list]
-        assert 0.8 in densities_used
-        assert 1.2 in densities_used
+        assert mock_amorphous.call_count == 1
+        assert mock_amorphous.call_args.kwargs["density_range"] == [0.8, 1.2]
+        assert mock_amorphous.call_args.kwargs["num_structures"] == 10

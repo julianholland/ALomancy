@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Molecules in initialisation.** `initialization.molecule_kwargs` (config_type `init_molecule`): one equilibrium structure per named molecule, in vacuum. `initialization.molecules_in_box_kwargs` (config_type `init_molecules_in_box`): periodic boxes of molecules, each `box_compositions` entry giving the ratio (`{"H2O": 2, "smiles-CO": 1}`), `density_range`, `num_of_molecules` and `num_of_structures`. Both are off by default and need their molecules named when on. Molecules are SAGE formulas or `smiles-<SMILES>`, and must be made of `general.elements`. Bond-length distortions come from `stretch_compress_targets_kwargs` / `rattle_target_structures` via `target_config_types`. Boxes are packed with `general.seed`, so they're reproducible.
+- **EZGA whole-molecule mutations**: `bounded_mutation_remove_molecule` (by formula or SMILES), alongside `bounded_mutation_add` with a molecule species. Molecule names in mutation species are checked when the workflow is built.
+- **`ezga_kwargs.atom_mutation_elements` and `extra_mutation_funcs`.** `atom_mutation_elements` picks the elements that get the default single-atom add/remove/swap mutations (default `general.elements`, as before); `extra_mutation_funcs` are appended to the defaults. For methane on Pd: `atom_mutation_elements: ["Pd"]` plus the CH4 add/remove in `extra_mutation_funcs`. Molecules in `extra_mutation_funcs` without `atom_mutation_elements`, or either key next to `mutation_funcs`, stop the run at startup with instructions. `docs/ezga.md` has three worked configs (no molecules, molecules with the defaults, molecules with `mutation_funcs` written out).
+- The initialiser has a `validate_kwargs` hook run when the workflow is built.
+- **Remote DFT path length is checked** when the workflow is built (worst case) and before each DFT batch is submitted (exact): over 240 characters raises, naming the path and how to shorten it.
+- EZGA report plots: structures per generation by operator (with duplicates filtered) and structures selected for DFT by seed type.
+
+### Changed
+- **Shorter remote run directories.** VASP failed with `open failure ... Is a directory` when a job's remote directory reached ~255 characters. ExPyRe's `<hostname>-<full local path>` segment (`unkownhost-_work_home_u_Simulations_test_5`) is now just the run path below `$HOME` (`Simulations_test_5`), and DFT jobs are named `sp_vasp_0` instead of `run_sp_vasp_high_accuracy_evaluation_0`. A run with unfinished ExPyRe jobs keeps its old remote layout until they finish. A DFT batch already queued when upgrading is resubmitted rather than resumed (the job names changed). No remote reinstall needed.
+- `initialization.amorphous_kwargs.density_range` (`[min, max]`, one density per structure) replaces `densities_list`, which is deprecated and read as its `[min, max]` (`docs/deprecations.md`).
+
+### Remote reinstall needed
+- `alomancy upgrade-hpc`: the EZGA remote job uses the new `bounded_mutation_remove_molecule` and `read_offspring` records each structure's mutations and seed.
 ## [1.1.0] - 2026-10-30
 
 ### Added

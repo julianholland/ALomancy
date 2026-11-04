@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import sys
@@ -120,6 +121,105 @@ _ensure_local_expyre_root()
 # eagerly resolves expyre's own config -- importing this any earlier would
 # resolve against a pre-isolation config, defeating the seeding above.
 from expyre.subprocess import FailedSubprocessWarning  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+# Job statuses after which ExPyRe never touches the remote directory again.
+_EXPYRE_FINISHED_STATUSES = ("processed", "cleaned")
+
+
+def _short_rundir_extra(run_dir: Path, home: Path) -> str:
+    """The run's own part of its remote directory name: its path below
+    $HOME, flattened ("Simulations_alomancy_test_5"), or the whole path
+    when it isn't under $HOME. $HOME is often a symlink (/home/u ->
+    /work/home/u) while the run path is the resolved one, so both forms
+    are tried."""
+    for base in (home, home.resolve()):
+        try:
+            rel = run_dir.relative_to(base)
+        except ValueError:
+            continue
+        if rel.parts:
+            return "_".join(rel.parts)
+    return str(run_dir).replace("/", "_").strip("_")
+
+
+def _shorten_rundir_extra(
+    systems: dict,
+    local_stage_dir: Path,
+    db: Any,
+    hostname: str,
+    home: Path,
+) -> bool:
+    """Replace the "<hostname>-<flattened local path>" segment ExPyRe
+    appends to every system's remote rundir with _short_rundir_extra.
+
+    expyre/config.py's init builds that segment (rundir_extra) from
+    $HOSTNAME ("unkownhost" when unset) and the full local run path. It
+    adds nothing but length: the remote DFT run directory hit VASP's
+    ~255-character path limit (see submitters.MAX_REMOTE_OUTPUT_DIR_LEN).
+    Each run still gets its own remote directory.
+
+    Left alone while the run's jobs.db has an unfinished job: ExPyRe finds
+    a resumed job's remote directory from the current remote_rundir, so
+    jobs submitted under the old layout must keep it. Also left alone when
+    the segment isn't where expyre is expected to put it (a different
+    expyre version). Returns whether anything was changed.
+    """
+    run_dir = (
+        local_stage_dir.parent
+        if local_stage_dir.name in (".expyre", "_expyre")
+        else local_stage_dir
+    )
+    old_extra = hostname + "-" + str(run_dir).replace("/", "_")
+    new_extra = _short_rundir_extra(run_dir, home)
+
+    if db is not None:
+        unfinished = [
+            job for job in db.jobs() if job["status"] not in _EXPYRE_FINISHED_STATUSES
+        ]
+        if unfinished:
+            logger.debug(
+                "Keeping ExPyRe's remote rundir layout (.../%s): %d unfinished "
+                "job(s) in jobs.db were submitted under it.",
+                old_extra,
+                len(unfinished),
+            )
+            return False
+
+    changed = False
+    for system in systems.values():
+        rundir = system.remote_rundir
+        if rundir is None or not rundir.endswith("/" + old_extra):
+            continue
+        system.remote_rundir = rundir.removesuffix(old_extra) + new_extra
+        changed = True
+    return changed
+
+
+def _shorten_expyre_remote_rundirs() -> None:
+    """Apply _shorten_rundir_extra to the loaded ExPyRe config. Skipped
+    under pytest (expyre's config isn't loaded there). Never fails the
+    package import."""
+    if "pytest" in sys.modules:
+        return
+    try:
+        from expyre import config as expyre_config
+
+        if expyre_config.local_stage_dir is None:
+            return
+        _shorten_rundir_extra(
+            expyre_config.systems or {},
+            Path(expyre_config.local_stage_dir),
+            expyre_config.db,
+            os.environ.get("HOSTNAME", "unkownhost"),
+            Path.home(),
+        )
+    except Exception:  # best effort; never fail the import
+        logger.debug("Could not shorten ExPyRe remote rundirs", exc_info=True)
+
+
+_shorten_expyre_remote_rundirs()
 
 _RSYNC_RETRY_WARNING_PATTERN = (
     r'(Failed|Succeeded) to run "[^"]*\brsync\b.*on attempt \d+.*trying again'

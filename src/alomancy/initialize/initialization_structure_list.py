@@ -3,11 +3,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 from ase import Atoms
 from ase.io import write
 
 from alomancy.initialize.amorphize import create_amorphous_atoms_list
+from alomancy.initialize.molecules import (
+    create_molecule_atoms_list,
+    create_molecules_in_box_atoms_list,
+    molecule_counts,
+)
 from alomancy.initialize.mp_interface import atoms_list_from_mp
 from alomancy.initialize.rattle import create_rattle_atoms_list
 from alomancy.initialize.singles_dimers_trimers import (
@@ -16,6 +20,7 @@ from alomancy.initialize.singles_dimers_trimers import (
     create_trimer_atoms_list,
 )
 from alomancy.initialize.stretch_and_compress import create_stretch_compress_atoms_list
+from alomancy.utils.molecules import build_molecule
 
 if TYPE_CHECKING:
     from alomancy.database.global_database import GlobalDatabase
@@ -31,6 +36,8 @@ def compute_initialization_needs(
     num_of_dimers_per_combo: int,
     num_of_trimers_per_combo: int,
     num_of_amorphous_structures: int,
+    molecules: list[str] | None = None,
+    box_compositions: list[dict] | None = None,
 ) -> dict:
     """
     Compare DB contents against initialization targets and return what still
@@ -45,6 +52,13 @@ def compute_initialization_needs(
       'trimer_override'     dict[str, int]
       'amorphous_override'  int              total still needed
       'mp_structures'       bool             True iff MP fetch is still needed
+      'molecule_override'   dict[str, int]   {formula: count_still_needed}
+      'box_override'        dict[str, int]   {formula: count_still_needed}
+
+    *molecules* (molecule_kwargs.molecules; one structure each) and
+    *box_compositions* (molecules_in_box_kwargs.box_compositions;
+    num_of_structures each) are counted per chemical formula, so two
+    names or compositions with the same formula share one target.
     """
     needs: dict = {}
 
@@ -84,7 +98,53 @@ def compute_initialization_needs(
     # MP structures: fetch once (skip if any init_MP already in DB)
     needs["mp_structures"] = mp_structures and "init_MP" not in all_counts
 
+    needs["molecule_override"] = _still_needed(
+        _molecule_targets(molecules or []), all_counts.get("init_molecule", {})
+    )
+    needs["box_override"] = _still_needed(
+        _box_targets(box_compositions or []),
+        all_counts.get("init_molecules_in_box", {}),
+    )
+
     return needs
+
+
+def _molecule_formula(name: str) -> str:
+    return str(build_molecule(name).get_chemical_formula())
+
+
+def _box_formula(composition: dict) -> str:
+    counts = molecule_counts(composition["molecules"], composition["num_of_molecules"])
+    symbols = [
+        symbol
+        for name, count in counts.items()
+        for symbol in build_molecule(name).get_chemical_symbols() * count
+    ]
+    return str(Atoms(symbols).get_chemical_formula())
+
+
+def _molecule_targets(molecules: list[str]) -> dict[str, int]:
+    targets: dict[str, int] = {}
+    for name in molecules:
+        formula = _molecule_formula(name)
+        targets[formula] = targets.get(formula, 0) + 1
+    return targets
+
+
+def _box_targets(box_compositions: list[dict]) -> dict[str, int]:
+    targets: dict[str, int] = {}
+    for composition in box_compositions:
+        formula = _box_formula(composition)
+        targets[formula] = targets.get(formula, 0) + composition["num_of_structures"]
+    return targets
+
+
+def _still_needed(targets: dict[str, int], have: dict[str, int]) -> dict[str, int]:
+    return {
+        formula: target - have.get(formula, 0)
+        for formula, target in targets.items()
+        if target > have.get(formula, 0)
+    }
 
 
 def create_initialization_atoms_list(
@@ -96,7 +156,7 @@ def create_initialization_atoms_list(
     num_of_trimers_per_combo: int = 5,
     num_of_amorphous_structures: int = 100,
     num_of_stretch_compress_per_target: int = 5,
-    densities_list: list[float] | None = None,
+    density_range: list[float] | None = None,
     max_lattice_deformation: float = 0.2,
     max_num_of_atoms: int = 20,
     num_of_atoms_per_amorphous: int = 20,
@@ -113,6 +173,13 @@ def create_initialization_atoms_list(
     dimer_override: dict[str, int] | None = None,
     trimer_override: dict[str, int] | None = None,
     amorphous_override: int | None = None,
+    molecules: list[str] | None = None,
+    molecule_vacuum: float = 10.0,
+    box_compositions: list[dict] | None = None,
+    box_min_distance: float = 1.5,
+    box_max_attempts_per_molecule: int = 1000,
+    molecule_override: dict[str, int] | None = None,
+    box_override: dict[str, int] | None = None,
 ) -> list[Atoms]:
     """
     Generate structures for the initialization phase.
@@ -172,6 +239,18 @@ def create_initialization_atoms_list(
     amorphous_override
         If provided, generate this many amorphous structures instead of
         num_of_amorphous_structures.
+    density_range
+        [min, max] g/cm^3: the amorphous structures' densities, evenly
+        spaced over the range (default [1.0, 1.0]).
+    molecules
+        Molecule names (formula or ``smiles-...``) to make one
+        equilibrium structure of each, in vacuum (init_molecule).
+    box_compositions
+        Periodic boxes of molecules (init_molecules_in_box), each entry
+        {molecules: {name: ratio}, density_range: [min, max],
+        num_of_molecules, num_of_structures}; see initialize/molecules.py.
+    molecule_override / box_override
+        If provided, {formula: count} still needed (compute_initialization_needs).
     """
     assert len(elements) > 0, "At least one element must be specified."
 
@@ -260,24 +339,57 @@ def create_initialization_atoms_list(
         else num_of_amorphous_structures
     )
     amorphous_atoms_list: list[Atoms] = []
-    if densities_list is None:
-        densities_list = [1.0]
-    for density in densities_list:
-        logger.debug("Creating amorphous structures with density %.2f g/cm^3.", density)
-        per_density = int(np.floor(amorphous_target / len(densities_list)))
-        if per_density == 0:
-            continue
-        amorphous_atoms_list.extend(
-            create_amorphous_atoms_list(
-                elements=elements,
-                atom_number=num_of_atoms_per_amorphous,
-                density=density,
-                num_structures=per_density,
-                seed=seed,
-                composition_list=composition_list,
-            )
+    if amorphous_target > 0:
+        amorphous_atoms_list = create_amorphous_atoms_list(
+            elements=elements,
+            atom_number=num_of_atoms_per_amorphous,
+            density_range=list(density_range or [1.0, 1.0]),
+            num_structures=amorphous_target,
+            seed=seed,
+            composition_list=composition_list,
         )
     logger.info("Created %d amorphous structures.", len(amorphous_atoms_list))
+
+    # --- Molecules in vacuum --------------------------------------------
+    molecule_atoms_list: list[Atoms] = []
+    remaining = dict(molecule_override) if molecule_override is not None else None
+    for name in molecules or []:
+        if remaining is not None:
+            formula = _molecule_formula(name)
+            if remaining.get(formula, 0) <= 0:
+                continue
+            remaining[formula] -= 1
+        molecule_atoms_list.extend(
+            create_molecule_atoms_list(name=name, vacuum=molecule_vacuum)
+        )
+    logger.info("Created %d molecules in vacuum.", len(molecule_atoms_list))
+
+    # --- Molecules in a box ---------------------------------------------
+    box_atoms_list: list[Atoms] = []
+    remaining = dict(box_override) if box_override is not None else None
+    for index, composition in enumerate(box_compositions or []):
+        num = composition["num_of_structures"]
+        skip = 0
+        if remaining is not None:
+            formula = _box_formula(composition)
+            still = min(num, remaining.get(formula, 0))
+            if still <= 0:
+                continue
+            remaining[formula] -= still
+            skip = num - still
+        box_atoms_list.extend(
+            create_molecules_in_box_atoms_list(
+                molecules_ratio=composition["molecules"],
+                density_range=composition["density_range"],
+                num_of_molecules=composition["num_of_molecules"],
+                num_of_structures=num,
+                min_distance=box_min_distance,
+                max_attempts=box_max_attempts_per_molecule,
+                seed=seed + index,
+                skip=skip,
+            )
+        )
+    logger.info("Created %d boxes of molecules.", len(box_atoms_list))
 
     # --- Assemble the base pool -----------------------------------------
     # Built before stretch/compress and rattle below, since both draw from
@@ -291,6 +403,8 @@ def create_initialization_atoms_list(
     base_atoms_list.extend(dimer_atoms_list)
     base_atoms_list.extend(trimer_atoms_list)
     base_atoms_list.extend(amorphous_atoms_list)
+    base_atoms_list.extend(molecule_atoms_list)
+    base_atoms_list.extend(box_atoms_list)
 
     # --- Stretch/compress + rattle on target structures -----------------
     target_config_type_set = set(target_config_types or [])
