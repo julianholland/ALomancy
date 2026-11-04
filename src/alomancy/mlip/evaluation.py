@@ -14,6 +14,17 @@ from alomancy.utils.dataset_curation import geometry_digest, structure_domain
 logger = logging.getLogger(__name__)
 
 
+def stress_pair_gpa(ref: object, pred: object) -> tuple[list, list] | None:
+    """A structure's DFT and model stress as Voigt components in GPa (for
+    parity plots), or None unless both are present and well formed."""
+    from ase.units import GPa
+
+    ref_v, pred_v = _voigt_stress(ref), _voigt_stress(pred)
+    if ref_v is None or pred_v is None:
+        return None
+    return (ref_v / GPa).tolist(), (pred_v / GPa).tolist()
+
+
 def _voigt_stress(stress: object) -> np.ndarray | None:
     """Stress as a Voigt 6-vector (ASE's get_stress() default), accepting a
     full 3x3 tensor too; None when missing or malformed."""

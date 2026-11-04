@@ -15,6 +15,7 @@ from ase import Atoms
 from ase.io import write
 
 from alomancy.analysis.report import write_loop_report
+from alomancy.analysis.report.render import _dataset
 from alomancy.analysis.report.rules import (
     DEFAULT_SUGGESTIONS,
     evaluate,
@@ -222,6 +223,42 @@ def test_stats_composition_redundancy_and_filters(finished_loop):
         "quality_filtered": 1,
     }
     assert dataset["new_quality_filter_reasons"] == {"high_force": 1}
+
+
+@pytest.mark.unit
+def test_go_starting_frames_are_counted_apart_from_new_structures(
+    finished_loop, shared_db
+):
+    """Step-0 frames of DFT geometry optimisations are mostly high-force by
+    design; they get their own count instead of inflating the new-structure
+    filter statistics (new_structures_force_filtered)."""
+    frames = [_labelled(0.6 + 0.01 * i, "random_selection", 0) for i in range(3)]
+    for frame in frames:
+        frame.info["geometry_initial"] = True
+    start = shared_db.size
+    shared_db.add_structures(frames, split="train", skip_duplicates=False)
+    shared_db.partition.set_metadata_bulk(
+        {
+            start + i: {
+                "is_quality_filtered": True,
+                "quality_filter_reasons": ["high_force"],
+            }
+            for i in (0, 1)
+        },
+        use_indices=True,
+    )
+
+    stats = collect_loop_stats(finished_loop, 0)
+    dataset = stats["dataset"]
+
+    assert dataset["initial_frames_this_loop"] == {"quality_filtered": 2, "train": 1}
+    assert dataset["new_this_loop"] == {
+        "train": 2,
+        "redundant": 1,
+        "quality_filtered": 1,
+    }
+    assert dataset["new_quality_filter_reasons"] == {"high_force": 1}
+    assert "starting frames: 3 stored this loop, 1 used" in " ".join(_dataset(stats))
 
 
 @pytest.mark.unit

@@ -138,6 +138,7 @@ def config_schema(
         "structure_selection_kwargs": dict.fromkeys(
             ("chem_formula_list", "selectable_configs", "atom_number_range")
         ),
+        "mlip_relaxation": dict.fromkeys(("fmax", "steps", "optimizer")),
     }
     unused[("structure_generation",)] = {}
     for name in registered("structure_generator"):

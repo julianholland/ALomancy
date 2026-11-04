@@ -255,7 +255,7 @@ def test_parse_eval_xyz_returns_per_atom_energy(tmp_path):
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
-    e_dft, e_pred, f_dft, f_pred = _parse_eval_xyz(xyz_path)
+    e_dft, e_pred, f_dft, f_pred = _parse_eval_xyz(xyz_path)[:4]
 
     assert len(e_dft) == 1
     assert e_dft[0] == pytest.approx(-2.0)  # -4.0 / 2 atoms
@@ -277,7 +277,7 @@ def test_parse_eval_xyz_no_forces_still_returns_energy(tmp_path):
 
     result = _parse_eval_xyz(xyz_path)
     assert result is not None
-    e_dft, _e_pred, f_dft, _f_pred = result
+    e_dft, _e_pred, f_dft, _f_pred = result[:4]
     assert len(e_dft) == 1
     assert e_dft[0] == pytest.approx(-1.0)
     assert len(f_dft) == 0
@@ -293,7 +293,7 @@ def test_parse_eval_xyz_with_e0_returns_formation_energy(tmp_path):
     xyz_path = tmp_path / "pred.xyz"
     write(str(xyz_path), [atoms], format="extxyz")
 
-    e_dft, e_pred, _f_dft, _f_pred = _parse_eval_xyz(xyz_path, e0={"S": -1.0})
+    e_dft, e_pred, _f_dft, _f_pred = _parse_eval_xyz(xyz_path, e0={"S": -1.0})[:4]
 
     # dft formation = (-4.0 - 2*(-1.0)) / 2 = -1.0; pred formation = (-3.8 - 2*(-1.0)) / 2 = -0.9
     assert e_dft[0] == pytest.approx(-1.0)
@@ -325,7 +325,7 @@ def test_parse_eval_xyz_missing_e0_element_falls_back(tmp_path):
     handler = _Collector()
     al_logger.addHandler(handler)
     try:
-        e_dft, e_pred, _f_dft, _f_pred = _parse_eval_xyz(xyz_path, e0={"O": -1.0})
+        e_dft, e_pred, _f_dft, _f_pred = _parse_eval_xyz(xyz_path, e0={"O": -1.0})[:4]
     finally:
         al_logger.removeHandler(handler)
 
@@ -818,7 +818,7 @@ def test_plot_dft_vs_model_uses_formation_energy_when_isolated_atoms_present(
 
     results_per_fit, energy_label = captured["Training"]
     assert energy_label == "formation energy"
-    e_dft, e_pred, _f_dft, _f_pred = results_per_fit[0]
+    e_dft, e_pred, _f_dft, _f_pred = results_per_fit[0][:4]
     # h2_dimer REF_energy=-31.0, H isolated E0=-13.6 -> dft formation = (-31.0 - 2*(-13.6))/2
     assert e_dft[0] == pytest.approx((-31.0 - 2 * (-13.6)) / 2)
     assert e_pred[0] == pytest.approx((-30.0 - 2 * (-13.6)) / 2)
@@ -883,7 +883,7 @@ def test_plot_dft_vs_model_falls_back_when_no_isolated_atoms(
 
     results_per_fit, energy_label = captured["Training"]
     assert energy_label == "energy"
-    e_dft, e_pred, _f_dft, _f_pred = results_per_fit[0]
+    e_dft, e_pred, _f_dft, _f_pred = results_per_fit[0][:4]
     # Raw per-atom energy (no E0 subtraction): -31.0/2 dft, -30.0/2 pred.
     assert e_dft[0] == pytest.approx(-15.5)
     assert e_pred[0] == pytest.approx(-15.0)
@@ -1022,3 +1022,89 @@ def test_test_parity_comes_from_the_files_when_the_db_has_train_only(
     )
     assert (plots_dir / "fit_parity_test_al_loop_0.png").exists()
     assert (plots_dir / "fit_parity_train_al_loop_0.png").exists()
+
+
+# ---------------------------------------------------------------------------
+# Stress parity
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_eval_xyz_reads_stress_pairs_in_gpa(tmp_path):
+    from ase.units import GPa
+
+    from alomancy.analysis.mlip_plots import _parse_eval_xyz, stress_pairs
+
+    with_stress = Atoms(
+        "S2", positions=[[0, 0, 0], [0, 0, 2.0]], cell=[10] * 3, pbc=True
+    )
+    with_stress.info.update(
+        REF_energy=-4.0,
+        model_energy=-3.8,
+        REF_stresses=np.full(6, 1.0 * GPa),
+        model_stress=np.full(6, 1.5 * GPa),
+    )
+    without = with_stress.copy()
+    del without.info["REF_stresses"]  # e.g. a structure from before tstress
+    xyz_path = tmp_path / "pred.xyz"
+    write(str(xyz_path), [with_stress, without], format="extxyz")
+
+    s_dft, s_pred = stress_pairs(_parse_eval_xyz(xyz_path))
+
+    assert s_dft == pytest.approx([1.0] * 6)
+    assert s_pred == pytest.approx([1.5] * 6)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("stress", "columns"), [(True, 3), (False, 2)])
+def test_parity_figure_has_a_stress_column_only_with_stress(
+    tmp_path, monkeypatch, stress, columns
+):
+    from alomancy.analysis import mlip_plots
+
+    rng = np.random.default_rng(0)
+    result = (rng.random(20), rng.random(20), rng.random(60), rng.random(60))
+    if stress:
+        result = (*result, rng.random(12), rng.random(12))
+    captured = {}
+    monkeypatch.setattr(
+        mlip_plots.plt, "close", lambda fig: captured.setdefault("fig", fig)
+    )
+    mlip_plots._draw_parity_figure(
+        results_per_fit=[result, result],
+        n_fits=2,
+        name="training",
+        seed=803,
+        set_label="Train",
+        base_name="al_loop_0",
+        plots_dir=tmp_path,
+        file_suffix="train",
+    )
+
+    axes = [a for a in captured["fig"].axes if a.get_label() != "_alomancy_watermark"]
+    assert len(axes) == 2 * columns
+    if stress:
+        assert axes[2].get_xlabel() == "DFT stress (GPa)"
+
+
+@pytest.mark.unit
+def test_report_parity_adds_a_stress_panel(tmp_path, monkeypatch):
+    from alomancy.analysis.report import plots
+
+    captured = {}
+    monkeypatch.setattr(
+        plots, "_save", lambda fig, path: captured.setdefault("fig", fig)
+    )
+    rng = np.random.default_rng(1)
+    base = (rng.random(5), rng.random(5), rng.random(15), rng.random(15))
+    plots.parity(
+        {"train": (*base, rng.random(6), rng.random(6)), "test": base},
+        tmp_path / "p.png",
+        title="t",
+        energy_label="energy",
+    )
+    assert [ax.get_xlabel() for ax in captured["fig"].axes] == [
+        "DFT energy (eV/atom)",
+        "DFT force component (eV/Å)",
+        "DFT stress component (GPa)",
+    ]

@@ -40,13 +40,28 @@ Fields that matter:
 
 `_run_single_job`: acquire the per-host ssh lock → `job.start()` → release → `_get_results_with_resume` → log stdout/stderr at DEBUG → compute queue time from `_expyre_job_started`'s mtime (logged as `Job N queue_time=… s.`, parsed by the timing plot) → return `(index, result)`. It never lets an exception escape; its failure handler logs the full traceback at DEBUG in `results/alomancy.log`.
 
+## Live job status
+
+`progress.py` (`remote_submission/`) replaces expyre's own progress output. `_get_results_with_resume` passes `quiet=True`, so expyre no longer writes a status letter per poll per thread.
+
+- **`TRACKER`** (`JobTracker`) holds one batch per active `run_all_jobs_bounded`: phase (`remote_info.job_name`), loop (from the jobs' `results/al_loop_N` output paths, `loop_from_paths`) and a row per job.
+  - `_run_single_job` marks each job submitted (with its remote id), and done or failed.
+  - The `_locked_sync` patch calls `TRACKER.synced(sys_name, _remote_statuses(sys_name))` after every successful sync. That records "last data" for the HPC and moves jobs between queued and running from expyre's DB. A failed sync calls `sync_failed` and re-raises unchanged; a coalesced (skipped) sync records nothing.
+- **`ProgressMonitor`** wraps the pool and renders one `snapshot()`:
+  - **On a terminal** (and unless `ALOMANCY_LIVE=0`, set by `alomancy run --no-live`): a rich `Live` panel that redraws itself. The console log handler is pointed at rich's stdout proxy, so log lines print above the panel.
+  - **Otherwise:** an INFO `Remote jobs: ...` summary line every 5 minutes.
+  - **Always:** `results/remote_status.json`, written atomically every 5 s and marked `finished` at the end. `alomancy status` renders it.
+  - Nested monitors share the outermost panel.
+- "Last data" is flagged stale after 3 check intervals without a sync.
+- `tests/conftest.py` sets `progress.STATUS_FILE = None`, so tests never write into the repository's `results/`. The file is only written when its directory exists.
+
 ## Resume and resubmit
 
 **Transient failures are resumed on the same job object, never treated as permanent** (`_get_results_with_resume`). A `get_results()` exception is retried while `job.status` is in `_RESUMABLE_JOB_STATUSES`:
 - the ongoing statuses `created`/`submitted`/`started` (expyre raised from transport, e.g. an rsync "No space left on device", before updating the status for that poll);
 - plus `succeeded`: expyre sets it *before* copying outputs back to `cwd`, so a local ENOSPC during the copy-out still reads `succeeded`; the remote side is done, so re-entering `get_results()` just retries the copy.
 
-Transport exceptions get up to `_TRANSPORT_RETRY_LIMIT` (5) retries with exponential backoff from `_TRANSPORT_RETRY_BACKOFF_SECONDS`; `ExPyReTimeoutError` gets `_TIMEOUT_RETRY_LIMIT` (1). The two budgets are separate counters, so an interleaved sequence of both can't exhaust the wrong one. Once `job.status` is `failed`/`died` (expyre's only terminal statuses, set before it raises), the exception re-raises immediately.
+Transport exceptions get up to `_TRANSPORT_RETRY_LIMIT` (5) retries with exponential backoff from `_TRANSPORT_RETRY_BACKOFF_SECONDS`; `ExPyReTimeoutError` gets `_TIMEOUT_RETRY_LIMIT` (1), but only once the job has started: a timeout while `job.status` is still `submitted` (expyre never saw `_expyre_job_started`) resumes without using an attempt (INFO event `job_still_queued`), so queue time never counts toward the wait limit. Raven and viper allow 8 running and 300 submitted jobs per user, so with a high `max_num_of_concurrent_jobs` most jobs wait in the queue; good_c's DFT jobs once all failed this way after 2 × 30 h of queueing. The two budgets are separate counters, so an interleaved sequence of both can't exhaust the wrong one. Once `job.status` is `failed`/`died` (expyre's only terminal statuses, set before it raises), the exception re-raises immediately.
 
 **Died jobs** (`ExPyReJobDiedError`): `_salvage_partial_output` first copies whatever the dead job's registered outputs already hold from its stage dir (it never raises), then, only if `RemoteInfo.resubmit_killed_jobs` is `True`, one fresh resubmission with `job.start(force_rerun=True)`. Salvage must come first: `force_rerun` wipes only the *remote* stage dir and reuses the local one, so the replacement's synced output would overwrite anything not yet salvaged. Off by default because a scheduler-killed job (OOM, walltime, node failure) usually needs different resources, not an identical retry.
 
@@ -81,7 +96,7 @@ The copy is a one-time snapshot: editing `EXPYRE_CONFIG` later doesn't change a 
 
 ExPyRe puts a job in `<rundir>/<rundir_extra>/run_<job name>_<44-char arghash>_<8-char mkdtemp suffix>/`, and a DFT job's VASP/QE runs in `results/<base_name>/high_accuracy_evaluation/batch_<b>/ase_output_<i>/` below that. VASP keeps paths in a ~256-character buffer: at 255 characters the filename is cut off and VASP fails with `forrtl: severe (30): open failure ... Is a directory`.
 
-- **`rundir_extra`**: expyre always sets it to `$HOSTNAME-<full local run path, / as _>` (`unkownhost` when `$HOSTNAME` is unset). `_shorten_expyre_remote_rundirs` (`alomancy/__init__.py`) replaces it, at import, with the run path below `$HOME` (`Simulations_alomancy_test_5`; `$HOME` is also tried resolved, since it is often a symlink to `/work/home/u`; a run outside `$HOME` keeps its full flattened path). Each run still has its own remote directory. It leaves the layout alone while the run's `jobs.db` has a job not yet `processed`/`cleaned`, since a resumed job finds its remote directory from the current `remote_rundir`.
+- **`rundir_extra`**: expyre always sets it to `$HOSTNAME-<full local run path, / as _>` (`unkownhost` when `$HOSTNAME` is unset). `_shorten_expyre_remote_rundirs` (`alomancy/__init__.py`) replaces it, at import, with the run path below `$HOME` (`Simulations_alomancy_test_5`; `$HOME` is also tried resolved, since it is often a symlink to `/work/home/u`; a run outside `$HOME` keeps its full flattened path). Each run still has its own remote directory. It leaves the layout alone while the run's `jobs.db` has a job not yet `processed`/`cleaned`, since a resumed job finds its remote directory from the current `remote_rundir`. `alomancy cancel` searches for both layouts when deleting the run's remote folder (`remote_short_run_dir`, `cli/cancel.py`).
 - **Job names**: `ase_remote_submitter` names DFT jobs with `dft_job_name` (`sp_vasp_0`, `go_qe_3`), without `run_` (ExPyRe adds its own) or the section name.
 - **Check**: `check_remote_path_length` (`remote_submission/submitters.py`) raises above `MAX_REMOTE_OUTPUT_DIR_LEN` (240). `projected_remote_output_dir` gives the exact length before submission (hash and suffix have fixed lengths). The workflow checks the worst case at construction (`_validate_remote_dft_path_length`), and `ase_remote_submitter` checks every job's exact path before submitting any.
 

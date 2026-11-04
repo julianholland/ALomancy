@@ -1085,7 +1085,7 @@ class TestMacePredictions:
         result = db.get_model_predictions(1, 2)
         assert result is not None
         assert "train" in result
-        e_dft, e_pred, f_dft, f_pred = result["train"]
+        e_dft, e_pred, f_dft, f_pred = result["train"][:4]
         # 2-atom structure: per-atom energy = -1.0/2 = -0.5 (dft) and -3.0/2 = -1.5 (pred)
         assert e_dft[0] == pytest.approx(-0.5)
         assert e_pred[0] == pytest.approx(-1.5)
@@ -1100,7 +1100,7 @@ class TestMacePredictions:
         )
         result = db.get_model_predictions(1, 2, e0={"H": -0.3})
         assert result is not None
-        e_dft, e_pred, _, _ = result["train"]
+        e_dft, e_pred, _, _ = result["train"][:4]
         # 2-atom H2: dft formation = (-1.0 - 2*(-0.3))/2 = -0.2
         # pred formation = (-3.0 - 2*(-0.3))/2 = -1.2
         assert e_dft[0] == pytest.approx(-0.2)
@@ -1130,7 +1130,7 @@ class TestMacePredictions:
             db_logger.removeHandler(handler)
 
         assert result is not None
-        e_dft, e_pred, _, _ = result["train"]
+        e_dft, e_pred, _, _ = result["train"][:4]
         # Falls back to raw per-atom energy (same as test_round_trip_values).
         assert e_dft[0] == pytest.approx(-0.5)
         assert e_pred[0] == pytest.approx(-1.5)
@@ -1429,3 +1429,37 @@ class TestClearDuplicateFlags:
         assert [x.info["config_type"] for x in kept] == ["high_sd"]
         assert db.clear_duplicate_flags() == 1
         assert len(db.get_train_atoms()) == 2
+
+
+@pytest.mark.unit
+def test_model_stress_round_trips_through_the_database(tmp_path):
+    """Stored model stress comes back as GPa components next to the DFT
+    stress, for the stress parity panel."""
+    from ase.units import GPa
+
+    atoms = make_atoms(
+        ["H", "H"],
+        config_type="init_dimer",
+        ref_energy=-1.0,
+        ref_forces=[[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+    )
+    atoms.info["REF_stresses"] = np.full(6, 2.0 * GPa)
+    db = GlobalDatabase(str(tmp_path / "db"))
+    db.add_structures([atoms], split="train", skip_duplicates=False)
+    db.assign_global_db_ids()
+    db.store_model_predictions(
+        0,
+        0,
+        {
+            0: {
+                "energy": -1.1,
+                "forces": [[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]],
+                "stress": (np.full(6, 2.5 * GPa)).tolist(),
+            }
+        },
+    )
+
+    s_dft, s_pred = db.get_model_predictions(0, 0)["train"][4:6]
+
+    assert s_dft == pytest.approx([2.0] * 6)
+    assert s_pred == pytest.approx([2.5] * 6)

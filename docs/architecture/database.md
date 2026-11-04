@@ -6,6 +6,7 @@
 
 A sage_lib `Partition` with `storage="hybrid"` (HDF5 + SQLite). It persists `atoms.info`, **not** `atoms.arrays`.
 
+- Structures from DFT geometry optimisations carry `geometry_step` (BFGS step of the frame); the unrelaxed starting frames kept alongside them also carry `geometry_initial = True` (`high_accuracy_evaluation.md`). The report counts those separately (`initial_frames_this_loop`), not as new structures.
 - `REF_forces` round-trips natively via `AtomPositionManager.configure(total_force=...)` / `apm.forces`.
 - `REF_stresses` has no native slot, so `_prepare_for_storage` writes it to `info["_REF_stresses"]` (`np.asarray(stress).tolist()`) and `_atoms_from_container` restores it (`np.array(meta.pop("_REF_stresses"))`).
 - `_atoms_from_container` strips every `char_vec*` key (cached descriptors never reach `atoms.info` or train files) and calls `drop_unwritable_info` (below).

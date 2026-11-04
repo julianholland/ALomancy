@@ -44,6 +44,7 @@ from ase import Atoms
 from ase.io import read, write
 
 from alomancy.mlip.evaluation import (
+    _voigt_stress,
     prediction_metrics,
     read_evaluation,
     save_evaluation,
@@ -512,7 +513,9 @@ def read_prediction_file(path: Path) -> list[Atoms]:
 
 def read_predictions(fit_dir: Path) -> dict[int, dict]:
     """Per-structure predictions from a fit's train_pred.xyz/test_pred.xyz,
-    as {global_db_id: {"energy": float, "forces": list}}; {} if none."""
+    as {global_db_id: {"energy": float, "forces": list[, "stress": list]}}
+    ("stress", Voigt 6 in eV/Å^3, only where the model predicted it);
+    {} if none."""
     preds: dict[int, dict] = {}
     for tag in ("train", "test"):
         xyz = fit_dir / f"{tag}_pred.xyz"
@@ -534,6 +537,9 @@ def read_predictions(fit_dir: Path) -> dict[int, dict]:
                 "energy": float(atoms.info["model_energy"]),
                 "forces": np.asarray(forces).tolist() if forces is not None else [],
             }
+            stress = _voigt_stress(atoms.info.get("model_stress"))
+            if stress is not None:
+                preds[int(gid)]["stress"] = stress.tolist()
         if n_skipped:
             logger.warning(
                 "%d of %d structure(s) in %s have no model_energy or "

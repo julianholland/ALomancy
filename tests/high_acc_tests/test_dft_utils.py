@@ -3,16 +3,21 @@
 import logging
 from pathlib import Path
 
+import numpy as np
 import pytest
 from ase import Atoms
+from ase.calculators.calculator import PropertyNotImplementedError
 from ase.calculators.emt import EMT
+from ase.io import read
 
 import alomancy.utils.dft_utils as dft_utils
 from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
     _run_sp,
+    _snapshot,
     _write_dft_result,
+    refresh_dft_labels,
 )
 
 _PARA_INFO = {
@@ -288,3 +293,114 @@ class TestRunGo:
         assert result.info["geometry_converged"] is False
         assert (Path(out) / "x.xyz").exists()
         assert any("did not reach fmax" in r.getMessage() for r in records)
+
+
+@pytest.mark.unit
+class TestGoInitialFrame:
+    """Step 0 of a geometry optimisation is a full DFT calculation of the
+    unrelaxed structure; _run_go keeps it in <name>_initial.xyz."""
+
+    @pytest.mark.unit
+    def test_initial_frame_holds_the_unrelaxed_geometry_and_its_labels(self, tmp_path):
+        out = tmp_path / "out"
+        start = _cu_dimer()
+        expected = start.copy()
+        expected.calc = EMT()
+        result = _run_go(start.copy(), str(out), {"name": "x"}, lambda a, j, d: EMT())
+
+        initial = read(out / "x_initial.xyz", format="extxyz")
+        assert np.allclose(initial.positions, expected.positions)
+        assert initial.info["REF_energy"] == pytest.approx(
+            expected.get_potential_energy()
+        )
+        assert np.allclose(initial.arrays["REF_forces"], expected.get_forces())
+        assert initial.info["geometry_step"] == 0
+        assert initial.info["geometry_initial"] is True
+        for key in ("geometry_converged", "geometry_steps", "dft_wall_time_s"):
+            assert key not in initial.info
+        assert result.info["geometry_step"] == result.info["geometry_steps"] > 0
+        final = read(out / "x.xyz", format="extxyz")
+        assert "geometry_initial" not in final.info
+        assert not np.allclose(final.positions, initial.positions)
+
+    @pytest.mark.unit
+    def test_no_initial_frame_when_the_structure_did_not_move(self, tmp_path):
+        out = tmp_path / "out"
+        single = Atoms("Cu", cell=[10, 10, 10], pbc=True)
+        _run_go(single, str(out), {"name": "x"}, lambda a, j, d: EMT())
+        assert (out / "x.xyz").exists()
+        assert not (out / "x_initial.xyz").exists()
+
+    @pytest.mark.unit
+    def test_snapshot_never_asks_the_calculator_again(self):
+        """A property the calculator didn't compute (QE stress with tstress
+        off) is left out rather than triggering a rerun."""
+
+        class NoStressEMT(EMT):
+            calls = 0
+
+            def calculate(self, atoms=None, properties=("energy",), changes=()):
+                NoStressEMT.calls += 1
+                if NoStressEMT.calls > 1:
+                    raise AssertionError("recalculated")
+                super().calculate(atoms, properties, changes)
+                self.results.pop("stress", None)
+
+        atoms = _cu_dimer()
+        atoms.calc = NoStressEMT()
+        atoms.get_forces()
+        copy = _snapshot(atoms)
+
+        assert np.allclose(copy.get_forces(), atoms.calc.results["forces"])
+        with pytest.raises(PropertyNotImplementedError):
+            copy.get_stress()
+        assert NoStressEMT.calls == 1
+
+
+class _CountingNoStressEMT(EMT):
+    """A calculator that, like QE with tstress off, never reports stress;
+    counts how often it actually runs."""
+
+    def __init__(self):
+        super().__init__()
+        self.runs = 0
+
+    def calculate(self, atoms=None, properties=("energy",), changes=()):
+        self.runs += 1
+        super().calculate(atoms, properties, changes)
+        self.results.pop("stress", None)
+
+
+@pytest.mark.unit
+class TestDftLabelStress:
+    @pytest.mark.unit
+    def test_missing_stress_never_reruns_the_calculation(self):
+        """Asking for stress the calculation didn't produce used to rerun
+        it (one extra pw.x per DFT job with tstress off)."""
+        atoms = _cu_dimer()
+        calc = _CountingNoStressEMT()
+        atoms.calc = calc
+        atoms.get_forces()
+
+        refresh_dft_labels(atoms)
+
+        assert calc.runs == 1
+        assert "REF_stresses" not in atoms.info
+
+    @pytest.mark.unit
+    def test_stale_stress_from_the_seed_is_dropped(self):
+        atoms = _cu_dimer()
+        atoms.info["REF_stresses"] = np.ones(6)  # inherited from an MD seed
+        atoms.calc = _CountingNoStressEMT()
+        atoms.get_forces()
+        refresh_dft_labels(atoms)
+        assert "REF_stresses" not in atoms.info
+
+    @pytest.mark.unit
+    def test_computed_stress_becomes_the_label(self):
+        atoms = _cu_dimer()
+        atoms.info["REF_stresses"] = np.ones(6)
+        atoms.calc = EMT()
+        expected = atoms.get_stress()
+        refresh_dft_labels(atoms)
+        assert np.allclose(atoms.info["REF_stresses"], expected)

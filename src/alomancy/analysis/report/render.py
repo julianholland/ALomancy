@@ -47,6 +47,9 @@ EVENT_DESCRIPTIONS = {
     "config_key_unrecognised": "unrecognised config keys (ignored)",
     "few_candidates_generated": "fewer than 2x per-loop candidates generated",
     "few_candidates_configured": "to-generate below 2x per-loop (config)",
+    "mlip_relax_fallback": "MLIP relaxation job failed (candidates unrelaxed)",
+    "mlip_relax_dropped": "candidates dropped by MLIP relaxation",
+    "job_still_queued": "jobs still queued after their time limit (waiting on)",
     "novelty_inexact": "novelty tolerance not exact",
     "novelty_selected": "novelty selection",
     "dft_summary": "DFT batch summary",
@@ -217,6 +220,14 @@ def _dataset(stats: dict) -> list[str]:
         f"- Redundancy removal: {dataset['redundant_total']} structure(s) flagged in "
         f"total, {new.get('redundant', 0)} of this loop's {sum(new.values())} new."
     )
+    initial = dataset.get("initial_frames_this_loop") or {}
+    if initial:
+        used = initial.get("train", 0) + initial.get("test", 0)
+        lines.append(
+            f"- DFT geometry-optimisation starting frames: {sum(initial.values())} "
+            f"stored this loop, {used} used (the rest excluded by the "
+            "train/test filters or redundancy removal)."
+        )
     if dataset["quality_filter_reasons"]:
         reasons = ", ".join(
             f"{k}: {v}" for k, v in dataset["quality_filter_reasons"].items()

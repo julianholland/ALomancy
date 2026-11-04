@@ -212,8 +212,18 @@ def test_run_trains_full_committee_then_selects(
         ("select", 0),
         ("train", 1, [803, 804, 805], {"min_successful": 3}),
         ("select", 1),
+        # The run ends by training on loop 1's DFT structures.
+        ("train", 2, [803, 804, 805], {"min_successful": 3}),
     ]
     assert Path("results/al_loop_1/loop.done").exists()
+
+
+def _final_training_done() -> None:
+    """Give the run's closing training (al_loop_2 for two loops) cached
+    fits, as a finished run would have, so a resume test exercises only the
+    loop it set up: train_mlip.done makes it reload instead of train."""
+    Path("results/al_loop_2").mkdir(parents=True, exist_ok=True)
+    Path("results/al_loop_2/train_mlip.done").write_text("done\n")
 
 
 @pytest.mark.unit
@@ -234,6 +244,7 @@ def test_resumes_existing_mid_loop_results_without_redoing_work(
     write(
         loop1 / "structure_generation/high_sd_structures.xyz", selected, format="extxyz"
     )
+    _final_training_done()
     wf = _workflow(jobs_dict, shared_db)
 
     fake_trainer = MagicMock()
@@ -341,6 +352,7 @@ def test_resumes_after_dft_without_rerunning_any_step(
             atoms, energy=-1.0, forces=np.zeros((len(atoms), 3))
         )
     write(loop1 / "high_accuracy_eval_results.xyz", evaluated, format="extxyz")
+    _final_training_done()
     wf = _workflow(jobs_dict, shared_db)
     fake_trainer = MagicMock()
     fake_trainer.read_existing_result.side_effect = lambda *a, **kw: (

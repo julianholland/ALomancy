@@ -165,7 +165,100 @@ def test_committee_cut_is_the_lowest_selected_candidate(tmp_path, monkeypatch):
         {"dft": {"submitted": 2}}, base_name="al_loop_0", plots_dir=None
     )
 
-    assert "2 selected (max force std dev ≥ 3" in section.lines[0]
+    assert "2 selected (50 %; max force std dev ≥ 3" in section.lines[0]
+
+
+def _rank_axes(monkeypatch, tmp_path, values, selected, cut):
+    """Draw selection_rank_plot and return its axes (captured before the
+    figure is saved and closed)."""
+    from alomancy.analysis.report import plots
+
+    captured = {}
+
+    def keep(fig, path):
+        captured["ax"] = fig.axes[0]
+
+    monkeypatch.setattr(plots, "_save", keep)
+    plots.selection_rank_plot(
+        values,
+        selected,
+        tmp_path / "rank.png",
+        title="t",
+        ylabel="std dev",
+        cut=cut,
+        unit="eV/Å",
+    )
+    return captured["ax"]
+
+
+def _points(ax) -> dict[str, np.ndarray]:
+    return {c.get_label(): np.asarray(c.get_offsets()) for c in ax.collections}
+
+
+@pytest.mark.unit
+def test_rank_plot_survives_outliers_and_zeros(tmp_path, monkeypatch):
+    """A 4101 outlier and exact zeros (seen in a real run) neither squash
+    the others nor vanish from the log axis; a redundant gap above the cut
+    shows as skipped."""
+    rng = np.random.default_rng(0)
+    values = [4101.0, *np.linspace(15.0, 0.4, 136).tolist(), *[0.0] * 8]
+    order = sorted(range(len(values)), key=lambda i: -values[i])
+    chosen_ranks = set(order[:101]) - {order[5]}  # rank 6 redundant
+    selected = [i in chosen_ranks for i in range(len(values))]
+    shuffle = rng.permutation(len(values))  # input order must not matter
+    values = [values[i] for i in shuffle]
+    selected = [selected[i] for i in shuffle]
+    cut = min(v for v, s in zip(values, selected, strict=True) if s)
+
+    ax = _rank_axes(monkeypatch, tmp_path, values, selected, cut)
+    points = _points(ax)
+
+    assert ax.get_yscale() == "log"
+    assert len(points["selected"]) == 100
+    assert len(points["skipped (e.g. redundant)"]) == 1
+    assert len(points["not selected"]) == 36
+    zeros = points["not selected, score 0 (n=8)"]
+    assert len(zeros) == 8
+    assert np.allclose(zeros[:, 1], 0.2)  # half the smallest positive score
+    assert ax.lines[0].get_ydata()[0] == pytest.approx(cut)
+    assert "100 of 145 selected (69 %)" in ax.get_title()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "values, selected",
+    [([3.0, 2.0, 1.0], [True, True, True]), ([0.0, 0.0], [False, False]), ([], [])],
+)
+def test_rank_plot_edge_cases_are_written(tmp_path, values, selected):
+    from alomancy.analysis.report.plots import selection_rank_plot
+
+    cut = min((v for v, s in zip(values, selected, strict=True) if s), default=None)
+    out = tmp_path / "rank.png"
+    selection_rank_plot(values, selected, out, title="t", ylabel="y", cut=cut)
+    assert out.exists()
+
+
+@pytest.mark.unit
+def test_committee_plot_falls_back_to_the_top_n(tmp_path, monkeypatch):
+    """A CSV written before the selection was recorded: the top N (N = DFT
+    submitted) count as selected, and the plot is still written."""
+    import polars as pl
+
+    from alomancy.analysis.report.sections import committee_section
+
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "results/al_loop_0/structure_generation/std_dev_forces.csv"
+    path.parent.mkdir(parents=True)
+    pl.DataFrame(
+        {"structure_index": [0, 1, 2, 3], "max_std_dev": [1.0, 4.0, 3.0, 2.0]}
+    ).write_csv(path)
+
+    section = committee_section(
+        {"dft": {"submitted": 3}}, base_name="al_loop_0", plots_dir=tmp_path / "p"
+    )
+
+    assert "3 selected (75 %; max force std dev ≥ 2" in section.lines[0]
+    assert section.plots[0].exists()
 
 
 def _md_axes(monkeypatch, tmp_path, temperatures, target=300.0) -> object:

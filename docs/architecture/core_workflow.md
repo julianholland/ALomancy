@@ -16,12 +16,12 @@ Children:
 ## Parent helpers a `run()` calls
 
 - `prepare_run()`: curation-policy check, `pre_run_checks`, resume or `_initialize_training_set` (cold/warm start), split filters + curation + redundancy; saves `results/run_config.yaml`; returns the first loop.
-- `iterate_loops(start)`: yields `LoopContext(loop, base_name, workdir, train, test, train_only, plots_dir)`, writes `train_set.xyz`/`test_set.xyz`, skips loops with `loop.done`, sets the event loop tag (`set_current_loop`).
+- `iterate_loops(start)`: yields `LoopContext(loop, base_name, workdir, train, test, train_only, plots_dir, final)`, writes `train_set.xyz`/`test_set.xyz`, skips loops with `loop.done`, sets the event loop tag (`set_current_loop`). After the last AL loop it yields one more, `al_loop_<num_of_al_loops>` with `final=True` (and `train_only`): every workflow's `run` trains on it and calls `finish_final_training` (report only), so the last loop's DFT structures reach a model. It writes no sentinel of its own: `train_mlip.done` makes a restart reload its models, and raising `num_of_al_loops` later carries on from that loop as a normal one.
 - `train_models(ctx, seeds, *, min_successful=1)` → `list[TrainedModel]`: one model per seed on one shared train/valid/test split, **one parallel `submit_n` batch**, per-fit caching, seed recorded in `training/fit_i/fit_seed.json` (a mismatch warns, it doesn't retrain), then the `results/best_model/` update.
 - `seeds(n)`: `general.seed + i` (unchanged so cached fits stay valid). `best_model(models)`: `rank_committee`.
-- `generate_candidates(ctx, model)`, `predict(ctx, models, structures)` (one parallel batch of `mlip/predict.predict_with_model`).
+- `generate_candidates(ctx, model)` (generator, bond filter, then the MLIP relaxation when `structure_generation.mlip_relaxation` is set; phase `mlip_relax`, `structure_generation.md`), `predict(ctx, models, structures)` (one parallel batch of `mlip/predict.predict_with_model`).
 - `high_accuracy_evaluate(ctx, structures)`: sets `job_id` and `needs_relaxation` from `force_ceiling`, injects `force_ceiling` as `fmax`, runs DFT, then `clean_structures` with `NEW_STRUCTURE_CONFIG_TYPE` and `al_loop`.
-- `add_to_dataset(ctx, structures)` (`test_ratio` split, or `fixed_test` diagnostics), `finish_loop(ctx)` (writes `loop.done`, the timing plot and the loop report).
+- `add_to_dataset(ctx, structures)` (`test_ratio` split, or `fixed_test` diagnostics; then the DFT GO starting frames from `high_accuracy_eval_initial_frames.xyz`, each in its final frame's split by `job_id`; `high_accuracy_evaluation.md`), `finish_loop(ctx)` (writes `loop.done`, the timing plot and the loop report).
 
 Section names are fixed to their config keys (`_INITIALIZATION_NAME`, `_TRAINING_NAME`, ...); functions that still read `config["name"]` get it merged into a shallow copy at the call site. A `name` written in the config is ignored with a warning.
 

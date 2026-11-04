@@ -92,6 +92,9 @@ class CommitteeUncertaintyWorkflow(ActiveLearningWorkflow):
                 ctx, self.seeds(committee_size), min_successful=_MIN_COMMITTEE_SIZE
             )
             self.plot_loop(ctx)
+            if ctx.final:
+                self.finish_final_training(ctx)
+                return
             if ctx.train_only:
                 logger.info(
                     "Initial committee training complete; train_only stops before generation."

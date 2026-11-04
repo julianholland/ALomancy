@@ -597,11 +597,16 @@ class TestRemoteJobExecutor:
         simply unknown rather than definitely still alive."""
         import alomancy.remote_submission.executor as executor_module
 
+        # The job had started running (status 'started'); a timeout while
+        # still queued doesn't count (test below).
         job = _FakeExPyReJob(
             "job0",
             tmp_path / "job0",
             duration=0.0,
-            get_results_side_effects=[ExPyReTimeoutError, ExPyReTimeoutError],
+            get_results_side_effects=[
+                (ExPyReTimeoutError("waited"), "started"),
+                (ExPyReTimeoutError("waited"), "started"),
+            ],
         )
         executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
 
@@ -612,6 +617,22 @@ class TestRemoteJobExecutor:
         # the single allowed resume attempt -- then gives up.
         assert results == [None]
         assert not job._get_results_side_effects
+
+    @pytest.mark.unit
+    def test_time_in_the_queue_never_uses_up_the_timeout(self, tmp_path):
+        """A job that never left the queue (status still 'submitted') keeps
+        waiting through any number of local timeouts: with hundreds of jobs
+        behind a per-user running cap, queue time alone used to fail them."""
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            get_results_side_effects=[ExPyReTimeoutError] * 4,
+        )
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
+
+        assert executor.run_all_jobs_bounded() == ["job0"]
+        assert job.start_calls == [False]
 
     @pytest.mark.unit
     def test_terminal_failure_status_is_not_retried(self, tmp_path):
