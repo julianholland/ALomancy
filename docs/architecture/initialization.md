@@ -4,7 +4,7 @@
 
 ## Flow
 
-`compute_needs(db, init_config, elements)` (`initialize/initialiser_interface.py`, calling `initialize/initialization_structure_list.py`'s `compute_initialization_needs`) compares what the DB already holds (`count_all_by_config_type_and_formula()`) with the configured targets and returns per-combo counts of what's missing: isolated atoms, dimers, trimers, amorphous, Materials Project. `generate(...)` (`create_initialization_atoms_list`; per type `initialize/singles_dimers_trimers.py`, `initialize/amorphize.py`, `initialize/stretch_and_compress.py`, `initialize/rattle.py`, `initialize/mp_interface.py`) builds only those; `_initialize_training_set` (`core_workflow.md`) sends them to DFT. Without an `initialization` section nothing is generated.
+`compute_needs(db, init_config, elements)` (`initialize/initialiser_interface.py`, calling `initialize/initialization_structure_list.py`'s `compute_initialization_needs`) compares what the DB already holds (`count_all_by_config_type_and_formula()`) with the configured targets and returns per-combo counts of what's missing: isolated atoms, dimers, trimers, amorphous, Materials Project, molecules, boxes of molecules. `generate(...)` (`create_initialization_atoms_list`; per type `initialize/singles_dimers_trimers.py`, `initialize/amorphize.py`, `initialize/stretch_and_compress.py`, `initialize/rattle.py`, `initialize/mp_interface.py`, `initialize/molecules.py`) builds only those; `_initialize_training_set` (`core_workflow.md`) sends them to DFT. Without an `initialization` section nothing is generated.
 
 ## Settings
 
@@ -12,14 +12,28 @@ One block per structure type in the `initialization` section, each with an `enab
 
 - `isolated_atom_kwargs`
 - `dimer_kwargs.num_of_dimers_per_combo` (default 10), `trimer_kwargs.num_of_trimers_per_combo` (default 5)
-- `amorphous_kwargs`: `num_of_amorphous_structures` (default 100), `num_of_atoms_per_amorphous` (default 20), `densities_list`, `composition_list`, `seed`
+- `amorphous_kwargs`: `num_of_amorphous_structures` (default 100), `num_of_atoms_per_amorphous` (default 20), `density_range` (`[min, max]` g/cm³, default `[1.0, 1.0]`; one density per structure, `np.linspace` over the range), `composition_list`, `seed`. `densities_list` is deprecated (`docs/deprecations.md`): it warns (`config_key_deprecated`) and is read as `[min, max]`.
 - `mp_kwargs`: `max_num_of_atoms` (default 20, caps MP fetches), `mp_max_energy_above_hull` (default 0.1 eV)
 - `stretch_compress_targets_kwargs`: `num_of_stretch_compress_per_target` (default 5), `max_lattice_deformation` (default 0.2)
 - `rattle_target_structures` (off by default): `num_of_rattled_per_target`, `rattle_standard_deviation`
+- `molecule_kwargs` (off by default, config_type `init_molecule`): `molecules` (required when enabled), `vacuum` (default 10 Å)
+- `molecules_in_box_kwargs` (off by default, config_type `init_molecules_in_box`): `box_compositions` (required when enabled), `min_distance` (default 1.5 Å), `max_attempts_per_molecule` (default 1000)
+
+`validate_kwargs` (registry hook, called from `ActiveLearningWorkflow._validate_initialiser_kwargs` at construction) checks the molecule blocks and every `density_range`, so a bad name fails at startup, not after other structures are already generated.
 
 `num_of_atoms_per_amorphous` and `mp_kwargs.max_num_of_atoms` are independent (they used to be one value). The old `d_t_s_a_ratio`/`target_non_mp_structures_to_add` are gone.
 
 Initialization structures keep their own relaxation policy: `needs_relaxation` per structure type, `fmax` 0.05. Deliberately compressed dimers/trimers aren't capped by `force_ceiling`.
+
+## Molecules (`initialize/molecules.py`)
+
+Molecules are named the way SAGE's `AtomPosition.build` takes them, through `utils/molecules.py` (`build_molecule`, `molecule_symbols`, `validate_molecules`): a SAGE preset formula (`"CO"`, `"H2O"`) or `"smiles-<SMILES>"` (`"smiles-CCO"`; SAGE's own SMILES parser, hydrogens added, geometry relaxed, no RDKit). Formulas outside SAGE's presets (`"CH4"`) don't build; write them as SMILES (`"smiles-C"`). Every element must be in `general.elements`. There is no shared molecule list: each block names its molecules, and nothing falls back to another section.
+
+- **In vacuum** (`molecule_kwargs`): one structure per molecule, SAGE's equilibrium geometry centred in a cubic cell of its largest extent plus `vacuum`, `pbc` false, `needs_relaxation` false. Distorted copies come from the shared blocks: list `init_molecule` in `general.dataset_kwargs.target_config_types` and `stretch_compress_targets_kwargs` scales the bonds (it scales the atoms with the cell), `rattle_target_structures` rattles them. That list also sets the train/test pool, and every target type shares one `max_lattice_deformation`.
+- **In a box** (`molecules_in_box_kwargs.box_compositions`): each entry is `{molecules: {name: ratio}, density_range: [min, max], num_of_molecules, num_of_structures}`. Integer counts come from the ratio by largest remainder (each molecule at least once); `num_of_structures` cubic periodic boxes at densities `np.linspace(min, max, num_of_structures)`, each sized so its density is exact. `needs_relaxation` true, as for amorphous. `info`: `box_composition` (`"H2O:2,smiles-CO:1"`), `density`.
+- **Packing is ALomancy's own.** SAGE's `MoleculeCluster_builder.add_solvent` does the same job but can't be seeded (it never passes `rng_seed` on). Here box *i* of composition *j* uses `np.random.default_rng([general.seed + j, i])`: each molecule a uniform random rotation and position, kept when no atom is within `min_distance` of another molecule's under the minimum image; failing `max_attempts_per_molecule` raises naming the composition and density. No force-field cleanup afterwards (LJ, as for amorphous, would distort the molecules).
+- **Restarts** count both per chemical formula (`molecule_override`, `box_override`), so names or compositions with one formula share a target. A partly done composition makes its highest-density boxes (the first ones are taken as done); box *i* is the same whichever others are made.
+- `utils/dataset_curation.structure_domain` maps them to the domains `molecule` and `molecules_in_box`, before the size rules (CO is not a dimer).
 
 ## Materials Project (`initialize/mp_interface.py`)
 

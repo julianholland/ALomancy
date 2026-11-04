@@ -204,6 +204,8 @@ class TestComputeInitializationNeeds:
             "trimer_override",
             "amorphous_override",
             "mp_structures",
+            "molecule_override",
+            "box_override",
         }
         assert set(needs.keys()) == expected_keys
 

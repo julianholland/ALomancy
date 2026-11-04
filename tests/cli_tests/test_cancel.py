@@ -27,6 +27,7 @@ from alomancy.cli.cancel import (
     is_run_directory,
     remote_run_dir_glob,
     remote_run_dirs,
+    remote_short_run_dir,
     remote_targets,
     stop_run_process,
 )
@@ -263,6 +264,32 @@ def test_remote_glob_matches_expyre_run_folder_layout():
 
 
 @pytest.mark.unit
+def test_remote_short_run_dir_matches_shortened_expyre_layout():
+    """The layout alomancy._shorten_rundir_extra gives a run's remote folder."""
+    local = Path("/work/home/advr/Simulations/alomancy/test_5/.expyre")
+    assert remote_short_run_dir(
+        "/raven/ptmp/advr/alomancy_scratch/", local, Path("/work/home/advr")
+    ) == ("/raven/ptmp/advr/alomancy_scratch/Simulations_alomancy_test_5")
+
+
+@pytest.mark.unit
+def test_remote_run_dirs_finds_both_layouts(tmp_path):
+    """A run can have folders in the old <host>-<full path> layout and the
+    short <path below $HOME> one; both are found, nothing else is."""
+    run_dir = _make_run(tmp_path, {"cpu": {"host": "raven", "rundir": "/r"}})
+    full = str(run_dir).replace("/", "_")
+    commands: list[str] = []
+
+    def ssh(host, command, timeout):
+        commands.append(command)
+        return True, f"/r/h-{full}\n/r/run\n/r/run_other\n/r/unrelated\n", ""
+
+    found, _ = remote_run_dirs(run_dir / ".expyre", {"cpu"}, ssh=ssh, home=tmp_path)
+    assert found == {"raven": [f"/r/h-{full}", "/r/run"]}
+    assert "/r/run" in commands[0].split()
+
+
+@pytest.mark.unit
 def test_remote_targets_dedupe_shared_rundirs_and_skip_local(tmp_path):
     run_dir = _make_run(
         tmp_path,
@@ -304,7 +331,9 @@ def test_remote_run_dirs_keeps_only_this_runs_folders(tmp_path):
     def ssh(host, command, timeout):
         return True, f"/r/h-{suffix}\n/r/unrelated\n", ""
 
-    found, unreachable = remote_run_dirs(run_dir / ".expyre", {"cpu"}, ssh=ssh)
+    found, unreachable = remote_run_dirs(
+        run_dir / ".expyre", {"cpu"}, ssh=ssh, home=tmp_path
+    )
     assert found == {"raven": [f"/r/h-{suffix}"]}
     assert unreachable == []
 

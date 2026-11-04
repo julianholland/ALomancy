@@ -220,6 +220,13 @@ from alomancy.mlip.evaluation import (
 from alomancy.mlip.predict import predict_with_model
 from alomancy.registry import registered, resolve
 from alomancy.remote_submission.executor import acquire_local_expyre_lock, submit_n
+from alomancy.remote_submission.submitters import (
+    ASE_OUTPUT_PREFIX,
+    check_remote_path_length,
+    dft_job_name,
+    expyre_remote_rundir,
+    projected_remote_output_dir,
+)
 from alomancy.structure_generation.mlip_relax import (
     relax_with_model,
     resolve_mlip_relaxation,
@@ -662,6 +669,8 @@ def _needs_anything(needs: dict) -> bool:
         or needs["trimer_override"]
         or needs["amorphous_override"] > 0
         or needs["mp_structures"]
+        or needs.get("molecule_override")
+        or needs.get("box_override")
     )
 
 
@@ -1192,6 +1201,10 @@ class ActiveLearningWorkflow(ABC):
                 },
             )
         self._validate_generator_kwargs(jobs_dict.get("structure_generation"))
+        self._validate_initialiser_kwargs(jobs_dict.get(_INITIALIZATION_NAME))
+        self._validate_remote_dft_path_length(
+            jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME)
+        )
         # After setup_logging so the warnings reach the console/log file.
         self._warn_about_unread_keys()
         self.validate_settings()
@@ -1216,6 +1229,64 @@ class ActiveLearningWorkflow(ABC):
                 elements=list(self.jobs_dict.get("general", {}).get("elements") or []),
                 seed=self.seed,
             )
+
+    def _validate_initialiser_kwargs(self, init_config: Any) -> None:
+        """The initialiser's construction-time check (registry entry
+        validate_kwargs): molecule blocks and density ranges, which would
+        otherwise fail only once initialisation runs."""
+        if not isinstance(init_config, dict):
+            return
+        validate = getattr(resolve("initialiser", "default"), "validate_kwargs", None)
+        if validate is not None:
+            # Not _required_elements: a config without initialisation
+            # molecules needs no elements here.
+            elements = self.jobs_dict.get("general", {}).get("elements") or []
+            validate(init_config, elements=list(elements))
+
+    def _validate_remote_dft_path_length(self, hae_config: Any) -> None:
+        """Fail now, not after training and MD, if the longest remote DFT
+        run directory this run can produce is too long for VASP/QE
+        (submitters.MAX_REMOTE_OUTPUT_DIR_LEN). ase_remote_submitter checks
+        the exact paths again before submitting each batch.
+
+        Worst case: the longest base_name this run uses, a 2-digit batch,
+        a 4-digit structure index and the longer of the evaluator's GO/SP
+        job names. Skipped when ExPyRe has no remote rundir for the HPC.
+        """
+        if not isinstance(hae_config, dict):
+            return
+        hpc = hae_config.get("hpc")
+        if not isinstance(hpc, dict) or not hpc.get("hpc_name"):
+            return
+        remote_rundir = expyre_remote_rundir(hpc["hpc_name"])
+        if remote_rundir is None:
+            return
+        try:
+            entry = resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
+        except ValueError:
+            return  # reported by the config-key check
+        base_names = [f"al_loop_{self.start_loop + self.num_of_al_loops}"]
+        if self.jobs_dict.get(_INITIALIZATION_NAME) is not None:
+            base_names.append(_INITIALIZATION_NAME)
+        base_name = max(base_names, key=len)
+        job_name = max((dft_job_name(fn, 9999) for fn in (entry.sp, entry.go)), key=len)
+        out_dir = str(
+            Path(
+                "results",
+                base_name,
+                _HIGH_ACCURACY_EVALUATION_NAME,
+                "batch_99",
+                f"{ASE_OUTPUT_PREFIX}_9999",
+            )
+        )
+        check_remote_path_length(
+            projected_remote_output_dir(remote_rundir, job_name, out_dir),
+            remote_rundir=remote_rundir,
+            context=(
+                f"high_accuracy_evaluation on HPC {hpc['hpc_name']!r} "
+                "(longest possible path)"
+            ),
+        )
 
     def _warn_about_unread_keys(self) -> None:
         """Warn about every config key the run will never read (configs/
@@ -1528,12 +1599,15 @@ class ActiveLearningWorkflow(ABC):
         ):
             logger.info(
                 "DB check: %d structure(s) already evaluated. Generating missing "
-                "structures: %d isolated atoms, %d dimers, %d trimers, %d amorphous.",
+                "structures: %d isolated atoms, %d dimers, %d trimers, %d amorphous, "
+                "%d molecules, %d boxes of molecules.",
                 self.db.size,
                 len(needs["isolated_atoms"]),
                 sum(needs["dimer_override"].values()),
                 sum(needs["trimer_override"].values()),
                 needs["amorphous_override"],
+                sum(needs.get("molecule_override", {}).values()),
+                sum(needs.get("box_override", {}).values()),
             )
 
             generated_atoms_list = None

@@ -95,7 +95,7 @@ train/test pair of xyz files, a single xyz file, a former ALomancy
 database, or nothing (a cold start). Every mode then:
 
 1. Imports the start data into the global database
-2. Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project)
+2. Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project, and molecules if switched on)
 3. Evaluates them with DFT
 4. Builds train/test splits from the database
 

@@ -267,6 +267,22 @@ def remote_run_dir_glob(rundir: str, local_stage_dir: Path) -> str:
     )
 
 
+def remote_short_run_dir(rundir: str, local_stage_dir: Path, home: Path) -> str:
+    """This run's folder under a system's `rundir` in the layout alomancy
+    sets at import (alomancy._shorten_rundir_extra): `<rundir>/<run path
+    below $HOME, / as _>`. Runs whose jobs were submitted before that
+    change, or while older jobs were unfinished, use remote_run_dir_glob's
+    layout instead, so both are searched."""
+    from alomancy import _short_rundir_extra
+
+    base = (
+        local_stage_dir.parent
+        if local_stage_dir.name in (".expyre", "_expyre")
+        else local_stage_dir
+    )
+    return rundir.rstrip("/") + "/" + _short_rundir_extra(base, home)
+
+
 _HPC_LOG_LINE = re.compile(r"HPC: (\S+), Job: ")
 
 
@@ -303,19 +319,28 @@ def remote_run_dirs(
     systems: set[str],
     *,
     ssh: Callable[[str, str, float], tuple[bool, str, str]] = run_ssh_command,
+    home: Path | None = None,
 ) -> tuple[dict[str, list[str]], list[str]]:
     """This run's existing folders on the hosts of `systems` (the HPCs it
-    submitted to), and the hosts that couldn't be listed."""
+    submitted to), in either remote layout (remote_run_dir_glob,
+    remote_short_run_dir), and the hosts that couldn't be listed."""
+    home = Path.home() if home is None else home
     found: dict[str, list[str]] = {}
     unreachable: list[str] = []
     suffix = "-" + _run_suffix(expyre_dir)
     for host, rundirs in sorted(remote_targets(expyre_dir, systems).items()):
-        globs = " ".join(remote_run_dir_glob(r, expyre_dir) for r in sorted(rundirs))
-        ok, stdout, _ = ssh(host, f"ls -d -- {globs} 2>/dev/null; true", _SSH_TIMEOUT)
+        short_dirs = {remote_short_run_dir(r, expyre_dir, home) for r in rundirs}
+        patterns = " ".join(
+            [remote_run_dir_glob(r, expyre_dir) for r in sorted(rundirs)]
+            + [shlex.quote(d) for d in sorted(short_dirs)]
+        )
+        ok, stdout, _ = ssh(
+            host, f"ls -d -- {patterns} 2>/dev/null; true", _SSH_TIMEOUT
+        )
         if not ok:
             unreachable.append(host)
             continue
-        paths = [p for p in stdout.split() if p.endswith(suffix)]
+        paths = [p for p in stdout.split() if p.endswith(suffix) or p in short_dirs]
         if paths:
             found[host] = paths
     return found, unreachable

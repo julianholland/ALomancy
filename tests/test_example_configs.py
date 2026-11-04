@@ -178,10 +178,13 @@ def test_readme_config_matches_tested_example():
 
 @pytest.mark.unit
 def test_ezga_walkthrough_config_matches_tested_example():
-    """docs/ezga.md walks through examples/configs/committee_mace_ezga_hise.yaml,
-    so the two can't drift apart."""
+    """docs/ezga.md walks through examples/configs/committee_mace_ezga_hise.yaml
+    (its first config block; the later ones are the Mutations section's
+    partial examples, built by the snippet test), so the two can't drift
+    apart."""
     example = yaml.safe_load(
         (_EXAMPLES / "configs" / "committee_mace_ezga_hise.yaml").read_text()
     )
-    walkthrough = [block for page, _, block in _DOC_SNIPPETS if page == "ezga.md"]
-    assert walkthrough == [example]
+    blocks = [block for page, _, block in _DOC_SNIPPETS if page == "ezga.md"]
+    assert blocks[0] == example
+    assert len(blocks) == 4

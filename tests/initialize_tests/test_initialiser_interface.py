@@ -16,10 +16,12 @@ from ase import Atoms
 from ase.io import write
 
 from alomancy.initialize.initialiser_interface import (
+    _resolve_kwargs,
     compute_needs,
     generate,
     output_paths,
     read_existing_result,
+    validate_kwargs,
 )
 
 _MODULE = "alomancy.initialize.initialiser_interface"
@@ -378,3 +380,110 @@ class TestGenerate:
                 max_time="1H",
             )
         assert Path("results/al_loop_0").is_dir()
+
+
+# --- validate_kwargs: molecule blocks and density ranges -------------------
+
+_CHO = ["C", "H", "O"]
+_BOX = {
+    "molecules": {"H2O": 2, "smiles-CO": 1},
+    "density_range": [0.8, 1.1],
+    "num_of_molecules": 12,
+    "num_of_structures": 2,
+}
+
+
+@pytest.mark.unit
+def test_validate_accepts_the_defaults():
+    validate_kwargs({}, elements=_CHO)
+
+
+@pytest.mark.unit
+def test_enabled_molecule_kwargs_without_molecules_raises():
+    with pytest.raises(ValueError, match=r"molecule_kwargs\.molecules is required"):
+        validate_kwargs({"molecule_kwargs": {"enabled": True}}, elements=_CHO)
+
+
+@pytest.mark.unit
+def test_molecule_kwargs_molecule_outside_general_elements_raises():
+    config = {"molecule_kwargs": {"enabled": True, "molecules": ["smiles-CCO"]}}
+    with pytest.raises(ValueError, match=r"contains \['C'\]"):
+        validate_kwargs(config, elements=["H", "O"])
+
+
+@pytest.mark.unit
+def test_enabled_box_kwargs_without_compositions_raises():
+    with pytest.raises(ValueError, match="box_compositions is required"):
+        validate_kwargs({"molecules_in_box_kwargs": {"enabled": True}}, elements=_CHO)
+
+
+@pytest.mark.unit
+def test_valid_box_composition_passes():
+    config = {"molecules_in_box_kwargs": {"enabled": True, "box_compositions": [_BOX]}}
+    validate_kwargs(config, elements=_CHO)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"density_range": [1.2, 0.8]}, "density_range must be"),
+        ({"density_range": [0.0, 1.0]}, "density_range must be"),
+        ({"density_range": 1.0}, "density_range must be"),
+        ({"molecules": {"H2O": 0}}, "positive ratios"),
+        ({"num_of_molecules": 1}, "at least the number of molecules"),
+        ({"num_of_structures": 0}, "num_of_structures must be"),
+        ({"densities": [1.0]}, "unknown keys"),
+    ],
+)
+def test_bad_box_composition_raises(change, message):
+    composition = {**_BOX, **change}
+    config = {
+        "molecules_in_box_kwargs": {"enabled": True, "box_compositions": [composition]}
+    }
+    with pytest.raises(ValueError, match=message):
+        validate_kwargs(config, elements=_CHO)
+
+
+@pytest.mark.unit
+def test_bad_amorphous_density_range_raises():
+    with pytest.raises(ValueError, match=r"amorphous_kwargs\.density_range"):
+        validate_kwargs({"amorphous_kwargs": {"density_range": [2, 1]}}, elements=_CHO)
+
+
+@pytest.mark.unit
+def test_densities_list_is_deprecated_and_read_as_its_range():
+    import logging
+
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    module_logger = logging.getLogger(_MODULE)
+    module_logger.addHandler(handler)
+    config = {"amorphous_kwargs": {"densities_list": [1.2, 0.8, 1.0]}}
+    try:
+        validate_kwargs(config, elements=_CHO)
+    finally:
+        module_logger.removeHandler(handler)
+    assert [r.event for r in records] == ["config_key_deprecated"]
+    resolved = _resolve_kwargs(config, "amorphous_kwargs")
+    assert resolved["density_range"] == [0.8, 1.2]
+    assert "densities_list" not in resolved
+
+
+@pytest.mark.unit
+def test_generate_passes_molecule_blocks_through(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = {
+        "isolated_atom_kwargs": {"enabled": False},
+        "dimer_kwargs": {"enabled": False},
+        "trimer_kwargs": {"enabled": False},
+        "amorphous_kwargs": {"enabled": False},
+        "mp_kwargs": {"enabled": False},
+        "molecule_kwargs": {"enabled": True, "molecules": ["CO"]},
+        "molecules_in_box_kwargs": {"enabled": True, "box_compositions": [_BOX]},
+    }
+    atoms = generate(config, base_name="init", name="initialization", elements=_CHO)
+    types = [a.info["config_type"] for a in atoms]
+    assert types.count("init_molecule") == 1
+    assert types.count("init_molecules_in_box") == 2

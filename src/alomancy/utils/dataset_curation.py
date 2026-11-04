@@ -42,6 +42,11 @@ def structure_domain(atoms: Atoms) -> str:
         return "bulk"
     if ct == "init_amorphous":
         return "amorphous"
+    # Before the size rules: CO is a molecule, not a dimer.
+    if ct == "init_molecule":
+        return "molecule"
+    if ct == "init_molecules_in_box":
+        return "molecules_in_box"
     if ct == "init_dimer" or len(atoms) == 2:
         return "dimer"
     if ct == "init_trimer" or len(atoms) == 3:
