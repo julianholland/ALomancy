@@ -21,6 +21,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# The training MAE plot's y-axis stops at this multiple of the worst fit's
+# lowest MAE, so the first epochs' large errors don't flatten the rest.
+_TRAINING_MAE_CAP = 3
+
+
+def _mae_axis_top(curves: list[np.ndarray]) -> float | None:
+    """y-axis top for one MAE panel: _TRAINING_MAE_CAP x the highest of the
+    fits' lowest MAEs, or None when no fit has a finite positive value."""
+    lowest = [float(np.nanmin(c)) for c in curves if len(c) and np.isfinite(c).any()]
+    lowest = [v for v in lowest if v > 0]
+    return _TRAINING_MAE_CAP * max(lowest) if lowest else None
+
 
 def _parse_training_jsonl(
     fit_dir: Path, name: str, fit_seed: int
@@ -139,19 +151,33 @@ def plot_training_curves(
     fig_mae, (ax_e, ax_f) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
     fig_mae.suptitle(f"{name} — Training MAE  [{base_name}]")
 
+    panels = {
+        "mae_e_per_atom": (ax_e, "eV/atom"),
+        "mae_f": (ax_f, "eV/Å"),
+    }
+    tops = {
+        col: _mae_axis_top(
+            [df[col].to_numpy() for _, df, _ in fit_data if col in df.columns]
+        )
+        for col in panels
+    }
     for i, df, used_ep in fit_data:
         color = colors[i % len(colors)]
         label = f"fit_{i} (seed {seed + i})"
-        if "mae_e_per_atom" in df.columns:
-            ax_e.plot(
-                df["epoch"],
-                df["mae_e_per_atom"],
-                color=color,
-                label=label,
-                linewidth=1.2,
+        for col, (ax, unit) in panels.items():
+            if col not in df.columns:
+                continue
+            values = df[col].to_numpy()
+            top = tops[col]
+            peak = float(np.nanmax(values)) if np.isfinite(values).any() else None
+            clipped = (
+                f" (peaks at {peak:.3g} {unit})"
+                if top is not None and peak is not None and peak > top
+                else ""
             )
-        if "mae_f" in df.columns:
-            ax_f.plot(df["epoch"], df["mae_f"], color=color, label=label, linewidth=1.2)
+            ax.plot(
+                df["epoch"], values, color=color, label=label + clipped, linewidth=1.2
+            )
         if used_ep is not None:
             ax_e.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
             ax_f.axvline(used_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.8)
@@ -167,6 +193,9 @@ def plot_training_curves(
             )
         ax.grid(True)
         ax.legend(fontsize=8)
+    for col, (ax, _unit) in panels.items():
+        if tops[col] is not None:
+            ax.set_ylim(0, tops[col])
 
     ax_e.set_ylabel("Energy MAE (eV/atom)")
     ax_f.set_ylabel("Force MAE (eV/Å)")

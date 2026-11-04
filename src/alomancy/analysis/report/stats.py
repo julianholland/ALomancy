@@ -209,12 +209,14 @@ def _dft_stats(base_name: str, events: dict, force_ceiling: float | None) -> dic
     }
 
 
-def _operator_counts(structures: list[Atoms], names: list[str]) -> dict[str, int]:
+def _operator_counts(structures: list[Atoms], names: list[str]) -> dict[str, float]:
     """How many of *structures* each EZGA operator produced: crossover, or
     each mutation in ezga_mutation_list (indices into mutation_funcs).
-    Structures from before ezga_mutation_list was recorded count as
-    "mutation"."""
-    counts: Counter = Counter()
+    Each structure counts once in total: a child of k mutations gives 1/k
+    to each, so the counts sum to the number of structures (the stacked
+    bars match the totals above them). Structures from before
+    ezga_mutation_list was recorded count as "mutation"."""
+    counts: defaultdict[str, float] = defaultdict(float)
     for atoms in structures:
         operation = atoms.info.get("ezga_operation")
         if operation is None:
@@ -223,9 +225,10 @@ def _operator_counts(structures: list[Atoms], names: list[str]) -> dict[str, int
         if operation == "crossover" or not mutations.size:
             counts[operation] += 1
             continue
+        share = 1.0 / mutations.size
         for i in mutations:
             i = int(i)
-            counts[names[i] if 0 <= i < len(names) else f"mut_{i}"] += 1
+            counts[names[i] if 0 <= i < len(names) else f"mut_{i}"] += share
     return dict(counts)
 
 
@@ -240,13 +243,17 @@ def _offspring_key(atoms: Atoms) -> tuple[int, float] | None:
 
 def _seed_types(db: Any) -> dict[int, str]:
     """global_db_id -> config_type of every structure in the database, to
-    name the seed an EZGA structure descends from."""
-    types = {}
-    for container in db.partition.list_containers():
-        meta = container.AtomPositionManager.metadata
-        if meta.get("global_db_id") is not None:
-            types[int(meta["global_db_id"])] = meta.get("config_type", "unknown")
-    return types
+    name the seed an EZGA structure descends from. Two metadata columns
+    read straight from sage_lib's index (Partition.get_all_metadata, one
+    SQL query each, ordered by object id), without building any
+    structures."""
+    ids = db.partition.get_all_metadata("global_db_id")
+    config_types = db.partition.get_all_metadata("config_type")
+    return {
+        int(db_id): str(config_type) if config_type is not None else "unknown"
+        for db_id, config_type in zip(ids, config_types, strict=True)
+        if db_id is not None
+    }
 
 
 def _ezga_duplicates(logger_dir: Path) -> dict[int, int]:
@@ -269,7 +276,7 @@ def _ezga_duplicates(logger_dir: Path) -> dict[int, int]:
 
 
 def _ezga_generation_stats(
-    base_name: str, mutation_funcs: list, seed_types: dict[int, str]
+    base_name: str, mutation_funcs: list, db: Any
 ) -> dict | None:
     """EZGA's run per generation (structures generated, duplicates filtered,
     operators applied) and the structures selected for DFT (high_sd_structures.xyz) by the
@@ -286,6 +293,7 @@ def _ezga_generation_stats(
         offspring = read_offspring(db_path)
         high_sd = read(selected_path, ":")
         duplicates = _ezga_duplicates(path / "ezga" / "logger")
+        seed_types = _seed_types(db)
     except Exception as exc:
         logger.warning(
             "Loop report: could not read EZGA output for %s: %s", base_name, exc
@@ -394,7 +402,7 @@ def collect_loop_stats(workflow: Any, loop: int) -> dict[str, Any]:
         _ezga_generation_stats(
             base_name,
             (generation.get("ezga_kwargs") or {}).get("mutation_funcs") or [],
-            _seed_types(workflow.db),
+            workflow.db,
         )
         if generation.get("generator") == "ezga"
         else None

@@ -978,16 +978,18 @@ class TestImportedSources:
 
     @pytest.mark.unit
     def test_fully_excluded_database_is_not_reread(self, tmp_path, monkeypatch):
+        import alomancy.database.global_database as gdb
+
         source = self._source(tmp_path, ["Cu", "Cu"])
         db = GlobalDatabase(str(tmp_path / "db"))
         reads = []
-        original = GlobalDatabase.get_all_as_atoms
+        original = gdb.read_storage
 
-        def counting(self):
-            reads.append(self.db_path)
-            return original(self)
+        def counting(path):
+            reads.append(path)
+            return original(path)
 
-        monkeypatch.setattr(GlobalDatabase, "get_all_as_atoms", counting)
+        monkeypatch.setattr(gdb, "read_storage", counting)
 
         assert db.import_from_database(source, elements=["H"]) == 0
         assert db.import_from_database(source, elements=["H"]) == 0
@@ -1007,6 +1009,57 @@ class TestImportedSources:
         assert db.is_imported(str(source.resolve()), "source_database")
         assert db.import_from_database(source) == 0
         assert db.size == 1
+
+    @pytest.mark.unit
+    def test_empty_source_raises_and_is_not_recorded(self, tmp_path):
+        """A 0-of-0 import (wrong path, or a source whose files were moved
+        aside) must stop the run, not be recorded as done and train on
+        nothing."""
+        GlobalDatabase(str(tmp_path / "old_run"))
+        db = GlobalDatabase(str(tmp_path / "db"))
+        with pytest.raises(ValueError, match="holds no structures"):
+            db.import_from_database(tmp_path / "old_run")
+        assert db.imported_sources == {}
+
+    @pytest.mark.unit
+    @pytest.mark.slow
+    def test_source_open_in_another_process_is_left_untouched(self, tmp_path):
+        """Importing from a DB another process holds open (its run still
+        going) must not let sage_lib rename that process's live files to
+        *.corrupted_*: it raises instead, and the holder's files stay put."""
+        import subprocess
+        import sys
+
+        source = self._source(tmp_path, ["H", "H"])
+        store = source / "hybrid_local"
+        before = {p.name: p.stat().st_ino for p in store.iterdir()}
+        holder = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import sys\n"
+                "from alomancy.database.global_database import GlobalDatabase\n"
+                f"db = GlobalDatabase({str(source)!r})\n"
+                "print('open', flush=True)\n"
+                "sys.stdin.read()\n",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert holder.stdout is not None
+            assert holder.stdout.readline().strip() == "open"
+            db = GlobalDatabase(str(tmp_path / "db"))
+            with pytest.raises(ValueError, match="open in another process"):
+                db.import_from_database(source)
+            after = {p.name: p.stat().st_ino for p in store.iterdir()}
+            assert not [n for n in after if ".corrupted_" in n]
+            for name in ("db_index.sqlite", "db_objects.h5"):
+                assert after[name] == before[name]
+            assert db.imported_sources == {}
+        finally:
+            holder.communicate("", timeout=30)
 
     @pytest.mark.unit
     def test_clear_forgets_imported_sources(self, tmp_path):

@@ -58,7 +58,7 @@ def relax_trainer():
 
 
 def _cu_dimer(x=1.8):
-    return Atoms("Cu2", positions=[[0, 0, 0], [x, 0, 0]], cell=[10, 10, 10], pbc=True)
+    return Atoms("Cu2", positions=[[0, 0, 0], [x, 0, 0]], cell=[5, 5, 5], pbc=True)
 
 
 # --- config -----------------------------------------------------------------

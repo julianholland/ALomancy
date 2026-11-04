@@ -203,6 +203,9 @@ def minimal_jobs_dict():
         "high_accuracy_evaluation": {
             "name": "high_accuracy_evaluation",
             "max_time": "10m",
+            # Test atoms sit in roomy boxes; the blown-up-cell check has its
+            # own tests (tests/utils_tests/test_blown_up_filter.py).
+            "max_vdw_volume_ratio": None,
             "hpc": {"hpc_name": "test-hpc", "pre_cmds": [], "partitions": ["test"]},
         },
     }

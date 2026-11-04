@@ -11,6 +11,7 @@ cover only this module's config -> kwargs wiring and restart entry points.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from ase import Atoms
 from ase.io import write
@@ -361,10 +362,43 @@ class TestGenerate:
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs["isolated_atoms_override"] == ["H"]
         assert call_kwargs["dimer_override"] == {"H2": 3}
-        assert call_kwargs["trimer_override"] is None  # empty dict -> None
-        assert call_kwargs["amorphous_override"] is None  # 0 -> None
+        # Empty/zero means "none still needed", not "no override" (None
+        # would regenerate the full set).
+        assert call_kwargs["trimer_override"] == {}
+        assert call_kwargs["amorphous_override"] == 0
         assert call_kwargs["mp_structures"] is False
         assert call_kwargs["single_atoms"] is True  # bool(["H"])
+
+    @pytest.mark.unit
+    def test_complete_kinds_are_not_regenerated(self, tmp_path, monkeypatch):
+        """Dimers and trimers complete, 3 amorphous cells missing: only those
+        3 are made (an empty override used to regenerate every dimer and
+        trimer, sending them to DFT again)."""
+        from collections import Counter
+
+        monkeypatch.chdir(tmp_path)
+        needs = {
+            "isolated_atoms": [],
+            "dimer_override": {},
+            "trimer_override": {},
+            "amorphous_override": 3,
+            "mp_structures": False,
+            "molecule_override": {},
+            "box_override": {},
+        }
+        out = generate(
+            {
+                "mp_kwargs": {"enabled": False},
+                "stretch_compress_targets_kwargs": {"enabled": False},
+                "amorphous_kwargs": {"num_of_atoms_per_amorphous": 4},
+            },
+            base_name="initialization",
+            name="initialization",
+            elements=["C", "O"],
+            needs=needs,
+            target_config_types=[],
+        )
+        assert Counter(a.info["config_type"] for a in out) == {"init_amorphous": 3}
 
     @pytest.mark.unit
     def test_creates_work_dir(self, tmp_path, monkeypatch):
@@ -487,3 +521,152 @@ def test_generate_passes_molecule_blocks_through(tmp_path, monkeypatch):
     types = [a.info["config_type"] for a in atoms]
     assert types.count("init_molecule") == 1
     assert types.count("init_molecules_in_box") == 2
+
+
+# --- Density warnings (vdW volume ratio, the blown-up filter's yardstick) ---
+
+
+def _density_warnings(config, elements, **kwargs):
+    import logging
+
+    from alomancy.initialize import initialiser_interface
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    initialiser_interface.logger.addHandler(handler)
+    try:
+        validate_kwargs(config, elements=elements, **kwargs)
+    finally:
+        initialiser_interface.logger.removeHandler(handler)
+    return {
+        r.event: r.getMessage()  # type: ignore[attr-defined]
+        for r in records
+        if getattr(r, "event", "").startswith("init_density")
+    }
+
+
+@pytest.mark.unit
+def test_default_density_warns_too_low_for_pt():
+    """1 g/cm^3 Pt is 14x its vdW volume: the blown-up filter (10) would
+    drop every amorphous cell before DFT."""
+    warnings = _density_warnings({}, ["Pt"], max_vdw_volume_ratio=10.0)
+    assert set(warnings) == {"init_density_too_low"}
+    message = warnings["init_density_too_low"]
+    assert "Pt at 1 g/cm^3" in message
+    assert "init_amorphous" in message
+
+
+@pytest.mark.unit
+def test_bulk_like_density_is_quiet():
+    config = {"amorphous_kwargs": {"density_range": [15.0, 21.0]}}
+    assert _density_warnings(config, ["Pt"], max_vdw_volume_ratio=10.0) == {}
+
+
+@pytest.mark.unit
+def test_denser_than_any_solid_warns_too_high():
+    config = {"amorphous_kwargs": {"density_range": [3.0, 10.0]}}
+    warnings = _density_warnings(config, ["C"], max_vdw_volume_ratio=10.0)
+    assert set(warnings) == {"init_density_too_high"}
+    assert "C at 10 g/cm^3" in warnings["init_density_too_high"]
+
+
+@pytest.mark.unit
+def test_hydrogen_random_mixes_are_checked_as_an_even_mix():
+    """A pure-H cell at 1 g/cm^3 is far too dense, but random mixes of H and
+    O are checked as their typical cell, so H configs don't always warn."""
+    assert _density_warnings({}, ["H", "O"], max_vdw_volume_ratio=10.0) == {}
+
+
+@pytest.mark.unit
+def test_sparse_molecule_box_warns_too_low():
+    config = {
+        "amorphous_kwargs": {"enabled": False},
+        "molecules_in_box_kwargs": {
+            "enabled": True,
+            "box_compositions": [
+                {
+                    "molecules": {"CO": 1},
+                    "density_range": [0.05, 0.05],
+                    "num_of_molecules": 8,
+                    "num_of_structures": 1,
+                }
+            ],
+        },
+    }
+    warnings = _density_warnings(config, ["C", "O"], max_vdw_volume_ratio=10.0)
+    assert set(warnings) == {"init_density_too_low"}
+    assert "CO:1 at 0.05 g/cm^3" in warnings["init_density_too_low"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"max_vdw_volume_ratio": None},
+        {
+            "max_vdw_volume_ratio": 10.0,
+            "vdw_exempt_config_types": frozenset({"init_amorphous"}),
+        },
+        {},
+    ],
+)
+def test_no_low_warning_when_the_filter_wont_drop_them(kwargs):
+    assert _density_warnings({}, ["Pt"], **kwargs) == {}
+
+
+@pytest.mark.unit
+def test_amorphous_seed_is_deprecated_and_ignored(tmp_path, monkeypatch):
+    """general.seed seeds the amorphous cells: amorphous_kwargs.seed warns
+    and changes nothing."""
+    import logging
+
+    from alomancy.initialize import initialiser_interface
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    initialiser_interface.logger.addHandler(handler)
+    try:
+        validate_kwargs({"amorphous_kwargs": {"seed": 1}}, elements=["C", "O"])
+    finally:
+        initialiser_interface.logger.removeHandler(handler)
+    assert any(
+        getattr(r, "event", None) == "config_key_deprecated"
+        and "amorphous_kwargs.seed" in r.getMessage()
+        for r in records
+    )
+
+    monkeypatch.chdir(tmp_path)
+    base = {
+        "mp_kwargs": {"enabled": False},
+        "dimer_kwargs": {"enabled": False},
+        "trimer_kwargs": {"enabled": False},
+        "isolated_atom_kwargs": {"enabled": False},
+        "stretch_compress_targets_kwargs": {"enabled": False},
+    }
+
+    def cells(amorphous, seed):
+        return generate(
+            {
+                **base,
+                "amorphous_kwargs": {
+                    "num_of_amorphous_structures": 2,
+                    "num_of_atoms_per_amorphous": 4,
+                    "density_range": [1.0, 2.0],
+                    **amorphous,
+                },
+            },
+            base_name="initialization",
+            name="initialization",
+            elements=["C", "O"],
+            target_config_types=[],
+            seed=seed,
+        )
+
+    default = cells({}, 803)
+    assert all(
+        np.allclose(a.positions, b.positions)
+        for a, b in zip(default, cells({"seed": 1}, 803), strict=True)
+    )
+    assert not np.allclose(cells({}, 7)[0].positions, default[0].positions)

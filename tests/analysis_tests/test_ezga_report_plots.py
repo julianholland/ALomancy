@@ -47,15 +47,18 @@ def _stacked_axes(monkeypatch, tmp_path, series, **kwargs) -> object:
 
 @pytest.mark.unit
 def test_mutation_indices_are_counted_by_their_configured_name():
+    """Each structure counts once: the child of two mutations gives half to
+    each, so the counts add up to the 3 structures."""
     counts = _operator_counts(
         [_atoms("mutation", [0]), _atoms("mutation", [2]), _atoms("mutation", [0, 1])],
         NAMES,
     )
     assert counts == {
-        "mutation_rattle": 2,
+        "mutation_rattle": 1.5,
         "bounded_mutation_add": 1,
-        "mutation_random_strain": 1,
+        "mutation_random_strain": 0.5,
     }
+    assert sum(counts.values()) == 3
 
 
 @pytest.mark.unit
@@ -377,6 +380,63 @@ def test_ezga_section_without_ezga_stats_or_plots_has_text_only(monkeypatch, tmp
 # ---------------------------------------------------------------------------
 
 
+def _seed_db(tmp_path):
+    """A real GlobalDatabase holding two seeds: global_db_id 0 (init_MP) and
+    1 (surface111_rattle)."""
+    import numpy as np
+
+    from alomancy.database.global_database import GlobalDatabase
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    seeds = []
+    for config_type in ("init_MP", "surface111_rattle"):
+        atoms = Atoms("Pd", cell=[3, 3, 3], pbc=True)
+        atoms.info.update(config_type=config_type, REF_energy=-1.0)
+        atoms.arrays["REF_forces"] = np.zeros((1, 3))
+        seeds.append(atoms)
+    db.add_structures(seeds, skip_duplicates=False)
+    return db
+
+
+@pytest.mark.unit
+def test_seed_types_reads_ids_and_config_types_from_the_index(tmp_path):
+    from alomancy.analysis.report.stats import _seed_types
+
+    assert _seed_types(_seed_db(tmp_path)) == {0: "init_MP", 1: "surface111_rattle"}
+
+
+class _UnreadableDB:
+    @property
+    def partition(self):
+        raise RuntimeError("the database must not be read")
+
+
+@pytest.mark.unit
+def test_no_ezga_output_means_no_database_read(monkeypatch, tmp_path):
+    """A loop without EZGA output returns None before the seed lookup."""
+    from alomancy.analysis.report.stats import _ezga_generation_stats
+
+    monkeypatch.chdir(tmp_path)
+    assert _ezga_generation_stats("al_loop_0", [], _UnreadableDB()) is None
+
+
+@pytest.mark.unit
+def test_an_unreadable_database_does_not_abort_the_report(monkeypatch, tmp_path):
+    """The seed lookup sits inside the never-raises guard."""
+    from ase.io import write
+
+    from alomancy.analysis.report.stats import _ezga_generation_stats
+    from alomancy.structure_generation.ezga import generate_structures
+
+    monkeypatch.chdir(tmp_path)
+    sg = tmp_path / "results/al_loop_0/structure_generation"
+    (sg / "ezga/db").mkdir(parents=True)
+    offspring = [_offspring(0, -1.0, [0])]
+    monkeypatch.setattr(generate_structures, "read_offspring", lambda path: offspring)
+    write(sg / "high_sd_structures.xyz", offspring, format="extxyz")
+    assert _ezga_generation_stats("al_loop_0", [], _UnreadableDB()) is None
+
+
 def _offspring(generation: int, energy: float, mutations: list[int]) -> Atoms:
     atoms = Atoms("Pd", cell=[3, 3, 3], pbc=True)
     atoms.info.update(
@@ -384,7 +444,7 @@ def _offspring(generation: int, energy: float, mutations: list[int]) -> Atoms:
         ezga_operation="mutation",
         ezga_mutation_list=mutations,
         ezga_energy=energy,
-        ezga_seed_db_id=7,
+        ezga_seed_db_id=1,
     )
     return atoms
 
@@ -416,7 +476,7 @@ def test_a_new_mutation_gets_its_own_series_without_code_changes(monkeypatch, tm
         {"type": "some.future.module.mutation_brand_new", "species": ["Pd"]},
     ]
 
-    ezga = _ezga_generation_stats("al_loop_0", mutation_funcs, {7: "surface111_rattle"})
+    ezga = _ezga_generation_stats("al_loop_0", mutation_funcs, _seed_db(tmp_path))
     calls = _captured_charts(monkeypatch)
     ezga_section(
         {**_ezga_stats(), "ezga": ezga},

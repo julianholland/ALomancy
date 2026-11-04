@@ -1,6 +1,8 @@
+import hashlib
 import logging
 import os
 import shutil
+import socket
 import sys
 import warnings
 from pathlib import Path
@@ -124,8 +126,22 @@ from expyre.subprocess import FailedSubprocessWarning  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# Job statuses after which ExPyRe never touches the remote directory again.
-_EXPYRE_FINISHED_STATUSES = ("processed", "cleaned")
+# Statuses of a job whose live remote directory a resumed run still reads:
+# ExPyRe hasn't staged a "created" job yet, a "succeeded" one has its
+# results locally, and failed/died/processed/cleaned jobs are never resumed
+# from the remote side.
+_EXPYRE_LIVE_REMOTE_STATUSES = ("submitted", "started")
+
+# Ids of the jobs that made this process keep ExPyRe's long remote layout
+# (see _shorten_expyre_remote_rundirs); empty when the layout was shortened.
+# submitters.check_remote_path_length names them when a path is too long.
+_LONG_RUNDIR_JOB_IDS: tuple[str, ...] = ()
+
+
+def _host_tag(host: str) -> str:
+    """Six hex characters identifying *host*: enough to keep two machines'
+    runs of the same path apart, short enough not to matter for path length."""
+    return hashlib.sha256(host.encode()).hexdigest()[:6]
 
 
 def _short_rundir_extra(run_dir: Path, home: Path) -> str:
@@ -144,49 +160,59 @@ def _short_rundir_extra(run_dir: Path, home: Path) -> str:
     return str(run_dir).replace("/", "_").strip("_")
 
 
-def _shorten_rundir_extra(
-    systems: dict,
-    local_stage_dir: Path,
-    db: Any,
-    hostname: str,
-    home: Path,
-) -> bool:
-    """Replace the "<hostname>-<flattened local path>" segment ExPyRe
-    appends to every system's remote rundir with _short_rundir_extra.
+def _run_rundir_extra(run_dir: Path, home: Path, host: str) -> str:
+    """The run's remote directory name below the HPC rundir:
+    "<host tag>-<run path below $HOME>", e.g.
+    "3fa9c2-Simulations_alomancy_test_5"."""
+    return f"{_host_tag(host)}-{_short_rundir_extra(run_dir, home)}"
 
-    expyre/config.py's init builds that segment (rundir_extra) from
-    $HOSTNAME ("unkownhost" when unset) and the full local run path. It
-    adds nothing but length: the remote DFT run directory hit VASP's
-    ~255-character path limit (see submitters.MAX_REMOTE_OUTPUT_DIR_LEN).
-    Each run still gets its own remote directory.
 
-    Left alone while the run's jobs.db has an unfinished job: ExPyRe finds
-    a resumed job's remote directory from the current remote_rundir, so
-    jobs submitted under the old layout must keep it. Also left alone when
-    the segment isn't where expyre is expected to put it (a different
-    expyre version). Returns whether anything was changed.
-    """
-    run_dir = (
+def _run_dir_of(local_stage_dir: Path) -> Path:
+    """The run directory expyre derives rundir_extra from."""
+    return (
         local_stage_dir.parent
         if local_stage_dir.name in (".expyre", "_expyre")
         else local_stage_dir
     )
-    old_extra = hostname + "-" + str(run_dir).replace("/", "_")
-    new_extra = _short_rundir_extra(run_dir, home)
 
-    if db is not None:
-        unfinished = [
-            job for job in db.jobs() if job["status"] not in _EXPYRE_FINISHED_STATUSES
-        ]
-        if unfinished:
-            logger.debug(
-                "Keeping ExPyRe's remote rundir layout (.../%s): %d unfinished "
-                "job(s) in jobs.db were submitted under it.",
-                old_extra,
-                len(unfinished),
-            )
-            return False
 
+def _jobs_pinning_long_layout(db: Any) -> tuple[str, ...]:
+    """Ids of the jobs in *db* whose remote directory a resume still needs
+    (_EXPYRE_LIVE_REMOTE_STATUSES): while any exist, the run keeps the
+    remote layout they were submitted under."""
+    if db is None:
+        return ()
+    return tuple(
+        str(job["id"])
+        for job in db.jobs()
+        if job["status"] in _EXPYRE_LIVE_REMOTE_STATUSES
+    )
+
+
+def _shorten_rundir_extra(
+    systems: dict,
+    local_stage_dir: Path,
+    expyre_hostname: str,
+    home: Path,
+    host: str,
+) -> bool:
+    """Replace the "<hostname>-<flattened local path>" segment ExPyRe
+    appends to every system's remote rundir with _run_rundir_extra.
+
+    expyre/config.py's init builds that segment (rundir_extra) from
+    $HOSTNAME (*expyre_hostname*, "unkownhost" when unset) and the full
+    local run path. It adds nothing but length: the remote DFT run
+    directory hit VASP's ~255-character path limit (see
+    submitters.MAX_REMOTE_OUTPUT_DIR_LEN). Each run still gets its own
+    remote directory, and a short hash of *host* keeps the same path on
+    two machines apart.
+
+    Left alone when the segment isn't where expyre is expected to put it
+    (a different expyre version). Returns whether anything was changed.
+    """
+    run_dir = _run_dir_of(local_stage_dir)
+    old_extra = expyre_hostname + "-" + str(run_dir).replace("/", "_")
+    new_extra = _run_rundir_extra(run_dir, home, host)
     changed = False
     for system in systems.values():
         rundir = system.remote_rundir
@@ -198,9 +224,13 @@ def _shorten_rundir_extra(
 
 
 def _shorten_expyre_remote_rundirs() -> None:
-    """Apply _shorten_rundir_extra to the loaded ExPyRe config. Skipped
-    under pytest (expyre's config isn't loaded there). Never fails the
-    package import."""
+    """Apply _shorten_rundir_extra to the loaded ExPyRe config, unless the
+    run has jobs still submitted/started under the long layout
+    (_jobs_pinning_long_layout): a resumed job finds its remote directory
+    from the current remote_rundir. Those ids go in _LONG_RUNDIR_JOB_IDS.
+    Skipped under pytest (expyre's config isn't loaded there). Never fails
+    the package import."""
+    global _LONG_RUNDIR_JOB_IDS
     if "pytest" in sys.modules:
         return
     try:
@@ -208,12 +238,21 @@ def _shorten_expyre_remote_rundirs() -> None:
 
         if expyre_config.local_stage_dir is None:
             return
+        pinned = _jobs_pinning_long_layout(expyre_config.db)
+        if pinned:
+            _LONG_RUNDIR_JOB_IDS = pinned
+            logger.debug(
+                "Keeping ExPyRe's long remote rundir layout: %d job(s) in "
+                "jobs.db are still submitted/started under it.",
+                len(pinned),
+            )
+            return
         _shorten_rundir_extra(
             expyre_config.systems or {},
             Path(expyre_config.local_stage_dir),
-            expyre_config.db,
             os.environ.get("HOSTNAME", "unkownhost"),
             Path.home(),
+            socket.gethostname(),
         )
     except Exception:  # best effort; never fail the import
         logger.debug("Could not shorten ExPyRe remote rundirs", exc_info=True)

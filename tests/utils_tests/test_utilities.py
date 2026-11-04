@@ -5,6 +5,7 @@ This module tests various utility functions used throughout the alomancy package
 """
 
 import fcntl
+import logging
 import os
 import tempfile
 import threading
@@ -565,6 +566,44 @@ class TestRemoteJobExecutor:
         assert results == ["the real result"]
         assert job.status == "succeeded"
         assert job.start_calls == [False]
+
+    @pytest.mark.unit
+    def test_lost_ssh_login_waits_without_using_attempts(self, tmp_path):
+        """After the shared ssh connection dies, alomancy-rsh's BatchMode
+        makes every poll fail with ssh's login error. That must wait for a
+        login (warning once), not spend the transport budget and abandon a
+        job that is still running remotely."""
+        import alomancy.remote_submission.executor as executor_module
+        from alomancy.remote_submission import progress
+
+        auth_error = RuntimeError(
+            'Failed to run command "ssh fhi-raccoon squeue" with err '
+            "jholl@10.0.0.1: Permission denied (keyboard-interactive)."
+        )
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            result="the real result",
+            get_results_side_effects=[auth_error] * 8 + [None],
+        )
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
+        records: list[logging.LogRecord] = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        executor_module.logger.addHandler(handler)
+        try:
+            with patch.object(executor_module, "_SSH_AUTH_WAIT_SECONDS", 0.001):
+                results = executor.run_all_jobs_bounded()
+        finally:
+            executor_module.logger.removeHandler(handler)
+            progress.TRACKER.auth_lost.clear()
+
+        assert results == ["the real result"]
+        assert job.start_calls == [False]
+        events = [getattr(r, "event", None) for r in records]
+        assert events.count("ssh_auth_lost") == 1
+        assert "job_resumed" not in events
 
     @pytest.mark.unit
     def test_transport_failure_gives_up_after_retry_limit(self, tmp_path):

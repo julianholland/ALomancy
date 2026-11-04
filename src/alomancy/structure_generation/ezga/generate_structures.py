@@ -607,6 +607,10 @@ def validate_kwargs(sg_config: dict, *, elements: list[str], seed: int) -> None:
     from ezga.factory import load_config
     from ezga.simulator.ase_calculator import ase_calculator
 
+    if not elements:
+        raise ValueError(
+            'general.elements is required (list of atomic symbols, e.g. ["C", "O"]).'
+        )
     user = sg_config.get("ezga_kwargs") or {}
     atom_number_range = (sg_config.get("structure_selection_kwargs") or {}).get(
         "atom_number_range"

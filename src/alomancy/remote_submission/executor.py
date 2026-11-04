@@ -16,6 +16,7 @@ from expyre.func import ExPyRe, ExPyReJobDiedError, ExPyReTimeoutError
 
 from alomancy.configs.remote_info import RemoteInfo
 from alomancy.remote_submission import progress
+from alomancy.utils.rsh import is_ssh_auth_failure
 
 logger = logging.getLogger(__name__)
 
@@ -287,13 +288,47 @@ def _ensure_expyre_sync_serialized() -> None:
                 result = orig_sync(self, *args, **kwargs)
             except Exception as exc:
                 progress.TRACKER.sync_failed(sys_name, exc)
+                if is_ssh_auth_failure(exc):
+                    _note_ssh_auth_lost(sys_name)
                 raise
             _sync_generations[sys_name] = _sync_generations.get(sys_name, 0) + 1
-            progress.TRACKER.synced(sys_name, _remote_statuses(sys_name))
+            if progress.TRACKER.synced(sys_name, _remote_statuses(sys_name)):
+                logger.info(
+                    "ssh to %s works again; polling continues.",
+                    sys_name,
+                    extra={"event": "ssh_auth_restored", "data": {"system": sys_name}},
+                )
             return result
 
     ExPyRe.sync_remote_results_status = _locked_sync
     _expyre_sync_patched = True
+
+
+def _ssh_host(sys_name: str) -> str:
+    """The ssh host ExPyRe uses for *sys_name* (the system name if unknown)."""
+    from expyre import config as expyre_config
+
+    system = (expyre_config.systems or {}).get(sys_name)
+    return str(getattr(system, "host", None) or sys_name)
+
+
+def _note_ssh_auth_lost(sys_name: str) -> None:
+    """Record that ssh to *sys_name* can't log in, warning once per outage.
+
+    With alomancy-rsh (utils/rsh.py) a call made after the ControlMaster
+    died fails at once instead of waiting on a hidden password prompt;
+    _get_results_with_resume then waits for a login rather than spending
+    the job's retry budget. The live panel shows the same instruction."""
+    host = _ssh_host(sys_name)
+    if progress.TRACKER.mark_auth_lost(sys_name, host):
+        logger.warning(
+            "ssh to %s can't log in (its shared ssh connection is gone): run "
+            "`ssh %s` in another terminal to log in again. Jobs keep waiting "
+            "and polling resumes on its own once ssh works.",
+            sys_name,
+            host,
+            extra={"event": "ssh_auth_lost", "data": {"system": sys_name}},
+        )
 
 
 def _remote_statuses(sys_name: str) -> dict[str, str]:
@@ -374,6 +409,9 @@ def _ensure_expyre_db_thread_safe() -> None:
 _TRANSPORT_RETRY_LIMIT = 5
 _TIMEOUT_RETRY_LIMIT = 1
 _TRANSPORT_RETRY_BACKOFF_SECONDS = 5.0
+# Between polls while ssh can't log in (no attempts used; see
+# _note_ssh_auth_lost).
+_SSH_AUTH_WAIT_SECONDS = 60.0
 
 
 def _get_results_with_resume(
@@ -445,6 +483,12 @@ def _get_results_with_resume(
             status = getattr(job, "status", None)
             if status not in _RESUMABLE_JOB_STATUSES:
                 raise
+            if is_ssh_auth_failure(exc):
+                # Not the job's fault and not transient on its own: waits,
+                # without using an attempt, until someone logs in again.
+                _note_ssh_auth_lost(getattr(job, "system_name", "?"))
+                time.sleep(_SSH_AUTH_WAIT_SECONDS)
+                continue
             if isinstance(exc, ExPyReTimeoutError) and status == "submitted":
                 logger.info(
                     "Job %d still queued after %.1f h; waiting on (queue time "

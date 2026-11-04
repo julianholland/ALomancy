@@ -85,7 +85,10 @@ _ADVR_OLD_RUNDIR = (
     "/raven/ptmp/advr/alomancy_scratch/"
     "unkownhost-_work_home_advr_Simulations_alomancy_test_5"
 )
-_ADVR_NEW_RUNDIR = "/raven/ptmp/advr/alomancy_scratch/Simulations_alomancy_test_5"
+# <6-hex host tag>-<run path below $HOME> (alomancy._run_rundir_extra).
+_ADVR_NEW_RUNDIR = (
+    "/raven/ptmp/advr/alomancy_scratch/3fa9c2-Simulations_alomancy_test_5"
+)
 _ADVR_OUT_DIR = "results/initialization/high_accuracy_evaluation/batch_0/ase_output_0"
 
 
@@ -127,7 +130,7 @@ class TestRemotePathLength:
     @pytest.mark.unit
     def test_new_layout_fits(self):
         path = projected_remote_output_dir(_ADVR_NEW_RUNDIR, "sp_vasp_0", _ADVR_OUT_DIR)
-        assert len(path) == 199
+        assert len(path) == 206
         check_remote_path_length(path, remote_rundir=_ADVR_NEW_RUNDIR, context="test")
 
     @pytest.mark.unit

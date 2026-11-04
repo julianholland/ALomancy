@@ -105,19 +105,46 @@ class TestCreateAmorphousAtomsList:
 
 
 @pytest.mark.unit
-def test_density_range_spaces_densities_evenly_one_per_structure():
+def test_density_range_draws_each_density_at_random_within_it():
     from alomancy.initialize.amorphize import create_amorphous_atoms_list
 
     result = create_amorphous_atoms_list(
         elements=["H"],
         atom_number=4,
         density_range=[0.5, 1.5],
-        num_structures=3,
+        num_structures=20,
         seed=42,
     )
     densities = [a.get_masses().sum() / a.get_volume() / 0.6022 for a in result]
-    assert densities == pytest.approx([0.5, 1.0, 1.5])
-    assert [a.info["density"] for a in result] == pytest.approx([0.5, 1.0, 1.5])
+    assert all(0.5 <= d <= 1.5 for d in densities)
+    assert len({round(d, 6) for d in densities}) == 20
+    assert [a.info["density"] for a in result] == pytest.approx(densities)
+
+
+@pytest.mark.unit
+def test_attempt_gives_new_cells_and_the_same_attempt_the_same_ones():
+    """A restart replacing cells lost to DFT failures (attempt = how many the
+    database holds) draws new cells; the same database state, the same."""
+    from alomancy.initialize.amorphize import create_amorphous_atoms_list
+
+    def cells(attempt):
+        return create_amorphous_atoms_list(
+            elements=["C", "O"],
+            atom_number=6,
+            density_range=[1.0, 2.0],
+            num_structures=3,
+            seed=803,
+            attempt=attempt,
+        )
+
+    first, again, restart = cells(0), cells(0), cells(97)
+    assert all(
+        np.allclose(a.positions, b.positions) for a, b in zip(first, again, strict=True)
+    )
+    assert not any(
+        a.get_volume() == pytest.approx(b.get_volume())
+        for a, b in zip(first, restart, strict=True)
+    )
 
 
 @pytest.mark.unit

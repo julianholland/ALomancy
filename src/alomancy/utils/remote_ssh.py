@@ -15,8 +15,12 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
+import sys
+from collections.abc import MutableMapping
 from pathlib import Path
+from typing import Any
 
 from alomancy.configs.global_config import EXPYRE_CONFIG, LEGACY_EXPYRE_CONFIG
 
@@ -31,7 +35,9 @@ def run_ssh_command(host: str, command: str, timeout: float) -> tuple[bool, str,
     /dev/tty directly for a password/OTP prompt even though stdout/stderr
     are captured here, so a host needing interactive auth can still block
     for up to `timeout` seconds rather than failing immediately -- that's
-    exactly the scenario this timeout exists to bound.
+    exactly the scenario this timeout exists to bound. Interactive on
+    purpose: its callers are CLI commands someone is watching. A workflow's
+    unattended calls go through ExPyRe and `alomancy-rsh` instead.
     """
     try:
         proc = subprocess.run(
@@ -190,6 +196,69 @@ def ensure_ssh_connectivity(hpc_profiles: dict[str, dict]) -> None:
             )
         else:
             logger.info("ssh connectivity to '%s' (%s) OK.", hpc_name, host)
+
+
+def _find_rsh_wrapper() -> str | None:
+    wrapper = Path(sys.executable).parent / "alomancy-rsh"
+    return str(wrapper) if wrapper.exists() else shutil.which("alomancy-rsh")
+
+
+def use_noninteractive_ssh(
+    env: MutableMapping[str, str] = os.environ,
+    systems: dict[str, Any] | None = None,
+    wrapper: str | None = None,
+) -> None:
+    """Route a workflow's unattended ExPyRe ssh calls through `alomancy-rsh`
+    (BatchMode), so a call made after the ControlMaster died fails instead
+    of blocking forever on a hidden password prompt (see utils/rsh.py).
+    Called after ensure_ssh_connectivity, whose login stays interactive.
+
+    ExPyRe reads the ssh command from two places: rsync copies use
+    $EXPYRE_RSH, while each System and its scheduler (squeue, sbatch,
+    scancel) keep the `remsh_cmd` from the systems config, which
+    `alomancy add-hpc` writes as "ssh". Both are switched; a user-set
+    EXPYRE_RSH or a system with a custom remsh_cmd is left alone.
+    *systems* defaults to expyre.config.systems.
+
+    Raises ValueError only if the wrapper's path contains whitespace:
+    ExPyRe splits remsh_cmd and EXPYRE_RSH on whitespace, so every
+    background ssh and rsync would fail. Called before any job is
+    submitted."""
+    wrapper = wrapper or _find_rsh_wrapper()
+    if wrapper is None:
+        logger.warning(
+            "alomancy-rsh not found next to %s or on PATH (reinstall alomancy). "
+            "Background ssh calls may hang on a password prompt if the ssh "
+            "connection drops.",
+            sys.executable,
+        )
+        return
+    if any(ch.isspace() for ch in wrapper):
+        raise ValueError(
+            f"alomancy-rsh is installed at {wrapper!r}, a path with whitespace "
+            "in it. ExPyRe splits its ssh command on whitespace, so every "
+            "background ssh and rsync (squeue, sbatch, staging files) would "
+            "fail. Install alomancy in an environment whose path has no "
+            "spaces, or reach this one through a symlink without spaces and "
+            "run python from there."
+        )
+    if systems is None:
+        try:
+            from expyre import config as expyre_config
+
+            systems = expyre_config.systems or {}
+        except Exception as exc:  # never break a run start over this
+            logger.debug("Could not read ExPyRe systems: %s", exc)
+            systems = {}
+    env.setdefault("EXPYRE_RSH", wrapper)
+    for name, system in systems.items():
+        if getattr(system, "remsh_cmd", None) != "ssh":
+            continue
+        system.remsh_cmd = wrapper
+        scheduler = getattr(system, "scheduler", None)
+        if scheduler is not None and getattr(scheduler, "remsh_cmd", None) == "ssh":
+            scheduler.remsh_cmd = wrapper
+        logger.debug("ExPyRe system %s: background ssh uses %s.", name, wrapper)
 
 
 def get_alomancy_version_for_profile(profile: dict) -> str | None:

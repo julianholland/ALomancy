@@ -851,6 +851,29 @@ class TestTrainMlip:
         assert calls == [[1, 2]]  # fit_0 was cached
 
     @pytest.mark.unit
+    def test_empty_training_set_raises_before_submitting(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """An empty train set (e.g. a start_from import that found nothing)
+        fails locally instead of after a remote fit's whole queue wait."""
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0", n_train=0)
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
+
+        with (
+            patch.object(wf, "trainer", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            patch.object(wf, "_store_predictions_and_cleanup"),
+            pytest.raises(ValueError, match="training set is empty"),
+        ):
+            wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == []
+
+    @pytest.mark.unit
     def test_failed_fit_retried_once_and_recovers(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -2916,3 +2939,82 @@ class TestAddToDatasetInitialFrames:
         wf._apply_split_filters()
         train = shared_db.get_train_atoms()
         assert sum(bool(a.info.get("geometry_initial")) for a in train) == 1
+
+
+class _NoLoopsEvents(logging.Handler):
+    def __init__(self):
+        super().__init__(level=logging.DEBUG)
+        self.records = []
+
+    def emit(self, record):
+        if getattr(record, "event", None) == "no_loops_to_run":
+            self.records.append(record)
+
+
+def _no_loops_records(wf, start):
+    handler = _NoLoopsEvents()
+    logger = logging.getLogger("alomancy.core.active_learning_workflow")
+    logger.addHandler(handler)
+    try:
+        contexts = list(wf.iterate_loops(start))
+    finally:
+        logger.removeHandler(handler)
+    return contexts, handler.records
+
+
+def _mark_done(*names):
+    for name in names:
+        Path("results", name).mkdir(parents=True, exist_ok=True)
+        Path("results", name, "loop.done").touch()
+
+
+@pytest.mark.unit
+def test_warns_when_num_of_al_loops_is_already_reached(
+    tmp_path, workflow_jobs_dict, shared_db, monkeypatch
+):
+    """Five loops already in results/ and num_of_al_loops 3: nothing runs,
+    and the warning says num_of_al_loops counts every loop so far."""
+    monkeypatch.chdir(tmp_path)
+    wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db, num_of_al_loops=3)
+    _mark_done(*(f"al_loop_{i}" for i in range(5)))
+
+    contexts, records = _no_loops_records(wf, start=3)
+
+    assert contexts == []
+    (record,) = records
+    assert record.data == {"num_of_al_loops": 3, "completed": 5}
+    message = record.getMessage()
+    assert "already holds 5 completed AL loop(s)" in message
+    assert "total over every loop" in message
+
+
+@pytest.mark.unit
+def test_warns_when_the_closing_training_is_already_done(
+    tmp_path, workflow_jobs_dict, shared_db, monkeypatch
+):
+    """A finished run rerun with the same num_of_al_loops only reloads its
+    closing training: that's nothing to run, too."""
+    monkeypatch.chdir(tmp_path)
+    wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db, num_of_al_loops=2)
+    _mark_done("al_loop_0", "al_loop_1")
+    Path("results/al_loop_2").mkdir(parents=True)
+    Path("results/al_loop_2/train_mlip.done").touch()
+
+    _, records = _no_loops_records(wf, start=2)
+
+    (record,) = records
+    assert record.data == {"num_of_al_loops": 2, "completed": 2}
+
+
+@pytest.mark.unit
+def test_no_warning_while_loops_remain(
+    tmp_path, workflow_jobs_dict, shared_db, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db, num_of_al_loops=2)
+    _mark_done("al_loop_0")
+
+    contexts, records = _no_loops_records(wf, start=1)
+
+    assert [c.loop for c in contexts] == [1, 2]
+    assert records == []

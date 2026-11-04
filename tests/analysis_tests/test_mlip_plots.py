@@ -427,6 +427,38 @@ def test_plot_training_curves_creates_files(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_plot_training_curves_caps_the_mae_axis(tmp_path, monkeypatch):
+    """Like the MD temperature plot: each MAE panel stops at 3x the worst
+    fit's lowest MAE, and a fit that goes above says where it peaks."""
+    from alomancy.analysis import mlip_plots
+
+    monkeypatch.chdir(tmp_path)
+    name, seed = "mlip_committee", 803
+    _write_fit_data(tmp_path, name, seed=seed)
+    txt = tmp_path / f"results/demo/{name}/fit_0/results/{name}_run-{seed}_train.txt"
+    lines = txt.read_text().splitlines()
+    first = json.loads(lines[0])
+    first.update(mae_f=5.0, mae_e_per_atom=0.06)  # a spike, and one under the cap
+    txt.write_text("\n".join([json.dumps(first), *lines[1:]]) + "\n")
+
+    figures = []
+    # The figures are closed after saving; their axes stay readable.
+    monkeypatch.setattr(mlip_plots, "add_logo_watermark", figures.append)
+    plots_dir = tmp_path / "plots"
+    plots_dir.mkdir()
+    job_dict = {"name": name, "num_of_models_in_committee": 1}
+    mlip_plots.plot_training_curves("demo", job_dict, seed, plots_dir, _mace(name))
+
+    ax_e, ax_f = [a for a in figures[0].axes if a.get_lines()]
+    assert ax_f.get_ylim() == pytest.approx((0, 3 * 0.21))
+    assert ax_e.get_ylim() == pytest.approx((0, 3 * 0.032))
+    labels_f = [t.get_text() for t in ax_f.get_legend().get_texts()]
+    labels_e = [t.get_text() for t in ax_e.get_legend().get_texts()]
+    assert labels_f[0] == "fit_0 (seed 803) (peaks at 5 eV/Å)"
+    assert labels_e[0] == "fit_0 (seed 803)"
+
+
+@pytest.mark.unit
 def test_plot_training_curves_dynamic_epochs_no_sidecar_does_not_raise(
     tmp_path, monkeypatch
 ):

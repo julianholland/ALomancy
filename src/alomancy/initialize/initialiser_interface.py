@@ -99,7 +99,6 @@ _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
         "num_of_atoms_per_amorphous": 20,
         "density_range": [1.0, 1.0],
         "composition_list": None,
-        "seed": 803,
     },
     "mp_kwargs": {
         "enabled": True,
@@ -147,6 +146,8 @@ _CREATION_KWARGS_SCHEMA: dict[str, list[str]] = {
 _CREATION_KWARGS_SCHEMA["rattle_target_structures"].append("rattle_standard_deviation")
 # Deprecated (docs/deprecations.md): read as density_range [min, max].
 _CREATION_KWARGS_SCHEMA["amorphous_kwargs"].append("densities_list")
+# Deprecated (docs/deprecations.md): ignored, general.seed seeds the cells.
+_CREATION_KWARGS_SCHEMA["amorphous_kwargs"].append("seed")
 
 
 def _resolve_kwargs(config: dict, namespace: str) -> dict:
@@ -168,6 +169,8 @@ def _resolve_kwargs(config: dict, namespace: str) -> dict:
         densities = [float(d) for d in user["densities_list"]]
         resolved["density_range"] = [min(densities), max(densities)]
     resolved.pop("densities_list", None)
+    if namespace == "amorphous_kwargs":
+        resolved.pop("seed", None)  # deprecated: general.seed is used
     return resolved
 
 
@@ -187,12 +190,23 @@ def _positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
-def validate_kwargs(config: dict, *, elements: list[str]) -> None:
+def validate_kwargs(
+    config: dict,
+    *,
+    elements: list[str],
+    max_vdw_volume_ratio: float | None = None,
+    vdw_exempt_config_types: frozenset[str] = frozenset(),
+) -> None:
     """Construction-time check (registry hook) of the initialization
     blocks that would otherwise fail only once initialisation runs: the
     molecule blocks (named explicitly when enabled, every molecule built
     by SAGE from general.elements), and every density_range. Warns about
-    the deprecated amorphous_kwargs.densities_list."""
+    the deprecated amorphous_kwargs.densities_list and amorphous_kwargs.seed,
+    and about densities
+    the blown-up filter would drop or that pack atoms tighter than any
+    solid (_warn_unusual_densities; *max_vdw_volume_ratio* and
+    *vdw_exempt_config_types* are high_accuracy_evaluation's, None skips
+    the low-density check)."""
     from alomancy.utils.molecules import validate_molecules
 
     amorphous = config.get("amorphous_kwargs") or {}
@@ -206,6 +220,16 @@ def validate_kwargs(config: dict, *, elements: list[str]) -> None:
             extra={
                 "event": "config_key_deprecated",
                 "data": {"key": "initialization.amorphous_kwargs.densities_list"},
+            },
+        )
+    if "seed" in amorphous:
+        logger.warning(
+            "initialization.amorphous_kwargs.seed is deprecated and ignored: "
+            "the amorphous cells are seeded by general.seed, like every other "
+            "random choice. Remove it (set general.seed to change the cells).",
+            extra={
+                "event": "config_key_deprecated",
+                "data": {"key": "initialization.amorphous_kwargs.seed"},
             },
         )
     density_range = _resolve_kwargs(config, "amorphous_kwargs")["density_range"]
@@ -226,8 +250,16 @@ def validate_kwargs(config: dict, *, elements: list[str]) -> None:
         validate_molecules(molecule_kwargs["molecules"], elements, where)
 
     box_kwargs = _resolve_kwargs(config, "molecules_in_box_kwargs")
-    if not box_kwargs["enabled"]:
-        return
+    if box_kwargs["enabled"]:
+        _validate_box_compositions(box_kwargs, elements)
+    _warn_unusual_densities(
+        config, elements, max_vdw_volume_ratio, vdw_exempt_config_types
+    )
+
+
+def _validate_box_compositions(box_kwargs: dict, elements: list[str]) -> None:
+    from alomancy.utils.molecules import validate_molecules
+
     where = "initialization.molecules_in_box_kwargs.box_compositions"
     compositions = box_kwargs["box_compositions"]
     if not compositions or not isinstance(compositions, list):
@@ -286,6 +318,141 @@ def validate_kwargs(config: dict, *, elements: list[str]) -> None:
                 f"initialization.molecules_in_box_kwargs.{key} must be positive, "
                 f"got {value!r}."
             )
+
+
+# Below this vdW volume ratio atoms are packed tighter than in any solid
+# (diamond is 0.28, close-packed metals 0.6-0.7): the cell is a mistake.
+_MIN_PLAUSIBLE_VDW_VOLUME_RATIO = 0.3
+
+
+def _density_compositions(
+    config: dict, elements: list[str]
+) -> list[tuple[str, str, list[str], list[float]]]:
+    """(block, label, symbols, density_range) for every composition an
+    enabled amorphous or molecules-in-box block makes. Amorphous cells
+    without a composition_list are random mixes of general.elements,
+    checked as their typical cell, an even mix (one of each element):
+    checking each pure element instead would flag every hydrogen config,
+    since a pure-H cell at any solid's density is far too dense."""
+    from alomancy.initialize.molecules import box_composition_label, molecule_counts
+    from alomancy.utils.molecules import molecule_symbols
+
+    found = []
+    amorphous = _resolve_kwargs(config, "amorphous_kwargs")
+    if amorphous["enabled"]:
+        density_range = list(amorphous["density_range"])
+        if amorphous["composition_list"]:
+            for cell in amorphous["composition_list"]:
+                symbols = [str(s) for s in cell]
+                try:
+                    label = Atoms(symbols).get_chemical_formula()
+                except (KeyError, ValueError):
+                    continue  # a bad composition_list fails at generation
+                found.append(("amorphous_kwargs", label, symbols, density_range))
+        elif elements:
+            label = (
+                str(elements[0])
+                if len(elements) == 1
+                else f"random mixes of {', '.join(elements)} (as an even mix)"
+            )
+            found.append(("amorphous_kwargs", label, list(elements), density_range))
+    boxes = _resolve_kwargs(config, "molecules_in_box_kwargs")
+    if boxes["enabled"]:
+        for composition in boxes["box_compositions"]:
+            counts = molecule_counts(
+                composition["molecules"], composition["num_of_molecules"]
+            )
+            symbols = [
+                symbol
+                for name, count in counts.items()
+                for symbol, n in molecule_symbols(name).items()
+                for _ in range(n * count)
+            ]
+            found.append(
+                (
+                    "molecules_in_box_kwargs",
+                    box_composition_label(composition["molecules"]),
+                    symbols,
+                    list(composition["density_range"]),
+                )
+            )
+    return found
+
+
+def _warn_unusual_densities(
+    config: dict,
+    elements: list[str],
+    max_vdw_volume_ratio: float | None,
+    vdw_exempt_config_types: frozenset[str],
+) -> None:
+    """Warn, per block, about compositions whose density_range (g/cm^3)
+    gives cells the blown-up filter would drop before DFT (vdW volume
+    ratio above *max_vdw_volume_ratio*, e.g. Pt at the default 1 g/cm^3:
+    14x), or packs atoms tighter than any solid (below
+    _MIN_PLAUSIBLE_VDW_VOLUME_RATIO). Each names the g/cm^3 window
+    between the two for that composition."""
+    from alomancy.utils.clean_structures import (
+        density_for_vdw_volume_ratio,
+        vdw_volume_ratio_at_density,
+    )
+
+    config_types = {
+        "amorphous_kwargs": "init_amorphous",
+        "molecules_in_box_kwargs": "init_molecules_in_box",
+    }
+    upper_ratio = max_vdw_volume_ratio
+    low: dict[str, list[str]] = {}
+    high: dict[str, list[str]] = {}
+    for block, label, symbols, (lo, hi) in _density_compositions(config, elements):
+        sparsest = vdw_volume_ratio_at_density(symbols, lo)
+        densest = vdw_volume_ratio_at_density(symbols, hi)
+        window_top = density_for_vdw_volume_ratio(
+            symbols, _MIN_PLAUSIBLE_VDW_VOLUME_RATIO
+        )
+        checked_low = (
+            upper_ratio is not None
+            and config_types[block] not in vdw_exempt_config_types
+        )
+        if checked_low and sparsest > upper_ratio:
+            window_bottom = density_for_vdw_volume_ratio(symbols, upper_ratio)
+            low.setdefault(block, []).append(
+                f"{label} at {lo:g} g/cm^3 ({sparsest:.3g}x its vdW volume; keep "
+                f"it between {window_bottom:.3g} and {window_top:.3g} g/cm^3)"
+            )
+        if densest < _MIN_PLAUSIBLE_VDW_VOLUME_RATIO:
+            high.setdefault(block, []).append(
+                f"{label} at {hi:g} g/cm^3 ({densest:.3g}x its vdW volume; keep "
+                f"it below {window_top:.3g} g/cm^3)"
+            )
+    for block, items in low.items():
+        logger.warning(
+            "initialization.%s.density_range is too low for %s: those cells "
+            "are above high_accuracy_evaluation.max_vdw_volume_ratio (%g) and "
+            "will be dropped before DFT as blown up. Raise the density (bulk "
+            "solids sit near 0.3-1x their vdW volume), or list %s in "
+            "high_accuracy_evaluation.vdw_exempt_config_types if they are "
+            "meant to be that sparse.",
+            block,
+            "; ".join(items),
+            upper_ratio,
+            config_types[block],
+            extra={
+                "event": "init_density_too_low",
+                "data": {"block": block, "compositions": items},
+            },
+        )
+    for block, items in high.items():
+        logger.warning(
+            "initialization.%s.density_range is too high for %s: the atoms "
+            "would be packed tighter than in any solid (diamond is 0.28x its "
+            "vdW volume), so the cells are unphysical.",
+            block,
+            "; ".join(items),
+            extra={
+                "event": "init_density_too_high",
+                "data": {"block": block, "compositions": items},
+            },
+        )
 
 
 def compute_needs(
@@ -418,7 +585,7 @@ def generate(
         num_of_atoms_per_amorphous=amorphous_kwargs["num_of_atoms_per_amorphous"],
         mp_max_energy_above_hull=mp_kwargs["mp_max_energy_above_hull"],
         composition_list=amorphous_kwargs["composition_list"],
-        seed=amorphous_kwargs["seed"],
+        seed=seed,
         target_config_types=target_config_types,
         num_of_rattled_per_target=(
             rattle_kwargs["num_of_rattled_per_target"]
@@ -434,13 +601,12 @@ def generate(
         isolated_atoms_override=(
             (needs["isolated_atoms"] or None) if needs is not None else None
         ),
-        dimer_override=(needs["dimer_override"] or None) if needs is not None else None,
-        trimer_override=(needs["trimer_override"] or None)
-        if needs is not None
-        else None,
-        amorphous_override=(
-            (needs["amorphous_override"] or None) if needs is not None else None
-        ),
+        # An empty/zero override means "none still needed", not "no
+        # override": `or None` here regenerated every dimer, trimer and
+        # amorphous cell whenever that kind was already complete.
+        dimer_override=needs["dimer_override"] if needs is not None else None,
+        trimer_override=needs["trimer_override"] if needs is not None else None,
+        amorphous_override=needs["amorphous_override"] if needs is not None else None,
         molecules=molecule_kwargs["molecules"] if molecule_kwargs["enabled"] else None,
         molecule_vacuum=molecule_kwargs["vacuum"],
         box_compositions=(

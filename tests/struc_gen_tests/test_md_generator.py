@@ -225,6 +225,7 @@ class TestGenerate:
                     "md_kwargs": {
                         "steps": 2000,
                         "temperature": 1000,
+                        "max_volume_ratio": 2.5,
                         "structure_selection_kwargs": {"num_of_md_starts": 3},
                     }
                 },
@@ -241,6 +242,8 @@ class TestGenerate:
         # structure_selection_kwargs is consumed by select_diverse_seeds
         # inside generate() itself; run_md has no matching parameter.
         assert "structure_selection_kwargs" not in function_kwargs
+        # Nor is max_volume_ratio: generate() filters the frames with it.
+        assert "max_volume_ratio" not in function_kwargs
 
     @pytest.mark.unit
     def test_jobs_get_the_calculator_spec_and_alomancy_defaults(
@@ -616,3 +619,171 @@ def test_generate_picks_spread_physical_frames_and_keeps_the_trajectory(
     assert all(
         len(read(_MD_DIR / f"md_output_{i}" / "md.xyz", ":")) == 11 for i in (0, 1)
     )
+
+
+def _expanding_trajectory(expand_from):
+    """11 frames of 2 H atoms in a 10 Å cell, md_frame 0..100 (0 = the
+    seed); from md_frame *expand_from* on the cell is 2x longer (8x the
+    volume)."""
+    frames = []
+    for step in range(0, 110, 10):
+        length = 10.0 if expand_from is None or step < expand_from else 20.0
+        a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1]], cell=[length] * 3, pbc=True)
+        a.info["md_frame"] = step
+        frames.append(a)
+    return frames
+
+
+def _generate_with_expansion(md_kwargs, expand_from=(None, 50)):
+    """generate() over two runs; run i expands from md_frame
+    expand_from[i] (None: never; default run 1 from 50). Returns
+    (candidates, logged records)."""
+    import logging
+
+    def fake_submit_n(function, job_configs, remote_info, **kwargs):
+        for jc in job_configs:
+            out_dir = Path(jc["function_kwargs"]["out_dir"])
+            index = int(out_dir.name.rsplit("_", 1)[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            frames = _expanding_trajectory(expand_from[index])
+            write(str(out_dir / "md.xyz"), frames, format="extxyz")
+        return [None] * len(job_configs)
+
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger = logging.getLogger(_MODULE)
+    logger.addHandler(handler)
+    level = logger.level
+    logger.setLevel(logging.INFO)  # md_summary is INFO
+    try:
+        with (
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit_n),
+            patch(f"{_MODULE}.get_remote_info"),
+        ):
+            result = generate(
+                seed_atoms=_distinct_seeds(10),
+                calculator_spec=_SPEC,
+                config={
+                    "num_of_structures_to_generate": 20,
+                    "md_kwargs": {
+                        "ensemble": "npt",
+                        **md_kwargs,
+                        "structure_selection_kwargs": {"num_of_md_starts": 2},
+                    },
+                },
+                base_name="al_loop_0",
+                name="md",
+                hpc={},
+                max_time="1H",
+            )
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+    return result, records
+
+
+@pytest.mark.unit
+def test_generate_cuts_a_run_at_its_first_frame_past_the_volume_ratio(
+    tmp_path, monkeypatch
+):
+    """A run whose cell grows past max_volume_ratio x its seed's volume
+    gives no candidate from that frame on; the other run keeps all its
+    frames, the trajectory file is untouched, and a warning suggests a
+    small positive pressure."""
+    monkeypatch.chdir(tmp_path)
+    result, records = _generate_with_expansion({})  # default ratio 3
+
+    by_run = {0: [], 1: []}
+    for a in result:
+        by_run[a.info["md_run"]].append(a.info["md_frame"])
+    assert by_run == {0: list(range(10, 110, 10)), 1: [10, 20, 30, 40]}
+    assert len(read(_MD_DIR / "md_output_1" / "md.xyz", ":")) == 11
+
+    (warning,) = [
+        r for r in records if getattr(r, "event", None) == "md_volume_expanded"
+    ]
+    assert warning.data == {"n_runs": 1, "n_frames": 6, "items": ["md_run_1"]}
+    assert "md_kwargs.pressure" in warning.getMessage()
+    (summary,) = [r for r in records if getattr(r, "event", None) == "md_summary"]
+    assert summary.data["expanded_per_run"] == [0, 6]
+    assert summary.data["max_volume_ratio"] == 3.0
+
+
+@pytest.mark.unit
+def test_generate_volume_filter_off_or_above_the_growth(tmp_path, monkeypatch):
+    """max_volume_ratio null turns the filter off; a ratio above the
+    growth (8x) leaves every frame in. Neither warns."""
+    for i, ratio in enumerate((None, 10)):
+        run_dir = tmp_path / f"r{i}"
+        run_dir.mkdir()
+        monkeypatch.chdir(run_dir)
+        result, records = _generate_with_expansion({"max_volume_ratio": ratio})
+        assert len(result) == 20
+        assert not [
+            r for r in records if getattr(r, "event", None) == "md_volume_expanded"
+        ]
+
+
+@pytest.mark.unit
+def test_generate_caches_nothing_when_every_run_expands_at_once(tmp_path, monkeypatch):
+    """Every run past the ratio by its first recorded frame leaves no
+    candidate: generate raises (suggesting pressure) and writes no
+    candidates file, so a restart reruns MD instead of reloading []."""
+    from alomancy.structure_generation.md.md_wfl import _candidates_path
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match=r"md_kwargs\.pressure"):
+        _generate_with_expansion({}, expand_from=(10, 10))
+    assert not _candidates_path("al_loop_0", "md").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("ensemble", "suggests_nvt"), [("npt", True), ("nvt", False)])
+def test_volume_warning_suggests_nvt_only_when_not_already_nvt(
+    tmp_path, monkeypatch, ensemble, suggests_nvt
+):
+    monkeypatch.chdir(tmp_path)
+    _, records = _generate_with_expansion({"ensemble": ensemble})
+    (warning,) = [
+        r for r in records if getattr(r, "event", None) == "md_volume_expanded"
+    ]
+    assert ("use ensemble 'nvt'" in warning.getMessage()) is suggests_nvt
+
+
+@pytest.mark.unit
+def test_a_seed_without_a_positive_volume_is_never_cut():
+    """A periodic seed with a degenerate cell gives no meaningful limit, so
+    the run is kept whole rather than cut at frame 1."""
+    from alomancy.structure_generation.md.md_wfl import _cut_expanded
+
+    frames = _expanding_trajectory(50)
+    frames[0].set_cell([0.0, 10.0, 10.0])
+    assert _cut_expanded(frames, 3.0) == len(frames)
+    assert _cut_expanded(_expanding_trajectory(50), 3.0) == 5
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", [1, 0.5, "3", True, -2, float("nan"), float("inf")])
+def test_validate_kwargs_rejects_a_bad_max_volume_ratio(bad):
+    from alomancy.structure_generation.md.md_wfl import validate_kwargs
+
+    with pytest.raises(ValueError, match="max_volume_ratio"):
+        validate_kwargs({"md_kwargs": {"max_volume_ratio": bad}}, elements=[], seed=0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("good", [None, 2.5, 3])
+def test_validate_kwargs_accepts_a_max_volume_ratio(good):
+    from alomancy.structure_generation.md.md_wfl import validate_kwargs
+
+    validate_kwargs({"md_kwargs": {"max_volume_ratio": good}}, elements=[], seed=0)
+    validate_kwargs({}, elements=[], seed=0)
+
+
+@pytest.mark.unit
+def test_md_registers_its_construction_time_check():
+    from alomancy.registry import resolve
+    from alomancy.structure_generation.md.md_wfl import validate_kwargs
+
+    assert resolve("structure_generator", "md").validate_kwargs is validate_kwargs

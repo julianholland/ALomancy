@@ -128,6 +128,7 @@ register(
     read_existing_result="read_existing_result",
     kwargs_defaults="_MD_KWARGS_DEFAULTS",
     kwargs_schema="_MD_KWARGS_SCHEMA",
+    validate_kwargs="validate_kwargs",
     report_section="report_section",
 )
 register(

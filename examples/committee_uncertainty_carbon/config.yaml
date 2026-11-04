@@ -10,16 +10,16 @@ general:
       - "init_MP"
     test_ratio: 0.1
 
-initialization:
+initialization: {}   # every initialization default
 
 training:
   trainer: "mace"  # selects the registered mlip_trainer backend (registry.py)
   hpc: "raccoon_big"
 
 structure_generation:
-  generator: "md"  
+  generator: "md"
   hpc: "raccoon_big"
 
 high_accuracy_evaluation:
-  evaluator: "qe"  
+  evaluator: "qe"
   hpc: "raven"

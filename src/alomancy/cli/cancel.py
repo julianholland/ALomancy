@@ -267,20 +267,31 @@ def remote_run_dir_glob(rundir: str, local_stage_dir: Path) -> str:
     )
 
 
-def remote_short_run_dir(rundir: str, local_stage_dir: Path, home: Path) -> str:
+def remote_short_run_dir(
+    rundir: str, local_stage_dir: Path, home: Path, host: str
+) -> str:
     """This run's folder under a system's `rundir` in the layout alomancy
-    sets at import (alomancy._shorten_rundir_extra): `<rundir>/<run path
-    below $HOME, / as _>`. Runs whose jobs were submitted before that
-    change, or while older jobs were unfinished, use remote_run_dir_glob's
-    layout instead, so both are searched."""
-    from alomancy import _short_rundir_extra
+    sets at import (alomancy._shorten_rundir_extra): `<rundir>/<hash of
+    the run's host>-<run path below $HOME, / as _>`. The host hash keeps
+    the same path on another machine from matching. Runs whose jobs were
+    submitted before that change, or while older jobs were still running,
+    use remote_run_dir_glob's layout instead, so both are searched."""
+    from alomancy import _run_dir_of, _run_rundir_extra
 
-    base = (
-        local_stage_dir.parent
-        if local_stage_dir.name in (".expyre", "_expyre")
-        else local_stage_dir
-    )
-    return rundir.rstrip("/") + "/" + _short_rundir_extra(base, home)
+    name: str = _run_rundir_extra(_run_dir_of(local_stage_dir), home, host)
+    return rundir.rstrip("/") + "/" + name
+
+
+def run_host(expyre_dir: Path) -> str:
+    """The host the run ran on, from its lock (`host=`, written by
+    remote_submission/executor.py), or this machine's when the lock has
+    none."""
+    lock = expyre_dir / LOCK_NAME
+    if lock.exists():
+        host = _parse_lock_record(lock.read_text(errors="replace")).host
+        if host:
+            return host
+    return socket.gethostname()
 
 
 _HPC_LOG_LINE = re.compile(r"HPC: (\S+), Job: ")
@@ -320,16 +331,21 @@ def remote_run_dirs(
     *,
     ssh: Callable[[str, str, float], tuple[bool, str, str]] = run_ssh_command,
     home: Path | None = None,
+    host: str | None = None,
 ) -> tuple[dict[str, list[str]], list[str]]:
     """This run's existing folders on the hosts of `systems` (the HPCs it
     submitted to), in either remote layout (remote_run_dir_glob,
-    remote_short_run_dir), and the hosts that couldn't be listed."""
+    remote_short_run_dir; *host* defaults to run_host), and the hosts that
+    couldn't be listed."""
     home = Path.home() if home is None else home
+    made_on = run_host(expyre_dir) if host is None else host
     found: dict[str, list[str]] = {}
     unreachable: list[str] = []
     suffix = "-" + _run_suffix(expyre_dir)
     for host, rundirs in sorted(remote_targets(expyre_dir, systems).items()):
-        short_dirs = {remote_short_run_dir(r, expyre_dir, home) for r in rundirs}
+        short_dirs = {
+            remote_short_run_dir(r, expyre_dir, home, made_on) for r in rundirs
+        }
         patterns = " ".join(
             [remote_run_dir_glob(r, expyre_dir) for r in sorted(rundirs)]
             + [shlex.quote(d) for d in sorted(short_dirs)]

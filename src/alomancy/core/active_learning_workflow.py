@@ -234,7 +234,10 @@ from alomancy.structure_generation.mlip_relax import (
 from alomancy.utils.clean_structures import (
     clean_structures,
     drop_unwritable_info,
+    filter_blown_up_structures,
     filter_structures_by_min_bond_distance,
+    resolve_max_vdw_volume_ratio,
+    resolve_vdw_exempt_config_types,
 )
 from alomancy.utils.dataset_curation import (
     curate_database,
@@ -258,6 +261,7 @@ from alomancy.utils.logging_config import (
 )
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
+    use_noninteractive_ssh,
 )
 from alomancy.utils.remove_redundancy import (
     REDUNDANCY_KWARGS_DEFAULTS,
@@ -1162,6 +1166,12 @@ class ActiveLearningWorkflow(ABC):
                 "high_accuracy_evaluation.force_ceiling must be a positive number "
                 f"(eV/Angstrom) or null, got {self.force_ceiling!r}."
             )
+        self.max_vdw_volume_ratio = resolve_max_vdw_volume_ratio(
+            jobs_dict.get("high_accuracy_evaluation")
+        )
+        self.vdw_exempt_config_types = resolve_vdw_exempt_config_types(
+            jobs_dict.get("high_accuracy_evaluation")
+        )
         self.mlip_relaxation = resolve_mlip_relaxation(
             (jobs_dict.get("structure_generation") or {}).get("mlip_relaxation")
         )
@@ -1212,16 +1222,20 @@ class ActiveLearningWorkflow(ABC):
             return
         validate = getattr(entry, "validate_kwargs", None)
         if validate is not None:
+            # As given (possibly empty): a generator that needs the species
+            # (EZGA) raises itself; MD's check doesn't use them.
             validate(
                 sg_config,
-                elements=self._required_elements(),
+                elements=list(self.jobs_dict.get("general", {}).get("elements") or []),
                 seed=self.seed,
             )
 
     def _validate_initialiser_kwargs(self, init_config: Any) -> None:
         """The initialiser's construction-time check (registry entry
         validate_kwargs): molecule blocks and density ranges, which would
-        otherwise fail only once initialisation runs."""
+        otherwise fail only once initialisation runs, and warnings for
+        densities the blown-up filter would drop (so it gets this run's
+        max_vdw_volume_ratio and vdw_exempt_config_types)."""
         if not isinstance(init_config, dict):
             return
         validate = getattr(resolve("initialiser", "default"), "validate_kwargs", None)
@@ -1229,7 +1243,12 @@ class ActiveLearningWorkflow(ABC):
             # Not _required_elements: a config without initialisation
             # molecules needs no elements here.
             elements = self.jobs_dict.get("general", {}).get("elements") or []
-            validate(init_config, elements=list(elements))
+            validate(
+                init_config,
+                elements=list(elements),
+                max_vdw_volume_ratio=self.max_vdw_volume_ratio,
+                vdw_exempt_config_types=self.vdw_exempt_config_types,
+            )
 
     def _validate_remote_dft_path_length(self, hae_config: Any) -> None:
         """Fail now, not after training and MD, if the longest remote DFT
@@ -1237,9 +1256,14 @@ class ActiveLearningWorkflow(ABC):
         (submitters.MAX_REMOTE_OUTPUT_DIR_LEN). ase_remote_submitter checks
         the exact paths again before submitting each batch.
 
-        Worst case: the longest base_name this run uses, a 2-digit batch,
-        a 4-digit structure index and the longer of the evaluator's GO/SP
-        job names. Skipped when ExPyRe has no remote rundir for the HPC.
+        An early warning, not the last word: the per-batch check in
+        ase_remote_submitter sees the exact paths. Projected for the
+        longest base_name that runs DFT (initialization, and
+        al_loop_{num_of_al_loops - 1}: al_loop_{num_of_al_loops} only
+        trains), batch_9, a structure index as long as
+        num_of_structures_per_loop's (at least 3 digits) and the longer of
+        the evaluator's GO/SP job names. Skipped when ExPyRe has no remote
+        rundir for the HPC.
         """
         if not isinstance(hae_config, dict):
             return
@@ -1253,18 +1277,25 @@ class ActiveLearningWorkflow(ABC):
             entry = resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
         except ValueError:
             return  # reported by the config-key check
-        base_names = [f"al_loop_{self.start_loop + self.num_of_al_loops}"]
+        base_names = []
+        if self.num_of_al_loops > 0:
+            base_names.append(f"al_loop_{self.num_of_al_loops - 1}")
         if self.jobs_dict.get(_INITIALIZATION_NAME) is not None:
             base_names.append(_INITIALIZATION_NAME)
+        if not base_names:
+            return
         base_name = max(base_names, key=len)
-        job_name = max((dft_job_name(fn, 9999) for fn in (entry.sp, entry.go)), key=len)
+        index = int("9" * max(3, len(str(max(self.num_of_structures_per_loop - 1, 0)))))
+        job_name = max(
+            (dft_job_name(fn, index) for fn in (entry.sp, entry.go)), key=len
+        )
         out_dir = str(
             Path(
                 "results",
                 base_name,
                 _HIGH_ACCURACY_EVALUATION_NAME,
-                "batch_99",
-                f"{ASE_OUTPUT_PREFIX}_9999",
+                "batch_9",
+                f"{ASE_OUTPUT_PREFIX}_{index}",
             )
         )
         check_remote_path_length(
@@ -1447,6 +1478,11 @@ class ActiveLearningWorkflow(ABC):
         acquire_local_expyre_lock()
         self.display_workflow_summary()
         ensure_ssh_connectivity(_collect_hpc_profiles(self.jobs_dict))
+        if not (
+            os.getenv("ALOMANCY_TEST_MODE") == "1"
+            or os.getenv("ALOMANCY_MOCK_EXTERNAL") == "1"
+        ):
+            use_noninteractive_ssh()
 
         latest_version = _fetch_latest_pypi_version()
         if latest_version is None:
@@ -1631,7 +1667,6 @@ class ActiveLearningWorkflow(ABC):
                 hpc=self.jobs_dict["high_accuracy_evaluation"]["hpc"],
                 max_time=self.jobs_dict["high_accuracy_evaluation"]["max_time"],
                 allow_relaxation=True,
-                start_index=0,
             )
 
             if not high_accuracy_structures:
@@ -2054,7 +2089,10 @@ class ActiveLearningWorkflow(ABC):
         DFT structures, which would otherwise never reach a model. It has
         no sentinel of its own: train_mlip.done makes a restart reload its
         models instead of retraining, and raising num_of_al_loops later
-        simply carries on with that loop."""
+        simply carries on with that loop.
+
+        Warns (``no_loops_to_run``) when there is nothing left to do."""
+        self._warn_if_no_loops_to_run(start)
         for loop in range(start, self.num_of_al_loops + 1):
             base_name = f"al_loop_{loop}"
             if self._phase_done(base_name, "loop"):
@@ -2101,6 +2139,41 @@ class ActiveLearningWorkflow(ABC):
                 plots_dir=loop_plots_dir,
                 final=final,
             )
+
+    def _warn_if_no_loops_to_run(self, start: int) -> None:
+        """Warn when every loop up to num_of_al_loops is already done (and
+        the closing training already trained), so the run ends without
+        doing anything: num_of_al_loops counts every loop in the results
+        directory, not the loops of this run."""
+        final = f"al_loop_{self.num_of_al_loops}"
+        to_run = [
+            loop
+            for loop in range(start, self.num_of_al_loops + 1)
+            if not self._phase_done(f"al_loop_{loop}", "loop")
+        ]
+        if to_run and not (
+            to_run == [self.num_of_al_loops] and self._phase_done(final, "train_mlip")
+        ):
+            return
+        completed = len(list(Path("results").glob("al_loop_*/loop.done")))
+        logger.warning(
+            "Nothing to run: general.num_of_al_loops is %d, but the results "
+            "directory already holds %d completed AL loop(s). num_of_al_loops "
+            "is the total over every loop in results/, not the number of loops "
+            "this run adds: set it above %d (e.g. %d for 5 more loops) to "
+            "carry on.",
+            self.num_of_al_loops,
+            completed,
+            completed,
+            completed + 5,
+            extra={
+                "event": "no_loops_to_run",
+                "data": {
+                    "num_of_al_loops": self.num_of_al_loops,
+                    "completed": completed,
+                },
+            },
+        )
 
     def train_models(
         self, ctx: LoopContext, seeds: list[int], *, min_successful: int = 1
@@ -2186,6 +2259,16 @@ class ActiveLearningWorkflow(ABC):
             self._check_recorded_seed(ctx, fit_idx, seeds[fit_idx])
 
         missing = [i for i in range(num_of_models) if i not in results]
+        if missing and not new_train_set:
+            # Caught here, not by the trainer: a remote fit on an empty file
+            # only fails after its whole queue wait.
+            raise ValueError(
+                f"train_mlip for {base_name}: the training set is empty (the "
+                f"global database at {self.db.db_path} holds {self.db.size} "
+                "structure(s), none left in the train split). Check "
+                "general.start_from, the initialization section and "
+                "general.train_filter."
+            )
         if missing:
             logger.info(
                 "train_mlip for %s: %d/%d fit(s) already cached; submitting %s.",
@@ -2415,6 +2498,10 @@ class ActiveLearningWorkflow(ABC):
             seed=self.seed,
         )
         kept: list[Atoms] = filter_structures_by_min_bond_distance(candidates)
+        # Blown-up cells never reach selection, so no DFT slot goes to one.
+        kept = filter_blown_up_structures(
+            kept, self.max_vdw_volume_ratio, self.vdw_exempt_config_types
+        )
         if self.mlip_relaxation is not None and kept:
             # Selection scores what DFT will start from: the relaxed
             # candidates (see structure_generation.md).
@@ -2586,7 +2673,6 @@ class ActiveLearningWorkflow(ABC):
             hpc=config["hpc"],
             max_time=config["max_time"],
             allow_relaxation=True,
-            start_index=0,
         )
         # Message text is parsed by analysis/timing_plots; keep it unchanged.
         logger.info(

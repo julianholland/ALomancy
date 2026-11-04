@@ -686,7 +686,7 @@ def training_curve(df: Any, path: Path, *, title: str) -> None:
 
 def stacked_counts(
     groups: list[str],
-    series: dict[str, list[int]],
+    series: dict[str, list[float]],
     path: Path,
     *,
     title: str,

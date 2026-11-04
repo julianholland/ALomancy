@@ -34,6 +34,8 @@ from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
+from alomancy.analysis.palette import ALOMANCY_PURPLE, PALETTE, PENDING_COLOR
+
 logger = logging.getLogger(__name__)
 
 # Where the run writes its status; None disables the file (tests/conftest.py
@@ -45,12 +47,16 @@ SUMMARY_INTERVAL = 300.0  # s between summary lines without a terminal
 STALE_INTERVALS = 3  # check intervals without a sync before "last data" is stale
 _STATES = ("done", "running", "queued", "to_submit", "failed")
 _BAR = {"done": "█", "running": "▓", "queued": "▒", "to_submit": "░"}
+# The ALomancy colour scheme (analysis/palette.py), as in the plots.
+_CYAN, _AMBER, _ROSE = PALETTE[1], PALETTE[3], PALETTE[4]
 _BAR_STYLE = {
-    "done": "green",
-    "running": "yellow",
-    "queued": "blue",
-    "to_submit": "dim",
+    "done": ALOMANCY_PURPLE,
+    "running": _CYAN,
+    "queued": _AMBER,
+    "to_submit": PENDING_COLOR,
 }
+_FAILED_STYLE = _ROSE
+_WARNING_STYLE = _AMBER
 _LOOP_RE = re.compile(r"al_loop_(\d+)")
 
 
@@ -95,6 +101,8 @@ class JobTracker:
         self._next_id = 0
         self.last_sync: dict[str, float] = {}
         self.last_sync_error: dict[str, str] = {}
+        # system -> (since, ssh host) while ssh to it can't log in
+        self.auth_lost: dict[str, tuple[float, str]] = {}
 
     # --- batches ------------------------------------------------------
     def register(
@@ -149,13 +157,15 @@ class JobTracker:
                 row.state = "done" if ok else "failed"
                 row.finished_at = time.time()
 
-    def synced(self, system: str, remote_statuses: dict[str, str]) -> None:
+    def synced(self, system: str, remote_statuses: dict[str, str]) -> bool:
         """A sync with `system` succeeded; `remote_statuses` maps expyre job
-        ids to expyre's remote_status (queued/held/running/done/...)."""
+        ids to expyre's remote_status (queued/held/running/done/...).
+        Returns whether this ends an ssh login outage (mark_auth_lost)."""
         now = time.time()
         with self._lock:
             self.last_sync[system] = now
             self.last_sync_error.pop(system, None)
+            restored = self.auth_lost.pop(system, None) is not None
             for batch in self._batches.values():
                 for row in batch.jobs:
                     if row.system != system or row.state not in ("queued", "running"):
@@ -167,10 +177,21 @@ class JobTracker:
                         if row.state != "running":
                             row.running_since = now
                         row.state = "running"
+        return restored
 
     def sync_failed(self, system: str, error: BaseException) -> None:
         with self._lock:
             self.last_sync_error[system] = f"{type(error).__name__}: {error}"[:200]
+
+    def mark_auth_lost(self, system: str, host: str) -> bool:
+        """ssh to `system` can't log in (its ControlMaster is gone); shown
+        until the next successful sync. Returns whether this starts a new
+        outage, so the caller warns once per outage."""
+        with self._lock:
+            if system in self.auth_lost:
+                return False
+            self.auth_lost[system] = (time.time(), host)
+            return True
 
     # --- snapshot --------------------------------------------------------
     def snapshot(self, now: float | None = None) -> dict[str, Any]:
@@ -181,11 +202,16 @@ class JobTracker:
                 _batch_snapshot(b, self.last_sync, self.last_sync_error, now)
                 for b in self._batches.values()
             ]
+            auth_lost = {
+                system: {"host": host, "since_s": now - since}
+                for system, (since, host) in self.auth_lost.items()
+            }
         return {
             "updated_at": now,
             "pid": os.getpid(),
             "host": socket.gethostname(),
             "batches": batches,
+            "auth_lost": auth_lost,
         }
 
 
@@ -296,20 +322,29 @@ def _batch_renderable(batch: dict[str, Any], width: int) -> RenderableType:
     counts = batch["counts"]
     loop = "" if batch.get("loop") is None else f" · loop {batch['loop']}"
     header = Text(
-        f"── {batch['phase']}{loop} ── {batch['total']} jobs ──", style="bold"
+        f"── {batch['phase']}{loop} ── {batch['total']} jobs ──",
+        style=f"bold {ALOMANCY_PURPLE}",
     )
 
     bar = Text()
     bar_width = max(10, min(50, width - 78))
     for state, n in bar_segments(counts, bar_width).items():
         bar.append(_BAR[state] * n, style=_BAR_STYLE[state])
-    summary = (
-        f"  done {counts['done']} · running {counts['running']} · "
-        f"queued {counts['queued']} · to submit {counts['to_submit']}"
-    )
-    bar.append(summary)
+    # Each label in its segment's colour, so the summary is the legend.
+    for i, (state, label) in enumerate(
+        (
+            ("done", "done"),
+            ("running", "running"),
+            ("queued", "queued"),
+            ("to_submit", "to submit"),
+        )
+    ):
+        bar.append("  " if i == 0 else " · ")
+        bar.append(label, style=_BAR_STYLE[state])
+        bar.append(f" {counts[state]}")
     if counts["failed"]:
-        bar.append(f" · failed {counts['failed']}", style="red")
+        bar.append(" · ")
+        bar.append(f"failed {counts['failed']}", style=_FAILED_STYLE)
 
     table = Table(box=None, padding=(0, 1), show_edge=False)
     for column in ("HPC", "done", "run", "queue", "fail", "last data", "oldest queued"):
@@ -319,9 +354,9 @@ def _batch_renderable(batch: dict[str, Any], width: int) -> RenderableType:
         last = "never" if hpc["last_data_s"] is None else f"{last} ago"
         last_text = Text(last)
         if hpc["stale"]:
-            last_text = Text(f"{last} ⚠", style="yellow")
+            last_text = Text(f"{last} ⚠", style=_WARNING_STYLE)
         if hpc.get("error"):
-            last_text.append(" (sync failing)", style="red")
+            last_text.append(" (sync failing)", style=_FAILED_STYLE)
         table.add_row(
             system,
             str(hpc["done"]),
@@ -349,7 +384,10 @@ def render(
 ) -> RenderableType:
     """The status panel for a TRACKER snapshot (live or read from the
     status file)."""
-    parts: list[RenderableType] = []
+    parts: list[RenderableType] = [
+        Text(f"⚠ {line}", style=f"bold {_FAILED_STYLE}")
+        for line in auth_lost_lines(snapshot)
+    ]
     for batch in snapshot.get("batches", []):
         parts.extend([_batch_renderable(batch, width), Text("")])
     if not snapshot.get("batches"):
@@ -357,14 +395,23 @@ def render(
     updated = datetime.fromtimestamp(snapshot["updated_at"]).strftime("%H:%M:%S")
     footer = Text(f" updated {updated}", style="dim")
     if note:
-        footer.append(f" · {note}", style="yellow")
+        footer.append(f" · {note}", style=_WARNING_STYLE)
     parts.append(footer)
     return Group(*parts)
 
 
+def auth_lost_lines(snapshot: dict[str, Any]) -> list[str]:
+    """One line per HPC whose ssh login was lost, saying what to do."""
+    return [
+        f"ssh to {system} needs a login ({format_duration(info['since_s'])}): "
+        f"run `ssh {info['host']}` in another terminal; jobs keep waiting."
+        for system, info in sorted((snapshot.get("auth_lost") or {}).items())
+    ]
+
+
 def summary_line(snapshot: dict[str, Any]) -> str:
     """One line per snapshot, for logs without a terminal."""
-    lines = []
+    lines = list(auth_lost_lines(snapshot))
     for batch in snapshot.get("batches", []):
         c = batch["counts"]
         loop = "" if batch.get("loop") is None else f" loop {batch['loop']}"

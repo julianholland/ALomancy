@@ -1,4 +1,5 @@
 import logging
+import math
 
 import numpy as np
 from ase import Atoms
@@ -195,6 +196,155 @@ def filter_structures_by_min_bond_distance(
         )
 
     return filtered
+
+
+# Default for high_accuracy_evaluation.max_vdw_volume_ratio. Healthy
+# condensed cells sit near 1; molecular crystals (P4, Li2S8) reach ~10; the
+# blown-up NPT cells that ran DFT out of memory were 30 and far above.
+DEFAULT_MAX_VDW_VOLUME_RATIO = 10.0
+# Single atoms, dimers and trimers sit in a box of vacuum by design (and
+# come back from DFT marked periodic), so they are never "blown up".
+GAS_PHASE_CONFIG_TYPES = frozenset({"IsolatedAtom", "init_dimer", "init_trimer"})
+
+
+def _vdw_volume(numbers: np.ndarray) -> float:
+    """Summed van der Waals sphere volume of atoms with these atomic
+    numbers (ase.data.vdw_radii; 1.5 x the covalent radius where ASE has no
+    vdW radius)."""
+    from ase.data import covalent_radii, vdw_radii
+
+    numbers = np.asarray(numbers, dtype=int)
+    radii = np.array([vdw_radii[z] for z in numbers], dtype=float)
+    missing = ~np.isfinite(radii)
+    radii[missing] = 1.5 * covalent_radii[numbers[missing]]
+    return float(np.sum(4.0 / 3.0 * np.pi * radii**3))
+
+
+def vdw_volume_ratio(atoms: Atoms) -> float:
+    """Cell volume over the summed van der Waals sphere volumes of its
+    atoms (_vdw_volume). Non-finite for a degenerate or non-finite cell."""
+    with np.errstate(all="ignore"):
+        volume = abs(float(np.linalg.det(atoms.cell.array)))
+        return volume / _vdw_volume(atoms.numbers)
+
+
+# 1 amu/Å^3 = 1.66054 g/cm^3, so a mass M (amu) at rho g/cm^3 fills
+# M / (rho * 0.6022) Å^3.
+_G_CM3_PER_AMU_A3 = 1.66054
+
+
+def vdw_volume_ratio_at_density(symbols: list[str], density_g_cm3: float) -> float:
+    """vdw_volume_ratio a cell of *symbols* would have at a mass density of
+    *density_g_cm3*: what filter_blown_up_structures will measure, known
+    before the cell exists."""
+    from ase.data import atomic_masses, atomic_numbers
+
+    numbers = np.array([atomic_numbers[s] for s in symbols])
+    mass = float(np.sum(atomic_masses[numbers]))
+    volume = mass * _G_CM3_PER_AMU_A3 / density_g_cm3
+    return volume / _vdw_volume(numbers)
+
+
+def density_for_vdw_volume_ratio(symbols: list[str], ratio: float) -> float:
+    """The mass density (g/cm^3) at which a cell of *symbols* has
+    vdw_volume_ratio *ratio* (the inverse of vdw_volume_ratio_at_density)."""
+    return vdw_volume_ratio_at_density(symbols, 1.0) / ratio
+
+
+def filter_blown_up_structures(
+    structures: list[Atoms],
+    max_ratio: float | None = DEFAULT_MAX_VDW_VOLUME_RATIO,
+    exempt_config_types: frozenset[str] = frozenset(),
+) -> list[Atoms]:
+    """Exclude periodic cells whose volume is more than *max_ratio* x their
+    atoms' van der Waals volume (vdw_volume_ratio), or non-finite: DFT on
+    such cells runs out of memory, times out or fails outright. None turns
+    the check off. Non-periodic structures, GAS_PHASE_CONFIG_TYPES and
+    *exempt_config_types* (e.g. molecules in vacuum) are never excluded."""
+    if max_ratio is None:
+        return list(structures)
+    exempt = GAS_PHASE_CONFIG_TYPES | exempt_config_types
+    kept, excluded = [], []
+    for structure in structures:
+        checked = (
+            len(structure) > 0
+            and structure.pbc.all()
+            and structure.info.get("config_type") not in exempt
+        )
+        ratio = vdw_volume_ratio(structure) if checked else 0.0
+        if np.isfinite(ratio) and ratio <= max_ratio:
+            kept.append(structure)
+        else:
+            excluded.append((structure, ratio))
+    if excluded:
+        ratios = [r for _, r in excluded]
+        largest = max((r for r in ratios if np.isfinite(r)), default=float("inf"))
+        config_types = sorted(
+            {str(s.info.get("config_type", "unknown")) for s, _ in excluded}
+        )
+        logger.warning(
+            "Excluded %d/%d structure(s) from DFT whose volume is above %g x "
+            "their atoms' van der Waals volume (largest %.3g x; config_type %s): "
+            "DFT on such cells runs out of memory or fails. If they came from "
+            "NPT MD, add a small positive structure_generation.md_kwargs."
+            "pressure (e.g. 0.1 GPa); if they are genuine low-density crystals, "
+            "raise high_accuracy_evaluation.max_vdw_volume_ratio; if they are "
+            "meant to have vacuum (e.g. molecules in a box), list their "
+            "config_type in high_accuracy_evaluation.vdw_exempt_config_types.",
+            len(excluded),
+            len(structures),
+            max_ratio,
+            largest,
+            ", ".join(config_types),
+            extra={
+                "event": "blown_up_excluded",
+                "data": {
+                    "n": len(excluded),
+                    "total": len(structures),
+                    "max_ratio": max_ratio,
+                    "config_types": config_types,
+                },
+            },
+        )
+    return kept
+
+
+def resolve_ratio(value: object, key: str) -> float | None:
+    """A config ratio limit: a finite number above 1, or None (check off)."""
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(value)
+        or value <= 1
+    ):
+        raise ValueError(
+            f"{key} must be a finite number above 1, or null to turn it off; "
+            f"got {value!r}."
+        )
+    return float(value)
+
+
+def resolve_max_vdw_volume_ratio(hae_config: dict | None) -> float | None:
+    """high_accuracy_evaluation.max_vdw_volume_ratio (default
+    DEFAULT_MAX_VDW_VOLUME_RATIO), validated by resolve_ratio."""
+    return resolve_ratio(
+        (hae_config or {}).get("max_vdw_volume_ratio", DEFAULT_MAX_VDW_VOLUME_RATIO),
+        "high_accuracy_evaluation.max_vdw_volume_ratio",
+    )
+
+
+def resolve_vdw_exempt_config_types(hae_config: dict | None) -> frozenset[str]:
+    """high_accuracy_evaluation.vdw_exempt_config_types: config types the
+    blown-up check skips, on top of GAS_PHASE_CONFIG_TYPES."""
+    value = (hae_config or {}).get("vdw_exempt_config_types") or []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ValueError(
+            "high_accuracy_evaluation.vdw_exempt_config_types must be a list "
+            f"of config_type names; got {value!r}."
+        )
+    return frozenset(value)
 
 
 def wrap_structures_into_cell(structures: list[Atoms]) -> list[Atoms]:

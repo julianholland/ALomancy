@@ -30,7 +30,8 @@ _MODULE = "alomancy.high_accuracy_evaluation.high_accuracy_calc_interface"
 
 
 def _config():
-    return {"evaluator": "qe"}
+    # Test atoms sit in roomy boxes; the blown-up-cell check is off here.
+    return {"evaluator": "qe", "max_vdw_volume_ratio": None}
 
 
 def _atoms(symbol="H"):
@@ -136,6 +137,7 @@ class TestHighAccuracyEvaluation:
                 tmp_path,
                 config={
                     "evaluator": "qe",
+                    "max_vdw_volume_ratio": None,
                     "qe_kwargs": {"system": {"input_dft": "pbe"}},
                 },
             )
@@ -157,7 +159,11 @@ class TestHighAccuracyEvaluation:
             _call(
                 [_atoms()],
                 tmp_path,
-                config={"evaluator": "vasp", "vasp_kwargs": {"encut": 520}},
+                config={
+                    "evaluator": "vasp",
+                    "vasp_kwargs": {"encut": 520},
+                    "max_vdw_volume_ratio": None,
+                },
             )
 
         job_dict = mock_sub.call_args.kwargs["function_kwargs"][
@@ -320,7 +326,11 @@ class TestHighAccuracyEvaluation:
             _call(
                 [go_atom],
                 tmp_path,
-                config={"evaluator": "qe", "max_go_time": "8H"},
+                config={
+                    "evaluator": "qe",
+                    "max_go_time": "8H",
+                    "max_vdw_volume_ratio": None,
+                },
                 allow_relaxation=True,
             )
 
@@ -393,3 +403,159 @@ class TestInitialFrames:
             _call([_atoms() for _ in range(2)], tmp_path)
         assert read_initial_frames("test_loop") == []
         assert read_initial_frames("never_evaluated") == []
+
+
+# --- Restart: finished results matched to structures by digest ---
+
+
+def _distinct(i: int) -> Atoms:
+    a = _atoms()
+    a.positions += [0.1 * i, 0.0, 0.0]
+    return a
+
+
+def _write_finished(structures: list[Atoms], batch: int = 0) -> None:
+    """Results of an earlier attempt, as the workers write them: the input's
+    atoms.info (with its digest) carried through to <name>.xyz."""
+    from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
+        DFT_INPUT_DIGEST_KEY,
+        dft_input_digest,
+    )
+
+    for i, atoms in enumerate(structures):
+        done = atoms.copy()
+        done.calc = SinglePointCalculator(
+            done, energy=-1.0, forces=np.zeros((len(done), 3))
+        )
+        done.info[DFT_INPUT_DIGEST_KEY] = dft_input_digest(atoms)
+        d = Path(
+            f"results/test_loop/high_accuracy_evaluation/batch_{batch}",
+            f"{ASE_OUTPUT_PREFIX}_{i}",
+        )
+        d.mkdir(parents=True, exist_ok=True)
+        ase_write(str(d / "high_accuracy_evaluation.xyz"), done, format="extxyz")
+
+
+def _submitted_x(mock_sub) -> list[float]:
+    return [
+        round(float(a.positions[0, 0]), 3)
+        for a in mock_sub.call_args.kwargs["input_atoms_list"]
+    ]
+
+
+@pytest.mark.unit
+class TestRestartByDigest:
+    @pytest.mark.unit
+    def test_unfinished_middle_structures_are_submitted_not_the_last(
+        self, tmp_path, monkeypatch
+    ):
+        """Jobs finish in any order: with 0 and 3 done, 1 and 2 are left.
+        The old positional rule would have resubmitted 2 and 3."""
+        monkeypatch.chdir(tmp_path)
+        structures = [_distinct(i) for i in range(4)]
+        _write_finished([structures[0], structures[3]])
+
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
+            result = _call(structures, tmp_path)
+
+        assert _submitted_x(mock_sub) == [0.1, 0.2]
+        assert len(result) == 4
+
+    @pytest.mark.unit
+    def test_reordered_list_submits_only_the_missing(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        structures = [_distinct(i) for i in range(4)]
+        _write_finished([structures[0], structures[2]])
+
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
+            _call(structures[::-1], tmp_path)
+
+        assert _submitted_x(mock_sub) == [0.3, 0.1]
+
+    @pytest.mark.unit
+    def test_all_finished_submits_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        structures = [_distinct(i) for i in range(3)]
+        _write_finished(structures)
+
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
+            result = _call(structures, tmp_path)
+
+        mock_sub.assert_not_called()
+        assert len(result) == 3
+
+    @pytest.mark.unit
+    def test_results_for_structures_no_longer_listed_warn_and_are_kept(
+        self, tmp_path, monkeypatch
+    ):
+        """Settings changed between restarts: the old result is kept, and the
+        warning says this isn't supported."""
+        import logging
+
+        from alomancy.high_accuracy_evaluation import high_accuracy_calc_interface
+
+        monkeypatch.chdir(tmp_path)
+        _write_finished([_distinct(9)])
+        records: list[logging.LogRecord] = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        high_accuracy_calc_interface.logger.addHandler(handler)
+        try:
+            with patch(
+                f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+            ) as mock_sub:
+                result = _call([_distinct(0), _distinct(1)], tmp_path)
+        finally:
+            high_accuracy_calc_interface.logger.removeHandler(handler)
+
+        assert _submitted_x(mock_sub) == [0.0, 0.1]
+        changed = [
+            r for r in records if getattr(r, "event", None) == "dft_inputs_changed"
+        ]
+        assert len(changed) == 1
+        assert "isn't supported" in changed[0].getMessage()
+        assert len(result) == 3
+
+    @pytest.mark.unit
+    def test_submitted_structures_carry_their_digest(self, tmp_path, monkeypatch):
+        from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
+            DFT_INPUT_DIGEST_KEY,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        with patch(
+            f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit
+        ) as mock_sub:
+            _call([_distinct(0)], tmp_path)
+
+        submitted = mock_sub.call_args.kwargs["input_atoms_list"]
+        assert submitted[0].info[DFT_INPUT_DIGEST_KEY]
+
+
+@pytest.mark.unit
+def test_digest_survives_an_extxyz_round_trip(tmp_path):
+    """A restart compares structures held in memory on the first attempt
+    with the same structures read back from file."""
+    from ase.io import read
+
+    from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
+        dft_input_digest,
+    )
+
+    rng = np.random.default_rng(0)
+    for k in range(50):
+        atoms = Atoms(
+            "H20",
+            positions=(rng.random((20, 3)) - 0.3) * 20,
+            cell=rng.random((3, 3)) * 10 + np.eye(3) * 5,
+            pbc=True,
+        )
+        path = tmp_path / f"{k}.xyz"
+        ase_write(str(path), atoms, format="extxyz")
+        assert dft_input_digest(read(path)) == dft_input_digest(atoms)

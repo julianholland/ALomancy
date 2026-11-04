@@ -14,21 +14,33 @@ from alomancy.analysis.report.sections import Section, _fmt
 
 _ICONS = {"error": "✖", "warning": "⚠", "info": "💡"}
 
+# Caption of the loop's added-structures GIF; true for every workflow. It
+# shows the DFT results as returned, before curation and the training
+# filters (a single point keeps its input geometry).
+ADDED_STRUCTURES_TITLE = "Structures evaluated with DFT this loop (final geometries)"
+
 # Short descriptions for the event table; unknown codes show as-is.
 EVENT_DESCRIPTIONS = {
     "jobs_started": "remote jobs started",
     "job_failed": "remote job failed",
     "job_died": "remote job died (killed / lost)",
     "job_resumed": "transient remote error, polling resumed",
+    "ssh_auth_lost": "ssh login lost (waited for `ssh <host>` login)",
     "job_resubmitted": "died job resubmitted",
+    "no_loops_to_run": "nothing to run: num_of_al_loops already reached",
     "md_no_steps": "MD runs replaced (no MD step)",
     "md_unfinished": "MD runs still failing after replacement",
+    "md_volume_expanded": "MD runs cut after expanding past max_volume_ratio",
     "md_summary": "MD summary",
     "ezga_summary": "EZGA summary",
     "ezga_restarted": "unfinished EZGA search moved aside and restarted",
     "ezga_few_structures_configured": "EZGA makes under 2x to-generate (config)",
     "ezga_atom_range_seeds_only": "atom_number_range only filters EZGA seeds (HiSE)",
     "short_bond_excluded": "structures dropped for a short bond",
+    "blown_up_excluded": "blown-up cells kept from DFT (volume >> vdW volume)",
+    "dft_inputs_changed": "DFT restart found results for structures no longer listed",
+    "init_density_too_low": "initialization densities the blown-up filter drops",
+    "init_density_too_high": "initialization densities tighter than any solid",
     "quality_filtered": "train/test quality filter passes",
     "redundancy_flagged": "redundancy removal passes",
     "redundancy_cap_hit": "redundancy removal skipped (would flag too many)",
@@ -446,6 +458,13 @@ def render_markdown(
         out += [_image(core_plots["composition"], "Training set composition"), ""]
     out += _redundancy(stats, core_plots)
     out += ["## DFT", "", *_dft(stats), ""]
+    if "added_structures" in core_plots:
+        out += [
+            f"**{ADDED_STRUCTURES_TITLE}**",
+            "",
+            _image(core_plots["added_structures"], ADDED_STRUCTURES_TITLE),
+            "",
+        ]
     for section in sections:
         out += [f"## {section.title}", ""]
         if section.lines:

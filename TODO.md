@@ -36,6 +36,7 @@ Checklist by milestone; the reasons and design notes are in [ROADMAP.md](ROADMAP
 - [ ] Add stresses to the parity plots when present
 
 ## 1.2 — module refactor, users, dependencies, DFT setup
+- [ ] Render the report's added-structures GIF (`analysis/report/structures_gif.py`) with sage_lib's renderer once it can run headless (offscreen/EGL, a scriptable export): it now needs a GLFW window and its GIF export is driven from its UI, so the report uses ASE's matplotlib renderer
 - [ ] Extend the MLIP abstract-class structure to structure generation and high-accuracy evaluation; one superclass for all base modules (old functions kept as shims)
 - [ ] Optional imports per module (mace core; sevennet, ezga extras)
 - [ ] HPC/local version mismatch: warn on minor, raise on major, record in the report (e.g. "raven is on 1.0.1, the submitter is on 1.0.2; consider running `alomancy upgrade-hpc`")

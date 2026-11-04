@@ -29,6 +29,7 @@ from alomancy.cli.cancel import (
     remote_run_dirs,
     remote_short_run_dir,
     remote_targets,
+    run_host,
     stop_run_process,
 )
 from alomancy.cli.nuke import wipe_local_expyre
@@ -266,27 +267,49 @@ def test_remote_glob_matches_expyre_run_folder_layout():
 @pytest.mark.unit
 def test_remote_short_run_dir_matches_shortened_expyre_layout():
     """The layout alomancy._shorten_rundir_extra gives a run's remote folder."""
+    from alomancy import _host_tag
+
     local = Path("/work/home/advr/Simulations/alomancy/test_5/.expyre")
     assert remote_short_run_dir(
-        "/raven/ptmp/advr/alomancy_scratch/", local, Path("/work/home/advr")
-    ) == ("/raven/ptmp/advr/alomancy_scratch/Simulations_alomancy_test_5")
+        "/raven/ptmp/advr/alomancy_scratch/", local, Path("/work/home/advr"), "h1"
+    ) == (
+        "/raven/ptmp/advr/alomancy_scratch/"
+        f"{_host_tag('h1')}-Simulations_alomancy_test_5"
+    )
 
 
 @pytest.mark.unit
 def test_remote_run_dirs_finds_both_layouts(tmp_path):
     """A run can have folders in the old <host>-<full path> layout and the
-    short <path below $HOME> one; both are found, nothing else is."""
+    short <host tag>-<path below $HOME> one; both are found. The same path
+    from another machine (another host tag) and unrelated folders are not."""
+    from alomancy import _host_tag
+
     run_dir = _make_run(tmp_path, {"cpu": {"host": "raven", "rundir": "/r"}})
     full = str(run_dir).replace("/", "_")
+    mine, other = f"/r/{_host_tag('me')}-run", f"/r/{_host_tag('other')}-run"
     commands: list[str] = []
 
     def ssh(host, command, timeout):
         commands.append(command)
-        return True, f"/r/h-{full}\n/r/run\n/r/run_other\n/r/unrelated\n", ""
+        return True, f"/r/h-{full}\n{mine}\n{other}\n/r/unrelated\n", ""
 
-    found, _ = remote_run_dirs(run_dir / ".expyre", {"cpu"}, ssh=ssh, home=tmp_path)
-    assert found == {"raven": [f"/r/h-{full}", "/r/run"]}
-    assert "/r/run" in commands[0].split()
+    found, _ = remote_run_dirs(
+        run_dir / ".expyre", {"cpu"}, ssh=ssh, home=tmp_path, host="me"
+    )
+    assert found == {"raven": [f"/r/h-{full}", mine]}
+    assert mine in commands[0].split()
+
+
+@pytest.mark.unit
+def test_run_host_comes_from_the_lock(tmp_path):
+    import socket
+
+    expyre_dir = tmp_path / ".expyre"
+    expyre_dir.mkdir()
+    assert run_host(expyre_dir) == socket.gethostname()
+    (expyre_dir / LOCK_NAME).write_text("pid=1 host=ravenlogin02 started=x\n")
+    assert run_host(expyre_dir) == "ravenlogin02"
 
 
 @pytest.mark.unit

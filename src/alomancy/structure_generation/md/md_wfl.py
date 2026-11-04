@@ -13,7 +13,10 @@ from ase.units import GPa, fs
 from alomancy.configs.remote_info import get_remote_info
 from alomancy.mlip.base import CalculatorSpec
 from alomancy.remote_submission.executor import submit_n
-from alomancy.utils.clean_structures import filter_structures_by_min_bond_distance
+from alomancy.utils.clean_structures import (
+    filter_structures_by_min_bond_distance,
+    resolve_ratio,
+)
 from alomancy.utils.dataset_curation import geometry_digest
 from alomancy.utils.seed_selection import mark_structures_for_dft, select_diverse_seeds
 
@@ -27,6 +30,10 @@ _MIN_FRAMES = 2
 # The chosen MD seeds (plus any replacements, tagged info["replaces"]) for
 # a loop, so restarts resume the same runs.
 _SEEDS_FILENAME = "md_seeds.xyz"
+# A run's frames stop being candidates once its volume per atom passes this
+# multiple of its seed's: under NPT, a model whose stress can't hold the
+# cell together lets it grow without bound, and DFT can't run such cells.
+_DEFAULT_MAX_VOLUME_RATIO = 3.0
 
 # ALomancy's own defaults for the modular structure_generator entry point
 # (generate(), below) -- deliberately different from run_md's own built-in
@@ -40,6 +47,7 @@ _MD_KWARGS_DEFAULTS: dict[str, Any] = {
     "temperature": 300,
     "timestep_fs": 0.5,
     "traj_interval": None,
+    "max_volume_ratio": _DEFAULT_MAX_VOLUME_RATIO,
     "structure_selection_kwargs": {
         "num_of_md_starts": _DEFAULT_NUM_OF_MD_STARTS,
         "enforce_chemical_diversity": False,
@@ -325,10 +333,52 @@ _MD_KWARGS_SCHEMA: dict[str, Any] = {
         for p in inspect.signature(run_md).parameters
         if p not in _RUN_MD_INTERNAL_PARAMS
     ),
+    "max_volume_ratio": None,
     "structure_selection_kwargs": dict.fromkeys(
         ("num_of_md_starts", "enforce_chemical_diversity", "seed")
     ),
 }
+# md_kwargs read by generate() itself, never passed on to run_md.
+_GENERATE_ONLY_KEYS = ("structure_selection_kwargs", "max_volume_ratio")
+
+
+def _max_volume_ratio(md_kwargs: dict) -> float | None:
+    """md_kwargs.max_volume_ratio: a finite number above 1, or None (off)."""
+    ratio: float | None = resolve_ratio(
+        md_kwargs.get("max_volume_ratio", _DEFAULT_MAX_VOLUME_RATIO),
+        "structure_generation.md_kwargs.max_volume_ratio",
+    )
+    return ratio
+
+
+def validate_kwargs(sg_config: dict, *, elements: list[str], seed: int) -> None:  # noqa: ARG001
+    """Construction-time check (registry hook) of the md_kwargs that
+    generate() reads itself."""
+    _max_volume_ratio(sg_config.get("md_kwargs") or {})
+
+
+def _cell_volume(atoms: Atoms) -> float:
+    """|det(cell)|: 0 for a degenerate cell, where get_volume() raises."""
+    with np.errstate(all="ignore"):
+        return abs(float(np.linalg.det(atoms.cell.array)))
+
+
+def _cut_expanded(frames: list[Atoms], ratio: float | None) -> int:
+    """Index of a run's first frame whose volume per atom is above *ratio*
+    times its seed's (frames[0]), or len(frames) if none is (or the
+    filter is off, or the seed isn't a periodic cell with a finite,
+    positive volume)."""
+    if ratio is None or not frames or not frames[0].pbc.all():
+        return len(frames)
+    seed_volume = _cell_volume(frames[0])
+    if not np.isfinite(seed_volume) or seed_volume <= 0:
+        return len(frames)
+    limit = ratio * seed_volume / len(frames[0])
+    for index, frame in enumerate(frames[1:], start=1):
+        volume = _cell_volume(frame) / len(frame)
+        if not np.isfinite(volume) or volume > limit:
+            return index
+    return len(frames)
 
 
 def _run_md_with_spec(
@@ -417,15 +467,15 @@ def generate(
 
     md_kwargs = dict(config.get("md_kwargs", {}))
     selection_kwargs = md_kwargs.pop("structure_selection_kwargs", {})
+    max_volume_ratio = _max_volume_ratio(md_kwargs)
+    md_kwargs.pop("max_volume_ratio", None)
     # Only run_md's own flat kwargs (steps, temperature, ...) get
     # ALomancy's defaults merged in here (deliberately different from
     # run_md's own steps=100 default, far too short for real production
     # MD); structure_selection_kwargs has its own defaults, resolved
     # separately.
     _run_md_kwargs_defaults = {
-        k: v
-        for k, v in _MD_KWARGS_DEFAULTS.items()
-        if k != "structure_selection_kwargs"
+        k: v for k, v in _MD_KWARGS_DEFAULTS.items() if k not in _GENERATE_ONLY_KEYS
     }
     md_kwargs = {**_run_md_kwargs_defaults, **md_kwargs}
     md_dir = Path("results", base_name, "structure_generation")
@@ -579,15 +629,46 @@ def generate(
 
     # Each run's file is its whole (oversampled) trajectory and stays as
     # it is; the candidates are its physical frames, spread over the run.
+    # A run is cut at its first frame past max_volume_ratio x its seed's
+    # volume: once the cell has blown up, later frames are suspect too.
     frames_per_run = []
+    expanded_per_run = []
     recorded: list[Atoms] = []
     for i in completed:
-        frames = read(out_dir(i) / target_file, ":", format="extxyz")
+        frames = list(read(out_dir(i) / target_file, ":", format="extxyz"))
         frames_per_run.append(len(frames))
-        for position, frame in enumerate(frames[1:], start=1):  # 0 = the seed
+        cut = _cut_expanded(frames, max_volume_ratio)
+        expanded_per_run.append(len(frames) - cut)
+        for position, frame in enumerate(frames[1:cut], start=1):  # 0 = the seed
             frame.info["md_run"] = i
             frame.info.setdefault("md_frame", position)
             recorded.append(frame)
+    expanded_runs = [i for i, n in zip(completed, expanded_per_run) if n]
+    ensemble = str(md_kwargs.get("ensemble", "nvt")).lower()  # run_md's default
+    if expanded_runs:
+        logger.warning(
+            "%d MD run(s) for %s expanded past %g x their starting volume "
+            "(ensemble %s, pressure %g GPa); the %d frame(s) from that point "
+            "on are not candidates. The model's stress lets the cell grow "
+            "without bound: add a small positive pressure "
+            "(structure_generation.md_kwargs.pressure, e.g. 0.1 GPa) to keep "
+            "the cell compact%s.",
+            len(expanded_runs),
+            base_name,
+            max_volume_ratio,
+            ensemble,
+            md_kwargs.get("pressure", 0.0),
+            sum(expanded_per_run),
+            ", or use ensemble 'nvt'" if ensemble != "nvt" else "",
+            extra={
+                "event": "md_volume_expanded",
+                "data": {
+                    "n_runs": len(expanded_runs),
+                    "n_frames": sum(expanded_per_run),
+                    "items": [item(i) for i in expanded_runs],
+                },
+            },
+        )
     physical = filter_structures_by_min_bond_distance(recorded)
     by_run: dict[int, list[Atoms]] = {i: [] for i in completed}
     for frame in physical:
@@ -616,12 +697,28 @@ def generate(
                 "replaced": len(replaced) + len(not_started),
                 "frames_per_run": frames_per_run,
                 "valid_per_run": valid_per_run,
+                "expanded_per_run": expanded_per_run,
+                "max_volume_ratio": max_volume_ratio,
                 "selected_per_run": shares,
                 "candidates": len(structure_list),
             },
         },
     )
 
+    if not structure_list:
+        cause = (
+            "every run expanded past max_volume_ratio before its first "
+            "recorded frame; add a small positive "
+            "structure_generation.md_kwargs.pressure (e.g. 0.1 GPa) or raise "
+            "md_kwargs.max_volume_ratio"
+            if not recorded
+            else "no recorded frame passed the minimum bond-distance filter"
+        )
+        raise RuntimeError(
+            f"MD for {base_name} produced no candidates: {cause}. Check the MD "
+            f"logs in {md_dir}/md_output_*. Nothing was cached, so a restart "
+            "will retry."
+        )
     candidates_path.parent.mkdir(parents=True, exist_ok=True)
     write(candidates_path, structure_list, format="extxyz")
     return structure_list
