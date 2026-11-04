@@ -93,6 +93,88 @@
 
 <span class="n">ASE_OUTPUT_PREFIX</span> <span class="o">=</span> <span class="s2">"ase_output"</span>
 
+<span class="c1"># VASP keeps file paths in a ~256-character Fortran buffer: a run directory</span>
+<span class="c1"># of 255 characters left no room for the filename, so VASP tried to open the</span>
+<span class="c1"># directory itself ("forrtl: severe (30): open failure ... Is a directory").</span>
+<span class="c1"># 240 leaves room for "/vasprun.xml" and similar. QE has the same kind of</span>
+<span class="c1"># limit.</span>
+<span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span> <span class="o">=</span> <span class="mi">240</span>
+
+<span class="c1"># ExPyRe names each job's stage directory (local and remote)</span>
+<span class="c1"># f"run_{name}_{arghash}_{suffix}": arghash is the urlsafe base64 of a</span>
+<span class="c1"># sha256 digest (always 44 characters) and suffix is tempfile.mkdtemp's</span>
+<span class="c1"># random part (always 8). Only their lengths matter here.</span>
+<span class="n">_EXPYRE_ARGHASH_LEN</span> <span class="o">=</span> <span class="mi">44</span>
+<span class="n">_EXPYRE_MKDTEMP_SUFFIX_LEN</span> <span class="o">=</span> <span class="mi">8</span>
+
+
+<div class="viewcode-block" id="dft_job_name">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.remote_submission.submitters.dft_job_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">dft_job_name</span><span class="p">(</span><span class="n">function</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Short ExPyRe job name for one DFT structure, e.g. "sp_vasp_0".</span>
+
+<span class="sd">    ExPyRe adds its own "run_" prefix, so the function's is dropped, and the</span>
+<span class="sd">    section name ("high_accuracy_evaluation") is left out: every character</span>
+<span class="sd">    here ends up in the remote run directory (MAX_REMOTE_OUTPUT_DIR_LEN).</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">function</span><span class="o">.</span><span class="vm">__name__</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s1">'run_'</span><span class="p">)</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<div class="viewcode-block" id="projected_remote_output_dir">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.remote_submission.submitters.projected_remote_output_dir">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">projected_remote_output_dir</span><span class="p">(</span><span class="n">remote_rundir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">job_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The remote directory a job's *out_dir* (relative to the job's stage</span>
+<span class="sd">    directory) will have, with placeholder characters standing in for</span>
+<span class="sd">    ExPyRe's hash and random suffix. Exact in length, which is what</span>
+<span class="sd">    check_remote_path_length needs."""</span>
+    <span class="n">stage_dir_name</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"run_</span><span class="si">{</span><span class="n">job_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="s1">'#'</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">_EXPYRE_ARGHASH_LEN</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="s1">'#'</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">_EXPYRE_MKDTEMP_SUFFIX_LEN</span><span class="si">}</span><span class="s2">"</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">remote_rundir</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">'/'</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">stage_dir_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">out_dir</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">'/'</span><span class="p">)</span><span class="si">}</span><span class="s2">/"</span></div>
+
+
+
+<div class="viewcode-block" id="check_remote_path_length">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.remote_submission.submitters.check_remote_path_length">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_remote_path_length</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">remote_rundir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Raise ValueError if *path* (from projected_remote_output_dir) is too</span>
+<span class="sd">    long for VASP/QE to open files in."""</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">note</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">""</span>
+        <span class="k">if</span> <span class="n">remote_rundir</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span>
+        <span class="k">else</span> <span class="s2">" The remote rundir is relative to the remote $HOME, which is "</span>
+        <span class="s2">"not counted, so the real path is longer still."</span>
+    <span class="p">)</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">: the remote DFT run directory would be </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
+        <span class="sa">f</span><span class="s2">"characters, over the </span><span class="si">{</span><span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span><span class="si">}</span><span class="s2"> that VASP/QE can "</span>
+        <span class="sa">f</span><span class="s2">"handle (they fail with 'open failure ... Is a directory').</span><span class="si">{</span><span class="n">note</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+        <span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+        <span class="sa">f</span><span class="s2">"The first part, </span><span class="si">{</span><span class="n">remote_rundir</span><span class="si">!r}</span><span class="s2">, is the HPC rundir (in "</span>
+        <span class="s2">"~/.alomancy/expyre_config.json, set by `alomancy add-hpc`) plus this "</span>
+        <span class="s2">"run's directory below $HOME. Shorten the rundir, or run from a "</span>
+        <span class="s2">"directory with a shorter path."</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="expyre_remote_rundir">
+<a class="viewcode-back" href="../../../api/mlip.html#alomancy.remote_submission.submitters.expyre_remote_rundir">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">expyre_remote_rundir</span><span class="p">(</span><span class="n">sys_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The remote directory ExPyRe puts *sys_name*'s jobs in, or None if</span>
+<span class="sd">    ExPyRe has no such system (it then fails on its own at submission) or</span>
+<span class="sd">    runs it locally."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">expyre</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span> <span class="k">as</span> <span class="n">expyre_config</span>
+
+    <span class="n">system</span> <span class="o">=</span> <span class="p">(</span><span class="n">expyre_config</span><span class="o">.</span><span class="n">systems</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">sys_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">system</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">system</span><span class="o">.</span><span class="n">remote_rundir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">remote_rundir</span><span class="p">)</span></div>
+
+
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_noop</span><span class="p">(</span><span class="o">**</span><span class="n">_kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No function provided for remote execution. This is a no-op."</span><span class="p">)</span>
@@ -117,10 +199,10 @@
 <span class="sd">    input_atoms_list and picks which function each structure's job runs</span>
 <span class="sd">    (e.g. a mix of geometry-optimisation and single-point evaluation jobs</span>
 <span class="sd">    sharing one submission queue instead of running as separate batches).</span>
-<span class="sd">    Each such job also gets a job name prefixed with the function's</span>
-<span class="sd">    __name__ so the two kinds are distinguishable in logs/ExPyRe state.</span>
-<span class="sd">    When omitted, every structure uses the single shared `function`,</span>
-<span class="sd">    unchanged from before.</span>
+<span class="sd">    When omitted, every structure uses the single shared `function`.</span>
+<span class="sd">    Every job is named by dft_job_name ("go_vasp_3", "sp_qe_0"), and its</span>
+<span class="sd">    remote run directory is checked against MAX_REMOTE_OUTPUT_DIR_LEN</span>
+<span class="sd">    before anything is submitted.</span>
 <span class="sd">    """</span>
     <span class="k">if</span> <span class="n">per_structure_function</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">per_structure_function</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span>
         <span class="n">input_atoms_list</span>
@@ -131,15 +213,18 @@
         <span class="p">)</span>
 
     <span class="n">ase_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">"high_accuracy_evaluation"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"batch_</span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-    <span class="n">ase_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">executor</span> <span class="o">=</span> <span class="n">RemoteJobExecutor</span><span class="p">(</span><span class="n">remote_info</span><span class="p">)</span>
+    <span class="n">remote_rundir</span> <span class="o">=</span> <span class="n">expyre_remote_rundir</span><span class="p">(</span><span class="n">remote_info</span><span class="o">.</span><span class="n">sys_name</span><span class="p">)</span>
 
     <span class="n">job_configs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">input_atoms_list</span><span class="p">):</span>
+        <span class="n">job_function</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">per_structure_function</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">if</span> <span class="n">per_structure_function</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="n">function</span>
+        <span class="n">out_dir</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">ase_dir</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">ASE_OUTPUT_PREFIX</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">))</span>
         <span class="n">job_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
             <span class="s2">"function_kwargs"</span><span class="p">:</span> <span class="p">{</span>
                 <span class="s2">"input_structure"</span><span class="p">:</span> <span class="n">atoms</span><span class="p">,</span>
-                <span class="s2">"out_dir"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">ase_dir</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">ASE_OUTPUT_PREFIX</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">)),</span>
+                <span class="s2">"out_dir"</span><span class="p">:</span> <span class="n">out_dir</span><span class="p">,</span>
                 <span class="o">**</span><span class="p">(</span><span class="n">function_kwargs</span> <span class="ow">or</span> <span class="p">{}),</span>
             <span class="p">},</span>
             <span class="c1"># The structure this job labels, for the loop report's retry</span>
@@ -147,12 +232,23 @@
             <span class="s2">"item"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"structure_</span><span class="si">{</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'job_id'</span><span class="p">,</span><span class="w"> </span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">batch</span><span class="si">}</span><span class="s1">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
         <span class="p">}</span>
         <span class="k">if</span> <span class="n">per_structure_function</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">job_function</span> <span class="o">=</span> <span class="n">per_structure_function</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
             <span class="n">job_config</span><span class="p">[</span><span class="s2">"function"</span><span class="p">]</span> <span class="o">=</span> <span class="n">job_function</span>
-            <span class="n">job_config</span><span class="p">[</span><span class="s2">"job_name"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">job_function</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">remote_info</span><span class="o">.</span><span class="n">job_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span>
-            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">job_function</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">job_config</span><span class="p">[</span><span class="s2">"job_name"</span><span class="p">]</span> <span class="o">=</span> <span class="n">dft_job_name</span><span class="p">(</span><span class="n">job_function</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+            <span class="c1"># Checked for every job before any is submitted, so a run whose</span>
+            <span class="c1"># paths are too long fails here rather than in the queue.</span>
+            <span class="k">if</span> <span class="n">remote_rundir</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">check_remote_path_length</span><span class="p">(</span>
+                    <span class="n">projected_remote_output_dir</span><span class="p">(</span>
+                        <span class="n">remote_rundir</span><span class="p">,</span> <span class="n">job_config</span><span class="p">[</span><span class="s2">"job_name"</span><span class="p">],</span> <span class="n">out_dir</span>
+                    <span class="p">),</span>
+                    <span class="n">remote_rundir</span><span class="o">=</span><span class="n">remote_rundir</span><span class="p">,</span>
+                    <span class="n">context</span><span class="o">=</span><span class="sa">f</span><span class="s2">"DFT job </span><span class="si">{</span><span class="n">job_config</span><span class="p">[</span><span class="s1">'job_name'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="p">)</span>
         <span class="n">job_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">job_config</span><span class="p">)</span>
+
+    <span class="n">ase_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">executor</span> <span class="o">=</span> <span class="n">RemoteJobExecutor</span><span class="p">(</span><span class="n">remote_info</span><span class="p">)</span>
 
     <span class="n">executor</span><span class="o">.</span><span class="n">run_and_wait</span><span class="p">(</span>
         <span class="n">function</span><span class="o">=</span><span class="p">(</span><span class="n">function</span> <span class="ow">or</span> <span class="n">_noop</span><span class="p">),</span>

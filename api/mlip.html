@@ -56,6 +56,10 @@
 <li class="toctree-l2"><a class="reference internal" href="database.html">Database</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">MLIP Training</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.remote_submission.submitters.ase_remote_submitter"><code class="docutils literal notranslate"><span class="pre">ase_remote_submitter()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.remote_submission.submitters.check_remote_path_length"><code class="docutils literal notranslate"><span class="pre">check_remote_path_length()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.remote_submission.submitters.dft_job_name"><code class="docutils literal notranslate"><span class="pre">dft_job_name()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.remote_submission.submitters.expyre_remote_rundir"><code class="docutils literal notranslate"><span class="pre">expyre_remote_rundir()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.remote_submission.submitters.projected_remote_output_dir"><code class="docutils literal notranslate"><span class="pre">projected_remote_output_dir()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.mlip.base.ALomancyTrainer"><code class="docutils literal notranslate"><span class="pre">ALomancyTrainer</span></code></a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.mlip.base.ALomancyTrainer.ISOLATED_ATOM_ENERGIES_KWARG"><code class="docutils literal notranslate"><span class="pre">ALomancyTrainer.ISOLATED_ATOM_ENERGIES_KWARG</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.mlip.base.ALomancyTrainer.KWARGS_DEFAULTS"><code class="docutils literal notranslate"><span class="pre">ALomancyTrainer.KWARGS_DEFAULTS</span></code></a></li>
@@ -172,10 +176,43 @@ RemoteJobExecutor pool (bounded by remote_info.max_num_of_concurrent_jobs).</p>
 input_atoms_list and picks which function each structure’s job runs
 (e.g. a mix of geometry-optimisation and single-point evaluation jobs
 sharing one submission queue instead of running as separate batches).
-Each such job also gets a job name prefixed with the function’s
-__name__ so the two kinds are distinguishable in logs/ExPyRe state.
-When omitted, every structure uses the single shared <cite>function</cite>,
-unchanged from before.</p>
+When omitted, every structure uses the single shared <cite>function</cite>.
+Every job is named by dft_job_name (“go_vasp_3”, “sp_qe_0”), and its
+remote run directory is checked against MAX_REMOTE_OUTPUT_DIR_LEN
+before anything is submitted.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.remote_submission.submitters.check_remote_path_length">
+<span class="sig-prename descclassname"><span class="pre">alomancy.remote_submission.submitters.</span></span><span class="sig-name descname"><span class="pre">check_remote_path_length</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remote_rundir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/remote_submission/submitters.html#check_remote_path_length"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.remote_submission.submitters.check_remote_path_length" title="Link to this definition"></a></dt>
+<dd><p>Raise ValueError if <em>path</em> (from projected_remote_output_dir) is too
+long for VASP/QE to open files in.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.remote_submission.submitters.dft_job_name">
+<span class="sig-prename descclassname"><span class="pre">alomancy.remote_submission.submitters.</span></span><span class="sig-name descname"><span class="pre">dft_job_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">function</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable" title="(in Python v3.15)"><span class="pre">Callable</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../_modules/alomancy/remote_submission/submitters.html#dft_job_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.remote_submission.submitters.dft_job_name" title="Link to this definition"></a></dt>
+<dd><p>Short ExPyRe job name for one DFT structure, e.g. “sp_vasp_0”.</p>
+<p>ExPyRe adds its own “<a href="#id1"><span class="problematic" id="id2">run_</span></a>” prefix, so the function’s is dropped, and the
+section name (“high_accuracy_evaluation”) is left out: every character
+here ends up in the remote run directory (MAX_REMOTE_OUTPUT_DIR_LEN).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.remote_submission.submitters.expyre_remote_rundir">
+<span class="sig-prename descclassname"><span class="pre">alomancy.remote_submission.submitters.</span></span><span class="sig-name descname"><span class="pre">expyre_remote_rundir</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sys_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/remote_submission/submitters.html#expyre_remote_rundir"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.remote_submission.submitters.expyre_remote_rundir" title="Link to this definition"></a></dt>
+<dd><p>The remote directory ExPyRe puts <em>sys_name</em>’s jobs in, or None if
+ExPyRe has no such system (it then fails on its own at submission) or
+runs it locally.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.remote_submission.submitters.projected_remote_output_dir">
+<span class="sig-prename descclassname"><span class="pre">alomancy.remote_submission.submitters.</span></span><span class="sig-name descname"><span class="pre">projected_remote_output_dir</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">remote_rundir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../_modules/alomancy/remote_submission/submitters.html#projected_remote_output_dir"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.remote_submission.submitters.projected_remote_output_dir" title="Link to this definition"></a></dt>
+<dd><p>The remote directory a job’s <em>out_dir</em> (relative to the job’s stage
+directory) will have, with placeholder characters standing in for
+ExPyRe’s hash and random suffix. Exact in length, which is what
+check_remote_path_length needs.</p>
 </dd></dl>
 
 <p id="module-alomancy.mlip.base">ALomancyTrainer: the generic base of every MLIP trainer backend.</p>

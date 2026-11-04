@@ -57,6 +57,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#ezga-kwargs-is-ezga-s-own-config"><code class="docutils literal notranslate"><span class="pre">ezga_kwargs</span></code> is EZGA’s own config</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#the-calculator">The calculator</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#defaults">Defaults</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mutations">Mutations</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#hise-supercell-escalation-and-the-md-burst">HiSE: supercell escalation and the MD burst</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#how-many-structures-ezga-makes">How many structures EZGA makes</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#cost">Cost</a></li>
@@ -165,7 +166,7 @@ ALomancy, locally and by <code class="docutils literal notranslate"><span class=
 <span class="w">  </span><span class="nt">amorphous_kwargs</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">num_of_amorphous_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
 <span class="w">    </span><span class="nt">num_of_atoms_per_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># small seeds: 2x2x1 makes them 40 atoms</span>
-<span class="w">    </span><span class="nt">densities_list</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">7.0</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">density_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">7.0</span><span class="p p-Indicator">]</span>
 
 <span class="nt">training</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">trainer</span><span class="p">:</span><span class="w"> </span><span class="s">"mace"</span>
@@ -302,7 +303,7 @@ wiki’s active-learning example:</p>
 <td><p><code class="docutils literal notranslate"><span class="pre">fmax</span></code> 0.05, <code class="docutils literal notranslate"><span class="pre">steps_max</span></code> 100, FIRE</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code></p></td>
-<td><p>rattle and strain; an add and a remove per element in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>; a swap for every pair of elements</p></td>
+<td><p>rattle and strain over <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>; an add and a remove per element of <code class="docutils literal notranslate"><span class="pre">atom_mutation_elements</span></code> (default <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>); a swap for every pair of those elements; then <code class="docutils literal notranslate"><span class="pre">extra_mutation_funcs</span></code> (see Mutations below)</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">evaluator</span></code></p></td>
 <td><p>composition feature over <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>; energy per atom as the objective</p></td>
@@ -314,6 +315,89 @@ wiki’s active-learning example:</p>
 default, so <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code> is either all yours or all the defaults. If
 <code class="docutils literal notranslate"><span class="pre">structure_selection_kwargs.atom_number_range</span></code> is set, it also bounds the
 default add and remove mutations, except with HiSE (below).</p>
+</section>
+<section id="mutations">
+<h3>Mutations<a class="headerlink" href="#mutations" title="Link to this heading"></a></h3>
+<p>There are three ways to set EZGA’s mutations. Molecules are always named
+explicitly: as a formula SAGE knows (<code class="docutils literal notranslate"><span class="pre">&quot;CO&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;H2O&quot;</span></code>) or as SMILES
+(<code class="docutils literal notranslate"><span class="pre">&quot;smiles-C&quot;</span></code> for methane, <code class="docutils literal notranslate"><span class="pre">&quot;smiles-OB(O)c1ccccc1&quot;</span></code> for phenylboronic acid).
+Every element of a molecule must be in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>. Mutation entries
+are EZGA <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code> entries: a <code class="docutils literal notranslate"><span class="pre">type</span></code> (the factory’s import path) and
+its arguments. ALomancy’s own factories are
+<code class="docutils literal notranslate"><span class="pre">alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add</span></code>
+(<code class="docutils literal notranslate"><span class="pre">species</span></code>, <code class="docutils literal notranslate"><span class="pre">max_atoms</span></code>, <code class="docutils literal notranslate"><span class="pre">bound</span></code>, <code class="docutils literal notranslate"><span class="pre">slab</span></code>, <code class="docutils literal notranslate"><span class="pre">collision_tolerance</span></code>),
+<code class="docutils literal notranslate"><span class="pre">...bounded_mutation_remove</span></code> (<code class="docutils literal notranslate"><span class="pre">species</span></code>, <code class="docutils literal notranslate"><span class="pre">min_atoms</span></code>) and
+<code class="docutils literal notranslate"><span class="pre">...bounded_mutation_remove_molecule</span></code> (<code class="docutils literal notranslate"><span class="pre">molecule</span></code>, <code class="docutils literal notranslate"><span class="pre">min_atoms</span></code>, removes one
+whole molecule).</p>
+<p><strong>1. No molecules: the automatic mutations.</strong> Write nothing about mutations.
+For <code class="docutils literal notranslate"><span class="pre">general.elements:</span> <span class="pre">[&quot;Cu&quot;,</span> <span class="pre">&quot;O&quot;]</span></code> ALomancy makes: a rattle (0.05 Å) and a
+cell strain (2 %) over Cu and O; a bounded add and a bounded remove for Cu
+and for O; swaps Cu→O and O→Cu; the composition feature over Cu and O; and
+energy per atom as the objective. <code class="docutils literal notranslate"><span class="pre">structure_selection_kwargs.atom_number_range</span></code>
+bounds the adds and removes (not with HiSE).</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Cu"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"ezga"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+<span class="w">  </span><span class="nt">structure_selection_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">atom_number_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">40</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">ezga_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">local</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+<p><strong>2. Molecules on top of the automatic mutations.</strong> For methane on a Pd
+surface <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> is <code class="docutils literal notranslate"><span class="pre">[Pd,</span> <span class="pre">H,</span> <span class="pre">C]</span></code>, but H and C should only move as
+CH4. <code class="docutils literal notranslate"><span class="pre">atom_mutation_elements:</span> <span class="pre">[&quot;Pd&quot;]</span></code> gives Pd alone the single-atom add,
+remove and swap mutations (rattle, strain and the composition feature still
+cover every element), and <code class="docutils literal notranslate"><span class="pre">extra_mutation_funcs</span></code> is appended to the
+defaults. Molecules in <code class="docutils literal notranslate"><span class="pre">extra_mutation_funcs</span></code> without <code class="docutils literal notranslate"><span class="pre">atom_mutation_elements</span></code>
+stop the run at startup: the default would add and remove H and C as single
+atoms.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"ezga"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+<span class="w">  </span><span class="nt">ezga_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">local</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">atom_mutation_elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">extra_mutation_funcs</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add"</span>
+<span class="w">        </span><span class="nt">species</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"smiles-C"</span><span class="p p-Indicator">]</span><span class="w">      </span><span class="c1"># CH4</span>
+<span class="w">        </span><span class="nt">bound</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">]</span><span class="w">              </span><span class="c1"># placed next to Pd atoms</span>
+<span class="w">        </span><span class="nt">slab</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                 </span><span class="c1"># on the surface side of a slab</span>
+<span class="w">        </span><span class="nt">max_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove_molecule"</span>
+<span class="w">        </span><span class="nt">molecule</span><span class="p">:</span><span class="w"> </span><span class="s">"smiles-C"</span>
+<span class="w">        </span><span class="nt">min_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+</pre></div>
+</div>
+<p><strong>3. Molecules with every mutation written out.</strong> <code class="docutils literal notranslate"><span class="pre">mutation_funcs</span></code> replaces
+the defaults entirely, so list everything you want, including the rattle,
+strain and Pd mutations. It can’t be combined with <code class="docutils literal notranslate"><span class="pre">atom_mutation_elements</span></code>
+or <code class="docutils literal notranslate"><span class="pre">extra_mutation_funcs</span></code> (startup error).</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"C"</span><span class="p p-Indicator">]</span>
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"ezga"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+<span class="w">  </span><span class="nt">ezga_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">local</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">mutation_funcs</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"ezga.variation.mutation.mutation_rattle"</span><span class="p p-Indicator">,</span><span class="nt"> std</span><span class="p">:</span><span class="w"> </span><span class="nv">0.05</span><span class="p p-Indicator">,</span><span class="nt"> species</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"H"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"C"</span><span class="p p-Indicator">]}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"ezga.variation.mutation.mutation_random_strain"</span><span class="p p-Indicator">,</span><span class="nt"> max_strain</span><span class="p">:</span><span class="w"> </span><span class="nv">0.02</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add"</span><span class="p p-Indicator">,</span><span class="nt"> species</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">],</span><span class="nt"> max_atoms</span><span class="p">:</span><span class="w"> </span><span class="nv">60</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove"</span><span class="p p-Indicator">,</span><span class="nt"> species</span><span class="p">:</span><span class="w"> </span><span class="s">"Pd"</span><span class="p p-Indicator">,</span><span class="nt"> min_atoms</span><span class="p">:</span><span class="w"> </span><span class="nv">20</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"alomancy.structure_generation.ezga.generate_structures.bounded_mutation_add"</span><span class="p p-Indicator">,</span><span class="nt"> species</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"smiles-C"</span><span class="p p-Indicator">],</span><span class="nt"> bound</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pd"</span><span class="p p-Indicator">],</span><span class="nt"> slab</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">,</span><span class="nt"> max_atoms</span><span class="p">:</span><span class="w"> </span><span class="nv">60</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">"alomancy.structure_generation.ezga.generate_structures.bounded_mutation_remove_molecule"</span><span class="p p-Indicator">,</span><span class="nt"> molecule</span><span class="p">:</span><span class="w"> </span><span class="s">"smiles-C"</span><span class="p p-Indicator">,</span><span class="nt"> min_atoms</span><span class="p">:</span><span class="w"> </span><span class="nv">20</span><span class="p p-Indicator">}</span>
+</pre></div>
+</div>
+<p>ALomancy doesn’t look at the seeds or the initialisation section for
+molecules. If your seeds hold molecules (e.g. from
+<code class="docutils literal notranslate"><span class="pre">initialization.molecules_in_box_kwargs</span></code>) but EZGA gets no molecule
+mutations, set <code class="docutils literal notranslate"><span class="pre">atom_mutation_elements</span></code> yourself, or the defaults add and
+remove the molecules’ elements one atom at a time.</p>
 </section>
 <section id="hise-supercell-escalation-and-the-md-burst">
 <h3>HiSE: supercell escalation and the MD burst<a class="headerlink" href="#hise-supercell-escalation-and-the-md-burst" title="Link to this heading"></a></h3>
