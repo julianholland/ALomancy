@@ -13,6 +13,7 @@ the folders are offered for deletion only when nothing is still alive.
 
 import contextlib
 import fcntl
+import functools
 import json
 import os
 import re
@@ -28,6 +29,11 @@ from typing import Any
 
 from alomancy.cli.nuke import wipe_local_expyre
 from alomancy.utils.remote_ssh import run_ssh_command
+from alomancy.utils.ssh_master import (
+    close_master,
+    control_path_template,
+    external_calls_disabled,
+)
 
 LOCK_NAME = "alomancy.lock"
 ONGOING_STATUSES = ("created", "submitted", "started")
@@ -454,6 +460,11 @@ def cancel_run(
 
     from expyre import config as expyre_config
 
+    template = control_path_template(run_dir)
+    if ssh is run_ssh_command:
+        # Through the run's own ssh connection while it is up (no login).
+        ssh = functools.partial(run_ssh_command, control_path=template)
+
     proc = find_run_process(expyre_dir)
     records = ongoing_jobs(expyre_config.db)
 
@@ -504,6 +515,27 @@ def cancel_run(
     used = hpcs_used(run_dir)
     configured = set(json.loads((expyre_dir / "config.json").read_text())["systems"])
     remote, unreachable = remote_run_dirs(expyre_dir, used & configured, ssh=ssh)
+    try:
+        return _offer_folder_deletion(
+            run_dir, expyre_dir, used, configured, remote, unreachable, input_fn, ssh
+        )
+    finally:
+        # The run is stopped: end its own ssh connections (utils/ssh_master.py).
+        if not external_calls_disabled():
+            for host in sorted(remote_targets(expyre_dir, used & configured)):
+                close_master(host, template)
+
+
+def _offer_folder_deletion(
+    run_dir: Path,
+    expyre_dir: Path,
+    used: set[str],
+    configured: set[str],
+    remote: dict[str, list[str]],
+    unreachable: list[str],
+    input_fn: Callable[[str], str],
+    ssh: Callable[[str, str, float], tuple[bool, str, str]],
+) -> int:
     stage_dirs = [p for p in expyre_dir.iterdir() if p.is_dir()]
     print("This run's ExPyRe folders:")
     print(

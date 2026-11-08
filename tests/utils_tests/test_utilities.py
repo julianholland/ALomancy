@@ -73,6 +73,7 @@ class _FakeExPyReJob:
         start_duration=0.0,
         start_concurrency_tracker=None,
         get_results_side_effects=None,
+        start_side_effects=None,
     ):
         self.name = name
         self.stage_dir = stage_dir
@@ -91,9 +92,14 @@ class _FakeExPyReJob:
         # succeeds on the second call, simulating a transport blip.
         self._get_results_side_effects = list(get_results_side_effects or [])
         self.start_calls: list[bool] = []
+        # Exceptions start() raises on successive calls before submitting
+        # (status stays "created", as in expyre when sbatch's ssh fails).
+        self._start_side_effects = list(start_side_effects or [])
 
     def start(self, **kwargs):
         self.start_calls.append(kwargs.get("force_rerun", False))
+        if self._start_side_effects:
+            raise self._start_side_effects.pop(0)
         if self._start_concurrency is not None:
             self._start_concurrency.on_start()
         self.stage_dir.mkdir(parents=True, exist_ok=True)
@@ -604,6 +610,53 @@ class TestRemoteJobExecutor:
         events = [getattr(r, "event", None) for r in records]
         assert events.count("ssh_auth_lost") == 1
         assert "job_resumed" not in events
+
+    @pytest.mark.unit
+    def test_lost_ssh_login_during_start_waits_and_starts_again(self, tmp_path):
+        """A login lost while staging or submitting (job.start()) waits for
+        a new login and starts the same job again, instead of failing it."""
+        import alomancy.remote_submission.executor as executor_module
+        from alomancy.remote_submission import progress
+
+        auth_error = RuntimeError(
+            "rsync failed: jholl@10.0.0.1: Permission denied (keyboard-interactive)."
+        )
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            result="the real result",
+            start_side_effects=[auth_error, auth_error],
+        )
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
+        records: list[logging.LogRecord] = []
+        handler = logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        executor_module.logger.addHandler(handler)
+        try:
+            with patch.object(executor_module, "_SSH_AUTH_WAIT_SECONDS", 0.001):
+                results = executor.run_all_jobs_bounded()
+        finally:
+            executor_module.logger.removeHandler(handler)
+            progress.TRACKER.auth_lost.clear()
+
+        assert results == ["the real result"]
+        assert job.start_calls == [False, False, False]
+        events = [getattr(r, "event", None) for r in records]
+        assert events.count("ssh_auth_lost") == 1
+        assert "job_failed" not in events
+
+    @pytest.mark.unit
+    def test_other_start_failures_still_fail_the_job(self, tmp_path):
+        job = _FakeExPyReJob(
+            "job0",
+            tmp_path / "job0",
+            duration=0.0,
+            start_side_effects=[RuntimeError("sbatch: invalid partition")],
+        )
+        executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
+        assert executor.run_all_jobs_bounded() == [None]
+        assert job.start_calls == [False]
 
     @pytest.mark.unit
     def test_transport_failure_gives_up_after_retry_limit(self, tmp_path):

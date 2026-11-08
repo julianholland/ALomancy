@@ -414,7 +414,14 @@ class TestNonInteractiveSsh:
         fake_ssh.chmod(0o755)
         proc = subprocess.run(
             [sys.executable, "-m", "alomancy.utils.rsh", "host", "bash", "-c", "true"],
-            env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+            env={
+                **{
+                    k: v
+                    for k, v in os.environ.items()
+                    if not k.startswith("ALOMANCY_SSH_")
+                },
+                "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            },
             capture_output=True,
             text=True,
             check=True,

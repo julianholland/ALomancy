@@ -155,14 +155,29 @@ Two behaviors differ from the old fast path. `initial_train_file_path`/`initial_
 
 ## Watching a run
 
-While the run waits on HPC jobs, its terminal shows a panel that redraws itself. The panel has:
-- a bar of jobs done, running, queued and still to submit;
-- for each HPC: the job counts, when data last came back from it (⚠ when that is overdue), and how long the oldest job has been queued;
-- the slowest running job.
+From the end of its startup checks until it finishes, the run's terminal shows two panels that redraw themselves:
 
-Log lines scroll above the panel. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. `alomancy run --no-live` turns the panel off.
+- **ALomancy**
+  - *Run Details*: the run, its workflow, the loop (with the time spent on it, counted across restarts) and the run time, and the elements.
+  - *Settings*: one row per block (selector, trainer, generator, evaluator), with the HPC each runs on.
+  - *Best Model*: the current best model and its errors.
+- **Current task**
+  - *Errors*: only shown when something is wrong, such as a lost ssh login, a failing sync or failed jobs.
+  - *Status*: the current step. While HPC jobs run, it shows a bar of jobs done, running, queued and still to submit, and for each HPC its ssh state, the job counts, when data last came back (`!` when overdue) and how long the oldest job has been queued.
+  - *Options*: the keys you can press.
 
-From any other terminal, `alomancy status` in the run's directory shows the same panel; `alomancy status --watch` keeps it updating until Ctrl-C.
+Log lines scroll above the panels. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. `alomancy run --no-live` turns the panels off.
+
+From any other terminal, `alomancy status` in the run's directory shows the same panels; `alomancy status --watch` keeps them updating until Ctrl-C.
+
+### If the ssh connection to an HPC drops
+
+At startup the run opens its own ssh connection to each HPC and asks for your password/OTP once. Every later ssh call reuses that connection. If it drops (a network blip, a laptop going to sleep), jobs don't fail: they wait. The panel shows `login needed` for that HPC.
+
+- In the run's terminal, press **L**, or the HPC's number when several need a login. The panels pause, your usual password/OTP prompt appears, and the run carries on.
+- From another terminal on the same machine (for a run under nohup or tmux), run `alomancy login` in the run's directory, or `alomancy login <HPC>`.
+
+An HPC that logs in with an ssh key reconnects on its own. The connections stay open after a crash or Ctrl-C, so a restart doesn't ask again; they close when the run finishes or with `alomancy cancel`. `ALOMANCY_OWN_SSH_MASTER=0` turns this off and uses your own ssh config instead.
 
 ## Stopping a run
 

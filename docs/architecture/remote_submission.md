@@ -32,7 +32,7 @@ Fields that matter:
 - Passed to ExPyRe: `sys_name`, `job_name`, `resources`, `pre_cmds`, `post_cmds`, `env_vars`, `input_files`, `output_files`, `header_extra`, `exact_fit`, `partial_node`; `timeout`/`check_interval` go to `get_results`.
 - `max_num_of_concurrent_jobs` caps the thread pool. It comes from the HPC profile (default 20, set by `alomancy add-hpc`), resolved by `_resolve_max_concurrent_jobs`; profiles with the pre-rename key `max_concurrent_jobs` are honoured with a warning. The job-dict-level `max_batch_size` fallback was removed in 1.0.0. Unrelated to MD's `num_of_md_starts`.
 - `resubmit_killed_jobs` (default `False`): see "Resume and resubmit" below.
-- `lock_timeout` defaults to `None`: a worker waits indefinitely for the per-host ssh lock. A version that derived it from `max_time` was reverted: the thread *holding* the lock while blocked on a password/OTP prompt was never bounded (expyre's `Popen(...).communicate()` has no timeout), so a timeout only made every queued thread fail loudly around the one that was still waiting. The real fix is `ensure_ssh_connectivity` (below).
+- `lock_timeout` defaults to `None`: a worker waits indefinitely for the per-host ssh lock. A version that derived it from `max_time` was reverted: the thread *holding* the lock while blocked on a password/OTP prompt was never bounded (expyre's `Popen(...).communicate()` has no timeout), so a timeout only made every queued thread fail loudly around the one that was still waiting. The real fix is the run's own ssh master, logged in at start, plus BatchMode for everything after (below).
 
 ## Scheduling: `run_all_jobs_bounded`
 
@@ -40,18 +40,37 @@ Fields that matter:
 
 `_run_single_job`: acquire the per-host ssh lock → `job.start()` → release → `_get_results_with_resume` → log stdout/stderr at DEBUG → compute queue time from `_expyre_job_started`'s mtime (logged as `Job N queue_time=… s.`, parsed by the timing plot) → return `(index, result)`. It never lets an exception escape; its failure handler logs the full traceback at DEBUG in `results/alomancy.log`.
 
-## Live job status
+## Live run status
 
 `progress.py` (`remote_submission/`) replaces expyre's own progress output. `_get_results_with_resume` passes `quiet=True`, so expyre no longer writes a status letter per poll per thread.
 
-- **`TRACKER`** (`JobTracker`) holds one batch per active `run_all_jobs_bounded`: phase (`remote_info.job_name`), loop (from the jobs' `results/al_loop_N` output paths, `loop_from_paths`) and a row per job.
+- **`TRACKER`** (`JobTracker`) holds the run and one batch per active `run_all_jobs_bounded`.
+  - The run: `set_run_info` (`ActiveLearningWorkflow.panel_run_info()` at the end of `pre_run_checks`: name, directory, workflow, `num_of_al_loops`, elements and the Settings rows; selector text from `selector_description()`, which a workflow may override), `set_loop` (`iterate_loops`; the start time is the loop's first event in `results/events.jsonl`, `_loop_started_at`, so loop time survives a restart), `set_phase` (the `@phase` decorator), `set_best_model` (`_update_best_model`).
+  - A batch: phase (`remote_info.job_name`), loop (from the jobs' `results/al_loop_N` output paths, `loop_from_paths`) and a row per job. `unregister` keeps a one-line summary in `finished_batches` for `FINISHED_KEEP` (5 min).
   - `_run_single_job` marks each job submitted (with its remote id), and done or failed.
   - The `_locked_sync` patch calls `TRACKER.synced(sys_name, _remote_statuses(sys_name))` after every successful sync. That records "last data" for the HPC and moves jobs between queued and running from expyre's DB. A failed sync calls `sync_failed` and re-raises unchanged; a coalesced (skipped) sync records nothing.
-- **`ProgressMonitor`** wraps the pool and renders one `snapshot()`:
-  - **On a terminal** (and unless `ALOMANCY_LIVE=0`, set by `alomancy run --no-live`): a rich `Live` panel that redraws itself, in the ALomancy colours (`_BAR_STYLE`: done brand violet, running cyan, queued amber, to submit `PENDING_COLOR`, a muted mid-violet readable on light and dark terminals; failures rose), each summary label in its bar segment's colour. The colours come from `analysis/palette.py`, which doesn't import matplotlib (`analysis/colors.py` re-exports them for plots). The console log handler is pointed at rich's stdout proxy, so log lines print above the panel.
-  - **Otherwise:** an INFO `Remote jobs: ...` summary line every 5 minutes.
-  - **Always:** `results/remote_status.json`, written atomically every 5 s and marked `finished` at the end. `alomancy status` renders it.
-  - Nested monitors share the outermost panel.
+  - ssh: `auth_lost` (system → since, host) and `ssh_state` (`ok` / `login needed`), set by `mark_auth_lost`, `auth_restored`, `set_ssh_ok` and `synced`.
+- **`ProgressMonitor`**: `ALomancy.run` (`core/entry.py`) holds one for the whole run (`defer_live=True, watch_ssh=True`). Each `run_all_jobs_bounded` enters its own, which nests and shares the outer one's panels. A bare executor run outside a workflow gets its own.
+  - **On a terminal** (and unless `ALOMANCY_LIVE=0`, set by `alomancy run --no-live`), a rich `Live` view of two bordered panels. Everything sits in a sub-section headed by `section()`: a dim rule with leading dashes and the title in the brand violet.
+    - "ALomancy" has Run Details, Settings and Best Model.
+      - Settings is a Block / Information / HPC table, with bold violet headers over a thin dim rule (`box.SIMPLE_HEAD`). It is dropped below 80 columns.
+      - Best Model shows the MAE on the split it was selected on.
+    - "Current task" has Errors, Status and Options.
+      - Errors (`error_lines`) is only shown when something is wrong: lost logins, failed jobs, failing syncs.
+      - Status has the current phase, then each batch: `batch_header`, `batch_bar` and the per-HPC table with an `ssh` column. Finished batches follow as `✓` lines.
+      - Options lists the keys, or `alomancy login` when there are none.
+    - With `defer_live`, the panels first appear once `set_run_info` has run or a batch starts, so the start-of-run logins reach a plain terminal.
+    - The colours come from `analysis/palette.py` (`_BAR_STYLE`: done brand violet, running cyan, queued amber, to submit `PENDING_COLOR`; failures rose, warnings amber, ok emerald), each summary label in its bar segment's colour. `palette.py` doesn't import matplotlib (`analysis/colors.py` re-exports it for plots).
+    - The console log handler is pointed at rich's stdout proxy, so log lines print above the panels.
+  - **Keys** (`_key_loop`, only when stdin is a terminal):
+    - The thread puts the terminal in cbreak mode and `select`s on stdin. `handle_key` maps `L` / `1`–`9` to a login and `?` to help.
+    - A login runs `executor.relogin` inside `_handoff`. That pauses the key thread (`_keys_idle`), stops `Live`, buffers the log handlers into a `StringIO`, restores the terminal mode, then undoes all of it and flushes the buffered lines.
+    - `terminal_handoff()` gives the same to other callers (`pre_run_checks`' logins); it is a no-op without a monitor.
+  - **Otherwise:** an INFO `Remote jobs: ...` summary line every 5 minutes while a batch runs or a login is lost, prefixed with loop, phase and the best model's `mae_f`.
+  - **Always:** `results/remote_status.json`, written atomically every 5 s (with the `run`, `ssh` and `finished_batches` keys) and marked `finished` at the end. `alomancy status` renders it.
+  - **ssh master watch** (`_watch_loop` → `executor.check_ssh_masters`, every `SSH_WATCH_INTERVAL` = 30 s):
+    - For each host it checks the run's master (`ssh -O check`). A dead one is reopened with BatchMode, so key-auth hosts recover silently.
+    - Otherwise `_note_ssh_auth_lost` raises the banner before any poll fails.
 - "Last data" is flagged stale after 3 check intervals without a sync.
 - `tests/conftest.py` sets `progress.STATUS_FILE = None`, so tests never write into the repository's `results/`. The file is only written when its directory exists.
 
@@ -80,13 +99,46 @@ Transport exceptions get up to `_TRANSPORT_RETRY_LIMIT` (5) retries with exponen
 
 `acquire_local_expyre_lock` runs at the start of `pre_run_checks()`: an exclusive non-blocking `flock`, raising `RuntimeError` if another process holds it (a no-op if this process already does, or if `local_stage_dir` hasn't resolved). The OS releases an `flock` when the holder's descriptor closes, including on a crash or `kill -9`, so a dead run never blocks a restart. The lock file records `pid`/`host`/`started`. The module-global handle is set under `_expyre_root_lock_guard` (double-checked locking): `flock` is per open file description, so two threads racing could otherwise each open the file and the second would report a conflicting process.
 
-## ssh connectivity before submission
+## The run's own ssh connections
 
-`pre_run_checks()` calls `ensure_ssh_connectivity` (`utils/remote_ssh.py`): one bare `ssh <host> true` per distinct HPC host in the run, with no timeout and no captured output, so a password/OTP prompt reaches the real terminal while the person who launched the run is still there. With `ControlMaster`/`ControlPersist` this also opens the shared connection every later call reuses. It never raises; an unreachable host is a warning, and the real submission fails loudly later.
+**alomancy owns one ssh master per HPC host** (`utils/ssh_master.py`).
+- `pre_run_checks()` calls `start_run_masters` (inside `progress.terminal_handoff`) for every distinct host of the run's HPC profiles (`resolve_hpc_host`).
+- Each master is `ssh -M -N -f -o ControlPath=<template> -o ControlPersist=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=10 <host>`, run without captured output or a timeout. A password/OTP prompt therefore reaches the real terminal while the person who launched the run is still there.
+- A master that is still alive (a restart of the same run) is reused without a prompt. An unreachable host is a warning, never an exception.
 
-**After that login, unattended ssh never prompts.** `use_noninteractive_ssh` (`utils/remote_ssh.py`, called next in `pre_run_checks`) routes ExPyRe's ssh through `alomancy-rsh` (`utils/rsh.py`, a console script: `ssh -o BatchMode=yes -o ConnectTimeout=30 "$@"`). ExPyRe takes the ssh command from two places, so both are switched: rsync copies read `$EXPYRE_RSH`, while each `System` and its scheduler (squeue, sbatch, scancel) keep the `remsh_cmd` from the systems config, which `add-hpc` writes as `"ssh"`. A user-set `EXPYRE_RSH` or a custom `remsh_cmd` is left alone. It has to be a single executable: ExPyRe builds `rsync -e <EXPYRE_RSH>` by joining strings and splitting on spaces, so `"ssh -o …"` would break every rsync. While the ControlMaster is up nothing changes. Once it is gone, a call fails within a second instead of blocking. Without the wrapper, good_c and fine_tune_good_c once hung for good (2026-11-03): fhi-raccoon only accepts `keyboard-interactive`, its master died after a network blip, and the next rsync and squeue each sat on a password prompt the live panel hid.
+**The socket path.**
+- `control_path_template` is `~/.alomancy/cm/<run_tag>-%C`. `run_tag` is 6 hex characters of the resolved run directory, and `ssh` expands `%C` per host.
+- `control_dir` falls back to `/tmp/alomancy-cm-<uid>` when the home path would push the socket past the ~104-character unix limit (the 40-character `%C` plus ssh's 17-character temporary suffix).
+- The directory has permissions 0700. A stale socket from a dead master is removed before `-M`, which would otherwise run without becoming a master (`_socket_path` via `ssh -G`).
 
-**A lost ssh login waits rather than failing jobs.** `is_ssh_auth_failure` (`utils/rsh.py`) recognises ssh's own login errors (`Permission denied (<method>)`, `Host key verification failed`, but not a remote file's `Permission denied (13)`). In the sync wrapper (`_ensure_expyre_sync_serialized`) and in `_get_results_with_resume`, such a failure calls `_note_ssh_auth_lost`. That logs one WARNING per outage, event `ssh_auth_lost`, telling the user to run `ssh <host>`, and `progress.TRACKER` shows the same line at the top of the live panel and in the summary. The poll then waits `_SSH_AUTH_WAIT_SECONDS` (60) and resumes without using a transport attempt, so a running job is never abandoned over a login. The first successful sync afterwards logs `ssh_auth_restored` and clears the banner. `run_ssh_command`, used only by CLI commands someone is watching, stays interactive.
+**Owning the master doesn't depend on the user's ssh config.**
+- Before, multiplexing had to be set in `~/.ssh/config`. Without it the start-of-run login did nothing for later calls, and BatchMode then failed every call on an OTP-only host.
+- `HostName`, `User`, `IdentityFile`, `ProxyJump` and the like still come from `~/.ssh/config`; only the `Control*` options are overridden. A jump host is logged in through the master command, which is interactive.
+- `ALOMANCY_OWN_SSH_MASTER=0` (`own_master_enabled`) goes back to `ensure_ssh_connectivity` (`utils/remote_ssh.py`): one bare `ssh <host> true` per host, relying on the user's own ControlMaster.
+
+**Lifetime.**
+- `ALomancy.run` calls `MASTERS.close_all()` (`ssh -O exit`) when the workflow returns normally.
+- A crash or Ctrl-C leaves the masters open, so the restart needs no login.
+- `alomancy cancel` uses them for its own ssh (`run_ssh_command(control_path=...)`) and closes them at the end.
+- Each run has its own masters, so two runs to one HPC log in once each and never close each other's connection.
+
+**After that login, unattended ssh never prompts.**
+- `use_noninteractive_ssh` (`utils/remote_ssh.py`, called next in `pre_run_checks`) routes ExPyRe's ssh through `alomancy-rsh` (`utils/rsh.py`, a console script whose `build_argv` gives `ssh -o BatchMode=yes -o ConnectTimeout=30 "$@"`).
+- When `start_run_masters` has set `ALOMANCY_SSH_CONTROL_DIR` and `ALOMANCY_SSH_RUN_TAG` in the run's environment (which ExPyRe's subprocesses inherit), it also adds `-o ControlPath=<dir>/<tag>-%C -o ControlMaster=no`. Every call then goes through the run's master and never tries to become one. Under `ALOMANCY_TEST_MODE` the environment is left alone.
+- ExPyRe takes the ssh command from two places, so both are switched: rsync copies read `$EXPYRE_RSH`, while each `System` and its scheduler (squeue, sbatch, scancel) keep the `remsh_cmd` from the systems config, which `add-hpc` writes as `"ssh"`. A user-set `EXPYRE_RSH` or a custom `remsh_cmd` is left alone.
+- It has to be a single executable: ExPyRe builds `rsync -e <EXPYRE_RSH>` by joining strings and splitting on spaces, so `"ssh -o …"` would break every rsync.
+- Once the master is gone, a call fails within a second instead of blocking. Without the wrapper, good_c and fine_tune_good_c once hung for good (2026-11-03): fhi-raccoon only accepts `keyboard-interactive`, its master died after a network blip, and the next rsync and squeue each sat on a password prompt the live panel hid.
+
+**A lost ssh login waits rather than failing jobs.**
+- `is_ssh_auth_failure` (`utils/rsh.py`) recognises ssh's own login errors (`Permission denied (<method>)`, `Host key verification failed`, but not a remote file's `Permission denied (13)`).
+- Such a failure calls `_note_ssh_auth_lost` from three places: the sync wrapper (`_ensure_expyre_sync_serialized`), `_get_results_with_resume`, and `job.start()` in `_start_and_wait`.
+  - It logs one WARNING per outage, event `ssh_auth_lost`, telling the user to press L or run `alomancy login`.
+  - `progress.TRACKER` shows the same line under Errors and `login needed [n]` in the ssh column.
+  - The caller then waits `_SSH_AUTH_WAIT_SECONDS` (60) and tries again without using an attempt, so a job is never abandoned over a login.
+- `job.start()` is simply repeated: expyre sets `submitted` only after sbatch returned, so the job is still `created`. The wait happens outside the per-host ssh lock.
+- A login through `relogin` (the L key) or the first successful sync afterwards logs `ssh_auth_restored` and clears the banner. `relogin` restores every system that shares the host (`MASTERS.systems_for`). It writes its "Logging in to …" line straight to the terminal, because the log handlers are buffered during the handoff.
+- `alomancy login` (`cli/login.py`) reopens the same socket from another terminal, and the next sync clears the banner.
+- `run_ssh_command`, used only by CLI commands someone is watching, stays interactive.
 
 ## Each run gets its own ExPyRe state
 

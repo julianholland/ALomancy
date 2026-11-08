@@ -9,6 +9,11 @@ instead, so the executor can wait for re-authentication
 (remote_submission/executor.py, `ssh_auth_lost`). While the ControlMaster
 is up, the options change nothing.
 
+When the run owns its ssh masters (utils/ssh_master.py), the run sets
+ALOMANCY_SSH_CONTROL_DIR and ALOMANCY_SSH_RUN_TAG, and every call goes
+through the run's socket with ControlMaster=no: it uses the master the run
+logged in with and never tries to become one itself.
+
 It is a separate executable rather than `EXPYRE_RSH="ssh -o ..."` because
 ExPyRe builds `rsync -e <EXPYRE_RSH>` by joining strings and splitting on
 spaces, so a multi-word command would break every rsync.
@@ -17,6 +22,7 @@ spaces, so a multi-word command would break every rsync.
 import os
 import re
 import sys
+from collections.abc import Mapping
 
 NONINTERACTIVE_SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=30"]
 
@@ -35,8 +41,23 @@ def is_ssh_auth_failure(error: BaseException | str) -> bool:
     return bool(_SSH_AUTH_FAILURE.search(str(error)))
 
 
+def build_argv(args: list[str], env: Mapping[str, str] = os.environ) -> list[str]:
+    """The ssh command line for *args* (what ExPyRe or rsync passed)."""
+    options = list(NONINTERACTIVE_SSH_OPTIONS)
+    control_dir = env.get("ALOMANCY_SSH_CONTROL_DIR")
+    tag = env.get("ALOMANCY_SSH_RUN_TAG")
+    if control_dir and tag:
+        options += [
+            "-o",
+            f"ControlPath={control_dir}/{tag}-%C",
+            "-o",
+            "ControlMaster=no",
+        ]
+    return ["ssh", *options, *args]
+
+
 def main() -> None:
-    os.execvp("ssh", ["ssh", *NONINTERACTIVE_SSH_OPTIONS, *sys.argv[1:]])
+    os.execvp("ssh", build_argv(sys.argv[1:]))
 
 
 if __name__ == "__main__":

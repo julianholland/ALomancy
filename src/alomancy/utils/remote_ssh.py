@@ -27,7 +27,9 @@ from alomancy.configs.global_config import EXPYRE_CONFIG, LEGACY_EXPYRE_CONFIG
 logger = logging.getLogger(__name__)
 
 
-def run_ssh_command(host: str, command: str, timeout: float) -> tuple[bool, str, str]:
+def run_ssh_command(
+    host: str, command: str, timeout: float, control_path: str | None = None
+) -> tuple[bool, str, str]:
     """Run `command` on `host` over ssh, bounded by `timeout` seconds.
 
     `timeout` has no default -- every call site must consciously choose one.
@@ -38,10 +40,19 @@ def run_ssh_command(host: str, command: str, timeout: float) -> tuple[bool, str,
     exactly the scenario this timeout exists to bound. Interactive on
     purpose: its callers are CLI commands someone is watching. A workflow's
     unattended calls go through ExPyRe and `alomancy-rsh` instead.
+
+    `control_path`: a run's own master socket (utils/ssh_master.py), used
+    without becoming a master, so a command for a running run (e.g.
+    `alomancy cancel`) needs no new login while the run's connection is up.
     """
+    options = (
+        []
+        if control_path is None
+        else ["-o", f"ControlPath={control_path}", "-o", "ControlMaster=no"]
+    )
     try:
         proc = subprocess.run(
-            ["ssh", host, command],
+            ["ssh", *options, host, command],
             capture_output=True,
             text=True,
             timeout=timeout,

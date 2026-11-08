@@ -25,7 +25,7 @@ EVENT_DESCRIPTIONS = {
     "job_failed": "remote job failed",
     "job_died": "remote job died (killed / lost)",
     "job_resumed": "transient remote error, polling resumed",
-    "ssh_auth_lost": "ssh login lost (waited for `ssh <host>` login)",
+    "ssh_auth_lost": "ssh login lost (waited for a new login)",
     "job_resubmitted": "died job resubmitted",
     "no_loops_to_run": "nothing to run: num_of_al_loops already reached",
     "md_no_steps": "MD runs replaced (no MD step)",

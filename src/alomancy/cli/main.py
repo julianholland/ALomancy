@@ -121,6 +121,15 @@ def main() -> None:
         help="Seconds between redraws with --watch (default: 5)",
     )
 
+    login = sub.add_parser(
+        "login",
+        help=(
+            "Log in again to an HPC whose ssh connection the run in this "
+            "directory lost (default: every HPC that needs it)"
+        ),
+    )
+    login.add_argument("hpc", nargs="?", default=None, help="HPC profile name")
+
     cancel = sub.add_parser(
         "cancel",
         help=(
@@ -175,6 +184,12 @@ def main() -> None:
             replot_results(args.results_dir.resolve(), no_parity=args.no_parity)
         else:
             res.print_help()
+    elif args.command == "login":
+        import sys
+
+        from alomancy.cli.login import login as run_login
+
+        sys.exit(run_login(Path.cwd(), args.hpc))
     elif args.command == "status":
         import sys
 
