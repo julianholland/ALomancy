@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import socket
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -16,6 +17,7 @@ from expyre.func import ExPyRe, ExPyReJobDiedError, ExPyReTimeoutError
 
 from alomancy.configs.remote_info import RemoteInfo
 from alomancy.remote_submission import progress
+from alomancy.utils import ssh_master
 from alomancy.utils.rsh import is_ssh_auth_failure
 
 logger = logging.getLogger(__name__)
@@ -315,20 +317,85 @@ def _ssh_host(sys_name: str) -> str:
 def _note_ssh_auth_lost(sys_name: str) -> None:
     """Record that ssh to *sys_name* can't log in, warning once per outage.
 
-    With alomancy-rsh (utils/rsh.py) a call made after the ControlMaster
+    With alomancy-rsh (utils/rsh.py) a call made after the run's ssh master
     died fails at once instead of waiting on a hidden password prompt;
-    _get_results_with_resume then waits for a login rather than spending
-    the job's retry budget. The live panel shows the same instruction."""
+    _get_results_with_resume and job.start() then wait for a login rather
+    than spending the job's retry budget. The live panel shows the same
+    instruction and logs in again on the L key (relogin)."""
     host = _ssh_host(sys_name)
     if progress.TRACKER.mark_auth_lost(sys_name, host):
         logger.warning(
-            "ssh to %s can't log in (its shared ssh connection is gone): run "
-            "`ssh %s` in another terminal to log in again. Jobs keep waiting "
-            "and polling resumes on its own once ssh works.",
+            "ssh to %s can't log in (its ssh connection is gone): press L in "
+            "the run's terminal, or run `alomancy login` in the run directory, "
+            "to log in again. Jobs keep waiting and polling resumes on its own "
+            "once ssh works.",
             sys_name,
-            host,
             extra={"event": "ssh_auth_lost", "data": {"system": sys_name}},
         )
+
+
+def _note_ssh_auth_restored(sys_name: str) -> None:
+    if progress.TRACKER.auth_restored(sys_name):
+        logger.info(
+            "ssh to %s works again; polling continues.",
+            sys_name,
+            extra={"event": "ssh_auth_restored", "data": {"system": sys_name}},
+        )
+
+
+def relogin(sys_name: str) -> bool:
+    """Log in to *sys_name*'s host again, interactively, by reopening the
+    run's ssh master (utils/ssh_master.py). Called from the live panel's L
+    key with the terminal handed over (progress.terminal_handoff). Every
+    system on the same host is restored with it. Returns whether ssh works
+    again."""
+    host = ssh_master.MASTERS.hosts.get(sys_name) or _ssh_host(sys_name)
+    if not ssh_master.MASTERS.active:
+        logger.warning(
+            "This run doesn't own its ssh connections (ALOMANCY_OWN_SSH_MASTER=0): "
+            "run `ssh %s` in another terminal to log in again.",
+            host,
+        )
+        return False
+    sys.stdout.write(
+        f"Logging in to {sys_name} ({host}), the run's ssh connection. "
+        "Ctrl-C to cancel.\n"
+    )
+    sys.stdout.flush()
+    try:
+        ok = ssh_master.MASTERS.login(host)
+    except KeyboardInterrupt:
+        ok = False
+    if not ok:
+        logger.warning("Login to %s (%s) failed; jobs keep waiting.", sys_name, host)
+        return False
+    for system in ssh_master.MASTERS.systems_for(host) or [sys_name]:
+        _note_ssh_auth_restored(system)
+    return True
+
+
+def check_ssh_masters() -> None:
+    """The master watch (run by the live monitor every
+    progress.SSH_WATCH_INTERVAL s): a dead master is reopened silently
+    where a key login works, otherwise its systems show "login needed"
+    right away instead of after the next failed poll."""
+    masters = ssh_master.MASTERS
+    template = masters.template
+    if template is None or ssh_master.external_calls_disabled():
+        return
+    for host in sorted(set(masters.hosts.values())):
+        systems = masters.systems_for(host)
+        if ssh_master.master_alive(host, template) or ssh_master.open_master(
+            host, template, interactive=False
+        ):
+            for system in systems:
+                if system in progress.TRACKER.auth_lost:
+                    _note_ssh_auth_restored(system)
+                else:
+                    progress.TRACKER.set_ssh_ok(system)
+            continue
+        for system in systems:
+            _note_ssh_auth_lost(system)
 
 
 def _remote_statuses(sys_name: str) -> dict[str, str]:
@@ -677,21 +744,35 @@ class RemoteJobExecutor:
         resubmit_killed_jobs = getattr(self.remote_info, "resubmit_killed_jobs", False)
 
         def _start_and_wait(force_rerun: bool) -> tuple[Any, str, str]:
-            with _ssh_call_lock(
-                self.remote_info.sys_name,
-                lock_timeout,
-                f"job.start() for job {index + 1} ({job_name})",
-            ):
-                start_wall_time = time.time()
-                job.start(
-                    resources=self.remote_info.resources,
-                    system_name=self.remote_info.sys_name,
-                    header_extra=getattr(self.remote_info, "header_extra", []),
-                    exact_fit=getattr(self.remote_info, "exact_fit", True),
-                    partial_node=getattr(self.remote_info, "partial_node", False),
-                    force_rerun=force_rerun,
-                )
-                job._alomancy_lock_timeout = lock_timeout
+            while True:
+                try:
+                    with _ssh_call_lock(
+                        self.remote_info.sys_name,
+                        lock_timeout,
+                        f"job.start() for job {index + 1} ({job_name})",
+                    ):
+                        start_wall_time = time.time()
+                        job.start(
+                            resources=self.remote_info.resources,
+                            system_name=self.remote_info.sys_name,
+                            header_extra=getattr(self.remote_info, "header_extra", []),
+                            exact_fit=getattr(self.remote_info, "exact_fit", True),
+                            partial_node=getattr(
+                                self.remote_info, "partial_node", False
+                            ),
+                            force_rerun=force_rerun,
+                        )
+                        job._alomancy_lock_timeout = lock_timeout
+                    break
+                except Exception as exc:
+                    # A lost ssh login is not the job's fault: wait for a new
+                    # login (outside the ssh lock) and start again. expyre
+                    # sets "submitted" only after sbatch returned, so the job
+                    # is still "created" and start() can simply be repeated.
+                    if not is_ssh_auth_failure(exc):
+                        raise
+                    _note_ssh_auth_lost(self.remote_info.sys_name)
+                    time.sleep(_SSH_AUTH_WAIT_SECONDS)
             logger.debug("Job %d submitted to queue: %s", index + 1, job_name)
             progress.TRACKER.submitted(
                 self._batch_id,

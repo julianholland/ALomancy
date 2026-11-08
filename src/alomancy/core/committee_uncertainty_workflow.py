@@ -85,6 +85,10 @@ class CommitteeUncertaintyWorkflow(ActiveLearningWorkflow):
                 f"deviation needs at least {_MIN_COMMITTEE_SIZE} models), got {size!r}."
             )
 
+    def selector_description(self) -> str:
+        size = self.workflow_kwargs["num_of_models_in_committee"]
+        return f"{size}-model committee uncertainty"
+
     def run(self) -> None:
         committee_size = self.workflow_kwargs["num_of_models_in_committee"]
         for ctx in self.iterate_loops(self.prepare_run()):

@@ -219,6 +219,7 @@ from alomancy.mlip.evaluation import (
 )
 from alomancy.mlip.predict import predict_with_model
 from alomancy.registry import registered, resolve
+from alomancy.remote_submission import progress
 from alomancy.remote_submission.executor import acquire_local_expyre_lock, submit_n
 from alomancy.remote_submission.submitters import (
     ASE_OUTPUT_PREFIX,
@@ -255,12 +256,14 @@ from alomancy.utils.import_structures import (
     read_structures,
 )
 from alomancy.utils.logging_config import (
+    EVENTS_FILENAME,
     set_current_loop,
     set_current_phase,
     setup_logging,
 )
 from alomancy.utils.remote_ssh import (
     ensure_ssh_connectivity,
+    resolve_hpc_host,
     use_noninteractive_ssh,
 )
 from alomancy.utils.remove_redundancy import (
@@ -278,6 +281,7 @@ from alomancy.utils.split_filter import (
     resolve_split_filter,
     validate_split_filter,
 )
+from alomancy.utils.ssh_master import own_master_enabled, start_run_masters
 from alomancy.utils.test_train_manager import split_atoms_list_into_test_and_train
 from alomancy.version import __version__, __version_tuple__
 
@@ -804,6 +808,48 @@ def _collect_hpc_profiles(jobs_dict: dict) -> dict[str, dict]:
     return profiles
 
 
+def _read_best_model_metadata() -> dict[str, Any] | None:
+    """results/best_model/model_metadata.json (for the live panel), or None."""
+    path = Path("results", _BEST_MODEL_DIR, "model_metadata.json")
+    try:
+        metadata: dict[str, Any] = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return metadata
+
+
+def _loop_started_at(loop: int, events_path: Path | None = None) -> float | None:
+    """When *loop* first started, over every attempt of the run: the time
+    of its first event in results/events.jsonl (None if it has none, i.e.
+    it starts now). Lets the live panel's loop time survive a restart."""
+    path = Path("results", EVENTS_FILENAME) if events_path is None else events_path
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("loop") == loop and event.get("time"):
+                    return datetime.fromisoformat(event["time"]).timestamp()
+    except OSError:
+        return None
+    return None
+
+
+def _describe_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> list[str]:
+    """`label value unit` for each of *keys* ({key: unit}) set in kwargs."""
+    parts = []
+    for key, unit in keys.items():
+        value = kwargs.get(key)
+        if value is None:
+            continue
+        if isinstance(value, list | tuple):
+            value = "-".join(str(v) for v in value)
+        parts.append(f"{key.replace('_', ' ')} {value}{unit}")
+    return parts
+
+
 def _fetch_latest_pypi_version(
     package: str = "alomancy", timeout: float = 3.0
 ) -> str | None:
@@ -956,6 +1002,7 @@ def phase(
             # latest attempt (analysis/report/current_events.py), even when
             # the step logs nothing else.
             set_current_phase(phase_name)
+            progress.TRACKER.set_phase(phase_name)
             logger.debug(
                 "Phase %s started for %s.",
                 phase_name,
@@ -973,6 +1020,7 @@ def phase(
                 )
             finally:
                 set_current_phase(None)
+                progress.TRACKER.set_phase(None)
             return result
 
         return cast(_StepT, wrapper)
@@ -1474,15 +1522,97 @@ class ActiveLearningWorkflow(ABC):
         lines.append("=" * 70)
         logger.info("\n".join(lines))
 
+    def selector_description(self) -> str:
+        """How this workflow picks structures, for the live panel's
+        Settings table (the per-loop count is added by panel_run_info)."""
+        return self.NAME.replace("_", " ")
+
+    def panel_run_info(self) -> dict[str, Any]:
+        """The live panel's static run details and Settings rows (see
+        remote_submission/progress.py)."""
+
+        def hpc_of(section: str) -> str:
+            hpc = (self.jobs_dict.get(section) or {}).get("hpc")
+            if isinstance(hpc, dict):
+                return str(hpc.get("hpc_name", "remote"))
+            return str(hpc) if hpc else "local"
+
+        generation = self.jobs_dict.get("structure_generation") or {}
+        generator = generation.get("generator", "md")
+        effective = _resolve_effective_phase_dict("structure_generation", generation)
+        generator_info = " · ".join(
+            [
+                progress.display_name(generator),
+                *_describe_kwargs(
+                    effective.get(f"{generator}_kwargs") or {},
+                    {"temperature": " K", "steps": ""},
+                ),
+            ]
+        )
+        evaluation = self.jobs_dict.get("high_accuracy_evaluation") or {}
+        trainer = self.training_config.get("trainer", "mace")
+        settings = [
+            {
+                "block": "selector",
+                "information": f"{self.selector_description()} · "
+                f"{self.num_of_structures_per_loop} structures/loop",
+                "hpc": "",
+            },
+            {
+                "block": "trainer",
+                "information": progress.display_name(trainer),
+                "hpc": hpc_of("training"),
+            },
+            {
+                "block": "generator",
+                "information": generator_info,
+                "hpc": hpc_of("structure_generation"),
+            },
+            {
+                "block": "evaluator",
+                "information": progress.display_name(evaluation.get("evaluator", "qe")),
+                "hpc": hpc_of("high_accuracy_evaluation"),
+            },
+        ]
+        cwd = Path.cwd()
+        try:
+            directory = "~/" + str(cwd.relative_to(Path.home()))
+        except ValueError:
+            directory = str(cwd)
+        return {
+            "name": cwd.name,
+            "directory": directory,
+            "workflow": self.NAME,
+            "num_of_al_loops": self.num_of_al_loops,
+            "elements": list(
+                (self.jobs_dict.get("general") or {}).get("elements") or []
+            ),
+            "settings": settings,
+        }
+
     def pre_run_checks(self) -> None:
         acquire_local_expyre_lock()
         self.display_workflow_summary()
-        ensure_ssh_connectivity(_collect_hpc_profiles(self.jobs_dict))
+        hpc_profiles = _collect_hpc_profiles(self.jobs_dict)
+        if own_master_enabled():
+            # The run's own ssh master per host (utils/ssh_master.py),
+            # logged in here while whoever launched the run is watching.
+            hosts = {
+                name: host
+                for name in hpc_profiles
+                if (host := resolve_hpc_host(name)) is not None
+            }
+            with progress.terminal_handoff():
+                start_run_masters(Path.cwd(), hosts)
+        else:
+            ensure_ssh_connectivity(hpc_profiles)
         if not (
             os.getenv("ALOMANCY_TEST_MODE") == "1"
             or os.getenv("ALOMANCY_MOCK_EXTERNAL") == "1"
         ):
             use_noninteractive_ssh()
+        progress.TRACKER.set_run_info(self.panel_run_info())
+        progress.TRACKER.set_best_model(_read_best_model_metadata())
 
         latest_version = _fetch_latest_pypi_version()
         if latest_version is None:
@@ -1904,6 +2034,7 @@ class ActiveLearningWorkflow(ABC):
         tmp_metadata = best_dir / ".model_metadata.json.tmp"
         tmp_metadata.write_text(json.dumps(metadata, indent=2) + "\n")
         os.replace(tmp_metadata, metadata_path)
+        progress.TRACKER.set_best_model(metadata)
         logger.info(
             "Best model for %s (fit_%d, chosen on %s) copied to %s.",
             base_name,
@@ -2099,6 +2230,9 @@ class ActiveLearningWorkflow(ABC):
                 continue
             final = loop == self.num_of_al_loops
             set_current_loop(loop)
+            progress.TRACKER.set_loop(
+                loop, final=final, started_at=_loop_started_at(loop)
+            )
             train_xyzs = self.db.get_train_atoms()
             test_xyzs = self.db.get_test_atoms()
 

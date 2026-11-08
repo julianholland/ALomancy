@@ -38,6 +38,7 @@ from alomancy.core.committee_uncertainty_workflow import CommitteeUncertaintyWor
 from alomancy.mlip.base import ALomancyTrainer, CalculatorSpec, run_training
 from alomancy.mlip.evaluation import prediction_metrics, save_evaluation
 from alomancy.mlip.predict import predict_with_model
+from alomancy.remote_submission import progress
 
 _MODULE = "alomancy.core.active_learning_workflow"
 
@@ -590,6 +591,8 @@ class TestUpdateBestModel:
         assert metadata["al_loop"] == 0
         assert metadata["fit_idx"] == 1
         assert metadata["selected_on_split"] == "valid"
+        # The live panel's Best Model section gets the same record.
+        assert progress.TRACKER.best_model == metadata
         test_errors = metadata["errors"]["test"]
         assert set(test_errors["config_types"]) == {"init_MP", "high_sd"}
         assert test_errors["config_types"]["high_sd"]["mae_f"] == pytest.approx(0.4)
@@ -3018,3 +3021,57 @@ def test_no_warning_while_loops_remain(
 
     assert [c.loop for c in contexts] == [1, 2]
     assert records == []
+
+
+# ---------------------------------------------------------------------------
+# live panel
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_panel_run_info_describes_each_block(
+    tmp_path, monkeypatch, workflow_jobs_dict, shared_db
+):
+    monkeypatch.chdir(tmp_path)
+    wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+    info = wf.panel_run_info()
+    assert info["name"] == tmp_path.name
+    assert info["workflow"] == wf.NAME
+    assert info["num_of_al_loops"] == wf.num_of_al_loops
+    rows = {row["block"]: row for row in info["settings"]}
+    assert list(rows) == ["selector", "trainer", "generator", "evaluator"]
+    assert rows["selector"]["hpc"] == ""
+    assert rows["selector"]["information"].endswith(
+        f" · {wf.num_of_structures_per_loop} structures/loop"
+    )
+    assert "committee" not in rows["trainer"]["information"]
+    assert "committee" not in rows["generator"]["information"]
+    if isinstance(wf, CommitteeUncertaintyWorkflow):
+        size = wf.workflow_kwargs["num_of_models_in_committee"]
+        assert rows["selector"]["information"].startswith(
+            f"{size}-model committee uncertainty"
+        )
+    json.dumps(info)  # goes into the status file
+
+
+@pytest.mark.unit
+def test_loop_time_counts_from_the_loops_first_event(tmp_path):
+    from alomancy.core.active_learning_workflow import _loop_started_at
+
+    events = tmp_path / "events.jsonl"
+    assert _loop_started_at(2, events) is None  # no file yet
+    events.write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in [
+                {"time": "2026-11-01T10:00:00", "loop": 1, "event": "phase_started"},
+                {"time": "2026-11-01T12:00:00", "loop": 2, "event": "phase_started"},
+                {"time": "2026-11-02T09:00:00", "loop": 2, "event": "phase_started"},
+            ]
+        )
+        + "\nnot json\n"
+    )
+    from datetime import datetime
+
+    assert _loop_started_at(2, events) == datetime(2026, 11, 1, 12).timestamp()
+    assert _loop_started_at(3, events) is None

@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Log in again from the run's own terminal when an HPC's ssh connection drops.**
+  - The panel shows `login needed` for that HPC. Press **L** (or the HPC's number), the panels pause, your normal password/OTP prompt appears, and the run carries on.
+  - From any other terminal on the same machine (a run under nohup or tmux), `alomancy login [HPC]` in the run directory does the same.
+  - Jobs never fail over a lost login: they wait.
+- **The run owns its ssh connections.**
+  - At startup it opens one ssh connection (ControlMaster) per HPC host, with a socket of its own under `~/.alomancy/cm/`, and every later ssh call reuses it. This works whether or not your `~/.ssh/config` sets up multiplexing.
+  - The connection survives a crash or Ctrl-C, so a restart doesn't ask for your password again. It closes when the run finishes, or with `alomancy cancel`, which also uses it so it doesn't ask for a login.
+  - `ALOMANCY_OWN_SSH_MASTER=0` goes back to relying on your own ssh config.
+- **A dropped ssh connection is noticed within 30 s**, before any job poll fails. Hosts that log in with an ssh key reconnect on their own.
+
+### Changed
+- **The live panel is now two panels that stay up for the whole run**, not just while HPC jobs run, in the ALomancy colours as before.
+  - "ALomancy" has three sections:
+    - *Run Details*: run, workflow, loop N / total with the time spent on the loop (counted across restarts) and the run time, and the elements.
+    - *Settings*: a Block / Information / HPC table for selector (e.g. "3-model committee uncertainty · 20 structures/loop"), trainer, generator and evaluator.
+    - *Best Model*: which fit, and its energy/force/stress MAE.
+  - "Current task" has three sections:
+    - *Errors*: only when something is wrong, such as lost logins, failed jobs or failing syncs.
+    - *Status*: the current step; for HPC jobs, the bars and the per-HPC table, now with an ssh column. Finished batches are collapsed to one line.
+    - *Options*: the keys you can press.
+  - `alomancy status` shows the same panels.
+  - The summary line logged without a terminal starts with the loop, the step and the best model's force MAE.
+  - The stale-data marker is `!` instead of `⚠`, which some fonts draw two characters wide.
+
+### Fixed
+- **A lost ssh login while submitting a job (staging files or sbatch) no longer fails the job**; it waits for a new login and submits again, as polling already did.
+
+No remote reinstall needed.
+
 ## [1.2.0] - 2026-11-04
 
 ### Added

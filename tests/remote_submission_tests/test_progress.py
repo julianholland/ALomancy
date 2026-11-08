@@ -152,15 +152,20 @@ def test_lost_ssh_login_is_shown_until_the_next_successful_sync():
     assert tracker.mark_auth_lost("raven", "raven.mpcdf.mpg.de") is True
     assert tracker.mark_auth_lost("raven", "raven.mpcdf.mpg.de") is False
     snapshot = tracker.snapshot()
-    expected = "run `ssh raven.mpcdf.mpg.de` in another terminal"
+    expected = "press L in the run's terminal or run `alomancy login`"
     assert expected in summary_line(snapshot)
-    assert expected in _text(render(snapshot), width=160)
+    text = _text(render(snapshot), width=200)
+    assert expected in text
+    assert "login needed [1]" in text
+    assert "── Errors" in text
+    assert "alomancy login" in _text(render(snapshot, keys=False), width=200)
 
     assert tracker.synced("raven", {}) is True
     assert tracker.synced("raven", {}) is False
     snapshot = tracker.snapshot()
     assert snapshot["auth_lost"] == {}
-    assert "ssh raven" not in summary_line(snapshot)
+    assert "needs a login" not in summary_line(snapshot)
+    assert "── Errors" not in _text(render(snapshot), width=200)
 
 
 @pytest.mark.unit
@@ -222,10 +227,10 @@ def test_render_shows_phase_counts_hpcs_and_stale_flag():
     tracker.submitted(batch, 1, "31549233", "id1")
     text = _text(render(tracker.snapshot(time.time() + 40)))
 
-    assert "high_accuracy_evaluation · loop 0 ── 3 jobs" in text
+    assert "high_accuracy_evaluation · loop 0 · 3 jobs" in text
     assert "done 0 · running 1 · queued 1 · to submit 1" in text
     assert "raven" in text
-    assert "⚠" in text
+    assert "ago !" in text
     assert "slowest running: go_0 (raven, 31549232)" in text
 
 
@@ -242,8 +247,7 @@ def test_bars_and_labels_use_the_alomancy_colours():
     tracker.submitted(batch, 0, "1", "id0")
     tracker.submitted(batch, 1, "2", "id1")
     tracker.synced("raven", {"id0": "running", "id1": "queued"})
-    group = render(tracker.snapshot())
-    bar = group.renderables[0].renderables[1]
+    bar = progress.batch_bar(tracker.snapshot()["batches"][0], width=100)
     assert isinstance(bar, Text)
 
     colour_of = {}
@@ -262,7 +266,7 @@ def test_bars_and_labels_use_the_alomancy_colours():
     for text, colour in expected.items():
         assert Color.parse(str(colour_of[text])) == Color.parse(colour), text
     assert Color.parse(str(colour_of["done"])) == Color.parse(ALOMANCY_PURPLE)
-    header = group.renderables[0].renderables[0]
+    header = progress.batch_header(tracker.snapshot()["batches"][0])
     assert ALOMANCY_PURPLE.lower() in str(header.style).lower()
 
 
@@ -393,3 +397,178 @@ def test_executor_reports_to_the_tracker_and_silences_expyre(tmp_path, monkeypat
     assert not progress.TRACKER.active()
     final = json.loads(status_file.read_text())
     assert final["finished"] is True
+
+
+# --- run panel, keys, finished batches -----------------------------------------
+
+
+def _run_tracker(best_model=None):
+    tracker, batch = _tracker_with_batch(n=2)
+    tracker.set_run_info(
+        {
+            "name": "good_c",
+            "directory": "~/alomancy_runs/good_c",
+            "workflow": "committee_uncertainty",
+            "num_of_al_loops": 10,
+            "elements": ["C", "H", "O"],
+            "settings": [
+                {
+                    "block": "selector",
+                    "information": "3-model committee uncertainty · 20 structures/loop",
+                    "hpc": "",
+                },
+                {"block": "trainer", "information": "MACE", "hpc": "raven_gpu"},
+                {"block": "generator", "information": "MD", "hpc": "raven_gpu"},
+                {"block": "evaluator", "information": "QE", "hpc": "fhi-raccoon"},
+            ],
+        }
+    )
+    tracker.set_loop(4, started_at=time.time() - 2 * 3600)
+    tracker.set_phase("high_accuracy_eval")
+    tracker.set_best_model(best_model)
+    return tracker, batch
+
+
+@pytest.mark.unit
+def test_run_panel_sections_settings_and_best_model(tmp_path):
+    """The ALomancy panel: Run Details, Settings (Block/Information/HPC)
+    and Best Model, read from a real model_metadata.json record."""
+    metadata = {
+        "al_loop": 3,
+        "fit_idx": 1,
+        "selected_on_split": "valid",
+        "trainer": "mace",
+        "errors": {
+            "valid": {"mae_e_per_atom": 0.0018, "mae_f": 0.041, "mae_stress": 0.0006}
+        },
+    }
+    path = tmp_path / "model_metadata.json"
+    path.write_text(json.dumps(metadata))
+    tracker, _ = _run_tracker(json.loads(path.read_text()))
+    snapshot = json.loads(json.dumps(tracker.snapshot()))  # as the status file
+    text = _text(render(snapshot), width=110)
+
+    for heading in ("Run Details", "Settings", "Best Model", "Status", "Options"):
+        assert f"── {heading}" in text
+    assert "── Errors" not in text
+    assert "good_c · ~/alomancy_runs/good_c" in text
+    assert "4 / 10" in text
+    assert "loop time 2 h 00 m" in text
+    assert "C, H, O" in text
+    assert "Block" in text and "Information" in text and "HPC" in text
+    assert "3-model committee uncertainty · 20 structures/loop" in text
+    assert "fhi-raccoon" in text
+    assert "loop 3 · fit_1 · MACE · selected on valid" in text
+    assert "E 1.8 meV/atom   F 41 meV/Å   S 0.6 meV/Å³" in text
+    assert "high_accuracy_eval · loop 4 · running" in text
+    line = summary_line(snapshot)
+    assert line.startswith("loop 4/10 · high_accuracy_eval")
+    assert "best mae_f 0.041" in line
+
+
+@pytest.mark.unit
+def test_run_panel_before_the_first_model_and_on_a_narrow_terminal():
+    tracker, _ = _run_tracker()
+    text = _text(render(tracker.snapshot(), width=70), width=70)
+    assert "none yet" in text
+    assert "── Settings" not in text  # dropped below 80 columns
+
+
+@pytest.mark.unit
+def test_section_headings_and_settings_headers_keep_the_colours():
+    from rich.color import Color
+
+    from alomancy.analysis.palette import ALOMANCY_PURPLE
+
+    rule = progress.section("Settings")
+    title = rule.title
+    assert title.plain == "── Settings"
+    span = next(s for s in title.spans if title.plain[s.start : s.end] == "Settings")
+    assert Color.parse(str(span.style).split()[-1]) == Color.parse(ALOMANCY_PURPLE)
+
+
+@pytest.mark.unit
+def test_failed_jobs_and_failing_syncs_show_under_errors():
+    tracker, batch = _tracker_with_batch(n=2)
+    tracker.finished(batch, 0, ok=False)
+    tracker.sync_failed("raven", RuntimeError("connection refused"))
+    text = _text(render(tracker.snapshot()), width=140)
+    assert "── Errors" in text
+    assert "1 of 2 jobs failed in high_accuracy_evaluation · loop 0" in text
+    assert "sync with raven failing: RuntimeError: connection refused" in text
+
+
+@pytest.mark.unit
+def test_finished_batches_collapse_to_one_line_then_go():
+    tracker, batch = _tracker_with_batch(n=2)
+    tracker.finished(batch, 0, ok=True)
+    tracker.finished(batch, 1, ok=False)
+    tracker.unregister(batch)
+    text = _text(render(tracker.snapshot()), width=120)
+    assert "✓ high_accuracy_evaluation · loop 0 · 1/2 done in" in text
+    assert "1 failed" in text
+    later = tracker.snapshot(time.time() + progress.FINISHED_KEEP + 1)
+    assert later["finished_batches"] == []
+
+
+@pytest.mark.unit
+def test_keys():
+    tracker, _ = _tracker_with_batch(n=1)
+    snapshot = tracker.snapshot()
+    assert progress.handle_key("L", snapshot) == ("none", None)
+    tracker.mark_auth_lost("raven", "raven")
+    tracker.mark_auth_lost("fhi-raccoon", "fhi-raccoon")
+    snapshot = tracker.snapshot()
+    assert progress.handle_key("l", snapshot) == ("login", "fhi-raccoon")
+    assert progress.handle_key("2", snapshot) == ("login", "raven")
+    assert progress.handle_key("3", snapshot) == ("none", None)
+    assert progress.handle_key("?", snapshot) == ("help", None)
+    text = _text(render(snapshot, keys=True), width=140)
+    assert "[L] log in to fhi-raccoon" in text
+    assert "[1-2] log in to that HPC" in text
+    assert "login needed [2]" in text  # raven, second in the list
+
+
+@pytest.mark.unit
+def test_a_login_restores_every_system_and_the_ssh_column():
+    tracker, batch = _tracker_with_batch(n=1)
+    tracker.submitted(batch, 0, "1", "id0")
+    tracker.mark_auth_lost("raven", "raven")
+    assert tracker.auth_restored("raven") is True
+    assert tracker.auth_restored("raven") is False
+    snapshot = tracker.snapshot()
+    assert snapshot["ssh"] == {"raven": "ok"}
+    assert "raven  ok" in _text(render(snapshot), width=140)
+
+
+@pytest.mark.unit
+def test_terminal_handoff_without_a_monitor_is_a_no_op():
+    ran = []
+    with progress.terminal_handoff():
+        ran.append(True)
+    assert ran == [True]
+
+
+@pytest.mark.unit
+def test_a_deferred_monitor_without_a_terminal_writes_status(tmp_path):
+    """The run-wide monitor (ALomancy.run) works without a terminal: no
+    panels, no key thread, the status file carries the run details."""
+    tracker, _ = _run_tracker()
+    path = tmp_path / "remote_status.json"
+    monitor = ProgressMonitor(
+        tracker,
+        live=False,
+        tick=0.02,
+        status_every=0.02,
+        status_file=path,
+        defer_live=True,
+    )
+    with monitor:
+        time.sleep(0.15)
+        assert ProgressMonitor._active is monitor
+        assert monitor._live is None
+        assert monitor._key_thread is None
+    assert ProgressMonitor._active is None
+    written = json.loads(path.read_text())
+    assert written["run"]["settings"][0]["block"] == "selector"
+    assert written["run"]["phase"]["name"] == "high_accuracy_eval"

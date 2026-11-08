@@ -81,7 +81,7 @@ def test_shows_the_panel_of_a_live_run(tmp_path, live_run):
 
     status, text = _output(run_dir)
     assert status == 0
-    assert "high_accuracy_evaluation · loop 0 ── 2 jobs" in text
+    assert "high_accuracy_evaluation · loop 0 · 2 jobs" in text
     assert "raven" in text
     assert "not running" not in text
     assert "stale" not in text

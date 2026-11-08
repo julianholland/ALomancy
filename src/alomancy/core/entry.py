@@ -21,6 +21,8 @@ from alomancy.core.active_learning_workflow import (
     ActiveLearningWorkflow,
     build_workflow,
 )
+from alomancy.remote_submission import progress
+from alomancy.utils import ssh_master
 
 __all__ = ["ALomancy"]
 
@@ -46,8 +48,15 @@ class ALomancy:
         self.workflow: ActiveLearningWorkflow = build_workflow(self.jobs_dict)
 
     def run(self) -> None:
-        """Run the configured workflow."""
-        self.workflow.run()
+        """Run the configured workflow under one live monitor (the panels
+        stay up between phases; remote_submission/progress.py). The run's
+        own ssh masters (utils/ssh_master.py) are closed when it finishes;
+        a crashed or interrupted run leaves them open, so its restart needs
+        no new login."""
+        progress.TRACKER.reset()
+        with progress.ProgressMonitor(defer_live=True, watch_ssh=True):
+            self.workflow.run()
+        ssh_master.MASTERS.close_all()
 
     def __getattr__(self, name: str) -> Any:
         # Only reached for attributes not found on ALomancy itself. Guard
