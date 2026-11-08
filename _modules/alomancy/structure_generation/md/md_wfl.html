@@ -94,7 +94,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.configs.remote_info</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_remote_info</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.mlip.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CalculatorSpec</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.remote_submission.executor</span><span class="w"> </span><span class="kn">import</span> <span class="n">submit_n</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="n">filter_structures_by_min_bond_distance</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.clean_structures</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">filter_structures_by_min_bond_distance</span><span class="p">,</span>
+    <span class="n">resolve_ratio</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dataset_curation</span><span class="w"> </span><span class="kn">import</span> <span class="n">geometry_digest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.seed_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">mark_structures_for_dft</span><span class="p">,</span> <span class="n">select_diverse_seeds</span>
 
@@ -108,6 +111,10 @@
 <span class="c1"># The chosen MD seeds (plus any replacements, tagged info["replaces"]) for</span>
 <span class="c1"># a loop, so restarts resume the same runs.</span>
 <span class="n">_SEEDS_FILENAME</span> <span class="o">=</span> <span class="s2">"md_seeds.xyz"</span>
+<span class="c1"># A run's frames stop being candidates once its volume per atom passes this</span>
+<span class="c1"># multiple of its seed's: under NPT, a model whose stress can't hold the</span>
+<span class="c1"># cell together lets it grow without bound, and DFT can't run such cells.</span>
+<span class="n">_DEFAULT_MAX_VOLUME_RATIO</span> <span class="o">=</span> <span class="mf">3.0</span>
 
 <span class="c1"># ALomancy's own defaults for the modular structure_generator entry point</span>
 <span class="c1"># (generate(), below) -- deliberately different from run_md's own built-in</span>
@@ -121,6 +128,7 @@
     <span class="s2">"temperature"</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
     <span class="s2">"timestep_fs"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
     <span class="s2">"traj_interval"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="s2">"max_volume_ratio"</span><span class="p">:</span> <span class="n">_DEFAULT_MAX_VOLUME_RATIO</span><span class="p">,</span>
     <span class="s2">"structure_selection_kwargs"</span><span class="p">:</span> <span class="p">{</span>
         <span class="s2">"num_of_md_starts"</span><span class="p">:</span> <span class="n">_DEFAULT_NUM_OF_MD_STARTS</span><span class="p">,</span>
         <span class="s2">"enforce_chemical_diversity"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
@@ -409,10 +417,55 @@
         <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">run_md</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span>
         <span class="k">if</span> <span class="n">p</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_RUN_MD_INTERNAL_PARAMS</span>
     <span class="p">),</span>
+    <span class="s2">"max_volume_ratio"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
     <span class="s2">"structure_selection_kwargs"</span><span class="p">:</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
         <span class="p">(</span><span class="s2">"num_of_md_starts"</span><span class="p">,</span> <span class="s2">"enforce_chemical_diversity"</span><span class="p">,</span> <span class="s2">"seed"</span><span class="p">)</span>
     <span class="p">),</span>
 <span class="p">}</span>
+<span class="c1"># md_kwargs read by generate() itself, never passed on to run_md.</span>
+<span class="n">_GENERATE_ONLY_KEYS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"structure_selection_kwargs"</span><span class="p">,</span> <span class="s2">"max_volume_ratio"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_max_volume_ratio</span><span class="p">(</span><span class="n">md_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""md_kwargs.max_volume_ratio: a finite number above 1, or None (off)."""</span>
+    <span class="n">ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">resolve_ratio</span><span class="p">(</span>
+        <span class="n">md_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_volume_ratio"</span><span class="p">,</span> <span class="n">_DEFAULT_MAX_VOLUME_RATIO</span><span class="p">),</span>
+        <span class="s2">"structure_generation.md_kwargs.max_volume_ratio"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">ratio</span>
+
+
+<div class="viewcode-block" id="validate_kwargs">
+<a class="viewcode-back" href="../../../../api/structure_generation.html#alomancy.structure_generation.md.md_wfl.validate_kwargs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_kwargs</span><span class="p">(</span><span class="n">sg_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">elements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: ARG001</span>
+<span class="w">    </span><span class="sd">"""Construction-time check (registry hook) of the md_kwargs that</span>
+<span class="sd">    generate() reads itself."""</span>
+    <span class="n">_max_volume_ratio</span><span class="p">(</span><span class="n">sg_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"md_kwargs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cell_volume</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""|det(cell)|: 0 for a degenerate cell, where get_volume() raises."""</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="nb">all</span><span class="o">=</span><span class="s2">"ignore"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="o">.</span><span class="n">array</span><span class="p">)))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cut_expanded</span><span class="p">(</span><span class="n">frames</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span> <span class="n">ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Index of a run's first frame whose volume per atom is above *ratio*</span>
+<span class="sd">    times its seed's (frames[0]), or len(frames) if none is (or the</span>
+<span class="sd">    filter is off, or the seed isn't a periodic cell with a finite,</span>
+<span class="sd">    positive volume)."""</span>
+    <span class="k">if</span> <span class="n">ratio</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">frames</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">frames</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pbc</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
+    <span class="n">seed_volume</span> <span class="o">=</span> <span class="n">_cell_volume</span><span class="p">(</span><span class="n">frames</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">seed_volume</span><span class="p">)</span> <span class="ow">or</span> <span class="n">seed_volume</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
+    <span class="n">limit</span> <span class="o">=</span> <span class="n">ratio</span> <span class="o">*</span> <span class="n">seed_volume</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">volume</span> <span class="o">=</span> <span class="n">_cell_volume</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">volume</span><span class="p">)</span> <span class="ow">or</span> <span class="n">volume</span> <span class="o">&gt;</span> <span class="n">limit</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">index</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_run_md_with_spec</span><span class="p">(</span>
@@ -509,15 +562,15 @@
 
     <span class="n">md_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"md_kwargs"</span><span class="p">,</span> <span class="p">{}))</span>
     <span class="n">selection_kwargs</span> <span class="o">=</span> <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"structure_selection_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">max_volume_ratio</span> <span class="o">=</span> <span class="n">_max_volume_ratio</span><span class="p">(</span><span class="n">md_kwargs</span><span class="p">)</span>
+    <span class="n">md_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"max_volume_ratio"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="c1"># Only run_md's own flat kwargs (steps, temperature, ...) get</span>
     <span class="c1"># ALomancy's defaults merged in here (deliberately different from</span>
     <span class="c1"># run_md's own steps=100 default, far too short for real production</span>
     <span class="c1"># MD); structure_selection_kwargs has its own defaults, resolved</span>
     <span class="c1"># separately.</span>
     <span class="n">_run_md_kwargs_defaults</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
-        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">"structure_selection_kwargs"</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">_MD_KWARGS_DEFAULTS</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_GENERATE_ONLY_KEYS</span>
     <span class="p">}</span>
     <span class="n">md_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">_run_md_kwargs_defaults</span><span class="p">,</span> <span class="o">**</span><span class="n">md_kwargs</span><span class="p">}</span>
     <span class="n">md_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"results"</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="s2">"structure_generation"</span><span class="p">)</span>
@@ -671,15 +724,46 @@
 
     <span class="c1"># Each run's file is its whole (oversampled) trajectory and stays as</span>
     <span class="c1"># it is; the candidates are its physical frames, spread over the run.</span>
+    <span class="c1"># A run is cut at its first frame past max_volume_ratio x its seed's</span>
+    <span class="c1"># volume: once the cell has blown up, later frames are suspect too.</span>
     <span class="n">frames_per_run</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">expanded_per_run</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">recorded</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completed</span><span class="p">:</span>
-        <span class="n">frames</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">/</span> <span class="n">target_file</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
+        <span class="n">frames</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">out_dir</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">/</span> <span class="n">target_file</span><span class="p">,</span> <span class="s2">":"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">))</span>
         <span class="n">frames_per_run</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">))</span>
-        <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>  <span class="c1"># 0 = the seed</span>
+        <span class="n">cut</span> <span class="o">=</span> <span class="n">_cut_expanded</span><span class="p">(</span><span class="n">frames</span><span class="p">,</span> <span class="n">max_volume_ratio</span><span class="p">)</span>
+        <span class="n">expanded_per_run</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span> <span class="o">-</span> <span class="n">cut</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">frames</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="n">cut</span><span class="p">],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>  <span class="c1"># 0 = the seed</span>
             <span class="n">frame</span><span class="o">.</span><span class="n">info</span><span class="p">[</span><span class="s2">"md_run"</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span>
             <span class="n">frame</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"md_frame"</span><span class="p">,</span> <span class="n">position</span><span class="p">)</span>
             <span class="n">recorded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+    <span class="n">expanded_runs</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">completed</span><span class="p">,</span> <span class="n">expanded_per_run</span><span class="p">)</span> <span class="k">if</span> <span class="n">n</span><span class="p">]</span>
+    <span class="n">ensemble</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">md_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ensemble"</span><span class="p">,</span> <span class="s2">"nvt"</span><span class="p">))</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>  <span class="c1"># run_md's default</span>
+    <span class="k">if</span> <span class="n">expanded_runs</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"</span><span class="si">%d</span><span class="s2"> MD run(s) for </span><span class="si">%s</span><span class="s2"> expanded past </span><span class="si">%g</span><span class="s2"> x their starting volume "</span>
+            <span class="s2">"(ensemble </span><span class="si">%s</span><span class="s2">, pressure </span><span class="si">%g</span><span class="s2"> GPa); the </span><span class="si">%d</span><span class="s2"> frame(s) from that point "</span>
+            <span class="s2">"on are not candidates. The model's stress lets the cell grow "</span>
+            <span class="s2">"without bound: add a small positive pressure "</span>
+            <span class="s2">"(structure_generation.md_kwargs.pressure, e.g. 0.1 GPa) to keep "</span>
+            <span class="s2">"the cell compact</span><span class="si">%s</span><span class="s2">."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">expanded_runs</span><span class="p">),</span>
+            <span class="n">base_name</span><span class="p">,</span>
+            <span class="n">max_volume_ratio</span><span class="p">,</span>
+            <span class="n">ensemble</span><span class="p">,</span>
+            <span class="n">md_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pressure"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+            <span class="nb">sum</span><span class="p">(</span><span class="n">expanded_per_run</span><span class="p">),</span>
+            <span class="s2">", or use ensemble 'nvt'"</span> <span class="k">if</span> <span class="n">ensemble</span> <span class="o">!=</span> <span class="s2">"nvt"</span> <span class="k">else</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"md_volume_expanded"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"n_runs"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">expanded_runs</span><span class="p">),</span>
+                    <span class="s2">"n_frames"</span><span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">expanded_per_run</span><span class="p">),</span>
+                    <span class="s2">"items"</span><span class="p">:</span> <span class="p">[</span><span class="n">item</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">expanded_runs</span><span class="p">],</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
     <span class="n">physical</span> <span class="o">=</span> <span class="n">filter_structures_by_min_bond_distance</span><span class="p">(</span><span class="n">recorded</span><span class="p">)</span>
     <span class="n">by_run</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completed</span><span class="p">}</span>
     <span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="n">physical</span><span class="p">:</span>
@@ -708,12 +792,28 @@
                 <span class="s2">"replaced"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">replaced</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">not_started</span><span class="p">),</span>
                 <span class="s2">"frames_per_run"</span><span class="p">:</span> <span class="n">frames_per_run</span><span class="p">,</span>
                 <span class="s2">"valid_per_run"</span><span class="p">:</span> <span class="n">valid_per_run</span><span class="p">,</span>
+                <span class="s2">"expanded_per_run"</span><span class="p">:</span> <span class="n">expanded_per_run</span><span class="p">,</span>
+                <span class="s2">"max_volume_ratio"</span><span class="p">:</span> <span class="n">max_volume_ratio</span><span class="p">,</span>
                 <span class="s2">"selected_per_run"</span><span class="p">:</span> <span class="n">shares</span><span class="p">,</span>
                 <span class="s2">"candidates"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structure_list</span><span class="p">),</span>
             <span class="p">},</span>
         <span class="p">},</span>
     <span class="p">)</span>
 
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">structure_list</span><span class="p">:</span>
+        <span class="n">cause</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">"every run expanded past max_volume_ratio before its first "</span>
+            <span class="s2">"recorded frame; add a small positive "</span>
+            <span class="s2">"structure_generation.md_kwargs.pressure (e.g. 0.1 GPa) or raise "</span>
+            <span class="s2">"md_kwargs.max_volume_ratio"</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">recorded</span>
+            <span class="k">else</span> <span class="s2">"no recorded frame passed the minimum bond-distance filter"</span>
+        <span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"MD for </span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2"> produced no candidates: </span><span class="si">{</span><span class="n">cause</span><span class="si">}</span><span class="s2">. Check the MD "</span>
+            <span class="sa">f</span><span class="s2">"logs in </span><span class="si">{</span><span class="n">md_dir</span><span class="si">}</span><span class="s2">/md_output_*. Nothing was cached, so a restart "</span>
+            <span class="s2">"will retry."</span>
+        <span class="p">)</span>
     <span class="n">candidates_path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">write</span><span class="p">(</span><span class="n">candidates_path</span><span class="p">,</span> <span class="n">structure_list</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"extxyz"</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">structure_list</span></div>

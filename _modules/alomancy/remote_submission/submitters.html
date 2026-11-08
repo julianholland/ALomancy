@@ -142,11 +142,24 @@
 <span class="sd">    long for VASP/QE to open files in."""</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span><span class="p">:</span>
         <span class="k">return</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">alomancy</span>
+
     <span class="n">note</span> <span class="o">=</span> <span class="p">(</span>
         <span class="s2">""</span>
         <span class="k">if</span> <span class="n">remote_rundir</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span>
         <span class="k">else</span> <span class="s2">" The remote rundir is relative to the remote $HOME, which is "</span>
         <span class="s2">"not counted, so the real path is longer still."</span>
+    <span class="p">)</span>
+    <span class="n">pinned</span> <span class="o">=</span> <span class="n">alomancy</span><span class="o">.</span><span class="n">_LONG_RUNDIR_JOB_IDS</span>
+    <span class="n">pinned_hint</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">This run kept ExPyRe's long remote layout (&lt;hostname&gt;-&lt;full local "</span>
+        <span class="sa">f</span><span class="s2">"path&gt;) because </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">pinned</span><span class="p">)</span><span class="si">}</span><span class="s2"> job(s) in .expyre/jobs.db are still "</span>
+        <span class="sa">f</span><span class="s2">"submitted/started under it (</span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">pinned</span><span class="p">[:</span><span class="mi">5</span><span class="p">])</span><span class="si">}</span><span class="s2">"</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">', ...'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">pinned</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">''</span><span class="si">}</span><span class="s2">). If they are no longer running "</span>
+        <span class="s2">"(e.g. left from before an upgrade), run `alomancy cancel` (or "</span>
+        <span class="s2">"`alomancy nuke`) and restart: the run then uses the short layout."</span>
+        <span class="k">if</span> <span class="n">pinned</span>
+        <span class="k">else</span> <span class="s2">""</span>
     <span class="p">)</span>
     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
         <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">: the remote DFT run directory would be </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
@@ -155,8 +168,8 @@
         <span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="sa">f</span><span class="s2">"The first part, </span><span class="si">{</span><span class="n">remote_rundir</span><span class="si">!r}</span><span class="s2">, is the HPC rundir (in "</span>
         <span class="s2">"~/.alomancy/expyre_config.json, set by `alomancy add-hpc`) plus this "</span>
-        <span class="s2">"run's directory below $HOME. Shorten the rundir, or run from a "</span>
-        <span class="s2">"directory with a shorter path."</span>
+        <span class="s2">"run's own directory name. Shorten the rundir, or run from a "</span>
+        <span class="sa">f</span><span class="s2">"directory with a shorter path.</span><span class="si">{</span><span class="n">pinned_hint</span><span class="si">}</span><span class="s2">"</span>
     <span class="p">)</span></div>
 
 

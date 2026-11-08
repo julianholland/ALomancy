@@ -109,6 +109,12 @@ uv<span class="w"> </span>sync<span class="w">            </span><span class="c1
 </div>
 <p>Without uv: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-e</span> <span class="pre">.</span></code> (add <code class="docutils literal notranslate"><span class="pre">pytest</span> <span class="pre">ruff</span> <span class="pre">mypy</span> <span class="pre">pre-commit</span></code> yourself;
 the dev tools are a uv dependency group, not a pip extra).</p>
+<blockquote>
+<div><p><strong>Upgrading:</strong> reinstall locally (<code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">sync</span></code>, or <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-U</span> <span class="pre">alomancy</span></code>)
+so the <code class="docutils literal notranslate"><span class="pre">alomancy-rsh</span></code> helper exists: background ssh goes through it, so a
+dropped ssh connection fails at once instead of hanging on a hidden
+password prompt. <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">upgrade-hpc</span></code> updates the HPC side.</p>
+</div></blockquote>
 </section>
 <section id="dependencies">
 <h2>Dependencies<a class="headerlink" href="#dependencies" title="Link to this heading"></a></h2>

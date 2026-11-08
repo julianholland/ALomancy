@@ -70,6 +70,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.structure_generation.md.md_wfl.run_md"><code class="docutils literal notranslate"><span class="pre">run_md()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.structure_generation.md.md_wfl.share_out"><code class="docutils literal notranslate"><span class="pre">share_out()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alomancy.structure_generation.md.md_wfl.spread_frames"><code class="docutils literal notranslate"><span class="pre">spread_frames()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alomancy.structure_generation.md.md_wfl.validate_kwargs"><code class="docutils literal notranslate"><span class="pre">validate_kwargs()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="high_accuracy_evaluation.html">High-Accuracy Evaluation</a></li>
@@ -271,6 +272,13 @@ more. Never more than a run’s <em>available</em> frames.</p>
 <dd><p><em>k</em> of a run’s <em>frames</em> (in MD order), spread as far apart in MD step
 (<code class="docutils literal notranslate"><span class="pre">info[&quot;md_frame&quot;]</span></code>) as possible: the first and last, and the rest
 nearest to evenly spaced steps between. All of them when k &gt;= len.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="alomancy.structure_generation.md.md_wfl.validate_kwargs">
+<span class="sig-prename descclassname"><span class="pre">alomancy.structure_generation.md.md_wfl.</span></span><span class="sig-name descname"><span class="pre">validate_kwargs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sg_config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">elements</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.15)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/alomancy/structure_generation/md/md_wfl.html#validate_kwargs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.structure_generation.md.md_wfl.validate_kwargs" title="Link to this definition"></a></dt>
+<dd><p>Construction-time check (registry hook) of the md_kwargs that
+generate() reads itself.</p>
 </dd></dl>
 
 </section>

@@ -55,6 +55,7 @@
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Deprecations &amp; Planned Breaking Changes</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#deprecated-unreleased">Deprecated (unreleased)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#initialization-amorphous-kwargs-seed"><code class="docutils literal notranslate"><span class="pre">initialization.amorphous_kwargs.seed</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#initialization-amorphous-kwargs-densities-list"><code class="docutils literal notranslate"><span class="pre">initialization.amorphous_kwargs.densities_list</span></code></a></li>
 </ul>
 </li>
@@ -103,13 +104,27 @@ ALomancy releases, so users can migrate ahead of time. See <code class="docutils
 changes that have already shipped.</p>
 <section id="deprecated-unreleased">
 <h2>Deprecated (unreleased)<a class="headerlink" href="#deprecated-unreleased" title="Link to this heading"></a></h2>
+<section id="initialization-amorphous-kwargs-seed">
+<h3><code class="docutils literal notranslate"><span class="pre">initialization.amorphous_kwargs.seed</span></code><a class="headerlink" href="#initialization-amorphous-kwargs-seed" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Status</strong>: deprecated; accepted with a warning (<code class="docutils literal notranslate"><span class="pre">config_key_deprecated</span></code>) and ignored</p></li>
+<li><p><strong>What changed</strong>: the amorphous cells (and the molecule boxes, which used the
+same seed) are seeded by <code class="docutils literal notranslate"><span class="pre">general.seed</span></code>, like every other random choice.
+<code class="docutils literal notranslate"><span class="pre">amorphous_kwargs.seed</span></code> (default 803) is no longer read. With the defaults
+nothing changes in which seed is used (<code class="docutils literal notranslate"><span class="pre">general.seed</span></code> also defaults to 803),
+but the cells themselves differ from earlier versions, since their densities
+are now drawn at random within <code class="docutils literal notranslate"><span class="pre">density_range</span></code>.</p></li>
+<li><p><strong>Migrate</strong>: remove <code class="docutils literal notranslate"><span class="pre">amorphous_kwargs.seed</span></code>; set <code class="docutils literal notranslate"><span class="pre">general.seed</span></code> to change the
+cells.</p></li>
+</ul>
+</section>
 <section id="initialization-amorphous-kwargs-densities-list">
 <h3><code class="docutils literal notranslate"><span class="pre">initialization.amorphous_kwargs.densities_list</span></code><a class="headerlink" href="#initialization-amorphous-kwargs-densities-list" title="Link to this heading"></a></h3>
 <ul class="simple">
 <li><p><strong>Status</strong>: deprecated; still read, with a warning (<code class="docutils literal notranslate"><span class="pre">config_key_deprecated</span></code>)</p></li>
 <li><p><strong>What changed</strong>: amorphous densities are a range, <code class="docutils literal notranslate"><span class="pre">density_range:</span> <span class="pre">[min,</span> <span class="pre">max]</span></code>
-(g/cm³), with one density per structure evenly spaced over it
-(<code class="docutils literal notranslate"><span class="pre">np.linspace(min,</span> <span class="pre">max,</span> <span class="pre">num_of_amorphous_structures)</span></code>), the same form as
+(g/cm³), each structure’s density drawn uniformly at random from it, the
+same form as
 <code class="docutils literal notranslate"><span class="pre">molecules_in_box_kwargs.box_compositions[].density_range</span></code>. A
 <code class="docutils literal notranslate"><span class="pre">densities_list</span></code> is read as <code class="docutils literal notranslate"><span class="pre">[min(list),</span> <span class="pre">max(list)]</span></code>; it used to split the
 structures equally between the listed densities.</p></li>

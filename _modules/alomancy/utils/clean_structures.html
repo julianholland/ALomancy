@@ -80,6 +80,7 @@
              
   <h1>Source code for alomancy.utils.clean_structures</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
@@ -287,6 +288,176 @@
         <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">filtered</span></div>
+
+
+
+<span class="c1"># Default for high_accuracy_evaluation.max_vdw_volume_ratio. Healthy</span>
+<span class="c1"># condensed cells sit near 1; molecular crystals (P4, Li2S8) reach ~10; the</span>
+<span class="c1"># blown-up NPT cells that ran DFT out of memory were 30 and far above.</span>
+<span class="n">DEFAULT_MAX_VDW_VOLUME_RATIO</span> <span class="o">=</span> <span class="mf">10.0</span>
+<span class="c1"># Single atoms, dimers and trimers sit in a box of vacuum by design (and</span>
+<span class="c1"># come back from DFT marked periodic), so they are never "blown up".</span>
+<span class="n">GAS_PHASE_CONFIG_TYPES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"IsolatedAtom"</span><span class="p">,</span> <span class="s2">"init_dimer"</span><span class="p">,</span> <span class="s2">"init_trimer"</span><span class="p">})</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_vdw_volume</span><span class="p">(</span><span class="n">numbers</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Summed van der Waals sphere volume of atoms with these atomic</span>
+<span class="sd">    numbers (ase.data.vdw_radii; 1.5 x the covalent radius where ASE has no</span>
+<span class="sd">    vdW radius)."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">ase.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">covalent_radii</span><span class="p">,</span> <span class="n">vdw_radii</span>
+
+    <span class="n">numbers</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">numbers</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">vdw_radii</span><span class="p">[</span><span class="n">z</span><span class="p">]</span> <span class="k">for</span> <span class="n">z</span> <span class="ow">in</span> <span class="n">numbers</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">missing</span> <span class="o">=</span> <span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">radii</span><span class="p">)</span>
+    <span class="n">radii</span><span class="p">[</span><span class="n">missing</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">covalent_radii</span><span class="p">[</span><span class="n">numbers</span><span class="p">[</span><span class="n">missing</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mf">4.0</span> <span class="o">/</span> <span class="mf">3.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">radii</span><span class="o">**</span><span class="mi">3</span><span class="p">))</span>
+
+
+<div class="viewcode-block" id="vdw_volume_ratio">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.vdw_volume_ratio">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">vdw_volume_ratio</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Cell volume over the summed van der Waals sphere volumes of its</span>
+<span class="sd">    atoms (_vdw_volume). Non-finite for a degenerate or non-finite cell."""</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="nb">all</span><span class="o">=</span><span class="s2">"ignore"</span><span class="p">):</span>
+        <span class="n">volume</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="o">.</span><span class="n">array</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">volume</span> <span class="o">/</span> <span class="n">_vdw_volume</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">numbers</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># 1 amu/Å^3 = 1.66054 g/cm^3, so a mass M (amu) at rho g/cm^3 fills</span>
+<span class="c1"># M / (rho * 0.6022) Å^3.</span>
+<span class="n">_G_CM3_PER_AMU_A3</span> <span class="o">=</span> <span class="mf">1.66054</span>
+
+
+<div class="viewcode-block" id="vdw_volume_ratio_at_density">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.vdw_volume_ratio_at_density">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">vdw_volume_ratio_at_density</span><span class="p">(</span><span class="n">symbols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">density_g_cm3</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""vdw_volume_ratio a cell of *symbols* would have at a mass density of</span>
+<span class="sd">    *density_g_cm3*: what filter_blown_up_structures will measure, known</span>
+<span class="sd">    before the cell exists."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">ase.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">atomic_masses</span><span class="p">,</span> <span class="n">atomic_numbers</span>
+
+    <span class="n">numbers</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">atomic_numbers</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">symbols</span><span class="p">])</span>
+    <span class="n">mass</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">atomic_masses</span><span class="p">[</span><span class="n">numbers</span><span class="p">]))</span>
+    <span class="n">volume</span> <span class="o">=</span> <span class="n">mass</span> <span class="o">*</span> <span class="n">_G_CM3_PER_AMU_A3</span> <span class="o">/</span> <span class="n">density_g_cm3</span>
+    <span class="k">return</span> <span class="n">volume</span> <span class="o">/</span> <span class="n">_vdw_volume</span><span class="p">(</span><span class="n">numbers</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="density_for_vdw_volume_ratio">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.density_for_vdw_volume_ratio">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">density_for_vdw_volume_ratio</span><span class="p">(</span><span class="n">symbols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">ratio</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The mass density (g/cm^3) at which a cell of *symbols* has</span>
+<span class="sd">    vdw_volume_ratio *ratio* (the inverse of vdw_volume_ratio_at_density)."""</span>
+    <span class="k">return</span> <span class="n">vdw_volume_ratio_at_density</span><span class="p">(</span><span class="n">symbols</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">/</span> <span class="n">ratio</span></div>
+
+
+
+<div class="viewcode-block" id="filter_blown_up_structures">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.filter_blown_up_structures">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">filter_blown_up_structures</span><span class="p">(</span>
+    <span class="n">structures</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">],</span>
+    <span class="n">max_ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">DEFAULT_MAX_VDW_VOLUME_RATIO</span><span class="p">,</span>
+    <span class="n">exempt_config_types</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atoms</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Exclude periodic cells whose volume is more than *max_ratio* x their</span>
+<span class="sd">    atoms' van der Waals volume (vdw_volume_ratio), or non-finite: DFT on</span>
+<span class="sd">    such cells runs out of memory, times out or fails outright. None turns</span>
+<span class="sd">    the check off. Non-periodic structures, GAS_PHASE_CONFIG_TYPES and</span>
+<span class="sd">    *exempt_config_types* (e.g. molecules in vacuum) are never excluded."""</span>
+    <span class="k">if</span> <span class="n">max_ratio</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">structures</span><span class="p">)</span>
+    <span class="n">exempt</span> <span class="o">=</span> <span class="n">GAS_PHASE_CONFIG_TYPES</span> <span class="o">|</span> <span class="n">exempt_config_types</span>
+    <span class="n">kept</span><span class="p">,</span> <span class="n">excluded</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">structure</span> <span class="ow">in</span> <span class="n">structures</span><span class="p">:</span>
+        <span class="n">checked</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+            <span class="ow">and</span> <span class="n">structure</span><span class="o">.</span><span class="n">pbc</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="ow">and</span> <span class="n">structure</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">exempt</span>
+        <span class="p">)</span>
+        <span class="n">ratio</span> <span class="o">=</span> <span class="n">vdw_volume_ratio</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span> <span class="k">if</span> <span class="n">checked</span> <span class="k">else</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ratio</span><span class="p">)</span> <span class="ow">and</span> <span class="n">ratio</span> <span class="o">&lt;=</span> <span class="n">max_ratio</span><span class="p">:</span>
+            <span class="n">kept</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">structure</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">excluded</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">structure</span><span class="p">,</span> <span class="n">ratio</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">excluded</span><span class="p">:</span>
+        <span class="n">ratios</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">excluded</span><span class="p">]</span>
+        <span class="n">largest</span> <span class="o">=</span> <span class="nb">max</span><span class="p">((</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">ratios</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">r</span><span class="p">)),</span> <span class="n">default</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">))</span>
+        <span class="n">config_types</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">))</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">excluded</span><span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"Excluded </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> structure(s) from DFT whose volume is above </span><span class="si">%g</span><span class="s2"> x "</span>
+            <span class="s2">"their atoms' van der Waals volume (largest </span><span class="si">%.3g</span><span class="s2"> x; config_type </span><span class="si">%s</span><span class="s2">): "</span>
+            <span class="s2">"DFT on such cells runs out of memory or fails. If they came from "</span>
+            <span class="s2">"NPT MD, add a small positive structure_generation.md_kwargs."</span>
+            <span class="s2">"pressure (e.g. 0.1 GPa); if they are genuine low-density crystals, "</span>
+            <span class="s2">"raise high_accuracy_evaluation.max_vdw_volume_ratio; if they are "</span>
+            <span class="s2">"meant to have vacuum (e.g. molecules in a box), list their "</span>
+            <span class="s2">"config_type in high_accuracy_evaluation.vdw_exempt_config_types."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">excluded</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+            <span class="n">max_ratio</span><span class="p">,</span>
+            <span class="n">largest</span><span class="p">,</span>
+            <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">config_types</span><span class="p">),</span>
+            <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">"event"</span><span class="p">:</span> <span class="s2">"blown_up_excluded"</span><span class="p">,</span>
+                <span class="s2">"data"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"n"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">excluded</span><span class="p">),</span>
+                    <span class="s2">"total"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">structures</span><span class="p">),</span>
+                    <span class="s2">"max_ratio"</span><span class="p">:</span> <span class="n">max_ratio</span><span class="p">,</span>
+                    <span class="s2">"config_types"</span><span class="p">:</span> <span class="n">config_types</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">kept</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_ratio">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.resolve_ratio">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_ratio</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A config ratio limit: a finite number above 1, or None (check off)."""</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="ow">not</span> <span class="n">math</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">value</span> <span class="o">&lt;=</span> <span class="mi">1</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> must be a finite number above 1, or null to turn it off; "</span>
+            <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_max_vdw_volume_ratio">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.resolve_max_vdw_volume_ratio">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_max_vdw_volume_ratio</span><span class="p">(</span><span class="n">hae_config</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""high_accuracy_evaluation.max_vdw_volume_ratio (default</span>
+<span class="sd">    DEFAULT_MAX_VDW_VOLUME_RATIO), validated by resolve_ratio."""</span>
+    <span class="k">return</span> <span class="n">resolve_ratio</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">hae_config</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_vdw_volume_ratio"</span><span class="p">,</span> <span class="n">DEFAULT_MAX_VDW_VOLUME_RATIO</span><span class="p">),</span>
+        <span class="s2">"high_accuracy_evaluation.max_vdw_volume_ratio"</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_vdw_exempt_config_types">
+<a class="viewcode-back" href="../../../api/utils.html#alomancy.utils.clean_structures.resolve_vdw_exempt_config_types">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_vdw_exempt_config_types</span><span class="p">(</span><span class="n">hae_config</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""high_accuracy_evaluation.vdw_exempt_config_types: config types the</span>
+<span class="sd">    blown-up check skips, on top of GAS_PHASE_CONFIG_TYPES."""</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">hae_config</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vdw_exempt_config_types"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"high_accuracy_evaluation.vdw_exempt_config_types must be a list "</span>
+            <span class="sa">f</span><span class="s2">"of config_type names; got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
 
 
 

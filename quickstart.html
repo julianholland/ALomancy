@@ -119,6 +119,7 @@
 <span class="w">    </span><span class="nt">num_of_models_in_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 </pre></div>
 </div>
+<p>This block shows only the <code class="docutils literal notranslate"><span class="pre">general:</span></code> section. Add an <code class="docutils literal notranslate"><span class="pre">initialization:</span></code> section (it may be empty, <code class="docutils literal notranslate"><span class="pre">initialization:</span> <span class="pre">{}</span></code>) and the config loads: every section left out falls back to its default modules (MACE training, MD generation, QE evaluation, the default initialization). That is a minimal sketch, not a config to run. Nothing in it says which HPC system each phase runs on, so the first remote job fails. Always name the modules and HPC profiles explicitly, as in <a class="reference internal" href="#configuration">Configuration</a> below. That way the run doesn’t depend on defaults that may change, and the config records what the run did.</p>
 </section>
 <section id="hpc-setup">
 <h2>HPC Setup<a class="headerlink" href="#hpc-setup" title="Link to this heading"></a></h2>
@@ -178,7 +179,7 @@ train/test pair of xyz files, a single xyz file, a former ALomancy
 database, or nothing (a cold start). Every mode then:</p>
 <ol class="arabic simple">
 <li><p>Imports the start data into the global database</p></li>
-<li><p>Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project)</p></li>
+<li><p>Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project, and molecules if switched on)</p></li>
 <li><p>Evaluates them with DFT</p></li>
 <li><p>Builds train/test splits from the database</p></li>
 </ol>

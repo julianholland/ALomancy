@@ -99,9 +99,9 @@ general:
 After the import, every mode follows the same path:
 
 1. **Import into this run's database** (`results/global_database`). Imports are idempotent. Each xyz file's SHA-256 (and a database's path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in `general.elements` are dropped at import, with one warning per source giving the count (event `start_from_elements_excluded`). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to `general.elements` later does not bring back structures that an earlier import excluded. To get them, start a fresh run.
-2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section. Leave the `initialization` section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (`initialization: {}`) to use the defaults.
+2. **Fill the gaps.** ALomancy counts what the database already holds against the `initialization` targets (isolated atoms, dimers, trimers, amorphous, Materials Project, molecules, ...). It generates and DFT-evaluates **only what is missing**. Imported data counts towards those targets. To skip a structure type entirely, set its `enabled: false` in the `initialization` section. Leave the `initialization` section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (`initialization: {}`) to use the defaults.
 3. **Split into train/test** (next section) and write `results/initialization/train_set.xyz` / `test_set.xyz`.
-4. **Start the AL loop.** After the last loop (`general.num_of_al_loops`), the run trains once more, in `results/al_loop_<num_of_al_loops>/`, so the structures DFT labelled in the last loop reach a model. `results/best_model/` then holds that final model.
+4. **Start the AL loop.** After the last loop (`general.num_of_al_loops`), the run trains once more, in `results/al_loop_<num_of_al_loops>/`, so the structures DFT labelled in the last loop reach a model. `results/best_model/` then holds that final model. `num_of_al_loops` is the total number of loops in the results directory, not the number a run adds: to carry on after a run with 10 loops, set it to 15 for 5 more. If it is already reached, the run ends at once with the warning `no_loops_to_run`, saying how many loops `results/` already holds.
 
 Once any AL loop has finished, a restart resumes from the database. `start_from` is not consulted again, and neither is the initialization step.
 
@@ -155,14 +155,29 @@ Two behaviors differ from the old fast path. `initial_train_file_path`/`initial_
 
 ## Watching a run
 
-While the run waits on HPC jobs, its terminal shows a panel that redraws itself. The panel has:
-- a bar of jobs done, running, queued and still to submit;
-- for each HPC: the job counts, when data last came back from it (⚠ when that is overdue), and how long the oldest job has been queued;
-- the slowest running job.
+From the end of its startup checks until it finishes, the run's terminal shows two panels that redraw themselves:
 
-Log lines scroll above the panel. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. `alomancy run --no-live` turns the panel off.
+- **ALomancy**
+  - *Run Details*: the run, its workflow, the loop (with the time spent on it, counted across restarts) and the run time, and the elements.
+  - *Settings*: one row per block (selector, trainer, generator, evaluator), with the HPC each runs on.
+  - *Best Model*: the current best model and its errors.
+- **Current task**
+  - *Errors*: only shown when something is wrong, such as a lost ssh login, a failing sync or failed jobs.
+  - *Status*: the current step. While HPC jobs run, it shows a bar of jobs done, running, queued and still to submit, and for each HPC its ssh state, the job counts, when data last came back (`!` when overdue) and how long the oldest job has been queued.
+  - *Options*: the keys you can press.
 
-From any other terminal, `alomancy status` in the run's directory shows the same panel; `alomancy status --watch` keeps it updating until Ctrl-C.
+Log lines scroll above the panels. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. `alomancy run --no-live` turns the panels off.
+
+From any other terminal, `alomancy status` in the run's directory shows the same panels; `alomancy status --watch` keeps them updating until Ctrl-C.
+
+### If the ssh connection to an HPC drops
+
+At startup the run opens its own ssh connection to each HPC and asks for your password/OTP once. Every later ssh call reuses that connection. If it drops (a network blip, a laptop going to sleep), jobs don't fail: they wait. The panel shows `login needed` for that HPC.
+
+- In the run's terminal, press **L**, or the HPC's number when several need a login. The panels pause, your usual password/OTP prompt appears, and the run carries on.
+- From another terminal on the same machine (for a run under nohup or tmux), run `alomancy login` in the run's directory, or `alomancy login <HPC>`.
+
+An HPC that logs in with an ssh key reconnects on its own. The connections stay open after a crash or Ctrl-C, so a restart doesn't ask again; they close when the run finishes or with `alomancy cancel`. `ALOMANCY_OWN_SSH_MASTER=0` turns this off and uses your own ssh config instead.
 
 ## Stopping a run
 

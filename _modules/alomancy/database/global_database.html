@@ -506,7 +506,28 @@
             <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Database </span><span class="si">%s</span><span class="s2"> already imported; skipping."</span><span class="p">,</span> <span class="n">source</span><span class="p">)</span>
             <span class="k">return</span> <span class="mi">0</span>
 
-        <span class="n">atoms_list</span> <span class="o">=</span> <span class="n">GlobalDatabase</span><span class="p">(</span><span class="n">marker</span><span class="p">)</span><span class="o">.</span><span class="n">get_all_as_atoms</span><span class="p">()</span>
+        <span class="c1"># Read-only: opening read-write while the source's own run holds it</span>
+        <span class="c1"># makes sage_lib take HDF5's lock error for corruption and rename</span>
+        <span class="c1"># that run's live DB aside (see "Replaced-DB detection" above).</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">containers</span> <span class="o">=</span> <span class="n">read_storage</span><span class="p">(</span><span class="n">source</span> <span class="o">/</span> <span class="s2">"hybrid_local"</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">FileNotFoundError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"No ALomancy database at </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">"lock"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="k">raise</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"start_from.database </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2"> is open in another process "</span>
+                <span class="s2">"(most likely its run is still going). Stop that run, or copy "</span>
+                <span class="s2">"the database (cp -a) and point start_from.database at the copy."</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">containers</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"start_from.database </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2"> holds no structures; nothing to "</span>
+                <span class="s2">"import. Check the path, and for *.corrupted_* files in "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">source</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="s1">'hybrid_local'</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+        <span class="n">atoms_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">atoms_from_container</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">containers</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">elements</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">atoms_list</span> <span class="o">=</span> <span class="n">filter_by_elements</span><span class="p">(</span><span class="n">atoms_list</span><span class="p">,</span> <span class="n">elements</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">marker</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>

@@ -54,7 +54,10 @@
 <li class="toctree-l2"><a class="reference internal" href="#label-handling-for-xyz-files">Label handling for xyz files</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#train-test-split">Train/test split</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#migrating-from-the-removed-keys">Migrating from the removed keys</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#watching-a-run">Watching a run</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#watching-a-run">Watching a run</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#if-the-ssh-connection-to-an-hpc-drops">If the ssh connection to an HPC drops</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#stopping-a-run">Stopping a run</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#common-errors-and-fixes">Common errors and fixes</a></li>
 </ul>
@@ -205,9 +208,9 @@ is named after which keys you give.</p>
 <p>After the import, every mode follows the same path:</p>
 <ol class="arabic simple">
 <li><p><strong>Import into this run’s database</strong> (<code class="docutils literal notranslate"><span class="pre">results/global_database</span></code>). Imports are idempotent. Each xyz file’s SHA-256 (and a database’s path) is recorded on its structures, so restarting a run never imports the same data twice. Structures containing any element not in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> are dropped at import, with one warning per source giving the count (event <code class="docutils literal notranslate"><span class="pre">start_from_elements_excluded</span></code>). This happens before redundancy removal and the train/test filters run. Because imports are idempotent, adding an element to <code class="docutils literal notranslate"><span class="pre">general.elements</span></code> later does not bring back structures that an earlier import excluded. To get them, start a fresh run.</p></li>
-<li><p><strong>Fill the gaps.</strong> ALomancy counts what the database already holds against the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> targets (isolated atoms, dimers, trimers, amorphous, Materials Project, …). It generates and DFT-evaluates <strong>only what is missing</strong>. Imported data counts towards those targets. To skip a structure type entirely, set its <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> in the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section. Leave the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (<code class="docutils literal notranslate"><span class="pre">initialization:</span> <span class="pre">{}</span></code>) to use the defaults.</p></li>
+<li><p><strong>Fill the gaps.</strong> ALomancy counts what the database already holds against the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> targets (isolated atoms, dimers, trimers, amorphous, Materials Project, molecules, …). It generates and DFT-evaluates <strong>only what is missing</strong>. Imported data counts towards those targets. To skip a structure type entirely, set its <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> in the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section. Leave the <code class="docutils literal notranslate"><span class="pre">initialization</span></code> section out entirely to use the imported data as is, with nothing generated. A cold start needs the section; it may be empty (<code class="docutils literal notranslate"><span class="pre">initialization:</span> <span class="pre">{}</span></code>) to use the defaults.</p></li>
 <li><p><strong>Split into train/test</strong> (next section) and write <code class="docutils literal notranslate"><span class="pre">results/initialization/train_set.xyz</span></code> / <code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>.</p></li>
-<li><p><strong>Start the AL loop.</strong> After the last loop (<code class="docutils literal notranslate"><span class="pre">general.num_of_al_loops</span></code>), the run trains once more, in <code class="docutils literal notranslate"><span class="pre">results/al_loop_&lt;num_of_al_loops&gt;/</span></code>, so the structures DFT labelled in the last loop reach a model. <code class="docutils literal notranslate"><span class="pre">results/best_model/</span></code> then holds that final model.</p></li>
+<li><p><strong>Start the AL loop.</strong> After the last loop (<code class="docutils literal notranslate"><span class="pre">general.num_of_al_loops</span></code>), the run trains once more, in <code class="docutils literal notranslate"><span class="pre">results/al_loop_&lt;num_of_al_loops&gt;/</span></code>, so the structures DFT labelled in the last loop reach a model. <code class="docutils literal notranslate"><span class="pre">results/best_model/</span></code> then holds that final model. <code class="docutils literal notranslate"><span class="pre">num_of_al_loops</span></code> is the total number of loops in the results directory, not the number a run adds: to carry on after a run with 10 loops, set it to 15 for 5 more. If it is already reached, the run ends at once with the warning <code class="docutils literal notranslate"><span class="pre">no_loops_to_run</span></code>, saying how many loops <code class="docutils literal notranslate"><span class="pre">results/</span></code> already holds.</p></li>
 </ol>
 <p>Once any AL loop has finished, a restart resumes from the database. <code class="docutils literal notranslate"><span class="pre">start_from</span></code> is not consulted again, and neither is the initialization step.</p>
 </section>
@@ -323,14 +326,34 @@ is named after which keys you give.</p>
 </section>
 <section id="watching-a-run">
 <h2>Watching a run<a class="headerlink" href="#watching-a-run" title="Link to this heading"></a></h2>
-<p>While the run waits on HPC jobs, its terminal shows a panel that redraws itself. The panel has:</p>
+<p>From the end of its startup checks until it finishes, the run’s terminal shows two panels that redraw themselves:</p>
 <ul class="simple">
-<li><p>a bar of jobs done, running, queued and still to submit;</p></li>
-<li><p>for each HPC: the job counts, when data last came back from it (⚠ when that is overdue), and how long the oldest job has been queued;</p></li>
-<li><p>the slowest running job.</p></li>
+<li><p><strong>ALomancy</strong></p>
+<ul>
+<li><p><em>Run Details</em>: the run, its workflow, the loop (with the time spent on it, counted across restarts) and the run time, and the elements.</p></li>
+<li><p><em>Settings</em>: one row per block (selector, trainer, generator, evaluator), with the HPC each runs on.</p></li>
+<li><p><em>Best Model</em>: the current best model and its errors.</p></li>
 </ul>
-<p>Log lines scroll above the panel. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">run</span> <span class="pre">--no-live</span></code> turns the panel off.</p>
-<p>From any other terminal, <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">status</span></code> in the run’s directory shows the same panel; <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">status</span> <span class="pre">--watch</span></code> keeps it updating until Ctrl-C.</p>
+</li>
+<li><p><strong>Current task</strong></p>
+<ul>
+<li><p><em>Errors</em>: only shown when something is wrong, such as a lost ssh login, a failing sync or failed jobs.</p></li>
+<li><p><em>Status</em>: the current step. While HPC jobs run, it shows a bar of jobs done, running, queued and still to submit, and for each HPC its ssh state, the job counts, when data last came back (<code class="docutils literal notranslate"><span class="pre">!</span></code> when overdue) and how long the oldest job has been queued.</p></li>
+<li><p><em>Options</em>: the keys you can press.</p></li>
+</ul>
+</li>
+</ul>
+<p>Log lines scroll above the panels. Without a terminal (nohup, output redirected), a one-line summary is logged every 5 minutes instead. <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">run</span> <span class="pre">--no-live</span></code> turns the panels off.</p>
+<p>From any other terminal, <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">status</span></code> in the run’s directory shows the same panels; <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">status</span> <span class="pre">--watch</span></code> keeps them updating until Ctrl-C.</p>
+<section id="if-the-ssh-connection-to-an-hpc-drops">
+<h3>If the ssh connection to an HPC drops<a class="headerlink" href="#if-the-ssh-connection-to-an-hpc-drops" title="Link to this heading"></a></h3>
+<p>At startup the run opens its own ssh connection to each HPC and asks for your password/OTP once. Every later ssh call reuses that connection. If it drops (a network blip, a laptop going to sleep), jobs don’t fail: they wait. The panel shows <code class="docutils literal notranslate"><span class="pre">login</span> <span class="pre">needed</span></code> for that HPC.</p>
+<ul class="simple">
+<li><p>In the run’s terminal, press <strong>L</strong>, or the HPC’s number when several need a login. The panels pause, your usual password/OTP prompt appears, and the run carries on.</p></li>
+<li><p>From another terminal on the same machine (for a run under nohup or tmux), run <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">login</span></code> in the run’s directory, or <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">login</span> <span class="pre">&lt;HPC&gt;</span></code>.</p></li>
+</ul>
+<p>An HPC that logs in with an ssh key reconnects on its own. The connections stay open after a crash or Ctrl-C, so a restart doesn’t ask again; they close when the run finishes or with <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">cancel</span></code>. <code class="docutils literal notranslate"><span class="pre">ALOMANCY_OWN_SSH_MASTER=0</span></code> turns this off and uses your own ssh config instead.</p>
+</section>
 </section>
 <section id="stopping-a-run">
 <h2>Stopping a run<a class="headerlink" href="#stopping-a-run" title="Link to this heading"></a></h2>

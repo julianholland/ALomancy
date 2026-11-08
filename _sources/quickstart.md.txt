@@ -31,6 +31,8 @@ general:
     num_of_models_in_committee: 5
 ```
 
+This block shows only the `general:` section. Add an `initialization:` section (it may be empty, `initialization: {}`) and the config loads: every section left out falls back to its default modules (MACE training, MD generation, QE evaluation, the default initialization). That is a minimal sketch, not a config to run. Nothing in it says which HPC system each phase runs on, so the first remote job fails. Always name the modules and HPC profiles explicitly, as in [Configuration](#configuration) below. That way the run doesn't depend on defaults that may change, and the config records what the run did.
+
 ## HPC Setup
 
 Before writing a config file, run the interactive wizard to register your HPC system:
@@ -93,7 +95,7 @@ train/test pair of xyz files, a single xyz file, a former ALomancy
 database, or nothing (a cold start). Every mode then:
 
 1. Imports the start data into the global database
-2. Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project)
+2. Generates only the initialization structures still missing (isolated atoms, dimers, trimers, amorphous, Materials Project, and molecules if switched on)
 3. Evaluates them with DFT
 4. Builds train/test splits from the database
 

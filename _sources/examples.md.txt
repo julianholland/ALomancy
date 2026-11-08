@@ -231,7 +231,7 @@ high_accuracy_evaluation:
 
 - **general**: Settings shared across the whole workflow. `al_workflow` selects which AL skeleton `ALomancy(config)` builds (`"committee_uncertainty"`, the default, `"random_selection"` or `"novelty_selection"`). `elements` (atomic symbols, e.g. `["C", "O"]`) is the single shared source of element identity. `num_of_structures_per_loop` (default 50) is how many structures the selector sends to DFT each loop. `dataset_kwargs` sets the train/test split for every workflow: `target_config_types` (which config types count toward the split) and `test_ratio` (the fraction that goes to test). `remove_redundancy` (default true) flags near-duplicate training structures; `redundancy_kwargs` tunes how its tolerance is chosen: `tolerance` (set it directly), `max_flagged_fraction` (default 0.5: if the automatic choice would flag more, nothing is flagged), `min_plateau_width` and `probe_steps_per_structure`. Settings specific to one AL skeleton go in its own block, e.g. `committee_uncertainty_kwargs.num_of_models_in_committee` (how many committee members are trained in parallel).
 
-- **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures (`density_range: [min, max]`), molecules, and stretched/compressed and rattled target structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`). Molecules are two more blocks, off by default: `molecule_kwargs` (single molecules in vacuum) and `molecules_in_box_kwargs` (periodic boxes of molecules at a density range), each naming its own molecules (below).
+- **initialization**: Generates initial training and test sets. Supports Materials Project structures, dimers, trimers, amorphous structures (`density_range: [min, max]`), molecules, and stretched/compressed and rattled target structures — each namespaced under its own `*_kwargs` (`mp_kwargs`, `dimer_kwargs`, `trimer_kwargs`, `amorphous_kwargs`, `stretch_compress_targets_kwargs`, `isolated_atom_kwargs`), each with its own `enabled` flag (default `true`). Molecules are two more blocks, off by default: `molecule_kwargs` (single molecules in vacuum) and `molecules_in_box_kwargs` (periodic boxes of molecules at a density range), each naming its own molecules (below). `read_generated_file` uses a ready-made extxyz file instead of generating. Every setting is shown, commented, in [Initialization in Full](#initialization-in-full).
 
   ```yaml
   general:
@@ -250,7 +250,7 @@ high_accuracy_evaluation:
         - molecules: {"smiles-O": 2, "smiles-CO": 1}   # water:methanol 2:1
           density_range: [0.8, 1.1]                    # g/cm^3
           num_of_molecules: 24
-          num_of_structures: 4                         # 0.8, 0.9, 1.0, 1.1
+          num_of_structures: 4                         # random densities in range
   ```
 
 - **training**: Trains the interatomic potential(s) the workflow needs (a committee for `committee_uncertainty`, one model for `random_selection` and `novelty_selection`). `trainer` selects the registered `mlip_trainer` backend: `"mace"` (default) or `"sevennet"`. Backend-specific settings go under `mace_kwargs` / `sevennet_kwargs` (SevenNet's own `model`/`train`/`data` input sections; requires `sevenn` on the training nodes). Complete, tested configs for each workflow and backend are in `examples/configs/`.
@@ -274,6 +274,8 @@ high_accuracy_evaluation:
 
   `md_kwargs.snapshot_oversample` (default 10) makes each MD run record that many times more snapshots than candidates are needed. Every snapshot stays in `md_output_i/structure_generation.xyz` as a viewable trajectory (each frame's MD step in `md_frame`). The candidates are the physical frames (no seed frame, no bond under 0.5 Å), spread evenly over each run, up to `num_of_structures_to_generate`; a run that goes unstable early still contributes the frames it recorded before that. Set it to 1 for the old one-snapshot-per-candidate behaviour.
 
+  `md_kwargs.max_volume_ratio` (default 3; `null` turns it off) stops a run's frames from becoming candidates once its volume per atom passes that multiple of its starting structure's. Under NPT, a model whose stress can't hold the cell together lets it grow without bound, and DFT on such cells runs out of memory or fails. When the filter cuts a run, the warning `md_volume_expanded` suggests a small positive `pressure` (e.g. 0.1 GPa) to keep the cell compact, or `ensemble: "nvt"`.
+
   `mlip_relaxation` (off by default) relaxes every generated candidate with the loop's best model before selection, so the committee (or random/novelty selection) chooses among relaxed structures, the ones DFT starts from, instead of raw MD snapshots. A candidate whose relaxation fails or ends with a bond shorter than 0.5 Å is dropped (warning `mlip_relax_dropped`); if the whole relaxation job fails, the unrelaxed candidates are used (warning `mlip_relax_fallback`). DFT still relaxes anything whose forces exceed `high_accuracy_evaluation.force_ceiling`. EZGA candidates are already relaxed by EZGA, so this is meant for MD. It adds a remote function: run `alomancy upgrade-hpc` before switching it on.
 
   ```yaml
@@ -286,7 +288,134 @@ high_accuracy_evaluation:
 
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored. `max_vdw_volume_ratio` (default 10; `null` turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms' van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning `blown_up_excluded`. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in `vdw_exempt_config_types` (e.g. `["molecules_in_vacuum"]`): tag structures that are meant to have vacuum, such as molecules in a box, with their own `config_type` and list it there. If genuine low-density crystals are dropped, raise `max_vdw_volume_ratio`.
+
+## Initialization in Full
+
+On a cold start (no `general.start_from`), the `initialization` section builds the starting training set before loop 0. Each block below makes one kind of structure and has its own `enabled` flag. Everything it makes is labelled by DFT through `high_accuracy_evaluation`, then split into train and test by `general.dataset_kwargs`. On a restart, only structures still missing from the database are made again. The block shows every setting with example values; where one differs from the default, its comment gives the default. An empty `initialization: {}` runs every default; the two molecule blocks are off unless you turn them on and name their molecules.
+
+```yaml
+initialization:
+  # Initialization builds the starting training set before the first AL loop.
+  # Every block below is a separate kind of structure; each has
+  # `enabled` (default true; false for rattle and the two molecule blocks)
+  # to turn it off without zeroing its count. All structures are labelled by DFT through the
+  # high_accuracy_evaluation section (its evaluator and hpc), then split into
+  # train/test using general.dataset_kwargs. On a restart, only the
+  # structures still missing from the database are regenerated.
+
+  # Generation runs on the local machine (no remote job), so these two are
+  # accepted for symmetry with the other sections but not used for anything.
+  max_time: "2H"
+  hpc: "my_hpc"
+
+  # Optional: skip generation and use your own structures instead (an extxyz
+  # file, path relative to results/initialization/). If the file is missing or
+  # empty, ALomancy falls back to generating them as configured below.
+  read_generated_file: null
+
+  # One isolated atom per element in general.elements, in a box (3x the vdW
+  # radius). Their DFT energies are the per-element reference energies used
+  # by the trainer and for formation energies in the plots and filters,
+  # so keep this on.
+  isolated_atom_kwargs:
+    enabled: true
+
+  # Two-atom structures for every element pair, at evenly spaced separations
+  # from 0.2x to 1.0x the sum of the vdW radii. These teach the model
+  # short-range repulsion (default 10 per pair).
+  dimer_kwargs:
+    enabled: true
+    num_of_dimers_per_combo: 20
+
+  # Three-atom structures for every element triple, on a grid of the two
+  # bond lengths over the same range as the dimers (default 5 per triple).
+  trimer_kwargs:
+    enabled: true
+    num_of_trimers_per_combo: 10
+
+  # Random amorphous cells: atoms placed at random at a given density, then
+  # pushed apart with a Lennard-Jones relaxation so no two overlap.
+  amorphous_kwargs:
+    enabled: true
+    num_of_amorphous_structures: 100   # total
+    num_of_atoms_per_amorphous: 20     # atoms per cell
+    density_range: [1.75, 2.25]        # g/cm^3, [min, max]; each cell's density
+                                       # random within it (default [1.0, 1.0])
+    # Fixed compositions: a list of cells, each a list of exactly
+    # num_of_atoms_per_amorphous symbols, e.g. [["Li", "Li", ..., "S"], ...];
+    # repeated or sampled to reach the total. null -> random mixes of
+    # general.elements.
+    composition_list: null
+    # Placement, compositions and densities are seeded by general.seed.
+
+  # Known crystals from the Materials Project that contain only
+  # general.elements. Needs the MP_API_KEY environment variable to be set.
+  mp_kwargs:
+    enabled: true
+    max_num_of_atoms: 50               # skip larger structures (default 20)
+    mp_max_energy_above_hull: 0.1      # eV/atom; 0 keeps only stable phases
+
+  # Single molecules in vacuum (config_type init_molecule; off by default).
+  # One structure per molecule at its equilibrium geometry, in a cubic cell
+  # of its largest extent plus `vacuum`. A molecule is a SAGE formula ("CO",
+  # "H2O") or "smiles-<SMILES>" ("smiles-CCO"); a formula SAGE has no preset
+  # for (CH4) is written as SMILES ("smiles-C"). Every element must be in
+  # general.elements (the example needs C and O). For bond-length scans,
+  # list init_molecule in general.dataset_kwargs.target_config_types: the
+  # stretch/compress and rattle blocks below then distort the molecules too.
+  molecule_kwargs:
+    enabled: true
+    molecules: ["CO", "CO2", "O2"]     # required when enabled
+    vacuum: 10.0                       # Å around the molecule
+
+  # Periodic boxes of molecules (config_type init_molecules_in_box; off by
+  # default), e.g. liquids and mixtures. Each box_compositions entry gives the
+  # molecules and their ratio, and makes num_of_structures boxes, each at a
+  # random density within its density_range and sized so it is exact.
+  # (Like the molecule_kwargs example, these need C and O in general.elements;
+  # with H as well, water:methanol 2:1 is {"smiles-O": 2, "smiles-CO": 1}.)
+  # The molecules are given random rotations and positions (seeded with
+  # general.seed) and kept min_distance apart; they are relaxed by DFT, like
+  # the amorphous cells.
+  molecules_in_box_kwargs:
+    enabled: true
+    box_compositions:                  # required when enabled
+      - molecules: {"CO": 2, "CO2": 1}   # CO:CO2 2:1
+        density_range: [0.8, 1.1]      # g/cm^3, [min, max]
+        num_of_molecules: 24           # per box, split by the ratio
+        num_of_structures: 4           # 4 boxes, random densities in 0.8-1.1
+      - molecules: {"CO": 1}           # pure CO
+        density_range: [0.5, 0.5]
+        num_of_molecules: 16
+        num_of_structures: 1
+    min_distance: 1.5                  # Å between atoms of different molecules
+    max_attempts_per_molecule: 1000    # placements tried before giving up
+
+  # Isotropic strains of every "target" structure generated here (those whose
+  # config_type is in general.dataset_kwargs.target_config_types, e.g.
+  # init_MP, init_amorphous, init_molecule). Covers the equation of state
+  # around each one; on a molecule in vacuum it scales the bonds.
+  stretch_compress_targets_kwargs:
+    enabled: true
+    num_of_stretch_compress_per_target: 5  # evenly spaced scalings
+    max_lattice_deformation: 0.2           # +/-20 % on the lattice vectors
+
+  # Randomly displaced copies of the same target structures (off by default).
+  # Adds off-equilibrium forces around each starting geometry.
+  rattle_target_structures:
+    enabled: false
+    num_of_rattled_per_target: 5
+    rattle_standard_deviation: 0.05    # Å; no default, required when enabled
+```
+
+- Each `composition_list` entry must have exactly `num_of_atoms_per_amorphous` symbols.
+- `amorphous_kwargs.densities_list` is deprecated: use `density_range` (see [Deprecations](deprecations.md)).
+- Densities are in g/cm³, so the same number is very sparse for heavy elements: Pt at the default 1 g/cm³ fills 14× its atoms' van der Waals volume, and `high_accuracy_evaluation.max_vdw_volume_ratio` (default 10) would drop every such cell before DFT. ALomancy warns about this when the workflow is built (`init_density_too_low`), and about densities packing atoms tighter than any solid (`init_density_too_high`), naming the g/cm³ window to use. Random amorphous mixes are checked as an even mix of `general.elements`.
+- Molecule names, every `density_range` and the box settings are checked when the workflow is built, so a bad name fails at startup, not after DFT has started. A box too small for its largest molecule, or one that can't be packed in `max_attempts_per_molecule` tries, raises naming the composition and density: lower the density or `min_distance`, or raise `num_of_molecules`.
+- On a restart, molecules and boxes are counted per chemical formula, so only the missing ones are made again.
+- `general.dataset_kwargs.target_config_types` decides which structures are stretched, compressed and rattled.
+- Dimers and trimers are far from equilibrium, so they are usually listed in `general.train_filter.exempt_config_types` (see [Filtering the Training and Test Sets](#filtering-the-training-and-test-sets)).
 
 ## Using VASP as the DFT Backend
 
