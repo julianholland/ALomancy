@@ -43,6 +43,10 @@ from ase import Atoms
 from ase.io import read, write
 
 from alomancy.configs.remote_info import get_remote_info
+from alomancy.high_accuracy_evaluation.level_of_theory import (
+    LevelOfTheory,
+    stamp_level_of_theory,
+)
 from alomancy.registry import resolve
 from alomancy.remote_submission.submitters import (
     ASE_OUTPUT_PREFIX,
@@ -50,6 +54,7 @@ from alomancy.remote_submission.submitters import (
 )
 from alomancy.utils.clean_structures import (
     filter_blown_up_structures,
+    filter_structures_by_atom_count,
     filter_structures_by_min_bond_distance,
     resolve_max_vdw_volume_ratio,
     resolve_vdw_exempt_config_types,
@@ -142,16 +147,58 @@ def _still_to_evaluate(structures: list[Atoms], found: list[Path]) -> list[Atoms
     return [a for a in structures if a.info[DFT_INPUT_DIGEST_KEY] not in done]
 
 
+def check_periodicity(
+    structures: list[Atoms],
+    evaluator: str,
+    supports_periodic: bool,
+    supports_non_periodic: bool,
+) -> None:
+    """Raise ValueError, before anything is submitted, when *structures*
+    hold periodic structures (any pbc True) and the evaluator has no
+    periodic boundary conditions (ORCA), or non-periodic ones and it
+    needs them. Counts per config_type in the message."""
+    for wanted, supported, test in (
+        ("periodic", supports_periodic, lambda a: bool(a.pbc.any())),
+        ("non-periodic", supports_non_periodic, lambda a: not a.pbc.any()),
+    ):
+        if supported:
+            continue
+        found: dict[str, int] = {}
+        for atoms in structures:
+            if test(atoms):
+                ct = str(atoms.info.get("config_type", "unknown"))
+                found[ct] = found.get(ct, 0) + 1
+        if found:
+            raise ValueError(
+                f"The {evaluator} evaluator can't take {wanted} structures, but "
+                f"{sum(found.values())} of the {len(structures)} structures "
+                f"going to it are {wanted} (config_type: "
+                + ", ".join(f"{k} {v}" for k, v in sorted(found.items()))
+                + "). "
+                + (
+                    "Generate non-periodic structures for it: in "
+                    "initialization use amorphous_cluster_kwargs and "
+                    "molecule_cluster_kwargs instead of amorphous_kwargs, "
+                    "mp_kwargs and molecules_in_box_kwargs, and seed structure "
+                    "generation with non-periodic structures only."
+                    if wanted == "periodic"
+                    else ""
+                )
+            )
+
+
 def initial_frames_path(base_name: str) -> Path:
     """Where the starting frames of this call's geometry optimisations are
     collected (step 0 of each GO that moved its structure)."""
     return Path("results", base_name, "high_accuracy_eval_initial_frames.xyz")
 
 
-def _collect_initial_frames(eval_dir: Path, base_name: str, name: str) -> None:
+def _collect_initial_frames(
+    eval_dir: Path, base_name: str, name: str, level: LevelOfTheory
+) -> None:
     """Gather every job's ``<name>_initial.xyz`` (written by ``_run_go``)
-    into ``initial_frames_path``. Jobs run before this existed, and SP or
-    unmoved GO jobs, have none."""
+    into ``initial_frames_path``, stamped with *level*. Jobs run before
+    this existed, and SP or unmoved GO jobs, have none."""
     frames = [
         refresh_dft_labels(read(p, format="extxyz"), str(p))
         for p in sorted(
@@ -160,6 +207,7 @@ def _collect_initial_frames(eval_dir: Path, base_name: str, name: str) -> None:
             )
         )
     ]
+    stamp_level_of_theory(frames, level)
     path = initial_frames_path(base_name)
     path.parent.mkdir(parents=True, exist_ok=True)
     write(path, frames, format="extxyz")
@@ -253,6 +301,7 @@ def high_accuracy_evaluation(
     evaluator = worker_config.get("evaluator", "qe")
     entry = resolve("dft_evaluator", evaluator)
     run_sp, run_go = entry.sp, entry.go
+    level = entry.level_of_theory(config, hpc)
 
     legacy_kwargs_key = _LEGACY_EVALUATOR_KWARGS_KEY.get(evaluator)
     new_kwargs_key = f"{evaluator}_kwargs"
@@ -276,6 +325,12 @@ def high_accuracy_evaluation(
         resolve_max_vdw_volume_ratio(config),
         resolve_vdw_exempt_config_types(config),
     )
+    check_periodicity(
+        structures, evaluator, entry.supports_periodic, entry.supports_non_periodic
+    )
+    structures = filter_structures_by_atom_count(
+        structures, entry.max_num_of_atoms(config), evaluator
+    )
 
     for atoms in structures:
         atoms.info[DFT_INPUT_DIGEST_KEY] = dft_input_digest(atoms)
@@ -291,11 +346,14 @@ def high_accuracy_evaluation(
                 "Skipping remote submission and reusing these structures.",
                 len(found_structures),
             )
-            _collect_initial_frames(eval_dir, base_name, name)
-            return [
-                refresh_dft_labels(read(p, format="extxyz"), str(p))
-                for p in found_structures
-            ]
+            _collect_initial_frames(eval_dir, base_name, name, level)
+            return stamp_level_of_theory(
+                [
+                    refresh_dft_labels(read(p, format="extxyz"), str(p))
+                    for p in found_structures
+                ],
+                level,
+            )
         elif found_structures:
             logger.info(
                 "Found %d structures from previous high accuracy evaluation. "
@@ -355,6 +413,7 @@ def high_accuracy_evaluation(
                 per_structure_function=per_structure_function,
                 batch=current_batches,
                 function_kwargs=function_kwargs,
+                max_output_dir_len=entry.max_output_dir_len,
             )
         else:
             logger.info(
@@ -367,6 +426,7 @@ def high_accuracy_evaluation(
                 function=run_sp,
                 batch=current_batches,
                 function_kwargs=function_kwargs,
+                max_output_dir_len=entry.max_output_dir_len,
             )
 
     high_accuracy_structures = []
@@ -392,8 +452,9 @@ def high_accuracy_evaluation(
             "the cause, then rerun."
         )
 
+    stamp_level_of_theory(high_accuracy_structures, level)
     sentinel_results.parent.mkdir(parents=True, exist_ok=True)
     write(sentinel_results, high_accuracy_structures, format="extxyz")
-    _collect_initial_frames(eval_dir, base_name, name)
+    _collect_initial_frames(eval_dir, base_name, name, level)
     _mark_phase_done(base_name)
     return high_accuracy_structures

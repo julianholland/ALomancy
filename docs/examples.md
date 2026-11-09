@@ -288,7 +288,7 @@ high_accuracy_evaluation:
 
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default) or `"vasp"`. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored. `max_vdw_volume_ratio` (default 10; `null` turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms' van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning `blown_up_excluded`. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in `vdw_exempt_config_types` (e.g. `["molecules_in_vacuum"]`): tag structures that are meant to have vacuum, such as molecules in a box, with their own `config_type` and list it there. If genuine low-density crystals are dropped, raise `max_vdw_volume_ratio`.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default), `"vasp"` or `"orca"` (molecules only, see [Using ORCA](#using-orca-as-the-evaluator)). Every label records its level of theory, and ALomancy warns at start-up (`level_of_theory_mismatch`) if the database already holds labels from a different one. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored. `max_vdw_volume_ratio` (default 10; `null` turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms' van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning `blown_up_excluded`. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in `vdw_exempt_config_types` (e.g. `["molecules_in_vacuum"]`): tag structures that are meant to have vacuum, such as molecules in a box, with their own `config_type` and list it there. If genuine low-density crystals are dropped, raise `max_vdw_volume_ratio`.
 
 ## Initialization in Full
 
@@ -455,11 +455,62 @@ high_accuracy_evaluation:
 
 QE configs work unchanged — `evaluator: "qe"` is the default and can be omitted.
 
+## Using ORCA as the Evaluator
+
+ORCA is a molecular code: it has no periodic boundary conditions, and besides DFT it runs wavefunction methods such as MP2 and coupled cluster. Set `evaluator: "orca"` and give the ORCA keyword line in `orca_kwargs`:
+
+```yaml
+high_accuracy_evaluation:
+  evaluator: "orca"
+  max_time: "2H"
+  orca_kwargs:
+    orcasimpleinput: "RI-MP2 def2-TZVP def2-TZVP/C TightSCF"
+    orcablocks: "%scf maxiter 300 end"   # extra % blocks (optional)
+    max_num_of_atoms_correlated: 20      # default; null = no cap
+  hpc:
+    hpc_name: "raven"
+    orca_path: "/path/to/orca/orca"      # absolute path, required
+    node_info:
+      ranks_per_system: 16
+      ranks_per_node: 72
+      threads_per_rank: 1
+      max_mem_per_node: "240G"
+    partitions: ["cpu"]
+    pre_cmds: ["module load openmpi/4.1"]  # the OpenMPI ORCA was built with
+
+initialization:
+  # With ORCA, the periodic blocks (amorphous_kwargs, mp_kwargs,
+  # molecules_in_box_kwargs) are off by default and these two are on.
+  amorphous_cluster_kwargs:
+    num_of_amorphous_clusters: 20
+    num_of_atoms_per_cluster: 6
+    density_range: [0.5, 1.0]
+  molecule_cluster_kwargs:
+    cluster_compositions:
+      - molecules: {"CO": 1}
+        density_range: [0.5, 1.0]
+        num_of_molecules: 3
+        num_of_structures: 5
+```
+
+- **Only non-periodic structures.** Anything with `pbc` true on any axis raises before submission.
+  - Initialisation therefore defaults to non-periodic structures: isolated atoms, dimers, trimers, molecules, amorphous clusters (`amorphous_cluster_kwargs`) and clusters of molecules (`molecule_cluster_kwargs`, built only when you give `cluster_compositions`).
+  - Enabling `amorphous_kwargs`, `mp_kwargs` or `molecules_in_box_kwargs` yourself raises, naming the replacement.
+  - Starting from a database that holds periodic structures raises too.
+- **Parallelism goes in the ORCA input.** ALomancy writes `%pal nprocs` (`node_info.ranks_per_system`) and `%maxcore` (75% of `max_mem_per_node` split between the processes).
+  - To use other values, set `orca_kwargs.nprocs` / `orca_kwargs.maxcore` (MB), or write a `%pal`/`%maxcore` block or a `PALn` keyword yourself. Your value wins, but must fit one node of the profile, or the run stops at start-up.
+  - ORCA is started by `orca_path` without srun and starts its own `mpirun`, so load its OpenMPI in `pre_cmds`.
+- **Post-HF methods are expensive.** For correlated and multireference methods (MP2, DLPNO-CCSD(T), double hybrids, CASSCF/NEVPT2), structures with more than `max_num_of_atoms_correlated` atoms are dropped before submission (`too_many_atoms_for_method`).
+  - Initialisation blocks configured to make larger structures stop the run at start-up.
+  - Coupled-cluster and multireference forces may need numerical gradients (about 6 × atoms energy calculations each); ALomancy warns about this at start-up.
+- `EnGrad` (forces) and `SCFConvergenceForced` are added to the keyword line when missing.
+- The spin multiplicity is the lowest the electron count allows, the ground state for isolated atoms (H 2, O 3), or `atoms.info["spin_multiplicity"]`; the charge is `orca_kwargs.charge` (default 0) or `atoms.info["charge"]`.
+
 ## Adding a New Backend
 
 Users never pick a workflow class in Python — `ALomancy(config)` builds the skeleton named by `general.al_workflow` (new skeletons: see `writing_a_workflow.md`), and each pluggable category (`mlip_trainer`, `structure_generator`, `dft_evaluator`, `initialiser`) is a module registered against a name in `src/alomancy/registry.py`, resolved lazily from config at runtime (`training.trainer`, `structure_generation.generator`, `high_accuracy_evaluation.evaluator`).
 
-Adding a new backend means writing a new module that implements the category's expected entry points — typically `output_paths(config, *, base_name, name, ...)` and `read_existing_result(config, *, base_name, name, ...)` for the skeleton's restart mechanism, plus the category-specific worker function (`train`, `generate`, or `sp`/`go`) — and registering it in `registry.py`. See any existing module under `mlip/` (e.g. `mlip/mace/trainer.py`), `structure_generation/` (`structure_generation/md/md_wfl.py`, `structure_generation/ezga/generate_structures.py`), or `high_accuracy_evaluation/dft/` (`run_qe.py`, `run_vasp.py`) for the pattern to follow.
+Adding a new backend means writing a new module that implements the category's expected entry points — typically `output_paths(config, *, base_name, name, ...)` and `read_existing_result(config, *, base_name, name, ...)` for the skeleton's restart mechanism, plus the category-specific worker function (`train`, `generate`, or `sp`/`go`) — and registering it in `registry.py`. See any existing module under `mlip/` (e.g. `mlip/mace/trainer.py`), `structure_generation/` (`structure_generation/md/md_wfl.py`, `structure_generation/ezga/generate_structures.py`), or `high_accuracy_evaluation/dft/` (`run_qe.py`, `run_vasp.py`) and `high_accuracy_evaluation/orca/` (`run_orca.py`) for the pattern to follow. A new evaluator's checklist (periodicity, parallel model, level of theory, atom cap) is in `docs/architecture/high_accuracy_evaluation.md`.
 
 ## Starting From Existing Data
 

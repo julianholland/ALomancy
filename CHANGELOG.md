@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ORCA as an evaluator** (`high_accuracy_evaluation.evaluator: "orca"`, settings in `orca_kwargs`). Remote reinstall needed (`alomancy upgrade-hpc`) before using it.
+  - ORCA has no periodic boundary conditions: structures with `pbc` true raise before submission, and starting from a database with periodic structures raises at start-up.
+  - Parallelism is written into the ORCA input (`%pal nprocs`, `%maxcore`), from the HPC profile's `node_info`. A value you set (`orca_kwargs.nprocs`/`maxcore`, a `%pal`/`%maxcore` block or `PALn`) wins, and stops the run at start-up if it doesn't fit one node. The profile needs `orca_path` (`alomancy add-hpc` asks for it).
+  - Post-HF methods (MP2, coupled cluster, double hybrids, multireference) are recognised from the keyword line. Structures above `orca_kwargs.max_num_of_atoms_correlated` (default 20) are dropped before submission (`too_many_atoms_for_method`). Methods that may need numerical gradients warn at start-up.
+  - Spin multiplicity per structure: the ground state for isolated atoms, else the lowest the electron count allows, or `atoms.info["spin_multiplicity"]`.
+- **Non-periodic initialisation**: `amorphous_cluster_kwargs` (random clusters) and `molecule_cluster_kwargs` (clusters of molecules, entries like `box_compositions`).
+  - With an evaluator without periodic boundary conditions (ORCA) they are on by default, and `amorphous_kwargs`, `mp_kwargs` and `molecules_in_box_kwargs` are off.
+  - Enabling a periodic block yourself raises, naming the replacement.
+- **Every label records its level of theory** (`atoms.info["REF_level_of_theory"]` and `REF_level_of_theory_id`), for every evaluator.
+  - The record has code-neutral fields: method, rung, dispersion, basis, core treatment, relativity, spin, solvation, plus precision settings.
+  - The start-up summary shows it. ALomancy warns (`level_of_theory_mismatch`) when the database holds labels from a different level of theory.
+  - Recorded on the driver side: no reinstall needed for QE/VASP.
 - **Log in again from the run's own terminal when an HPC's ssh connection drops.**
   - The panel shows `login needed` for that HPC. Press **L** (or the HPC's number), the panels pause, your normal password/OTP prompt appears, and the run carries on.
   - From any other terminal on the same machine (a run under nohup or tmux), `alomancy login [HPC]` in the run directory does the same.
@@ -31,9 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `alomancy status` shows the same panels.
   - The summary line logged without a terminal starts with the loop, the step and the best model's force MAE.
   - The stale-data marker is `!` instead of `⚠`, which some fonts draw two characters wide.
+- **The MD temperature plot shows all runs as one density map** instead of one line per run: the share of running runs at each step and temperature, Gaussian-blurred, with the median and target on top and a strip of the runs still going below. The legend counts runs that stopped early or went above the axis.
+- `scipy` is now a direct dependency (it already came in through ase).
 
 ### Fixed
 - **A lost ssh login while submitting a job (staging files or sbatch) no longer fails the job**; it waits for a new login and submits again, as polling already did.
+- **The 240-character remote path limit now applies only to VASP.** QE runs with a long remote directory (for example an older run kept on ExPyRe's long layout) no longer fail at start with "the remote DFT run directory would be … characters".
 
 No remote reinstall needed.
 

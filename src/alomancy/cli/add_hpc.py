@@ -156,6 +156,9 @@ def build_alomancy_profile(
                 profile["vasp_path"] = dft_paths["vasp_path"]
             if "pp_path" in dft_paths:
                 profile["pp_path"] = dft_paths["pp_path"]
+        elif dft_code == "orca":
+            if "orca_path" in dft_paths:
+                profile["orca_path"] = dft_paths["orca_path"]
 
     return profile
 
@@ -451,9 +454,11 @@ def add_hpc_wizard() -> None:
         default=20,
     )
 
-    print("\nDFT code on this system? Options: qe / vasp / none")
+    print("\nDFT code on this system? Options: qe / vasp / orca / none")
     dft_code_raw = _prompt("DFT code", default="none").strip().lower()
-    dft_code: str | None = dft_code_raw if dft_code_raw in ("qe", "vasp") else None
+    dft_code: str | None = (
+        dft_code_raw if dft_code_raw in ("qe", "vasp", "orca") else None
+    )
     dft_paths: dict = {}
     if dft_code == "qe":
         dft_paths["pwx_path"] = _prompt("  QE pw.x executable path")
@@ -471,6 +476,15 @@ def add_hpc_wizard() -> None:
         print(
             "  Note: add pseudo_dict element→POTCAR-suffix overrides manually"
             f" in {ALOMANCY_HPC_CONFIG}"
+        )
+    elif dft_code == "orca":
+        dft_paths["orca_path"] = _prompt(
+            "  Absolute path of the orca binary (ORCA must be started by its full"
+            " path to run in parallel)"
+        )
+        print(
+            "  Note: ORCA starts its own mpirun: load the OpenMPI it was built"
+            f" with in this profile's pre_cmds in {ALOMANCY_HPC_CONFIG}"
         )
 
     alomancy_profile = build_alomancy_profile(

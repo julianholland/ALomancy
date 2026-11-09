@@ -47,6 +47,10 @@ def structure_domain(atoms: Atoms) -> str:
         return "molecule"
     if ct == "init_molecules_in_box":
         return "molecules_in_box"
+    if ct == "init_amorphous_cluster":
+        return "cluster"
+    if ct == "init_molecule_cluster":
+        return "molecule_cluster"
     if ct == "init_dimer" or len(atoms) == 2:
         return "dimer"
     if ct == "init_trimer" or len(atoms) == 3:

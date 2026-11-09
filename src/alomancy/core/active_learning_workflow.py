@@ -205,6 +205,11 @@ from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     read_initial_frames,
 )
+from alomancy.high_accuracy_evaluation.level_of_theory import (
+    LEVEL_OF_THEORY_ID_KEY,
+    LEVEL_OF_THEORY_KEY,
+    differing_fields,
+)
 from alomancy.mlip.base import (
     ALomancyTrainer,
     CalculatorSpec,
@@ -719,7 +724,9 @@ def _is_user_specified(raw_phase_dict: dict, dotted_key: str) -> bool:
     return True
 
 
-def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
+def _resolve_effective_phase_dict(
+    phase: str, phase_dict: dict, *, evaluator_supports_periodic: bool = True
+) -> dict:
     """Return phase_dict with its <method>_kwargs (or, for
     "initialization", each of its structure-type namespaces -- see
     initialiser_interface.py's module docstring; or, for "general",
@@ -773,7 +780,10 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
                 **effective.get(kwargs_key, {}),
             }
     elif phase == "initialization":
-        namespace_defaults = resolve("initialiser", "default").kwargs_defaults
+        # The block defaults depend on the evaluator (periodic or not).
+        namespace_defaults = resolve("initialiser", "default").kwargs_defaults_for(
+            evaluator_supports_periodic
+        )
         for namespace, defaults in namespace_defaults.items():
             effective[namespace] = {**defaults, **effective.get(namespace, {})}
     elif phase == "training":
@@ -1249,6 +1259,7 @@ class ActiveLearningWorkflow(ABC):
                 },
             )
         self._validate_generator_kwargs(jobs_dict.get("structure_generation"))
+        self._validate_evaluator_kwargs(jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME))
         self._validate_initialiser_kwargs(jobs_dict.get(_INITIALIZATION_NAME))
         self._validate_remote_dft_path_length(
             jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME)
@@ -1278,6 +1289,55 @@ class ActiveLearningWorkflow(ABC):
                 seed=self.seed,
             )
 
+    def _evaluator_entry(self) -> Any:
+        """The registry entry of high_accuracy_evaluation.evaluator, or
+        None when there is no such section or the name is unknown (the
+        config-key check reports that)."""
+        hae_config = self.jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME)
+        if not isinstance(hae_config, dict):
+            return None
+        try:
+            return resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
+        except ValueError:
+            return None
+
+    @property
+    def evaluator_supports_periodic(self) -> bool:
+        """False for an evaluator without periodic boundary conditions
+        (ORCA): initialisation then defaults to non-periodic structures."""
+        entry = self._evaluator_entry()
+        return True if entry is None else bool(entry.supports_periodic)
+
+    def _evaluator_max_num_of_atoms(self) -> int | None:
+        entry = self._evaluator_entry()
+        if entry is None:
+            return None
+        cap: int | None = entry.max_num_of_atoms(
+            self.jobs_dict[_HIGH_ACCURACY_EVALUATION_NAME]
+        )
+        return cap
+
+    def _evaluator_level_of_theory(self) -> Any:
+        """The LevelOfTheory the configured evaluator labels with, or None
+        without an evaluator."""
+        entry = self._evaluator_entry()
+        if entry is None:
+            return None
+        hae_config = self.jobs_dict[_HIGH_ACCURACY_EVALUATION_NAME]
+        hpc = hae_config.get("hpc")
+        return entry.level_of_theory(hae_config, hpc if isinstance(hpc, dict) else None)
+
+    def _validate_evaluator_kwargs(self, hae_config: Any) -> None:
+        """The evaluator's construction-time check (registry entry
+        validate_kwargs, e.g. ORCA's: orca_kwargs complete, its parallel
+        settings within the HPC profile's node)."""
+        entry = self._evaluator_entry()
+        validate = getattr(entry, "validate_kwargs", None)
+        if validate is None or not isinstance(hae_config, dict):
+            return
+        hpc = hae_config.get("hpc")
+        validate(hae_config, hpc if isinstance(hpc, dict) else None)
+
     def _validate_initialiser_kwargs(self, init_config: Any) -> None:
         """The initialiser's construction-time check (registry entry
         validate_kwargs): molecule blocks and density ranges, which would
@@ -1296,12 +1356,15 @@ class ActiveLearningWorkflow(ABC):
                 elements=list(elements),
                 max_vdw_volume_ratio=self.max_vdw_volume_ratio,
                 vdw_exempt_config_types=self.vdw_exempt_config_types,
+                evaluator_supports_periodic=self.evaluator_supports_periodic,
+                max_num_of_atoms=self._evaluator_max_num_of_atoms(),
             )
 
     def _validate_remote_dft_path_length(self, hae_config: Any) -> None:
         """Fail now, not after training and MD, if the longest remote DFT
-        run directory this run can produce is too long for VASP/QE
-        (submitters.MAX_REMOTE_OUTPUT_DIR_LEN). ase_remote_submitter checks
+        run directory this run can produce is too long for the evaluator
+        (its registry entry point max_output_dir_len: VASP 240, QE none,
+        which skips the check). ase_remote_submitter checks
         the exact paths again before submitting each batch.
 
         An early warning, not the last word: the per-batch check in
@@ -1325,6 +1388,8 @@ class ActiveLearningWorkflow(ABC):
             entry = resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
         except ValueError:
             return  # reported by the config-key check
+        if entry.max_output_dir_len is None:
+            return
         base_names = []
         if self.num_of_al_loops > 0:
             base_names.append(f"al_loop_{self.num_of_al_loops - 1}")
@@ -1348,6 +1413,7 @@ class ActiveLearningWorkflow(ABC):
         )
         check_remote_path_length(
             projected_remote_output_dir(remote_rundir, job_name, out_dir),
+            limit=entry.max_output_dir_len,
             remote_rundir=remote_rundir,
             context=(
                 f"high_accuracy_evaluation on HPC {hpc['hpc_name']!r} "
@@ -1476,7 +1542,15 @@ class ActiveLearningWorkflow(ABC):
             # what is and isn't covered. Values the user actually wrote
             # are marked explicitly; unmarked lines are values filled in
             # purely from a module's own defaults.
-            effective_phase_dict = _resolve_effective_phase_dict(phase, phase_dict)
+            effective_phase_dict = _resolve_effective_phase_dict(
+                phase,
+                phase_dict,
+                evaluator_supports_periodic=self.evaluator_supports_periodic,
+            )
+            if phase == _HIGH_ACCURACY_EVALUATION_NAME and (
+                level := self._evaluator_level_of_theory()
+            ):
+                lines.append(f"  level of theory: {level.label()}")
             for key, value in _flatten_settings(effective_phase_dict):
                 # max_time is never marked either way (see
                 # _resolve_effective_phase_dict's docstring): it's already
@@ -1716,6 +1790,92 @@ class ActiveLearningWorkflow(ABC):
             self.db.size,
         )
 
+    def _check_database_against_evaluator(self) -> None:
+        """One pass over the global DB before anything is generated:
+
+        - warn (level_of_theory_mismatch) when it holds labels from a
+          different level of theory than the configured evaluator's
+          (structures from before the stamp count as unknown, not as a
+          mismatch); precision-only differences (k-points, smearing,
+          SCF threshold) are logged at info;
+        - raise when the evaluator has no periodic boundary conditions
+          (ORCA) and the DB holds periodic structures: they would seed
+          structure generation, and the first loop's evaluation would
+          fail on the periodic candidates hours in.
+        """
+        entry = self._evaluator_entry()
+        if entry is None or self.db.size == 0:
+            return
+        level = self._evaluator_level_of_theory()
+        current = level.to_dict()
+        current_id = level.identity_id()
+        other_ids: dict[str, int] = {}
+        other_levels: dict[str, dict] = {}
+        precision_only = 0
+        unknown = 0
+        periodic: dict[str, int] = {}
+        for atoms in self.db.get_all_as_atoms():
+            if atoms.pbc.any():
+                ct = str(atoms.info.get("config_type", "unknown"))
+                periodic[ct] = periodic.get(ct, 0) + 1
+            stored_id = atoms.info.get(LEVEL_OF_THEORY_ID_KEY)
+            if stored_id is None:
+                unknown += 1
+            elif stored_id != current_id:
+                other_ids[stored_id] = other_ids.get(stored_id, 0) + 1
+                if stored_id not in other_levels:
+                    try:
+                        other_levels[stored_id] = json.loads(
+                            str(atoms.info.get(LEVEL_OF_THEORY_KEY, "{}"))
+                        )
+                    except json.JSONDecodeError:
+                        other_levels[stored_id] = {}
+            elif atoms.info.get(LEVEL_OF_THEORY_KEY) != level.to_json():
+                precision_only += 1
+        if periodic and not entry.supports_periodic:
+            raise ValueError(
+                "high_accuracy_evaluation's evaluator has no periodic boundary "
+                f"conditions, but the global database holds "
+                f"{sum(periodic.values())} periodic structures (config_type: "
+                + ", ".join(f"{k} {v}" for k, v in sorted(periodic.items()))
+                + "), e.g. from general.start_from. They would seed structure "
+                "generation and make periodic candidates the evaluator can't "
+                "label. Start from non-periodic data only (pbc False)."
+            )
+        if other_ids:
+            details = "; ".join(
+                f"{n} structure(s) with id {i} (differs in "
+                f"{', '.join(differing_fields(other_levels[i], current)) or '?'})"
+                for i, n in sorted(other_ids.items())
+            )
+            logger.warning(
+                "The global database holds labels from a different level of "
+                "theory than the configured evaluator's (%s, id %s): %s. Their "
+                "energies are on a different scale; training on both mixes "
+                "them. Start from a database labelled at this level of theory, "
+                "or relabel those structures.",
+                level.label(),
+                current_id,
+                details,
+                extra={
+                    "event": "level_of_theory_mismatch",
+                    "data": {"current": current_id, "others": other_ids},
+                },
+            )
+        if precision_only:
+            logger.info(
+                "%d structure(s) in the global database were labelled at this "
+                "level of theory with different precision settings (k-points, "
+                "smearing, SCF threshold or numerical grids).",
+                precision_only,
+            )
+        if unknown:
+            logger.info(
+                "%d structure(s) in the global database carry no level of "
+                "theory (labelled before it was recorded, or imported).",
+                unknown,
+            )
+
     # -- Initialiser -> evaluator orchestration (decision 10) --
 
     def _initialize_training_set(
@@ -1726,6 +1886,7 @@ class ActiveLearningWorkflow(ABC):
         init_config = self.jobs_dict.get(_INITIALIZATION_NAME)
 
         self._import_start_data()
+        self._check_database_against_evaluator()
 
         initialiser_entry = resolve("initialiser", "default")
         elements = self._required_elements()
@@ -1744,7 +1905,12 @@ class ActiveLearningWorkflow(ABC):
                 self.db.size,
             )
         elif _needs_anything(
-            needs := initialiser_entry.compute_needs(self.db, init_config, elements)
+            needs := initialiser_entry.compute_needs(
+                self.db,
+                init_config,
+                elements,
+                evaluator_supports_periodic=self.evaluator_supports_periodic,
+            )
         ):
             logger.info(
                 "DB check: %d structure(s) already evaluated. Generating missing "
@@ -1782,6 +1948,7 @@ class ActiveLearningWorkflow(ABC):
                     needs=needs,
                     target_config_types=self.dataset_kwargs["target_config_types"],
                     seed=self.seed,
+                    evaluator_supports_periodic=self.evaluator_supports_periodic,
                 )
 
             if not generated_atoms_list:

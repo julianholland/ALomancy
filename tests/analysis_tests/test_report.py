@@ -628,7 +628,6 @@ def test_md_temperature_plot_reads_every_runs_log(tmp_path, monkeypatch):
     assert path == tmp_path / "plots" / "md_temperature.png"
     assert captured["n"] == 3
     assert captured["completed"] == [40, 25, 40]  # runs 0, 1, 10 in run order
-    assert captured["run_labels"] == ["run 0", "run 1", "run 10"]
     assert captured["target_temperature"] == 500.0
     assert captured["requested_steps"] == 40
     assert captured["equilibration_steps"] == 5
@@ -648,13 +647,10 @@ def test_md_temperature_plot_is_drawn_and_skipped_without_logs(tmp_path, monkeyp
     assert path is not None and path.exists()
 
 
-@pytest.mark.unit
-@pytest.mark.parametrize("n_runs", [3, 14])
-def test_md_runs_overlays_every_run_in_its_own_colour(tmp_path, n_runs):
-    """One thin line per run on one axis, each its own colour (past the
-    brand palette too), plus the black dashed target."""
+def _draw_md_runs(tmp_path, temperatures, completed, **kwargs):
+    """Draw md_runs for real and return its figure's axes (map, runs
+    strip, colourbar), captured before the figure is saved and closed."""
     import matplotlib.pyplot as plt
-    from matplotlib.colors import to_hex
 
     from alomancy.analysis.report import plots
 
@@ -662,33 +658,65 @@ def test_md_runs_overlays_every_run_in_its_own_colour(tmp_path, n_runs):
     original_save = plots._save
 
     def capture(fig, path):
-        (ax,) = [a for a in fig.axes if a.get_lines()]
-        drawn["lines"] = ax.get_lines()
-        drawn["colors"] = [to_hex(line.get_color()) for line in ax.get_lines()]
+        drawn["axes"] = fig.axes
         original_save(fig, path)
 
     plots._save, saved = capture, plots._save
     try:
         plots.md_runs(
-            [np.full(50, 300.0) for _ in range(n_runs)],
-            [49] * (n_runs - 1) + [20],
+            temperatures,
+            completed,
             tmp_path / "md.png",
-            run_labels=[f"run {i}" for i in range(n_runs)],
             title="t",
-            target_temperature=300.0,
-            requested_steps=49,
+            **{"target_temperature": 300.0, "requested_steps": 49, **kwargs},
         )
     finally:
         plots._save = saved
     plt.close("all")
+    return drawn["axes"]
 
-    run_colors = drawn["colors"][:n_runs]
-    assert len(set(run_colors)) == n_runs
-    target = drawn["lines"][n_runs]
+
+@pytest.mark.unit
+def test_md_runs_draws_all_runs_as_one_density_map(tmp_path):
+    """14 runs make one blurred density map with a colourbar, the median
+    and the black dashed target on it, and a strip counting the runs still
+    going, which drops when the short run stops."""
+    from matplotlib.collections import QuadMesh
+    from matplotlib.colors import to_hex
+
+    rng = np.random.default_rng(0)
+    temperatures = [300.0 + 20 * rng.standard_normal(50) for _ in range(13)]
+    temperatures.append(300.0 + 20 * rng.standard_normal(21))
+    ax, ax_runs = _draw_md_runs(tmp_path, temperatures, [49] * 13 + [20])
+
+    assert len([c for c in ax.collections if isinstance(c, QuadMesh)]) == 1
+    (colorbar,) = ax.child_axes
+    assert colorbar.get_ylabel() == "share of running runs"
+    by_label = {line.get_label(): line for line in ax.get_lines()}
+    target = by_label["target 300 K"]
     assert to_hex(target.get_color()) == "#000000"
     assert target.get_linestyle() == "--"
-    assert drawn["lines"][n_runs - 1].get_label() == f"run {n_runs - 1} (stopped at 20)"
+    assert np.nanmedian(by_label["median"].get_ydata()) == pytest.approx(300, abs=15)
+    _, labels = ax.get_legend_handles_labels()
+    assert "1 of 14 run(s) stopped early" in labels
+    (strip,) = ax_runs.get_lines()
+    assert list(strip.get_ydata()[[0, 20, 21, 49]]) == [14, 14, 13, 13]
     assert (tmp_path / "md.png").exists()
+
+
+@pytest.mark.unit
+def test_md_density_is_normalised_per_step(tmp_path):
+    """Each step column is divided by the runs still running there, so the
+    map doesn't fade where runs have stopped: after the short run ends, the
+    one run left fills its column as fully as two runs did before."""
+    from matplotlib.collections import QuadMesh
+
+    temperatures = [np.full(49, 300.0), np.full(25, 300.0)]
+    ax, *_ = _draw_md_runs(tmp_path, temperatures, [48, 24], requested_steps=48)
+    (mesh,) = [c for c in ax.collections if isinstance(c, QuadMesh)]
+    density = np.ma.filled(mesh.get_array(), 0.0).reshape(-1, 48)
+    early, late = density[:, 10].max(), density[:, 40].max()
+    assert late == pytest.approx(early, rel=1e-6)
 
 
 def _probe_record(chosen=0.0369):

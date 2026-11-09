@@ -559,3 +559,91 @@ def test_digest_survives_an_extxyz_round_trip(tmp_path):
         path = tmp_path / f"{k}.xyz"
         ase_write(str(path), atoms, format="extxyz")
         assert dft_input_digest(read(path)) == dft_input_digest(atoms)
+
+
+def _orca_config(simpleinput="RI-MP2 def2-SVP def2-SVP/C", **orca_kwargs):
+    return {
+        "evaluator": "orca",
+        "max_vdw_volume_ratio": None,
+        "orca_kwargs": {"orcasimpleinput": simpleinput, **orca_kwargs},
+    }
+
+
+def _molecule(n_atoms: int, config_type="init_molecule_cluster"):
+    a = Atoms(
+        "H" * n_atoms, positions=[[0, 0, 1.5 * i] for i in range(n_atoms)], pbc=False
+    )
+    a.info["config_type"] = config_type
+    a.calc = SinglePointCalculator(a, energy=-1.0, forces=np.zeros((n_atoms, 3)))
+    return a
+
+
+@pytest.mark.unit
+def test_periodic_structures_to_a_non_periodic_evaluator_raise(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit) as sub,
+        pytest.raises(ValueError, match="amorphous_cluster_kwargs"),
+    ):
+        _call([_molecule(2), _atoms()], tmp_path, config=_orca_config())
+    sub.assert_not_called()
+
+
+@pytest.mark.unit
+def test_structures_above_the_atom_cap_are_dropped(tmp_path, monkeypatch):
+    import logging
+
+    from alomancy.utils import clean_structures
+
+    monkeypatch.chdir(tmp_path)
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    clean_structures.logger.addHandler(handler)
+    try:
+        with patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit) as sub:
+            result = _call(
+                [_molecule(2), _molecule(5)],
+                tmp_path,
+                config=_orca_config(max_num_of_atoms_correlated=3),
+            )
+    finally:
+        clean_structures.logger.removeHandler(handler)
+    assert [len(a) for a in sub.call_args.kwargs["input_atoms_list"]] == [2]
+    assert len(result) == 1
+    dropped = [
+        r for r in records if getattr(r, "event", None) == "too_many_atoms_for_method"
+    ]
+    assert len(dropped) == 1 and dropped[0].data["n"] == 1
+
+
+@pytest.mark.unit
+def test_mean_field_methods_have_no_atom_cap(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit) as sub:
+        _call(
+            [_molecule(30)],
+            tmp_path,
+            config=_orca_config("B3LYP def2-SVP", max_num_of_atoms_correlated=3),
+        )
+    assert len(sub.call_args.kwargs["input_atoms_list"]) == 1
+
+
+@pytest.mark.unit
+def test_results_carry_the_level_of_theory(tmp_path, monkeypatch):
+    from alomancy.high_accuracy_evaluation.dft.run_qe import level_of_theory
+    from alomancy.high_accuracy_evaluation.level_of_theory import (
+        LEVEL_OF_THEORY_ID_KEY,
+        LEVEL_OF_THEORY_KEY,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    with patch(f"{_MODULE}.ase_remote_submitter", side_effect=_fake_submit):
+        result = _call([_atoms(), _atoms("He")], tmp_path)
+    expected = level_of_theory(_config(), {})
+    assert {a.info[LEVEL_OF_THEORY_ID_KEY] for a in result} == {expected.identity_id()}
+    # Written into the consolidated results too, so a restart reads it back.
+    cached = read_existing_result(
+        {}, base_name="test_loop", name="high_accuracy_evaluation"
+    )
+    assert all(a.info[LEVEL_OF_THEORY_KEY] == expected.to_json() for a in cached)

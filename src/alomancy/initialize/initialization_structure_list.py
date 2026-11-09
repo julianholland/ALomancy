@@ -6,9 +6,13 @@ from typing import TYPE_CHECKING
 from ase import Atoms
 from ase.io import write
 
-from alomancy.initialize.amorphize import create_amorphous_atoms_list
+from alomancy.initialize.amorphize import (
+    create_amorphous_atoms_list,
+    create_amorphous_cluster_atoms_list,
+)
 from alomancy.initialize.molecules import (
     create_molecule_atoms_list,
+    create_molecule_cluster_atoms_list,
     create_molecules_in_box_atoms_list,
     molecule_counts,
 )
@@ -38,6 +42,8 @@ def compute_initialization_needs(
     num_of_amorphous_structures: int,
     molecules: list[str] | None = None,
     box_compositions: list[dict] | None = None,
+    num_of_amorphous_clusters: int = 0,
+    cluster_compositions: list[dict] | None = None,
 ) -> dict:
     """
     Compare DB contents against initialization targets and return what still
@@ -54,11 +60,16 @@ def compute_initialization_needs(
       'mp_structures'       bool             True iff MP fetch is still needed
       'molecule_override'   dict[str, int]   {formula: count_still_needed}
       'box_override'        dict[str, int]   {formula: count_still_needed}
+      'amorphous_cluster_override'  int      total still needed
+      'molecule_cluster_override'   dict[str, int] {formula: count_still_needed}
 
     *molecules* (molecule_kwargs.molecules; one structure each) and
     *box_compositions* (molecules_in_box_kwargs.box_compositions;
     num_of_structures each) are counted per chemical formula, so two
     names or compositions with the same formula share one target.
+    *num_of_amorphous_clusters* (amorphous_cluster_kwargs) is counted in
+    total like the amorphous cells, *cluster_compositions*
+    (molecule_cluster_kwargs) per formula like the boxes.
     """
     needs: dict = {}
 
@@ -104,6 +115,14 @@ def compute_initialization_needs(
     needs["box_override"] = _still_needed(
         _box_targets(box_compositions or []),
         all_counts.get("init_molecules_in_box", {}),
+    )
+    have_clusters = sum(all_counts.get("init_amorphous_cluster", {}).values())
+    needs["amorphous_cluster_override"] = max(
+        0, num_of_amorphous_clusters - have_clusters
+    )
+    needs["molecule_cluster_override"] = _still_needed(
+        _box_targets(cluster_compositions or []),
+        all_counts.get("init_molecule_cluster", {}),
     )
 
     return needs
@@ -180,6 +199,17 @@ def create_initialization_atoms_list(
     box_max_attempts_per_molecule: int = 1000,
     molecule_override: dict[str, int] | None = None,
     box_override: dict[str, int] | None = None,
+    num_of_amorphous_clusters: int = 0,
+    num_of_atoms_per_cluster: int = 10,
+    cluster_density_range: list[float] | None = None,
+    cluster_composition_list: list[list[str]] | None = None,
+    cluster_vacuum: float = 10.0,
+    amorphous_cluster_override: int | None = None,
+    cluster_compositions: list[dict] | None = None,
+    cluster_min_distance: float = 1.5,
+    cluster_max_attempts_per_molecule: int = 1000,
+    molecule_cluster_vacuum: float = 10.0,
+    molecule_cluster_override: dict[str, int] | None = None,
 ) -> list[Atoms]:
     """
     Generate structures for the initialization phase.
@@ -252,6 +282,15 @@ def create_initialization_atoms_list(
         num_of_molecules, num_of_structures}; see initialize/molecules.py.
     molecule_override / box_override
         If provided, {formula: count} still needed (compute_initialization_needs).
+    num_of_amorphous_clusters, num_of_atoms_per_cluster, cluster_density_range,
+    cluster_composition_list, cluster_vacuum, amorphous_cluster_override
+        Non-periodic random clusters (init_amorphous_cluster,
+        amorphous_cluster_kwargs); see create_amorphous_cluster_atoms_list.
+    cluster_compositions, cluster_min_distance,
+    cluster_max_attempts_per_molecule, molecule_cluster_vacuum,
+    molecule_cluster_override
+        Non-periodic clusters of molecules (init_molecule_cluster,
+        molecule_cluster_kwargs), entries as for box_compositions.
     """
     assert len(elements) > 0, "At least one element must be specified."
 
@@ -394,6 +433,60 @@ def create_initialization_atoms_list(
         )
     logger.info("Created %d boxes of molecules.", len(box_atoms_list))
 
+    # --- Amorphous clusters (non-periodic) -------------------------------
+    cluster_target = (
+        amorphous_cluster_override
+        if amorphous_cluster_override is not None
+        else num_of_amorphous_clusters
+    )
+    amorphous_cluster_atoms_list = create_amorphous_cluster_atoms_list(
+        elements=elements,
+        atom_number=num_of_atoms_per_cluster,
+        density_range=list(cluster_density_range or [1.0, 1.0]),
+        num_structures=cluster_target,
+        seed=seed,
+        composition_list=cluster_composition_list,
+        vacuum=cluster_vacuum,
+        # How many the DB already holds: new clusters on every restart.
+        attempt=max(0, num_of_amorphous_clusters - cluster_target),
+    )
+    if amorphous_cluster_atoms_list:
+        logger.info("Created %d amorphous clusters.", len(amorphous_cluster_atoms_list))
+
+    # --- Clusters of molecules (non-periodic) ----------------------------
+    molecule_cluster_atoms_list: list[Atoms] = []
+    remaining = (
+        dict(molecule_cluster_override)
+        if molecule_cluster_override is not None
+        else None
+    )
+    for index, composition in enumerate(cluster_compositions or []):
+        num = composition["num_of_structures"]
+        still = num
+        if remaining is not None:
+            formula = _box_formula(composition)
+            still = min(num, remaining.get(formula, 0))
+            if still <= 0:
+                continue
+            remaining[formula] -= still
+        molecule_cluster_atoms_list.extend(
+            create_molecule_cluster_atoms_list(
+                molecules_ratio=composition["molecules"],
+                density_range=composition["density_range"],
+                num_of_molecules=composition["num_of_molecules"],
+                num_of_structures=still,
+                min_distance=cluster_min_distance,
+                max_attempts=cluster_max_attempts_per_molecule,
+                seed=seed + index,
+                vacuum=molecule_cluster_vacuum,
+                attempt=num - still,
+            )
+        )
+    if molecule_cluster_atoms_list:
+        logger.info(
+            "Created %d clusters of molecules.", len(molecule_cluster_atoms_list)
+        )
+
     # --- Assemble the base pool -----------------------------------------
     # Built before stretch/compress and rattle below, since both draw from
     # whichever of these freshly-generated structures count as "target"
@@ -408,6 +501,8 @@ def create_initialization_atoms_list(
     base_atoms_list.extend(amorphous_atoms_list)
     base_atoms_list.extend(molecule_atoms_list)
     base_atoms_list.extend(box_atoms_list)
+    base_atoms_list.extend(amorphous_cluster_atoms_list)
+    base_atoms_list.extend(molecule_cluster_atoms_list)
 
     # --- Stretch/compress + rattle on target structures -----------------
     target_config_type_set = set(target_config_types or [])

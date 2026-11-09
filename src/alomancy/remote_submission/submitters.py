@@ -12,13 +12,6 @@ logger = logging.getLogger(__name__)
 
 ASE_OUTPUT_PREFIX = "ase_output"
 
-# VASP keeps file paths in a ~256-character Fortran buffer: a run directory
-# of 255 characters left no room for the filename, so VASP tried to open the
-# directory itself ("forrtl: severe (30): open failure ... Is a directory").
-# 240 leaves room for "/vasprun.xml" and similar. QE has the same kind of
-# limit.
-MAX_REMOTE_OUTPUT_DIR_LEN = 240
-
 # ExPyRe names each job's stage directory (local and remote)
 # f"run_{name}_{arghash}_{suffix}": arghash is the urlsafe base64 of a
 # sha256 digest (always 44 characters) and suffix is tempfile.mkdtemp's
@@ -32,7 +25,8 @@ def dft_job_name(function: Callable, index: int) -> str:
 
     ExPyRe adds its own "run_" prefix, so the function's is dropped, and the
     section name ("high_accuracy_evaluation") is left out: every character
-    here ends up in the remote run directory (MAX_REMOTE_OUTPUT_DIR_LEN).
+    here ends up in the remote run directory (the evaluator's
+    max_output_dir_len, check_remote_path_length).
     """
     return f"{function.__name__.removeprefix('run_')}_{index}"
 
@@ -48,10 +42,13 @@ def projected_remote_output_dir(remote_rundir: str, job_name: str, out_dir: str)
     return f"{remote_rundir.rstrip('/')}/{stage_dir_name}/{out_dir.strip('/')}/"
 
 
-def check_remote_path_length(path: str, *, remote_rundir: str, context: str) -> None:
-    """Raise ValueError if *path* (from projected_remote_output_dir) is too
-    long for VASP/QE to open files in."""
-    if len(path) <= MAX_REMOTE_OUTPUT_DIR_LEN:
+def check_remote_path_length(
+    path: str, *, limit: int | None, remote_rundir: str, context: str
+) -> None:
+    """Raise ValueError if *path* (from projected_remote_output_dir) is
+    longer than *limit*, the evaluator's own max_output_dir_len (registry
+    entry point; e.g. run_vasp.MAX_OUTPUT_DIR_LEN). None: no limit."""
+    if limit is None or len(path) <= limit:
         return
     import alomancy
 
@@ -74,8 +71,8 @@ def check_remote_path_length(path: str, *, remote_rundir: str, context: str) -> 
     )
     raise ValueError(
         f"{context}: the remote DFT run directory would be {len(path)} "
-        f"characters, over the {MAX_REMOTE_OUTPUT_DIR_LEN} that VASP/QE can "
-        f"handle (they fail with 'open failure ... Is a directory').{note}\n"
+        f"characters, over the {limit} this DFT code can handle (VASP fails "
+        f"with 'open failure ... Is a directory').{note}\n"
         f"  {path}\n"
         f"The first part, {remote_rundir!r}, is the HPC rundir (in "
         "~/.alomancy/expyre_config.json, set by `alomancy add-hpc`) plus this "
@@ -109,6 +106,8 @@ def ase_remote_submitter(
     per_structure_function: list[Callable] | None = None,
     batch: int = 0,
     function_kwargs: dict[str, Any] | None = None,
+    *,
+    max_output_dir_len: int | None,
 ) -> None:
     """Submit one job per structure in input_atoms_list to a shared
     RemoteJobExecutor pool (bounded by remote_info.max_num_of_concurrent_jobs).
@@ -119,8 +118,9 @@ def ase_remote_submitter(
     sharing one submission queue instead of running as separate batches).
     When omitted, every structure uses the single shared `function`.
     Every job is named by dft_job_name ("go_vasp_3", "sp_qe_0"), and its
-    remote run directory is checked against MAX_REMOTE_OUTPUT_DIR_LEN
-    before anything is submitted.
+    remote run directory is checked against max_output_dir_len (the
+    evaluator's registry entry point; None checks nothing) before anything
+    is submitted.
     """
     if per_structure_function is not None and len(per_structure_function) != len(
         input_atoms_list
@@ -160,6 +160,7 @@ def ase_remote_submitter(
                     projected_remote_output_dir(
                         remote_rundir, job_config["job_name"], out_dir
                     ),
+                    limit=max_output_dir_len,
                     remote_rundir=remote_rundir,
                     context=f"DFT job {job_config['job_name']}",
                 )

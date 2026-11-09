@@ -1,7 +1,10 @@
 """Molecules for initialisation: single molecules in vacuum
-(``molecule_kwargs``, config_type ``init_molecule``) and periodic boxes of
+(``molecule_kwargs``, config_type ``init_molecule``), periodic boxes of
 molecules at a density (``molecules_in_box_kwargs``, config_type
-``init_molecules_in_box``).
+``init_molecules_in_box``), and their non-periodic counterpart, clusters of
+molecules in vacuum (``molecule_cluster_kwargs``, config_type
+``init_molecule_cluster``) for evaluators without periodic boundary
+conditions (ORCA).
 
 Molecules are named as SAGE builds them (a formula such as ``"CO"`` or
 ``"smiles-<SMILES>"``, see utils/molecules.py). Only the equilibrium
@@ -121,6 +124,96 @@ def _pack_box(
         box += Atoms(template.get_chemical_symbols(), positions=positions)
     box.wrap()
     return box
+
+
+def _pack_sphere(
+    templates: list[Atoms],
+    radius: float,
+    min_distance: float,
+    max_attempts: int,
+    rng: np.random.Generator,
+    label: str,
+    density: float,
+) -> Atoms:
+    """Place each template, randomly rotated, with its centre uniform in a
+    sphere of *radius*, keeping it when no atom comes within
+    *min_distance* of an atom already placed (no periodic images)."""
+    cluster = Atoms(pbc=False)
+    for template in templates:
+        centred = template.positions - template.positions.mean(axis=0)
+        for _ in range(max_attempts):
+            direction = rng.normal(size=3)
+            direction /= np.linalg.norm(direction)
+            offset = direction * radius * rng.random() ** (1 / 3)
+            positions = centred @ _random_rotation(rng).T + offset
+            if len(cluster) == 0:
+                break
+            _, distances = get_distances(positions, cluster.positions)
+            if distances.min() >= min_distance:
+                break
+        else:
+            raise ValueError(
+                f"initialization.molecule_cluster_kwargs: could not place every "
+                f"molecule of {label} at {density:g} g/cm^3 ({len(cluster)} atoms "
+                f"placed after {max_attempts} attempts for the next one). Lower "
+                "the density or min_distance, or raise max_attempts_per_molecule."
+            )
+        cluster += Atoms(template.get_chemical_symbols(), positions=positions)
+    return cluster
+
+
+def create_molecule_cluster_atoms_list(
+    molecules_ratio: dict[str, float],
+    density_range: list[float],
+    num_of_molecules: int,
+    num_of_structures: int,
+    min_distance: float,
+    max_attempts: int,
+    seed: int,
+    vacuum: float = 10.0,
+    attempt: int = 0,
+) -> list[Atoms]:
+    """*num_of_structures* non-periodic clusters of *num_of_molecules*
+    molecules in the ratio *molecules_ratio* (config_type
+    ``init_molecule_cluster``), for evaluators without periodic boundary
+    conditions (ORCA): the non-periodic counterpart of
+    create_molecules_in_box_atoms_list. Each cluster's density, drawn
+    uniformly from *density_range*, sets the radius of the sphere the
+    molecule centres are placed in; the cluster is centred in a cubic cell
+    of its extent plus *vacuum*, ``pbc`` False. Cluster i is seeded
+    (seed, attempt, i), as the boxes are."""
+    counts = molecule_counts(molecules_ratio, num_of_molecules)
+    label = box_composition_label(molecules_ratio)
+    molecules = {name: build_molecule(name) for name in counts}
+    mass = sum(molecules[n].get_masses().sum() * c for n, c in counts.items())
+    templates = [molecules[n] for n, c in counts.items() for _ in range(c)]
+
+    clusters = []
+    for index in range(num_of_structures):
+        rng = np.random.default_rng([seed, attempt, index])
+        density = float(rng.uniform(density_range[0], density_range[1]))
+        volume = mass / (density * _AMU_PER_A3_TO_G_PER_CM3)
+        radius = (3 * volume / (4 * np.pi)) ** (1 / 3)
+        order = rng.permutation(len(templates))
+        cluster = _pack_sphere(
+            [templates[i] for i in order],
+            radius,
+            min_distance,
+            max_attempts,
+            rng,
+            label,
+            density,
+        )
+        extent = float(np.ptp(cluster.positions, axis=0).max())
+        cluster.cell = [extent + vacuum] * 3
+        cluster.center()
+        cluster.info["config_type"] = "init_molecule_cluster"
+        cluster.info["cluster_composition"] = label
+        cluster.info["density"] = density
+        cluster.info["needs_relaxation"] = True
+        clusters.append(cluster)
+    logger.debug("Packed %d clusters of %s.", len(clusters), label)
+    return clusters
 
 
 def create_molecules_in_box_atoms_list(

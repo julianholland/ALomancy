@@ -18,6 +18,26 @@ One block per structure type in the `initialization` section, each with an `enab
 - `rattle_target_structures` (off by default): `num_of_rattled_per_target`, `rattle_standard_deviation`
 - `molecule_kwargs` (off by default, config_type `init_molecule`): `molecules` (required when enabled), `vacuum` (default 10 Å)
 - `molecules_in_box_kwargs` (off by default, config_type `init_molecules_in_box`): `box_compositions` (required when enabled), `min_distance` (default 1.5 Å), `max_attempts_per_molecule` (default 1000)
+- `amorphous_cluster_kwargs` (config_type `init_amorphous_cluster`, domain `cluster`): `num_of_amorphous_clusters` (default 50), `num_of_atoms_per_cluster` (default 10), `density_range` (default `[1.0, 1.0]`), `composition_list`, `vacuum` (default 10 Å)
+- `molecule_cluster_kwargs` (config_type `init_molecule_cluster`, domain `molecule_cluster`): `cluster_compositions` (entries as for `box_compositions`), `min_distance` (default 1.5 Å), `max_attempts_per_molecule` (default 1000), `vacuum` (default 10 Å)
+
+## Evaluators without periodic boundary conditions
+
+The defaults depend on the evaluator (`kwargs_defaults(evaluator_supports_periodic)`, registry entry point `kwargs_defaults_for`). `compute_needs`, `generate` and `validate_kwargs` take `evaluator_supports_periodic`, which the workflow passes from the evaluator's registry entry point `supports_periodic`. With an evaluator that has none (ORCA), `_NON_PERIODIC_DEFAULTS` applies:
+- `amorphous_kwargs`, `mp_kwargs` and `molecules_in_box_kwargs` are off;
+- `amorphous_cluster_kwargs` and `molecule_cluster_kwargs` are on.
+
+A block whose `enabled` the user wrote is never switched. `validate_kwargs`:
+- raises when the user enabled a periodic block, naming its replacement (`_PERIODIC_ONLY_BLOCKS`: amorphous → amorphous clusters, boxes → molecule clusters, MP has none);
+- warns `config_key_unused` when a periodic block has settings but no `enabled`;
+- logs which defaults changed.
+
+A default-on `molecule_cluster_kwargs` without `cluster_compositions` makes nothing (info line). Explicitly enabled without them, it raises: no molecule list is shared with another block.
+
+With a size cap (`max_num_of_atoms`, from the evaluator's entry point of that name: ORCA with a correlated method), `validate_kwargs` raises when an enabled block is configured to make larger structures (`_structure_sizes`: amorphous cells, clusters, molecules, boxes, molecule clusters). Every one of them would be dropped before evaluation.
+
+- **Amorphous clusters** (`create_amorphous_cluster_atoms_list`, `initialize/amorphize.py`): atoms uniform in a sphere whose radius comes from a density drawn from `density_range`, the same LJ cleanup as the periodic cells, centred in a cube of extent + `vacuum`, `pbc` False, `needs_relaxation` true. Random compositions draw each atom from `general.elements`. rng `[seed, attempt, 1]` (the trailing 1 keeps it apart from the periodic cells' stream); restarts count the total, like amorphous.
+- **Molecule clusters** (`create_molecule_cluster_atoms_list`, `initialize/molecules.py`): the box recipe (`molecule_counts`, random rotations, `min_distance` between molecules) with molecule centres uniform in a sphere sized by the density (`_pack_sphere`, no periodic images), centred in a cube of extent + `vacuum`, `pbc` False. rng `[seed + j, attempt, i]`; restarts count per formula (`molecule_cluster_override`), like boxes.
 
 `validate_kwargs` (registry hook, called from `ActiveLearningWorkflow._validate_initialiser_kwargs` at construction) checks the molecule blocks and every `density_range`, so a bad name fails at startup, not after other structures are already generated. It also warns (`_warn_unusual_densities`, events `init_density_too_low`/`init_density_too_high`) when a `density_range` gives cells above the run's `max_vdw_volume_ratio` (the blown-up filter would drop them before DFT; skipped when that is null or the config type is in `vdw_exempt_config_types`, both passed in by the workflow) or below 0.3× their vdW volume (`vdw_volume_ratio_at_density`, `utils/clean_structures.py`). Random amorphous mixes are checked as an even mix of `general.elements`: per pure element, every H config would warn.
 

@@ -124,6 +124,72 @@ def create_amorphous_atoms_list(
     return amorphous_atoms_list
 
 
+def _lj_cleanup(atoms: Atoms) -> None:
+    """Push apart atoms placed too close (LJ, Argon-like parameters)."""
+    atoms.calc = LennardJones(sigma=1.0, epsilon=0.0103)
+    BFGS(atoms, logfile=None).run(fmax=0.05, steps=200)
+    atoms.calc = None
+
+
+def create_amorphous_cluster_atoms_list(
+    elements: list[str],
+    atom_number: int,
+    density_range: list[float],
+    num_structures: int,
+    seed: int = 803,
+    composition_list: list[list[str]] | None = None,
+    vacuum: float = 10.0,
+    attempt: int = 0,
+) -> list[Atoms]:
+    """*num_structures* non-periodic random clusters of *atom_number* atoms
+    (config_type ``init_amorphous_cluster``), for evaluators without
+    periodic boundary conditions (ORCA): the non-periodic counterpart of
+    create_amorphous_atoms_list.
+
+    Each cluster's density (g/cm^3) is drawn uniformly from
+    *density_range* and sets the radius of the sphere its atoms are placed
+    in at random (uniform in volume); the same LJ cleanup then pushes apart
+    atoms placed too close. The cluster is centred in a cubic cell of its
+    extent plus *vacuum* with ``pbc`` False. Compositions as for
+    create_amorphous_atoms_list (random mixes of *elements* unless
+    *composition_list* is given). Seeded by (seed, attempt, 1): *attempt*
+    is how many clusters the database already holds, so a restart draws
+    new clusters, and the trailing 1 keeps the stream apart from the
+    periodic amorphous cells'."""
+    if num_structures <= 0:
+        return []
+    rng = np.random.default_rng([seed, attempt, 1])
+    densities = rng.uniform(density_range[0], density_range[1], num_structures)
+    if composition_list is None:
+        compositions = [
+            list(rng.choice(elements, atom_number)) for _ in range(num_structures)
+        ]
+    else:
+        indices = rng.choice(len(composition_list), num_structures)
+        compositions = [list(composition_list[i]) for i in indices]
+
+    clusters = []
+    for composition, density in zip(compositions, densities, strict=True):
+        mass = sum(atomic_masses[atomic_numbers[el]] for el in composition)
+        volume = mass / (density * 0.6022)  # Angstrom^3
+        radius = (3 * volume / (4 * np.pi)) ** (1 / 3)
+        directions = rng.normal(size=(len(composition), 3))
+        directions /= np.linalg.norm(directions, axis=1)[:, None]
+        radii = radius * rng.random(len(composition)) ** (1 / 3)
+        atoms = Atoms(
+            symbols=composition, positions=directions * radii[:, None], pbc=False
+        )
+        _lj_cleanup(atoms)
+        extent = float(np.ptp(atoms.positions, axis=0).max())
+        atoms.cell = [extent + vacuum] * 3
+        atoms.center()
+        atoms.info["config_type"] = "init_amorphous_cluster"
+        atoms.info["density"] = round(float(density), 6)
+        atoms.info["needs_relaxation"] = True
+        clusters.append(atoms)
+    return clusters
+
+
 if __name__ == "__main__":
     elements = ["H", "O"]
     atom_number = 3

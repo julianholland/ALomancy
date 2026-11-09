@@ -10,8 +10,10 @@ from unittest.mock import MagicMock
 import pytest
 from ase import Atoms
 
+from alomancy.high_accuracy_evaluation.dft.run_vasp import (
+    MAX_OUTPUT_DIR_LEN as VASP_LIMIT,
+)
 from alomancy.remote_submission.submitters import (
-    MAX_REMOTE_OUTPUT_DIR_LEN,
     ase_remote_submitter,
     check_remote_path_length,
     dft_job_name,
@@ -40,6 +42,7 @@ class TestAseRemoteSubmitter:
                 base_name="al_loop_0",
                 input_atoms_list=[Atoms("H"), Atoms("H")],
                 per_structure_function=[MagicMock()],
+                max_output_dir_len=None,
             )
 
     @pytest.mark.unit
@@ -70,6 +73,7 @@ class TestAseRemoteSubmitter:
             base_name="al_loop_0",
             input_atoms_list=[Atoms("H"), Atoms("H")],
             per_structure_function=[run_go, run_sp],
+            max_output_dir_len=None,
         )
 
         job_configs = captured["job_configs"]
@@ -124,26 +128,34 @@ class TestRemotePathLength:
         assert len(path) == 255
         with pytest.raises(ValueError, match="255 characters"):
             check_remote_path_length(
-                path, remote_rundir=_ADVR_OLD_RUNDIR, context="test"
+                path, limit=VASP_LIMIT, remote_rundir=_ADVR_OLD_RUNDIR, context="test"
             )
 
     @pytest.mark.unit
     def test_new_layout_fits(self):
         path = projected_remote_output_dir(_ADVR_NEW_RUNDIR, "sp_vasp_0", _ADVR_OUT_DIR)
         assert len(path) == 206
-        check_remote_path_length(path, remote_rundir=_ADVR_NEW_RUNDIR, context="test")
+        check_remote_path_length(
+            path, limit=VASP_LIMIT, remote_rundir=_ADVR_NEW_RUNDIR, context="test"
+        )
 
     @pytest.mark.unit
     def test_limit_is_inclusive(self):
-        ok = "/" + "a" * (MAX_REMOTE_OUTPUT_DIR_LEN - 1)
-        check_remote_path_length(ok, remote_rundir="/a", context="test")
+        ok = "/" + "a" * (VASP_LIMIT - 1)
+        check_remote_path_length(
+            ok, limit=VASP_LIMIT, remote_rundir="/a", context="test"
+        )
         with pytest.raises(ValueError):
-            check_remote_path_length(ok + "a", remote_rundir="/a", context="test")
+            check_remote_path_length(
+                ok + "a", limit=VASP_LIMIT, remote_rundir="/a", context="test"
+            )
 
     @pytest.mark.unit
     def test_relative_rundir_says_home_not_counted(self):
         with pytest.raises(ValueError, match="remote \\$HOME"):
-            check_remote_path_length("x" * 300, remote_rundir="scratch", context="t")
+            check_remote_path_length(
+                "x" * 300, limit=VASP_LIMIT, remote_rundir="scratch", context="t"
+            )
 
     @pytest.mark.unit
     def test_submitter_raises_before_submitting(
@@ -168,6 +180,7 @@ class TestRemotePathLength:
                 base_name="initialization",
                 input_atoms_list=[Atoms("H")],
                 function=run_sp_vasp,
+                max_output_dir_len=VASP_LIMIT,
             )
         assert "job_configs" not in captured
 
@@ -193,9 +206,36 @@ class TestRemotePathLength:
             base_name="al_loop_0",
             input_atoms_list=[Atoms("H"), Atoms("H")],
             function=run_sp_qe,
+            max_output_dir_len=None,
         )
         names = [c["job_name"] for c in captured["job_configs"]]
         assert names == ["sp_qe_0", "sp_qe_1"]
+
+    @pytest.mark.unit
+    def test_no_limit_submits_a_long_path(self, tmp_path, monkeypatch, expyre_systems):
+        """QE registers no path limit: a rundir far over VASP's 240 still
+        submits."""
+        monkeypatch.chdir(tmp_path)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "alomancy.remote_submission.executor.RemoteJobExecutor.run_and_wait",
+            _fake_run_and_wait(captured),
+        )
+        expyre_systems["raven_cpu"] = _system("/scratch/" + "x" * 300)
+        remote_info = MagicMock()
+        remote_info.sys_name = "raven_cpu"
+
+        def run_sp_qe(**kwargs):
+            pass
+
+        ase_remote_submitter(
+            remote_info=remote_info,
+            base_name="al_loop_0",
+            input_atoms_list=[Atoms("H")],
+            function=run_sp_qe,
+            max_output_dir_len=None,
+        )
+        assert [c["job_name"] for c in captured["job_configs"]] == ["sp_qe_0"]
 
     @pytest.mark.unit
     def test_expyre_remote_rundir_unknown_system_is_none(self, expyre_systems):

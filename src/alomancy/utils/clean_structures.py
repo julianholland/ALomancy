@@ -309,6 +309,45 @@ def filter_blown_up_structures(
     return kept
 
 
+def filter_structures_by_atom_count(
+    structures: list[Atoms], max_atoms: int | None, evaluator: str = ""
+) -> list[Atoms]:
+    """Exclude structures with more than *max_atoms* atoms (None: keep
+    all), the evaluator's size cap (registry entry point max_num_of_atoms,
+    e.g. ORCA with a correlated method). Warning too_many_atoms_for_method."""
+    if max_atoms is None:
+        return list(structures)
+    kept = [s for s in structures if len(s) <= max_atoms]
+    excluded = [s for s in structures if len(s) > max_atoms]
+    if excluded:
+        config_types = sorted(
+            {str(s.info.get("config_type", "unknown")) for s in excluded}
+        )
+        logger.warning(
+            "Excluded %d/%d structure(s) from %s evaluation with more than %d "
+            "atoms (largest %d; config_type %s): the configured method's cost "
+            "grows steeply with size. Raise high_accuracy_evaluation."
+            "<evaluator>_kwargs.max_num_of_atoms_correlated to evaluate them "
+            "anyway, or generate smaller structures.",
+            len(excluded),
+            len(structures),
+            evaluator or "high-accuracy",
+            max_atoms,
+            max(len(s) for s in excluded),
+            ", ".join(config_types),
+            extra={
+                "event": "too_many_atoms_for_method",
+                "data": {
+                    "n": len(excluded),
+                    "total": len(structures),
+                    "max_atoms": max_atoms,
+                    "config_types": config_types,
+                },
+            },
+        )
+    return kept
+
+
 def resolve_ratio(value: object, key: str) -> float | None:
     """A config ratio limit: a finite number above 1, or None (check off)."""
     if value is None:

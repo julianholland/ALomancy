@@ -193,8 +193,11 @@ def bar_per_item(
     _save(fig, path)
 
 
-# Points drawn per MD run; logs have one row per step (tens of thousands).
-_MD_MAX_POINTS = 2000
+# The MD temperature map: step and temperature bins, and the Gaussian blur
+# (in bins) that smooths it. Logs have one row per step (tens of thousands).
+_MD_X_BINS = 400
+_MD_Y_BINS = 200
+_MD_BLUR_SIGMA = 1.5
 # The temperature plot's y-axis stops at this multiple of the target.
 _MD_TEMPERATURE_CAP = 3
 
@@ -204,57 +207,97 @@ def md_runs(
     completed_steps: list[int],
     path: Path,
     *,
-    run_labels: list[str],
     title: str,
     target_temperature: float,
     requested_steps: int,
     equilibration_steps: int = 0,
     equilibration_temperature: float | None = None,
 ) -> None:
-    """Temperature against MD step for every run on one axis, one thin
-    line and colour per run, with the target temperature as a black dashed
-    line and the end of equilibration dotted. A run that stopped early says
-    where in the legend. The y-axis stops at _MD_TEMPERATURE_CAP x the
-    higher of the target and the equilibration temperature (the logs hold
-    both phases), so one exploding run doesn't flatten the others; a run
-    that goes above it says so in the legend."""
+    """Temperature against MD step for all runs as one density map, with
+    the number of runs still going in a strip below.
+
+    Every run's (step, T) points are binned together, each step column is
+    divided by the points in it (the runs still running there, so the
+    colour is the share of running runs at that temperature and doesn't
+    fade as runs stop early), and the map is blurred with a Gaussian of
+    _MD_BLUR_SIGMA bins. On top: the median temperature per step, the
+    target as a black dashed line and the end of equilibration dotted.
+    The y-axis stops at _MD_TEMPERATURE_CAP x the higher of the target and
+    the equilibration temperature (the logs hold both phases), so one
+    exploding run doesn't flatten the others; the legend says how many
+    runs went above it and how many stopped before ``requested_steps``
+    (``completed_steps``: production steps per run); the strip counts the
+    steps each run logged."""
+    from matplotlib.colors import LinearSegmentedColormap
+    from scipy.ndimage import gaussian_filter
+
     setup_alomancy_style()
     n = len(temperatures)
-    # The brand palette in its fixed order; beyond it, evenly spaced colours
-    # from one perceptual map so every run still has its own.
-    colors = (
-        PALETTE[:n]
-        if n <= len(PALETTE)
-        else [plt.get_cmap("turbo")(x) for x in np.linspace(0.05, 0.95, n)]
-    )
     highest = max(
         target_temperature,
         equilibration_temperature
         if equilibration_steps and equilibration_temperature
         else 0.0,
     )
-    y_max = _MD_TEMPERATURE_CAP * highest if highest > 0 else None
-    fig, ax = plt.subplots(figsize=(10, 4.8))
-    for temps, steps, label, color in zip(
-        temperatures, completed_steps, run_labels, colors, strict=True
-    ):
-        stride = max(1, len(temps) // _MD_MAX_POINTS)
-        stopped = f" (stopped at {steps:,})" if steps < requested_steps else ""
-        clipped = (
-            f" (peaks at {np.nanmax(temps):,.0f} K)"
-            if y_max is not None and len(temps) and np.nanmax(temps) > y_max
-            else ""
-        )
-        ax.plot(
-            np.arange(len(temps))[::stride],
-            temps[::stride],
-            color=color,
-            lw=0.7,
-            alpha=0.85,
-            label=f"{label}{stopped}{clipped}",
-        )
-    if y_max is not None:
-        ax.set_ylim(0, y_max)
+    total_steps = max(
+        equilibration_steps + requested_steps, *(len(t) - 1 for t in temperatures)
+    )
+    finite = [t[np.isfinite(t)] for t in temperatures]
+    pooled = np.concatenate(finite) if finite else np.array([])
+    if highest > 0:
+        y_max = _MD_TEMPERATURE_CAP * highest
+    else:
+        # No target to scale from: an open axis up to the hottest point.
+        y_max = float(pooled.max()) * 1.02 if len(pooled) else 0.0
+        y_max = y_max if y_max > 0 else 1.0
+
+    steps = np.concatenate([np.arange(len(t)) for t in temperatures])
+    temps = np.concatenate(temperatures)
+    keep = np.isfinite(temps) & (temps <= y_max)
+    x_edges = np.linspace(0, max(total_steps, 1), min(_MD_X_BINS, total_steps or 1) + 1)
+    y_edges = np.linspace(0, y_max, _MD_Y_BINS + 1)
+    counts, _, _ = np.histogram2d(temps[keep], steps[keep], bins=(y_edges, x_edges))
+    per_column = counts.sum(axis=0)
+    share = np.divide(
+        counts, per_column, out=np.zeros_like(counts), where=per_column > 0
+    )
+    blurred = gaussian_filter(share, sigma=_MD_BLUR_SIGMA)
+    blurred = np.ma.masked_less_equal(
+        blurred, 1e-4 * blurred.max() if blurred.size else 0
+    )
+
+    fig, (ax, ax_runs) = plt.subplots(
+        2,
+        1,
+        sharex=True,
+        figsize=(10, 5.8),
+        gridspec_kw={"height_ratios": (4, 1)},
+    )
+    cmap = LinearSegmentedColormap.from_list(
+        "alomancy_density", ["#F3EEFB", PALETTE[0], "#2A0E52"]
+    )
+    mesh = ax.pcolormesh(x_edges, y_edges, blurred, cmap=cmap, shading="flat")
+    # An inset just right of the map, so both panels keep the same width;
+    # it stops short of the top so the logo watermark doesn't cover it.
+    colorbar = fig.colorbar(mesh, cax=ax.inset_axes((1.015, 0.0, 0.02, 0.8)))
+    colorbar.set_label("share of running runs")
+
+    # Median temperature across the runs that logged each step.
+    longest = max(len(t) for t in temperatures)
+    padded = np.full((n, longest), np.nan)
+    for i, t in enumerate(temperatures):
+        padded[i, : len(t)] = t
+    running = np.sum(np.isfinite(padded), axis=0)
+    # Every column up to the longest log has at least one run in it.
+    median = np.nanmedian(padded, axis=0)
+    stride = max(1, longest // _MD_X_BINS)
+    ax.plot(
+        np.arange(longest)[::stride],
+        median[::stride],
+        color="black",
+        lw=0.8,
+        label="median",
+    )
     ax.axhline(
         target_temperature,
         color="black",
@@ -263,30 +306,54 @@ def md_runs(
         label=f"target {target_temperature:g} K",
         zorder=5,
     )
-    if equilibration_steps:
-        ax.axvline(
-            equilibration_steps,
-            color="black",
-            ls=":",
-            lw=1,
-            label="end of equilibration",
-            zorder=5,
+    for axis in (ax, ax_runs):
+        if equilibration_steps:
+            axis.axvline(
+                equilibration_steps,
+                color="black",
+                ls=":",
+                lw=1,
+                label="end of equilibration" if axis is ax else None,
+                zorder=5,
+            )
+    stopped = sum(c < requested_steps for c in completed_steps)
+    if stopped:
+        ax.plot([], [], ls="none", label=f"{stopped} of {n} run(s) stopped early")
+    peaks = [float(np.nanmax(t)) for t in finite if len(t)]
+    above = [p for p in peaks if p > y_max]
+    if above:
+        # An invisible handle, so the note sits in the legend.
+        ax.plot(
+            [],
+            [],
+            ls="none",
+            label=f"{len(above)} run(s) above {y_max:,.0f} K "
+            f"(peak {max(above):,.0f} K)",
         )
-    ax.set_xlim(0, equilibration_steps + requested_steps)
-    ax.set_xlabel("MD step")
+    ax.set_ylim(0, y_max)
+    ax.set_xlim(0, total_steps)
     ax.set_ylabel("Temperature (K)")
     ax.set_title(title)
     ax.grid(True)
+
+    ax_runs.step(np.arange(longest), running, where="post", color=PALETTE[0], lw=1.2)
+    ax_runs.set_ylim(0, n * 1.08)
+    ax_runs.yaxis.set_major_locator(MaxNLocator(nbins=3, integer=True))
+    ax_runs.set_ylabel("runs")
+    ax_runs.set_xlabel("MD step")
+    ax_runs.grid(True)
+
     # Below the plot: the top-right corner holds the logo watermark.
-    legend = ax.legend(
+    handles, labels = ax.get_legend_handles_labels()
+    ax_runs.legend(
+        handles,
+        labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.14),
+        bbox_to_anchor=(0.5, -0.55),
         fontsize=8,
-        ncol=min(6, n + 1 + bool(equilibration_steps)),
+        ncol=len(labels),
         frameon=False,
     )
-    for handle in legend.get_lines():
-        handle.set_linewidth(2)
     _save(fig, path)
 
 

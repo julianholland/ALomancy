@@ -106,6 +106,11 @@ register(
     "alomancy.high_accuracy_evaluation.dft.run_qe",
     sp="run_sp_qe",
     go="run_go_qe",
+    max_output_dir_len="MAX_OUTPUT_DIR_LEN",
+    supports_periodic="SUPPORTS_PERIODIC",
+    supports_non_periodic="SUPPORTS_NON_PERIODIC",
+    max_num_of_atoms="max_num_of_atoms",
+    level_of_theory="level_of_theory",
     resolve_effective_kwargs="resolve_effective_kwargs",
     report_section="report_section",
 )
@@ -115,6 +120,29 @@ register(
     "alomancy.high_accuracy_evaluation.dft.run_vasp",
     sp="run_sp_vasp",
     go="run_go_vasp",
+    max_output_dir_len="MAX_OUTPUT_DIR_LEN",
+    supports_periodic="SUPPORTS_PERIODIC",
+    supports_non_periodic="SUPPORTS_NON_PERIODIC",
+    max_num_of_atoms="max_num_of_atoms",
+    level_of_theory="level_of_theory",
+    resolve_effective_kwargs="resolve_effective_kwargs",
+    report_section="report_section",
+)
+
+# ORCA: molecular (non-periodic only), DFT and wavefunction methods; the
+# only evaluator with construction-time kwargs validation so far.
+register(
+    "dft_evaluator",
+    "orca",
+    "alomancy.high_accuracy_evaluation.orca.run_orca",
+    sp="run_sp_orca",
+    go="run_go_orca",
+    max_output_dir_len="MAX_OUTPUT_DIR_LEN",
+    supports_periodic="SUPPORTS_PERIODIC",
+    supports_non_periodic="SUPPORTS_NON_PERIODIC",
+    max_num_of_atoms="max_num_of_atoms",
+    level_of_theory="level_of_theory",
+    validate_kwargs="validate_kwargs",
     resolve_effective_kwargs="resolve_effective_kwargs",
     report_section="report_section",
 )
@@ -152,6 +180,7 @@ register(
     output_paths="output_paths",
     read_existing_result="read_existing_result",
     kwargs_defaults="_CREATION_KWARGS_DEFAULTS",
+    kwargs_defaults_for="kwargs_defaults",
     kwargs_schema="_CREATION_KWARGS_SCHEMA",
     validate_kwargs="validate_kwargs",
 )

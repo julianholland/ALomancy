@@ -276,7 +276,6 @@ def _md_axes(monkeypatch, tmp_path, temperatures, target=300.0) -> object:
         [np.asarray(t, dtype=float) for t in temperatures],
         [len(t) for t in temperatures],
         tmp_path / "md.png",
-        run_labels=[f"run {i}" for i in range(len(temperatures))],
         title="t",
         target_temperature=target,
         requested_steps=3,
@@ -288,9 +287,8 @@ def _md_axes(monkeypatch, tmp_path, temperatures, target=300.0) -> object:
 def test_md_temperature_axis_stops_at_three_times_the_target(monkeypatch, tmp_path):
     ax = _md_axes(monkeypatch, tmp_path, [[290, 310, 5000], [300, 305, 295]])
     assert ax.get_ylim() == (0.0, 900.0)
-    labels = [t.get_text() for t in ax.get_legend().get_texts()]
-    assert "run 0 (peaks at 5,000 K)" in labels
-    assert "run 1" in labels
+    _, labels = ax.get_legend_handles_labels()
+    assert "1 run(s) above 900 K (peak 5,000 K)" in labels
 
 
 @pytest.mark.unit
@@ -313,7 +311,6 @@ def test_md_temperature_cap_covers_a_hotter_equilibration(monkeypatch, tmp_path)
         [np.array([2000.0, 2050.0, 300.0, 310.0])],
         [1],
         tmp_path / "md.png",
-        run_labels=["run 0"],
         title="t",
         target_temperature=300.0,
         requested_steps=1,
@@ -322,4 +319,5 @@ def test_md_temperature_cap_covers_a_hotter_equilibration(monkeypatch, tmp_path)
     )
     ax = captured["ax"]
     assert ax.get_ylim() == (0.0, 6000.0)
-    assert ax.get_legend().get_texts()[0].get_text() == "run 0"
+    _, labels = ax.get_legend_handles_labels()
+    assert not any("above" in label for label in labels)

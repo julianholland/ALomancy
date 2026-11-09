@@ -206,6 +206,8 @@ class TestComputeInitializationNeeds:
             "mp_structures",
             "molecule_override",
             "box_override",
+            "amorphous_cluster_override",
+            "molecule_cluster_override",
         }
         assert set(needs.keys()) == expected_keys
 
