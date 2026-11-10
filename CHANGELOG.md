@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-10
 
 ### Added
 - **Common crystal structures for each metal** (`initialization.crystal_structures_kwargs`, config_type `init_crystal`, on by default). Every metal in `general.elements` is built as fcc, bcc, hcp, simple cubic, diamond, A15 and ω primitive cells and labelled single-point, so the model sees the competing phases.
