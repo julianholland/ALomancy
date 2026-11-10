@@ -93,13 +93,6 @@
 
 <span class="n">ASE_OUTPUT_PREFIX</span> <span class="o">=</span> <span class="s2">"ase_output"</span>
 
-<span class="c1"># VASP keeps file paths in a ~256-character Fortran buffer: a run directory</span>
-<span class="c1"># of 255 characters left no room for the filename, so VASP tried to open the</span>
-<span class="c1"># directory itself ("forrtl: severe (30): open failure ... Is a directory").</span>
-<span class="c1"># 240 leaves room for "/vasprun.xml" and similar. QE has the same kind of</span>
-<span class="c1"># limit.</span>
-<span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span> <span class="o">=</span> <span class="mi">240</span>
-
 <span class="c1"># ExPyRe names each job's stage directory (local and remote)</span>
 <span class="c1"># f"run_{name}_{arghash}_{suffix}": arghash is the urlsafe base64 of a</span>
 <span class="c1"># sha256 digest (always 44 characters) and suffix is tempfile.mkdtemp's</span>
@@ -115,7 +108,8 @@
 
 <span class="sd">    ExPyRe adds its own "run_" prefix, so the function's is dropped, and the</span>
 <span class="sd">    section name ("high_accuracy_evaluation") is left out: every character</span>
-<span class="sd">    here ends up in the remote run directory (MAX_REMOTE_OUTPUT_DIR_LEN).</span>
+<span class="sd">    here ends up in the remote run directory (the evaluator's</span>
+<span class="sd">    max_output_dir_len, check_remote_path_length).</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">function</span><span class="o">.</span><span class="vm">__name__</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s1">'run_'</span><span class="p">)</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2">"</span></div>
 
@@ -137,10 +131,13 @@
 
 <div class="viewcode-block" id="check_remote_path_length">
 <a class="viewcode-back" href="../../../api/mlip.html#alomancy.remote_submission.submitters.check_remote_path_length">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">check_remote_path_length</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">remote_rundir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Raise ValueError if *path* (from projected_remote_output_dir) is too</span>
-<span class="sd">    long for VASP/QE to open files in."""</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_remote_path_length</span><span class="p">(</span>
+    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">remote_rundir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">str</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Raise ValueError if *path* (from projected_remote_output_dir) is</span>
+<span class="sd">    longer than *limit*, the evaluator's own max_output_dir_len (registry</span>
+<span class="sd">    entry point; e.g. run_vasp.MAX_OUTPUT_DIR_LEN). None: no limit."""</span>
+    <span class="k">if</span> <span class="n">limit</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">limit</span><span class="p">:</span>
         <span class="k">return</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">alomancy</span>
 
@@ -163,8 +160,8 @@
     <span class="p">)</span>
     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
         <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">: the remote DFT run directory would be </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
-        <span class="sa">f</span><span class="s2">"characters, over the </span><span class="si">{</span><span class="n">MAX_REMOTE_OUTPUT_DIR_LEN</span><span class="si">}</span><span class="s2"> that VASP/QE can "</span>
-        <span class="sa">f</span><span class="s2">"handle (they fail with 'open failure ... Is a directory').</span><span class="si">{</span><span class="n">note</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+        <span class="sa">f</span><span class="s2">"characters, over the </span><span class="si">{</span><span class="n">limit</span><span class="si">}</span><span class="s2"> this DFT code can handle (VASP fails "</span>
+        <span class="sa">f</span><span class="s2">"with 'open failure ... Is a directory').</span><span class="si">{</span><span class="n">note</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
         <span class="sa">f</span><span class="s2">"The first part, </span><span class="si">{</span><span class="n">remote_rundir</span><span class="si">!r}</span><span class="s2">, is the HPC rundir (in "</span>
         <span class="s2">"~/.alomancy/expyre_config.json, set by `alomancy add-hpc`) plus this "</span>
@@ -204,6 +201,8 @@
     <span class="n">per_structure_function</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="n">function_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_output_dir_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Submit one job per structure in input_atoms_list to a shared</span>
 <span class="sd">    RemoteJobExecutor pool (bounded by remote_info.max_num_of_concurrent_jobs).</span>
@@ -214,8 +213,9 @@
 <span class="sd">    sharing one submission queue instead of running as separate batches).</span>
 <span class="sd">    When omitted, every structure uses the single shared `function`.</span>
 <span class="sd">    Every job is named by dft_job_name ("go_vasp_3", "sp_qe_0"), and its</span>
-<span class="sd">    remote run directory is checked against MAX_REMOTE_OUTPUT_DIR_LEN</span>
-<span class="sd">    before anything is submitted.</span>
+<span class="sd">    remote run directory is checked against max_output_dir_len (the</span>
+<span class="sd">    evaluator's registry entry point; None checks nothing) before anything</span>
+<span class="sd">    is submitted.</span>
 <span class="sd">    """</span>
     <span class="k">if</span> <span class="n">per_structure_function</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">per_structure_function</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span>
         <span class="n">input_atoms_list</span>
@@ -255,6 +255,7 @@
                     <span class="n">projected_remote_output_dir</span><span class="p">(</span>
                         <span class="n">remote_rundir</span><span class="p">,</span> <span class="n">job_config</span><span class="p">[</span><span class="s2">"job_name"</span><span class="p">],</span> <span class="n">out_dir</span>
                     <span class="p">),</span>
+                    <span class="n">limit</span><span class="o">=</span><span class="n">max_output_dir_len</span><span class="p">,</span>
                     <span class="n">remote_rundir</span><span class="o">=</span><span class="n">remote_rundir</span><span class="p">,</span>
                     <span class="n">context</span><span class="o">=</span><span class="sa">f</span><span class="s2">"DFT job </span><span class="si">{</span><span class="n">job_config</span><span class="p">[</span><span class="s1">'job_name'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
                 <span class="p">)</span>

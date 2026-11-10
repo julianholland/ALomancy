@@ -62,8 +62,14 @@
 <li class="toctree-l3"><a class="reference internal" href="#configuration-key-descriptions">Configuration Key Descriptions</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#initialization-in-full">Initialization in Full</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#initialization-in-full">Initialization in Full</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#crystal-structures-crystal-structures-kwargs">Crystal Structures (<code class="docutils literal notranslate"><span class="pre">crystal_structures_kwargs</span></code>)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#example-a-single-bulk-metal-from-a-cold-start">Example: a Single Bulk Metal from a Cold Start</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#using-vasp-as-the-dft-backend">Using VASP as the DFT Backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#using-orca-as-the-evaluator">Using ORCA as the Evaluator</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#using-fhi-aims-as-the-evaluator">Using FHI-aims as the Evaluator</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#adding-a-new-backend">Adding a New Backend</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#starting-from-existing-data">Starting From Existing Data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#filtering-the-training-and-test-sets">Filtering the Training and Test Sets</a></li>
@@ -373,7 +379,7 @@ because it is per-element and changes between projects.</p>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">&quot;nvt&quot;</span></code> runs fixed-cell Langevin dynamics (the default). <code class="docutils literal notranslate"><span class="pre">ensemble:</span> <span class="pre">&quot;npt&quot;</span></code> runs ASE’s <code class="docutils literal notranslate"><span class="pre">LangevinBAOAB</span></code> integrator with a barostat targeting <code class="docutils literal notranslate"><span class="pre">pressure</span></code> (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell’s fixed volume.</p>
 </li>
-<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">evaluator</span></code> key selects the registered <code class="docutils literal notranslate"><span class="pre">dft_evaluator</span></code> backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default) or <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>. Submission concurrency (how many jobs run at once) is controlled by <code class="docutils literal notranslate"><span class="pre">max_num_of_concurrent_jobs</span></code> on the HPC profile (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see <a class="reference internal" href="deprecations.html"><span class="std std-doc">Deprecations</span></a> for the removed <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> fallback. Settings for the evaluator you didn’t select (e.g. <code class="docutils literal notranslate"><span class="pre">qe_kwargs</span></code> while <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;vasp&quot;</span></code>) are reported at start-up and ignored. <code class="docutils literal notranslate"><span class="pre">max_vdw_volume_ratio</span></code> (default 10; <code class="docutils literal notranslate"><span class="pre">null</span></code> turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms’ van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning <code class="docutils literal notranslate"><span class="pre">blown_up_excluded</span></code>. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in <code class="docutils literal notranslate"><span class="pre">vdw_exempt_config_types</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">[&quot;molecules_in_vacuum&quot;]</span></code>): tag structures that are meant to have vacuum, such as molecules in a box, with their own <code class="docutils literal notranslate"><span class="pre">config_type</span></code> and list it there. If genuine low-density crystals are dropped, raise <code class="docutils literal notranslate"><span class="pre">max_vdw_volume_ratio</span></code>.</p></li>
+<li><p><strong>high_accuracy_evaluation</strong>: Performs high-accuracy DFT evaluation on selected structures. The <code class="docutils literal notranslate"><span class="pre">evaluator</span></code> key selects the registered <code class="docutils literal notranslate"><span class="pre">dft_evaluator</span></code> backend: <code class="docutils literal notranslate"><span class="pre">&quot;qe&quot;</span></code> (Quantum Espresso, default), <code class="docutils literal notranslate"><span class="pre">&quot;vasp&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;aims&quot;</span></code> (FHI-aims, see <a class="reference internal" href="#using-fhi-aims-as-the-evaluator">Using FHI-aims</a>) or <code class="docutils literal notranslate"><span class="pre">&quot;orca&quot;</span></code> (molecules only, see <a class="reference internal" href="#using-orca-as-the-evaluator">Using ORCA</a>). Every label records its level of theory. At start-up, ALomancy stops if the database already holds labels from another code, whose energies are on another scale (<code class="docutils literal notranslate"><span class="pre">general.allow_mixed_level_of_theory:</span> <span class="pre">true</span></code> turns this into a warning). It warns (<code class="docutils literal notranslate"><span class="pre">level_of_theory_mismatch</span></code>) for labels from the same code at different settings. Submission concurrency (how many jobs run at once) is controlled by <code class="docutils literal notranslate"><span class="pre">max_num_of_concurrent_jobs</span></code> on the HPC profile (<code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see <a class="reference internal" href="deprecations.html"><span class="std std-doc">Deprecations</span></a> for the removed <code class="docutils literal notranslate"><span class="pre">max_batch_size</span></code> fallback. Settings for the evaluator you didn’t select (e.g. <code class="docutils literal notranslate"><span class="pre">qe_kwargs</span></code> while <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;vasp&quot;</span></code>) are reported at start-up and ignored. <code class="docutils literal notranslate"><span class="pre">max_vdw_volume_ratio</span></code> (default 10; <code class="docutils literal notranslate"><span class="pre">null</span></code> turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms’ van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning <code class="docutils literal notranslate"><span class="pre">blown_up_excluded</span></code>. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in <code class="docutils literal notranslate"><span class="pre">vdw_exempt_config_types</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">[&quot;molecules_in_vacuum&quot;]</span></code>): tag structures that are meant to have vacuum, such as molecules in a box, with their own <code class="docutils literal notranslate"><span class="pre">config_type</span></code> and list it there. If genuine low-density crystals are dropped, raise <code class="docutils literal notranslate"><span class="pre">max_vdw_volume_ratio</span></code>.</p></li>
 </ul>
 </section>
 </section>
@@ -407,11 +413,13 @@ because it is per-element and changes between projects.</p>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 
 <span class="w">  </span><span class="c1"># Two-atom structures for every element pair, at evenly spaced separations</span>
-<span class="w">  </span><span class="c1"># from 0.2x to 1.0x the sum of the vdW radii. These teach the model</span>
-<span class="w">  </span><span class="c1"># short-range repulsion (default 10 per pair).</span>
+<span class="w">  </span><span class="c1"># over distance_range x the sum of the two covalent radii (default</span>
+<span class="w">  </span><span class="c1"># [0.5, 2.0]: Pt-Pt 1.36 to 5.44 Å). These teach the model short-range</span>
+<span class="w">  </span><span class="c1"># repulsion (default 10 per pair).</span>
 <span class="w">  </span><span class="nt">dimer_kwargs</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">    </span><span class="nt">num_of_dimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">distance_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.0</span><span class="p p-Indicator">]</span>
 
 <span class="w">  </span><span class="c1"># Three-atom structures for every element triple, on a grid of the two</span>
 <span class="w">  </span><span class="c1"># bond lengths over the same range as the dimers (default 5 per triple).</span>
@@ -487,21 +495,209 @@ because it is per-element and changes between projects.</p>
 <span class="w">    </span><span class="nt">max_lattice_deformation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span><span class="w">           </span><span class="c1"># +/-20 % on the lattice vectors</span>
 
 <span class="w">  </span><span class="c1"># Randomly displaced copies of the same target structures (off by default).</span>
-<span class="w">  </span><span class="c1"># Adds off-equilibrium forces around each starting geometry.</span>
+<span class="w">  </span><span class="c1"># Adds off-equilibrium forces around each starting geometry. A 1-atom cell</span>
+<span class="w">  </span><span class="c1"># (fcc metals) is rattled as a 2x2x2 supercell: moving its only atom would</span>
+<span class="w">  </span><span class="c1"># just translate it.</span>
 <span class="w">  </span><span class="nt">rattle_target_structures</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 <span class="w">    </span><span class="nt">num_of_rattled_per_target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-<span class="w">    </span><span class="nt">rattle_standard_deviation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.05</span><span class="w">    </span><span class="c1"># Å; no default, required when enabled</span>
+<span class="w">    </span><span class="nt">rattle_standard_deviation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.05</span><span class="w">    </span><span class="c1"># Å; default 3% of the nearest-neighbour distance</span>
+
+<span class="w">  </span><span class="c1"># Common crystal structures of each element (config_type init_crystal), on</span>
+<span class="w">  </span><span class="c1"># by default for the metals in general.elements: each element in every</span>
+<span class="w">  </span><span class="c1"># structure, as primitive cells, labelled single-point. Without settings,</span>
+<span class="w">  </span><span class="c1"># the element's own ASE reference crystal keeps its reference lattice</span>
+<span class="w">  </span><span class="c1"># constant (fcc Pt: 3.92 Å) and every other structure gets the same volume</span>
+<span class="w">  </span><span class="c1"># per atom (bcc Pt: 3.11 Å). The run's log lists each lattice and its source.</span>
+<span class="w">  </span><span class="nt">crystal_structures_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">                     </span><span class="c1"># null: the metals in general.elements</span>
+<span class="w">    </span><span class="nt">structures</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">fcc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">bcc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">hcp</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">sc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">diamond</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">a15</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">omega</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">lattice_constants</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">              </span><span class="c1"># e.g. {Pt: {fcc: 3.97, hcp: {a: 2.80, c: 4.57}}}</span>
+<span class="w">    </span><span class="nt">volume_per_atom</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">                </span><span class="c1"># e.g. {Pt: 15.5} (Å^3/atom) for Pt's other structures</span>
 </pre></div>
 </div>
 <ul class="simple">
 <li><p>Each <code class="docutils literal notranslate"><span class="pre">composition_list</span></code> entry must have exactly <code class="docutils literal notranslate"><span class="pre">num_of_atoms_per_amorphous</span></code> symbols.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">amorphous_kwargs.densities_list</span></code> is deprecated: use <code class="docutils literal notranslate"><span class="pre">density_range</span></code> (see <a class="reference internal" href="deprecations.html"><span class="std std-doc">Deprecations</span></a>).</p></li>
-<li><p>Densities are in g/cm³, so the same number is very sparse for heavy elements: Pt at the default 1 g/cm³ fills 14× its atoms’ van der Waals volume, and <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.max_vdw_volume_ratio</span></code> (default 10) would drop every such cell before DFT. ALomancy warns about this when the workflow is built (<code class="docutils literal notranslate"><span class="pre">init_density_too_low</span></code>), and about densities packing atoms tighter than any solid (<code class="docutils literal notranslate"><span class="pre">init_density_too_high</span></code>), naming the g/cm³ window to use. Random amorphous mixes are checked as an even mix of <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>.</p></li>
+<li><p>Densities are in g/cm³, so the same number is very sparse for heavy elements: Pt at the default 1 g/cm³ fills 14× its atoms’ van der Waals volume, and <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.max_vdw_volume_ratio</span></code> (default 10) would drop every such cell before DFT. When the whole <code class="docutils literal notranslate"><span class="pre">density_range</span></code> is that sparse, the run stops when the workflow is built; when part of it is, ALomancy warns (<code class="docutils literal notranslate"><span class="pre">init_density_too_low</span></code>). It also warns about densities packing atoms tighter than any solid (<code class="docutils literal notranslate"><span class="pre">init_density_too_high</span></code>). Each names the g/cm³ window to use (Pt: about 15–21). Random amorphous mixes are checked as an even mix of <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>.</p></li>
 <li><p>Molecule names, every <code class="docutils literal notranslate"><span class="pre">density_range</span></code> and the box settings are checked when the workflow is built, so a bad name fails at startup, not after DFT has started. A box too small for its largest molecule, or one that can’t be packed in <code class="docutils literal notranslate"><span class="pre">max_attempts_per_molecule</span></code> tries, raises naming the composition and density: lower the density or <code class="docutils literal notranslate"><span class="pre">min_distance</span></code>, or raise <code class="docutils literal notranslate"><span class="pre">num_of_molecules</span></code>.</p></li>
 <li><p>On a restart, molecules and boxes are counted per chemical formula, so only the missing ones are made again.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">general.dataset_kwargs.target_config_types</span></code> decides which structures are stretched, compressed and rattled.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">general.dataset_kwargs.target_config_types</span></code> decides which structures are stretched, compressed and rattled. Those stretched, compressed and rattled copies can go to the test set too, so a single bulk structure (e.g. fcc Pt from Materials Project) plus its copies gives a test set.</p></li>
+<li><p><strong>Few target structures</strong>: before any initialisation DFT, ALomancy counts the structures that can go to the test set. With fewer than 2 the run stops (one always stays in training, so the test set would be empty); with fewer than 5 it warns (<code class="docutils literal notranslate"><span class="pre">few_target_structures</span></code>). Both suggest what to add: rattled copies, more stretch/compress, more target types, or <code class="docutils literal notranslate"><span class="pre">start_from</span></code> structures.</p></li>
+<li><p>Materials Project structures include 1-atom primitive cells (elemental ground states such as fcc Pt).</p></li>
+<li><p><strong>Crystal structures</strong>: see <a class="reference internal" href="#crystal-structures-crystal-structures-kwargs">Crystal Structures</a> below.</p></li>
 <li><p>Dimers and trimers are far from equilibrium, so they are usually listed in <code class="docutils literal notranslate"><span class="pre">general.train_filter.exempt_config_types</span></code> (see <a class="reference internal" href="#filtering-the-training-and-test-sets">Filtering the Training and Test Sets</a>).</p></li>
+</ul>
+<section id="crystal-structures-crystal-structures-kwargs">
+<h3>Crystal Structures (<code class="docutils literal notranslate"><span class="pre">crystal_structures_kwargs</span></code>)<a class="headerlink" href="#crystal-structures-crystal-structures-kwargs" title="Link to this heading"></a></h3>
+<p>This block builds each chosen element in the common crystal structures, so the model sees an element’s competing phases and not only the ground state Materials Project returns. It matters most when few bulk structures are available (see <a class="reference internal" href="#example-a-single-bulk-metal-from-a-cold-start">the single-metal example</a>). Every structure has <code class="docutils literal notranslate"><span class="pre">config_type:</span> <span class="pre">init_crystal</span></code>, with <code class="docutils literal notranslate"><span class="pre">crystal_structure</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">bcc</span></code>) and <code class="docutils literal notranslate"><span class="pre">lattice_source</span></code> in its info.</p>
+<p><strong>Defaults.</strong> With no settings the block is on and:</p>
+<ul class="simple">
+<li><p>builds every <strong>metal</strong> in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>: alkali, alkaline-earth, transition, lanthanide, actinide and post-transition metals (Al, Ga, In, Sn, Tl, Pb, Bi, Po). Non-metals and metalloids (B, C, Si, Ge, As, Sb, Te, …) are left out, and a run without metals builds nothing;</p></li>
+<li><p>builds <strong>all seven structures</strong> for each element, at <strong>ASE’s reference lattice</strong> (below);</p></li>
+<li><p>labels them as <strong>single points</strong>: they are never relaxed, and never go through <code class="docutils literal notranslate"><span class="pre">force_ceiling</span></code>;</p></li>
+<li><p><strong>keeps them in training</strong>: <code class="docutils literal notranslate"><span class="pre">init_crystal</span></code> is always exempt from <code class="docutils literal notranslate"><span class="pre">general.train_filter</span></code>, added to (not replaced by) your <code class="docutils literal notranslate"><span class="pre">exempt_config_types</span></code>, since the unstable phases sit far above the ground state by design;</p></li>
+<li><p>does <strong>not</strong> make them test targets. List <code class="docutils literal notranslate"><span class="pre">init_crystal</span></code> in <code class="docutils literal notranslate"><span class="pre">general.dataset_kwargs.target_config_types</span></code> to test on them; they are then also stretched, compressed and rattled like any target type.</p></li>
+</ul>
+<p>It is off by default, and can’t be enabled, with an evaluator that has no periodic boundary conditions (ORCA). Initialisation only runs again while no AL loop has finished, so enabling the block, or upgrading, doesn’t change a run that is already past it.</p>
+<p><strong>Choosing the elements.</strong> <code class="docutils literal notranslate"><span class="pre">elements:</span> <span class="pre">null</span></code> (the default) means the metals in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>. Give a list to choose them yourself; every one must be in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>, and non-metals are allowed when listed explicitly (e.g. <code class="docutils literal notranslate"><span class="pre">[&quot;Si&quot;]</span></code> to build silicon in these structures too). <code class="docutils literal notranslate"><span class="pre">enabled:</span> <span class="pre">false</span></code> turns the block off.</p>
+<p><strong>Choosing the crystal structures.</strong> <code class="docutils literal notranslate"><span class="pre">structures</span></code> lists which of these to build (default: all), each as a primitive cell:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>name</p></th>
+<th class="head"><p>structure</p></th>
+<th class="head text-right"><p>atoms</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fcc</span></code></p></td>
+<td><p>face-centred cubic</p></td>
+<td class="text-right"><p>1</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">bcc</span></code></p></td>
+<td><p>body-centred cubic</p></td>
+<td class="text-right"><p>1</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">hcp</span></code></p></td>
+<td><p>hexagonal close-packed; c/a from the element’s reference if its reference crystal is hcp (Ti: 1.588), else the ideal 1.633</p></td>
+<td class="text-right"><p>2</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sc</span></code></p></td>
+<td><p>simple cubic</p></td>
+<td class="text-right"><p>1</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">diamond</span></code></p></td>
+<td><p>diamond</p></td>
+<td class="text-right"><p>2</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">a15</span></code></p></td>
+<td><p>A15 (β-W)</p></td>
+<td class="text-right"><p>8</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">omega</span></code></p></td>
+<td><p>ω phase (hexagonal, c/a 0.62, as in Ti and Zr)</p></td>
+<td class="text-right"><p>3</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Lattice constants.</strong> For each element and structure the first of these that is set wins:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lattice_constants[element][structure]</span></code>: the lattice constant a in Å (the conventional cubic a for fcc, bcc, sc, diamond and A15). For <code class="docutils literal notranslate"><span class="pre">hcp</span></code> and <code class="docutils literal notranslate"><span class="pre">omega</span></code>, either a (c then follows from the c/a above) or <code class="docutils literal notranslate"><span class="pre">{a:</span> <span class="pre">...,</span> <span class="pre">c:</span> <span class="pre">...}</span></code>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">volume_per_atom[element]</span></code>: Å³ per atom, applied to every structure of that element without its own lattice constant;</p></li>
+<li><p><strong>ASE’s reference crystal</strong> (<code class="docutils literal notranslate"><span class="pre">ase.data.reference_states</span></code>): the element’s own reference structure keeps its reference lattice constant, and every other structure is scaled to the same volume per atom. For Pt (reference fcc, 3.92 Å, 15.06 Å³/atom): bcc a = 3.11 Å, hcp a = 2.77 Å, sc a = 2.47 Å.</p></li>
+</ol>
+<p>The run’s log lists every structure’s lattice constant and its source (<code class="docutils literal notranslate"><span class="pre">reference</span></code>, <code class="docutils literal notranslate"><span class="pre">equal_volume</span></code> or <code class="docutils literal notranslate"><span class="pre">user</span></code>) when the workflow is built. ASE’s reference values are experimental, so a DFT functional’s own lattice can differ by 1–3%; set <code class="docutils literal notranslate"><span class="pre">lattice_constants</span></code> or <code class="docutils literal notranslate"><span class="pre">volume_per_atom</span></code> to start from yours. Elements with no reference data in ASE (Pm, Fr, Ra, Pu, Am and heavier) need one of the two, or the run stops at start-up naming them. Magnetic metals (Fe, Co, Ni) need spin polarisation in the evaluator settings.</p>
+<p>For example, Ti and Cu in four structures, Cu’s fcc at its own lattice constant, Ti’s hcp at a given a and c, and Ti’s other structures at a set volume per atom:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Ti"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"Cu"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"O"</span><span class="p p-Indicator">]</span>
+
+<span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">amorphous_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">density_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">4.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">7.0</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">crystal_structures_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Ti"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"Cu"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">structures</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">fcc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">bcc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">hcp</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">omega</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">lattice_constants</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">Cu</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">fcc</span><span class="p">:</span><span class="w"> </span><span class="nv">3.63</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="nt">Ti</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">hcp</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">a</span><span class="p">:</span><span class="w"> </span><span class="nv">2.93</span><span class="p p-Indicator">,</span><span class="nt"> c</span><span class="p">:</span><span class="w"> </span><span class="nv">4.65</span><span class="p p-Indicator">}}</span>
+<span class="w">    </span><span class="nt">volume_per_atom</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">Ti</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17.4</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="example-a-single-bulk-metal-from-a-cold-start">
+<h2>Example: a Single Bulk Metal from a Cold Start<a class="headerlink" href="#example-a-single-bulk-metal-from-a-cold-start" title="Link to this heading"></a></h2>
+<p>A run for one metallic element with no existing data has very few bulk structures to start from. Materials Project usually holds only the ground state and one or two polymorphs. Its stretched, compressed and rattled copies then make up the whole bulk part of the training and test sets, and the model never sees the element’s competing crystal phases until MD wanders into them. In that situation <code class="docutils literal notranslate"><span class="pre">crystal_structures_kwargs</span></code> is what fills the gap:</p>
+<ul class="simple">
+<li><p><strong>What it adds</strong>: every chosen element in each common crystal structure (fcc, bcc, hcp, simple cubic, diamond, A15 and ω), as small primitive cells labelled single-point. It is on by default for the metals in <code class="docutils literal notranslate"><span class="pre">general.elements</span></code>, and the start-up log lists each structure’s lattice constant and where it came from.</p></li>
+<li><p><strong>Lattice constants</strong>: the element’s own ASE reference structure keeps its reference lattice constant (fcc Pt: 3.92 Å), and every other structure gets the same volume per atom (bcc Pt: 3.11 Å, hcp Pt: 2.77 Å). <code class="docutils literal notranslate"><span class="pre">lattice_constants</span></code> (per structure) and <code class="docutils literal notranslate"><span class="pre">volume_per_atom</span></code> (per element) override this, for example to start from your functional’s own lattice.</p></li>
+<li><p><strong>Train filter</strong>: <code class="docutils literal notranslate"><span class="pre">init_crystal</span></code> is always kept in training, since the unstable phases are far above the ground state by design.</p></li>
+<li><p><strong>As test targets</strong>: listing <code class="docutils literal notranslate"><span class="pre">init_crystal</span></code> (and <code class="docutils literal notranslate"><span class="pre">init_MP</span></code>) in <code class="docutils literal notranslate"><span class="pre">target_config_types</span></code> makes the crystals test-eligible too, and stretches, compresses and rattles them. 1-atom cells such as fcc and bcc are rattled as 2×2×2 supercells, since rattling a single atom only translates it. This gives a test set even when Materials Project returns a single structure. With fewer than 2 structures that could go to the test set, the run stops before any DFT; with fewer than 5 it warns.</p></li>
+<li><p><strong>Amorphous density</strong>: densities are in g/cm³, so heavy metals need high values (bulk Pt is 21.45 g/cm³). A range entirely too sparse, such as the default 1 g/cm³ for Pt, stops the run at start-up.</p></li>
+</ul>
+<p>The configuration below is for Pt with VASP labels and a 5-model MACE committee:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">general</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">al_workflow</span><span class="p">:</span><span class="w"> </span><span class="s">"committee_uncertainty"</span>
+<span class="w">  </span><span class="nt">elements</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"Pt"</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">num_of_al_loops</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">  </span><span class="nt">num_of_structures_per_loop</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">  </span><span class="nt">verbose</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">  </span><span class="nt">log_file</span><span class="p">:</span><span class="w"> </span><span class="s">"results/alomancy.log"</span>
+<span class="w">  </span><span class="nt">db_path</span><span class="p">:</span><span class="w"> </span><span class="s">"results/global_database"</span>
+<span class="w">  </span><span class="nt">dataset_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">target_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_MP"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_rattle"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_crystal"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">test_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">committee_uncertainty_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_models_in_committee</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">  </span><span class="nt">train_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">exempt_config_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"init_dimer"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"init_trimer"</span><span class="p p-Indicator">]</span>
+
+<span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_cpu"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
+<span class="w">  </span><span class="nt">mp_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">max_num_of_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">mp_max_energy_above_hull</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.11</span>
+<span class="w">  </span><span class="nt">dimer_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_dimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">    </span><span class="nt">distance_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.0</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">trimer_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_trimers_per_combo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">    </span><span class="nt">distance_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2.0</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">amorphous_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_amorphous_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<span class="w">    </span><span class="nt">num_of_atoms_per_amorphous</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">density_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">15.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">21.0</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">stretch_compress_targets_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_stretch_compress_per_target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">max_lattice_deformation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
+<span class="w">  </span><span class="nt">rattle_target_structures</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">num_of_rattled_per_target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">  </span><span class="nt">crystal_structures_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">structures</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">fcc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">bcc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">hcp</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">sc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">diamond</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">a15</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">omega</span><span class="p p-Indicator">]</span>
+
+<span class="nt">training</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">trainer</span><span class="p">:</span><span class="w"> </span><span class="s">"mace"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raccoon_gpu"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"5H"</span>
+
+<span class="nt">structure_generation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">generator</span><span class="p">:</span><span class="w"> </span><span class="s">"md"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raccoon_gpu"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"10H"</span>
+<span class="w">  </span><span class="nt">num_of_structures_to_generate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"vasp"</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span><span class="w"> </span><span class="s">"raven_cpu"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
+<span class="w">  </span><span class="nt">vasp_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">encut</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">400</span>
+<span class="w">    </span><span class="nt">ediff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0e-6</span>
+<span class="w">    </span><span class="nt">prec</span><span class="p">:</span><span class="w"> </span><span class="s">"Accurate"</span>
+<span class="w">    </span><span class="nt">gga</span><span class="p">:</span><span class="w"> </span><span class="s">"RP"</span>
+<span class="w">    </span><span class="nt">ivdw</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">11</span>
+<span class="w">    </span><span class="nt">ismear</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">    </span><span class="nt">sigma</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">    </span><span class="nt">kspacing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.15</span>
+<span class="w">    </span><span class="nt">kgamma</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">lreal</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">algo</span><span class="p">:</span><span class="w"> </span><span class="s">"Normal"</span>
+<span class="w">    </span><span class="nt">nelm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+<span class="w">    </span><span class="nt">ncore</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+</pre></div>
+</div>
+<p>Notes on the other settings:</p>
+<ul class="simple">
+<li><p><strong>Dimers and trimers</strong> span 0.5–2.0 × the sum of the two covalent radii (1.36–5.44 Å for Pt-Pt). They are listed in <code class="docutils literal notranslate"><span class="pre">train_filter.exempt_config_types</span></code> because their short-range forces are large by design.</p></li>
+<li><p><strong>Materials Project</strong> structures include 1-atom primitive cells, so fcc Pt (mp-126) is fetched.</p></li>
+<li><p><strong>VASP</strong>: <code class="docutils literal notranslate"><span class="pre">kspacing</span></code> and <code class="docutils literal notranslate"><span class="pre">kgamma</span></code> set the k-point density and centring that ALomancy uses to write each structure’s KPOINTS. Non-periodic axes (isolated atoms, dimers, trimers) get one k-point. <code class="docutils literal notranslate"><span class="pre">lreal:</span> <span class="pre">false</span></code> suits the 1–3-atom structures in vacuum, and <code class="docutils literal notranslate"><span class="pre">algo:</span> <span class="pre">&quot;Normal&quot;</span></code> with <code class="docutils literal notranslate"><span class="pre">nelm:</span> <span class="pre">200</span></code> avoids most SCF failures on them.</p></li>
+<li><p><strong>HPC profiles</strong>: <code class="docutils literal notranslate"><span class="pre">raven_cpu</span></code> and <code class="docutils literal notranslate"><span class="pre">raccoon_gpu</span></code> are named profiles from <code class="docutils literal notranslate"><span class="pre">~/.alomancy/hpc_config.yaml</span></code>; replace them with your own. Set <code class="docutils literal notranslate"><span class="pre">max_num_of_concurrent_jobs</span></code> in each profile so DFT jobs run in parallel.</p></li>
+<li><p><strong>Production</strong>: <code class="docutils literal notranslate"><span class="pre">num_of_al_loops:</span> <span class="pre">1</span></code> is for a first test; raise it for a production run.</p></li>
 </ul>
 </section>
 <section id="using-vasp-as-the-dft-backend">
@@ -539,12 +735,129 @@ what <code class="docutils literal notranslate"><span class="pre">module</span> 
 fall back to the default (unsuffixed) POTCAR under that path — if that directory doesn’t
 carry a given element (e.g. <code class="docutils literal notranslate"><span class="pre">Pd</span></code>), VASP fails with <code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">pseudopotential</span> <span class="pre">for</span> <span class="pre">&lt;element&gt;!</span></code>.</p>
 </div></blockquote>
+<blockquote>
+<div><p><strong>k-points:</strong> ALomancy builds each structure’s k-point grid and writes KPOINTS, so VASP
+ignores an INCAR <code class="docutils literal notranslate"><span class="pre">KSPACING</span></code>. Set <code class="docutils literal notranslate"><span class="pre">vasp_kwargs.kspacing</span></code> (Å⁻¹, as VASP’s KSPACING; default
+0.15) to change the density and <code class="docutils literal notranslate"><span class="pre">kgamma:</span> <span class="pre">true</span></code> for Γ-centred grids; ALomancy applies them.
+<code class="docutils literal notranslate"><span class="pre">kpts</span></code> raises: one grid can’t fit cells of different sizes. Non-periodic axes (slabs,
+molecules, isolated atoms) get one k-point, even though VASP pads them with vacuum. QE takes
+<code class="docutils literal notranslate"><span class="pre">qe_kwargs.k_spacing</span></code> the same way.</p>
+</div></blockquote>
 <p>QE configs work unchanged — <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;qe&quot;</span></code> is the default and can be omitted.</p>
+</section>
+<section id="using-orca-as-the-evaluator">
+<h2>Using ORCA as the Evaluator<a class="headerlink" href="#using-orca-as-the-evaluator" title="Link to this heading"></a></h2>
+<p>ORCA is a molecular code: it has no periodic boundary conditions, and besides DFT it runs wavefunction methods such as MP2 and coupled cluster. Set <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;orca&quot;</span></code> and give the ORCA keyword line in <code class="docutils literal notranslate"><span class="pre">orca_kwargs</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"orca"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
+<span class="w">  </span><span class="nt">orca_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">orcasimpleinput</span><span class="p">:</span><span class="w"> </span><span class="s">"RI-MP2</span><span class="nv"> </span><span class="s">def2-TZVP</span><span class="nv"> </span><span class="s">def2-TZVP/C</span><span class="nv"> </span><span class="s">TightSCF"</span>
+<span class="w">    </span><span class="nt">orcablocks</span><span class="p">:</span><span class="w"> </span><span class="s">"%scf</span><span class="nv"> </span><span class="s">maxiter</span><span class="nv"> </span><span class="s">300</span><span class="nv"> </span><span class="s">end"</span><span class="w">   </span><span class="c1"># extra % blocks (optional)</span>
+<span class="w">    </span><span class="nt">max_num_of_atoms_correlated</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">      </span><span class="c1"># default; null = no cap</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">"raven"</span>
+<span class="w">    </span><span class="nt">orca_path</span><span class="p">:</span><span class="w"> </span><span class="s">"/path/to/orca/orca"</span><span class="w">      </span><span class="c1"># absolute path, required</span>
+<span class="w">    </span><span class="nt">node_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">ranks_per_system</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
+<span class="w">      </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">72</span>
+<span class="w">      </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">"240G"</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"cpu"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"module</span><span class="nv"> </span><span class="s">load</span><span class="nv"> </span><span class="s">openmpi/4.1"</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># the OpenMPI ORCA was built with</span>
+
+<span class="nt">initialization</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># With ORCA, the periodic blocks (amorphous_kwargs, mp_kwargs,</span>
+<span class="w">  </span><span class="c1"># molecules_in_box_kwargs) are off by default and these two are on.</span>
+<span class="w">  </span><span class="nt">amorphous_cluster_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">num_of_amorphous_clusters</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">num_of_atoms_per_cluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span>
+<span class="w">    </span><span class="nt">density_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">molecule_cluster_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cluster_compositions</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">molecules</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="s">"CO"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">}</span>
+<span class="w">        </span><span class="nt">density_range</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.5</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">num_of_molecules</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">        </span><span class="nt">num_of_structures</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Only non-periodic structures.</strong> Anything with <code class="docutils literal notranslate"><span class="pre">pbc</span></code> true on any axis raises before submission.</p>
+<ul>
+<li><p>Initialisation therefore defaults to non-periodic structures: isolated atoms, dimers, trimers, molecules, amorphous clusters (<code class="docutils literal notranslate"><span class="pre">amorphous_cluster_kwargs</span></code>) and clusters of molecules (<code class="docutils literal notranslate"><span class="pre">molecule_cluster_kwargs</span></code>, built only when you give <code class="docutils literal notranslate"><span class="pre">cluster_compositions</span></code>).</p></li>
+<li><p>Enabling <code class="docutils literal notranslate"><span class="pre">amorphous_kwargs</span></code>, <code class="docutils literal notranslate"><span class="pre">mp_kwargs</span></code> or <code class="docutils literal notranslate"><span class="pre">molecules_in_box_kwargs</span></code> yourself raises, naming the replacement.</p></li>
+<li><p>Starting from a database that holds periodic structures raises too.</p></li>
+</ul>
+</li>
+<li><p><strong>Parallelism goes in the ORCA input.</strong> ALomancy writes <code class="docutils literal notranslate"><span class="pre">%pal</span> <span class="pre">nprocs</span></code> (<code class="docutils literal notranslate"><span class="pre">node_info.ranks_per_system</span></code>) and <code class="docutils literal notranslate"><span class="pre">%maxcore</span></code> (75% of <code class="docutils literal notranslate"><span class="pre">max_mem_per_node</span></code> split between the processes).</p>
+<ul>
+<li><p>To use other values, set <code class="docutils literal notranslate"><span class="pre">orca_kwargs.nprocs</span></code> / <code class="docutils literal notranslate"><span class="pre">orca_kwargs.maxcore</span></code> (MB), or write a <code class="docutils literal notranslate"><span class="pre">%pal</span></code>/<code class="docutils literal notranslate"><span class="pre">%maxcore</span></code> block or a <code class="docutils literal notranslate"><span class="pre">PALn</span></code> keyword yourself. Your value wins, but must fit one node of the profile, or the run stops at start-up.</p></li>
+<li><p>ORCA is started by <code class="docutils literal notranslate"><span class="pre">orca_path</span></code> without srun and starts its own <code class="docutils literal notranslate"><span class="pre">mpirun</span></code>, so load its OpenMPI in <code class="docutils literal notranslate"><span class="pre">pre_cmds</span></code>.</p></li>
+</ul>
+</li>
+<li><p><strong>Post-HF methods are expensive.</strong> For correlated and multireference methods (MP2, DLPNO-CCSD(T), double hybrids, CASSCF/NEVPT2), structures with more than <code class="docutils literal notranslate"><span class="pre">max_num_of_atoms_correlated</span></code> atoms are dropped before submission (<code class="docutils literal notranslate"><span class="pre">too_many_atoms_for_method</span></code>).</p>
+<ul>
+<li><p>Initialisation blocks configured to make larger structures stop the run at start-up.</p></li>
+<li><p>Coupled-cluster and multireference forces may need numerical gradients (about 6 × atoms energy calculations each); ALomancy warns about this at start-up.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EnGrad</span></code> (forces) and <code class="docutils literal notranslate"><span class="pre">SCFConvergenceForced</span></code> are added to the keyword line when missing.</p></li>
+<li><p>The spin multiplicity is the lowest the electron count allows, the ground state for isolated atoms (H 2, O 3), or <code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;spin_multiplicity&quot;]</span></code>; the charge is <code class="docutils literal notranslate"><span class="pre">orca_kwargs.charge</span></code> (default 0) or <code class="docutils literal notranslate"><span class="pre">atoms.info[&quot;charge&quot;]</span></code>.</p></li>
+</ul>
+</section>
+<section id="using-fhi-aims-as-the-evaluator">
+<h2>Using FHI-aims as the Evaluator<a class="headerlink" href="#using-fhi-aims-as-the-evaluator" title="Link to this heading"></a></h2>
+<p>FHI-aims is an all-electron code: no pseudopotentials. Its basis and integration grids come from the species defaults that ship with it. Set <code class="docutils literal notranslate"><span class="pre">evaluator:</span> <span class="pre">&quot;aims&quot;</span></code>. The defaults use the <code class="docutils literal notranslate"><span class="pre">intermediate</span></code> species defaults with PBE:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">high_accuracy_evaluation</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">evaluator</span><span class="p">:</span><span class="w"> </span><span class="s">"aims"</span>
+<span class="w">  </span><span class="nt">max_time</span><span class="p">:</span><span class="w"> </span><span class="s">"2H"</span>
+<span class="w">  </span><span class="nt">aims_kwargs</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">species_defaults</span><span class="p">:</span><span class="w"> </span><span class="s">"intermediate"</span><span class="w">   </span><span class="c1"># default; light / intermediate / tight / really_tight</span>
+<span class="w">    </span><span class="nt">k_spacing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.15</span><span class="w">                    </span><span class="c1"># default, 1/Angstrom (or k_grid_density); k-grid set per structure</span>
+<span class="w">    </span><span class="nt">xc</span><span class="p">:</span><span class="w"> </span><span class="s">"pbe"</span><span class="w">                          </span><span class="c1"># default; any control.in keyword can go here</span>
+<span class="w">  </span><span class="nt">hpc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">hpc_name</span><span class="p">:</span><span class="w"> </span><span class="s">"raven"</span>
+<span class="w">    </span><span class="nt">aims_path</span><span class="p">:</span><span class="w"> </span><span class="s">"/path/to/aims.x"</span>
+<span class="w">    </span><span class="nt">aims_species_dir</span><span class="p">:</span><span class="w"> </span><span class="s">"/path/to/FHIaims/species_defaults/defaults_2020"</span>
+<span class="w">    </span><span class="nt">node_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">ranks_per_system</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">72</span>
+<span class="w">      </span><span class="nt">ranks_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">72</span>
+<span class="w">      </span><span class="nt">threads_per_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">      </span><span class="nt">max_mem_per_node</span><span class="p">:</span><span class="w"> </span><span class="s">"240G"</span>
+<span class="w">    </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"cpu"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">pre_cmds</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"ulimit</span><span class="nv"> </span><span class="s">-s</span><span class="nv"> </span><span class="s">unlimited"</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># OMP_NUM_THREADS=1 is set on the aims command itself</span>
+</pre></div>
+</div>
+<ul>
+<li><p><strong>Starting data must be FHI-aims data.</strong> All-electron energies are on a completely different scale from QE/VASP ones (C is about −1030 eV/atom instead of about −155). Starting from a database labelled with another code stops the run at start-up.</p></li>
+<li><p><strong>Boundary conditions</strong>:</p>
+<ul class="simple">
+<li><p>periodic cells get a k-grid from <code class="docutils literal notranslate"><span class="pre">k_spacing</span></code>;</p></li>
+<li><p>molecules and clusters run without a cell, and so do isolated atoms (the exact free-atom energy);</p></li>
+<li><p>structures periodic along only some axes are padded with vacuum on the others.</p></li>
+</ul>
+</li>
+<li><p><strong>Defaults</strong> (<code class="docutils literal notranslate"><span class="pre">control.in</span></code>):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">relativistic</span> <span class="pre">atomic_zora</span> <span class="pre">scalar</span></code>, <code class="docutils literal notranslate"><span class="pre">spin</span> <span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">occupation_type</span> <span class="pre">gaussian</span> <span class="pre">0.01</span></code>, <code class="docutils literal notranslate"><span class="pre">sc_accuracy_rho</span> <span class="pre">1e-6</span></code>;</p></li>
+<li><p>forces always, and the stress for periodic cells, all from one SCF.</p></li>
+</ul>
+<p>Any other <code class="docutils literal notranslate"><span class="pre">control.in</span></code> keyword can go in <code class="docutils literal notranslate"><span class="pre">aims_kwargs</span></code>; <code class="docutils literal notranslate"><span class="pre">xc:</span> <span class="pre">&quot;hse06</span> <span class="pre">0.11&quot;</span></code> also needs <code class="docutils literal notranslate"><span class="pre">hse_unit:</span> <span class="pre">&quot;bohr-1&quot;</span></code>.</p>
+</li>
+<li><p><strong>Rejected at start-up</strong>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">k_grid</span></code>/<code class="docutils literal notranslate"><span class="pre">kpts</span></code> (one grid can’t fit cells of different sizes: use <code class="docutils literal notranslate"><span class="pre">k_spacing</span></code> or <code class="docutils literal notranslate"><span class="pre">k_grid_density</span></code>; non-periodic axes of a slab get one k-point);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">species_dir</span></code> (it comes from the profile);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plus_u</span></code> (ASE can’t write it).</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ulimit</span> <span class="pre">-s</span> <span class="pre">unlimited</span></code></strong> in <code class="docutils literal notranslate"><span class="pre">pre_cmds</span></code>: FHI-aims crashes on a small stack. <code class="docutils literal notranslate"><span class="pre">alomancy</span> <span class="pre">add-hpc</span></code> adds it for you, and ALomancy warns at start-up if it’s missing.</p></li>
+</ul>
 </section>
 <section id="adding-a-new-backend">
 <h2>Adding a New Backend<a class="headerlink" href="#adding-a-new-backend" title="Link to this heading"></a></h2>
 <p>Users never pick a workflow class in Python — <code class="docutils literal notranslate"><span class="pre">ALomancy(config)</span></code> builds the skeleton named by <code class="docutils literal notranslate"><span class="pre">general.al_workflow</span></code> (new skeletons: see <code class="docutils literal notranslate"><span class="pre">writing_a_workflow.md</span></code>), and each pluggable category (<code class="docutils literal notranslate"><span class="pre">mlip_trainer</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generator</span></code>, <code class="docutils literal notranslate"><span class="pre">dft_evaluator</span></code>, <code class="docutils literal notranslate"><span class="pre">initialiser</span></code>) is a module registered against a name in <code class="docutils literal notranslate"><span class="pre">src/alomancy/registry.py</span></code>, resolved lazily from config at runtime (<code class="docutils literal notranslate"><span class="pre">training.trainer</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generation.generator</span></code>, <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.evaluator</span></code>).</p>
-<p>Adding a new backend means writing a new module that implements the category’s expected entry points — typically <code class="docutils literal notranslate"><span class="pre">output_paths(config,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">name,</span> <span class="pre">...)</span></code> and <code class="docutils literal notranslate"><span class="pre">read_existing_result(config,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">name,</span> <span class="pre">...)</span></code> for the skeleton’s restart mechanism, plus the category-specific worker function (<code class="docutils literal notranslate"><span class="pre">train</span></code>, <code class="docutils literal notranslate"><span class="pre">generate</span></code>, or <code class="docutils literal notranslate"><span class="pre">sp</span></code>/<code class="docutils literal notranslate"><span class="pre">go</span></code>) — and registering it in <code class="docutils literal notranslate"><span class="pre">registry.py</span></code>. See any existing module under <code class="docutils literal notranslate"><span class="pre">mlip/</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">mlip/mace/trainer.py</span></code>), <code class="docutils literal notranslate"><span class="pre">structure_generation/</span></code> (<code class="docutils literal notranslate"><span class="pre">structure_generation/md/md_wfl.py</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generation/ezga/generate_structures.py</span></code>), or <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation/dft/</span></code> (<code class="docutils literal notranslate"><span class="pre">run_qe.py</span></code>, <code class="docutils literal notranslate"><span class="pre">run_vasp.py</span></code>) for the pattern to follow.</p>
+<p>Adding a new backend means writing a new module that implements the category’s expected entry points — typically <code class="docutils literal notranslate"><span class="pre">output_paths(config,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">name,</span> <span class="pre">...)</span></code> and <code class="docutils literal notranslate"><span class="pre">read_existing_result(config,</span> <span class="pre">*,</span> <span class="pre">base_name,</span> <span class="pre">name,</span> <span class="pre">...)</span></code> for the skeleton’s restart mechanism, plus the category-specific worker function (<code class="docutils literal notranslate"><span class="pre">train</span></code>, <code class="docutils literal notranslate"><span class="pre">generate</span></code>, or <code class="docutils literal notranslate"><span class="pre">sp</span></code>/<code class="docutils literal notranslate"><span class="pre">go</span></code>) — and registering it in <code class="docutils literal notranslate"><span class="pre">registry.py</span></code>. See any existing module under <code class="docutils literal notranslate"><span class="pre">mlip/</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">mlip/mace/trainer.py</span></code>), <code class="docutils literal notranslate"><span class="pre">structure_generation/</span></code> (<code class="docutils literal notranslate"><span class="pre">structure_generation/md/md_wfl.py</span></code>, <code class="docutils literal notranslate"><span class="pre">structure_generation/ezga/generate_structures.py</span></code>), or <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation/dft/</span></code> (<code class="docutils literal notranslate"><span class="pre">run_qe.py</span></code>, <code class="docutils literal notranslate"><span class="pre">run_vasp.py</span></code>) and <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation/orca/</span></code> (<code class="docutils literal notranslate"><span class="pre">run_orca.py</span></code>) for the pattern to follow. A new evaluator’s checklist (periodicity, parallel model, level of theory, atom cap) is in <code class="docutils literal notranslate"><span class="pre">docs/architecture/high_accuracy_evaluation.md</span></code>.</p>
 </section>
 <section id="starting-from-existing-data">
 <h2>Starting From Existing Data<a class="headerlink" href="#starting-from-existing-data" title="Link to this heading"></a></h2>
@@ -585,7 +898,7 @@ database. <code class="docutils literal notranslate"><span class="pre">general.t
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">max_force</span></code> excludes structures whose largest per-atom force is at or above the value.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">formation_energy_per_atom</span></code> keeps only structures inside <code class="docutils literal notranslate"><span class="pre">[min,</span> <span class="pre">max]</span></code> (inclusive), measured against the database’s <code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code> energies: <code class="docutils literal notranslate"><span class="pre">(E</span> <span class="pre">−</span> <span class="pre">Σ</span> <span class="pre">E_isolated)</span> <span class="pre">/</span> <span class="pre">n_atoms</span></code>, the same definition as the parity plots. Structures containing an element without an <code class="docutils literal notranslate"><span class="pre">IsolatedAtom</span></code> energy are not energy-filtered, and a warning says so.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">exempt_config_types</span></code> lists config_types the whole filter skips (both criteria), for example the initialization’s dimers and stretched/compressed crystals, whose large forces are the short-range data MD needs. Exempt structures are counted in the filter’s log line, and removing an exemption filters them again in the next loop.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">exempt_config_types</span></code> lists config_types the whole filter skips (both criteria), for example the initialization’s dimers and stretched/compressed crystals, whose large forces are the short-range data MD needs. Exempt structures are counted in the filter’s log line, and removing an exemption filters them again in the next loop. <code class="docutils literal notranslate"><span class="pre">init_crystal</span></code> (the competing crystal phases, far above the ground state by design) is always exempt from the train filter, added to your list rather than replaced by it.</p></li>
 </ul>
 <p>Excluded structures are flagged (<code class="docutils literal notranslate"><span class="pre">is_quality_filtered</span></code>, with the reason in <code class="docutils literal notranslate"><span class="pre">quality_filter_reasons</span></code>) and left out of <code class="docutils literal notranslate"><span class="pre">train_set.xyz</span></code>/<code class="docutils literal notranslate"><span class="pre">test_set.xyz</span></code>, training and test metrics. The flags are recomputed every loop, so loosening or removing a filter brings them back.</p>
 <p>Separately, <code class="docutils literal notranslate"><span class="pre">high_accuracy_evaluation.force_ceiling</span></code> (default <code class="docutils literal notranslate"><span class="pre">100.0</span></code> eV/Å) controls how far AL-generated structures are relaxed before their DFT labels are kept: each is relaxed until its largest force is at most the ceiling. <code class="docutils literal notranslate"><span class="pre">null</span></code> means a single-point calculation with no relaxation. Initialization structures are not affected.</p>

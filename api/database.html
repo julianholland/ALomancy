@@ -63,6 +63,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_all_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_all_by_config_type_and_formula()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_config_type_and_formula()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.count_by_info"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.count_by_info()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.db_replaced"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.db_replaced()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.ensure_on_disk"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.ensure_on_disk()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#alomancy.database.global_database.GlobalDatabase.flag_as_duplicates"><code class="docutils literal notranslate"><span class="pre">GlobalDatabase.flag_as_duplicates()</span></code></a></li>
@@ -152,9 +153,15 @@ the same element’s isolated atom twice if two external datasets
 provide it.</p>
 </div></blockquote>
 <ul class="simple">
-<li><p>All other config_types (dimers, trimers, amorphous, al_loop_N):
-always added; use compute_initialization_needs() for count-based
-checking before generating new structures.</p></li>
+<li><p>Every structure carrying a dft_input_digest (all DFT results):
+skipped when a structure with the same digest, and the same
+place in its geometry optimisation (final result or starting
+frame), is already stored. A restart that reloads cached DFT
+results (e.g. the initialisation phase, re-entered while one of
+its needs can never be met) used to add them all again.</p></li>
+<li><p>All other structures: always added; use
+compute_initialization_needs() for count-based checking before
+generating new structures.</p></li>
 </ul>
 <p>REF_forces (Nx3 array) are serialised into atoms.info before adding
 because sage_lib only persists atoms.info, not atoms.arrays.</p>
@@ -245,6 +252,15 @@ when several config_types need to be queried at once.</p>
 <span class="sig-name descname"><span class="pre">count_by_config_type_and_formula</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.count_by_config_type_and_formula"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.count_by_config_type_and_formula" title="Link to this definition"></a></dt>
 <dd><p>Return {formula: count} for all structures with the given config_type.
 Used by compute_initialization_needs for per-element-combo checking.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="alomancy.database.global_database.GlobalDatabase.count_by_info">
+<span class="sig-name descname"><span class="pre">count_by_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/alomancy/database/global_database.html#GlobalDatabase.count_by_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#alomancy.database.global_database.GlobalDatabase.count_by_info" title="Link to this definition"></a></dt>
+<dd><p>{(chemical formula, str(metadata[key])): n} over the structures of
+<em>config_type</em>: counts that formula alone can’t tell apart (fcc and
+bcc Pt are both “Pt”), e.g. key “crystal_structure” for
+init_crystal.</p>
 </dd></dl>
 
 <dl class="py method">

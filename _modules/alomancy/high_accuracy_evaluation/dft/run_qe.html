@@ -86,14 +86,32 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.espresso</span><span class="w"> </span><span class="kn">import</span> <span class="n">Espresso</span><span class="p">,</span> <span class="n">EspressoProfile</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.high_accuracy_evaluation.level_of_theory</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RYDBERG_EV</span><span class="p">,</span>
+    <span class="n">LevelOfTheory</span><span class="p">,</span>
+    <span class="n">functional_rung</span><span class="p">,</span>
+    <span class="n">is_hartree_fock</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dft_utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_build_srun_command</span><span class="p">,</span>
     <span class="n">_run_go</span><span class="p">,</span>
     <span class="n">_run_sp</span><span class="p">,</span>
-    <span class="n">generate_kpts</span><span class="p">,</span>
+    <span class="n">kpoint_grid</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="c1"># The longest remote job output directory QE can work in (registry entry</span>
+<span class="c1"># point max_output_dir_len); None: no limit is checked. Only VASP has the</span>
+<span class="c1"># short Fortran path buffer (run_vasp.MAX_OUTPUT_DIR_LEN).</span>
+<span class="n">MAX_OUTPUT_DIR_LEN</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="c1"># Registry entry points: QE handles periodic and non-periodic cells.</span>
+<span class="n">SUPPORTS_PERIODIC</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="n">SUPPORTS_NON_PERIODIC</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="c1"># k-point spacing (1/Angstrom, as generate_kpts takes it).</span>
+<span class="n">KSPACING</span> <span class="o">=</span> <span class="mf">0.15</span>
 
 
 <div class="viewcode-block" id="find_optimal_npool">
@@ -234,7 +252,38 @@
 <span class="sd">    the input_data defaults shown (control.calculation itself does vary by</span>
 <span class="sd">    scf/relax, but that distinction isn't relevant to a settings summary).</span>
 <span class="sd">    """</span>
-    <span class="k">return</span> <span class="n">get_qe_input_data</span><span class="p">(</span><span class="s2">"scf"</span><span class="p">,</span> <span class="n">qe_kwargs</span><span class="p">)</span></div>
+    <span class="n">k_spacing</span><span class="p">,</span> <span class="n">namelists</span> <span class="o">=</span> <span class="n">split_k_spacing</span><span class="p">(</span><span class="n">qe_kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="o">**</span><span class="n">get_qe_input_data</span><span class="p">(</span><span class="s2">"scf"</span><span class="p">,</span> <span class="n">namelists</span><span class="p">),</span> <span class="s2">"k_spacing"</span><span class="p">:</span> <span class="n">k_spacing</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="split_k_spacing">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.split_k_spacing">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">split_k_spacing</span><span class="p">(</span><span class="n">qe_kwargs</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""(k-point spacing, the namelists): qe_kwargs.k_spacing (1/Angstrom, 2</span>
+<span class="sd">    pi included, as VASP's KSPACING) overrides KSPACING and is not a pw.x</span>
+<span class="sd">    namelist, so it is taken out before the namelists are merged."""</span>
+    <span class="n">namelists</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">qe_kwargs</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">k_spacing</span> <span class="o">=</span> <span class="n">namelists</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"k_spacing"</span><span class="p">,</span> <span class="n">KSPACING</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">k_spacing</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">k_spacing</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"high_accuracy_evaluation.qe_kwargs.k_spacing must be a positive "</span>
+            <span class="sa">f</span><span class="s2">"number (1/Angstrom), got </span><span class="si">{</span><span class="n">k_spacing</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">k_spacing</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"high_accuracy_evaluation.qe_kwargs.k_spacing must be positive, got "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">k_spacing</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">k_spacing</span><span class="p">),</span> <span class="n">namelists</span></div>
+
+
+
+<div class="viewcode-block" id="validate_kwargs">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.validate_kwargs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_kwargs</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">hpc</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: ARG001</span>
+<span class="w">    </span><span class="sd">"""Construction-time check: qe_kwargs.k_spacing valid when set."""</span>
+    <span class="n">split_k_spacing</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"qe_kwargs"</span><span class="p">))</span></div>
 
 
 
@@ -243,7 +292,13 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">create_qe_calc_object</span><span class="p">(</span>
     <span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Espresso</span><span class="p">:</span>
-    <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">generate_kpts</span><span class="p">(</span><span class="n">cell</span><span class="o">=</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="n">periodic_3d</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kspacing</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">"""The k-grid comes from the structure's own pbc at qe_kwargs.k_spacing</span>
+<span class="sd">    (default KSPACING): non-periodic axes get one k-point, so an isolated</span>
+<span class="sd">    atom or molecule runs at Gamma only."""</span>
+    <span class="n">k_spacing</span><span class="p">,</span> <span class="n">namelists</span> <span class="o">=</span> <span class="n">split_k_spacing</span><span class="p">(</span>
+        <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"qe_input_kwargs"</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">kpoint_grid</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">k_spacing</span><span class="p">)</span>
     <span class="n">npool</span> <span class="o">=</span> <span class="n">find_optimal_npool</span><span class="p">(</span>
         <span class="n">total_kpoints</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">)),</span>
         <span class="n">ranks_per_system</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"node_info"</span><span class="p">][</span>
@@ -258,9 +313,7 @@
             <span class="n">pwx_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"pwx_path"</span><span class="p">],</span>
             <span class="n">pp_path</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"pp_path"</span><span class="p">],</span>
         <span class="p">),</span>
-        <span class="n">input_data</span><span class="o">=</span><span class="n">get_qe_input_data</span><span class="p">(</span>
-            <span class="s2">"scf"</span><span class="p">,</span> <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"qe_input_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
-        <span class="p">),</span>
+        <span class="n">input_data</span><span class="o">=</span><span class="n">get_qe_input_data</span><span class="p">(</span><span class="s2">"scf"</span><span class="p">,</span> <span class="n">namelists</span><span class="p">),</span>
         <span class="n">kpts</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">),</span>
         <span class="n">pseudopotentials</span><span class="o">=</span><span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">][</span><span class="s2">"pseudo_dict"</span><span class="p">],</span>
         <span class="n">directory</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
@@ -294,6 +347,118 @@
         <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
         <span class="n">create_qe_calc_object</span><span class="p">,</span>
         <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">"qe_opt"</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="max_num_of_atoms">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.max_num_of_atoms">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">max_num_of_atoms</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: ARG001</span>
+<span class="w">    </span><span class="sd">"""Registry entry point: QE has no size cap."""</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># system.vdw_corr spellings -&gt; dispersion (dftd3_version picks the D3 damping).</span>
+<span class="n">_QE_VDW_CORR</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"grimme-d2"</span><span class="p">:</span> <span class="s2">"D2"</span><span class="p">,</span>
+    <span class="s2">"dft-d"</span><span class="p">:</span> <span class="s2">"D2"</span><span class="p">,</span>
+    <span class="s2">"d2"</span><span class="p">:</span> <span class="s2">"D2"</span><span class="p">,</span>
+    <span class="s2">"ts"</span><span class="p">:</span> <span class="s2">"TS"</span><span class="p">,</span>
+    <span class="s2">"ts-vdw"</span><span class="p">:</span> <span class="s2">"TS"</span><span class="p">,</span>
+    <span class="s2">"tkatchenko-scheffler"</span><span class="p">:</span> <span class="s2">"TS"</span><span class="p">,</span>
+    <span class="s2">"mbd"</span><span class="p">:</span> <span class="s2">"MBD"</span><span class="p">,</span>
+    <span class="s2">"mbd_vdw"</span><span class="p">:</span> <span class="s2">"MBD"</span><span class="p">,</span>
+    <span class="s2">"many-body dispersion"</span><span class="p">:</span> <span class="s2">"MBD"</span><span class="p">,</span>
+    <span class="s2">"xdm"</span><span class="p">:</span> <span class="s2">"XDM"</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">_QE_D3_VERSION</span> <span class="o">=</span> <span class="p">{</span><span class="mi">2</span><span class="p">:</span> <span class="s2">"D2"</span><span class="p">,</span> <span class="mi">3</span><span class="p">:</span> <span class="s2">"D3(0)"</span><span class="p">,</span> <span class="mi">4</span><span class="p">:</span> <span class="s2">"D3(BJ)"</span><span class="p">,</span> <span class="mi">5</span><span class="p">:</span> <span class="s2">"D3M(0)"</span><span class="p">,</span> <span class="mi">6</span><span class="p">:</span> <span class="s2">"D3M(BJ)"</span><span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_qe_core_treatment</span><span class="p">(</span><span class="n">pseudo_dict</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""From the pseudopotential file names, when they say: SSSP/pslibrary</span>
+<span class="sd">    names carry paw / rrkjus / uspp / oncv / nc."""</span>
+    <span class="n">kinds</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">pseudo_dict</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">lower</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="s2">"paw"</span> <span class="ow">in</span> <span class="n">lower</span><span class="p">:</span>
+            <span class="n">kinds</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"paw"</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">any</span><span class="p">(</span><span class="n">tag</span> <span class="ow">in</span> <span class="n">lower</span> <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"rrkjus"</span><span class="p">,</span> <span class="s2">"uspp"</span><span class="p">,</span> <span class="s2">"gbrv"</span><span class="p">,</span> <span class="s2">".us."</span><span class="p">,</span> <span class="s2">"_us"</span><span class="p">)):</span>
+            <span class="n">kinds</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"ultrasoft"</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">any</span><span class="p">(</span><span class="n">tag</span> <span class="ow">in</span> <span class="n">lower</span> <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"oncv"</span><span class="p">,</span> <span class="s2">"sg15"</span><span class="p">,</span> <span class="s2">"pseudodojo"</span><span class="p">,</span> <span class="s2">".nc."</span><span class="p">,</span> <span class="s2">"_nc"</span><span class="p">)):</span>
+            <span class="n">kinds</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">"norm_conserving"</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">kinds</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">kinds</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">kinds</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">"mixed"</span>
+
+
+<div class="viewcode-block" id="level_of_theory">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_qe.level_of_theory">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">level_of_theory</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">hpc</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LevelOfTheory</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Registry entry point (high_accuracy_evaluation/level_of_theory.py),</span>
+<span class="sd">    from the effective pw.x namelists. Without system.input_dft QE takes</span>
+<span class="sd">    the functional from the pseudopotentials: method left unspecified."""</span>
+    <span class="n">k_spacing</span><span class="p">,</span> <span class="n">namelists</span> <span class="o">=</span> <span class="n">split_k_spacing</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"qe_kwargs"</span><span class="p">))</span>
+    <span class="n">input_data</span> <span class="o">=</span> <span class="n">get_qe_input_data</span><span class="p">(</span><span class="s2">"scf"</span><span class="p">,</span> <span class="n">namelists</span><span class="p">)</span>
+    <span class="n">system</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">input_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="n">electrons</span> <span class="o">=</span> <span class="n">input_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"electrons"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">input_dft</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"input_dft"</span><span class="p">)</span>
+    <span class="n">method</span><span class="p">,</span> <span class="n">rung</span> <span class="o">=</span> <span class="n">functional_rung</span><span class="p">(</span><span class="n">input_dft</span><span class="p">)</span>
+    <span class="n">vdw_corr</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vdw_corr"</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">))</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">vdw_corr</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"grimme-d3"</span><span class="p">,</span> <span class="s2">"dft-d3"</span><span class="p">,</span> <span class="s2">"d3"</span><span class="p">):</span>
+        <span class="n">dispersion</span> <span class="o">=</span> <span class="n">_QE_D3_VERSION</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dftd3_version"</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span> <span class="s2">"D3"</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">vdw_corr</span> <span class="o">==</span> <span class="s2">"none"</span><span class="p">:</span>
+        <span class="n">dispersion</span> <span class="o">=</span> <span class="s2">"none"</span>
+        <span class="k">if</span> <span class="n">input_dft</span> <span class="ow">and</span> <span class="s2">"vdw"</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">input_dft</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+            <span class="n">dispersion</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"nonlocal (</span><span class="si">{</span><span class="n">input_dft</span><span class="si">}</span><span class="s2">)"</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">dispersion</span> <span class="o">=</span> <span class="n">_QE_VDW_CORR</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">vdw_corr</span><span class="p">,</span> <span class="n">vdw_corr</span><span class="p">)</span>
+    <span class="n">hubbard</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">"hubbard_"</span><span class="p">,</span> <span class="s2">"lda_plus_u"</span><span class="p">))</span>
+    <span class="p">}</span>
+    <span class="n">pseudo_dict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">((</span><span class="n">hpc</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pseudo_dict"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="k">if</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"noncolin"</span><span class="p">):</span>
+        <span class="n">spin</span> <span class="o">=</span> <span class="s2">"noncollinear"</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">spin</span> <span class="o">=</span> <span class="s2">"collinear"</span> <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nspin"</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="s2">"restricted"</span>
+    <span class="n">smearing</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"occupations"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"smearing"</span><span class="p">:</span>
+        <span class="n">smearing</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"scheme"</span><span class="p">:</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"smearing"</span><span class="p">,</span> <span class="s2">"gaussian"</span><span class="p">),</span>
+            <span class="s2">"width_eV"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"degauss"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span> <span class="o">*</span> <span class="n">RYDBERG_EV</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">ecutwfc</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ecutwfc"</span><span class="p">)</span>
+    <span class="n">ecutrho</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ecutrho"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">LevelOfTheory</span><span class="p">(</span>
+        <span class="n">code</span><span class="o">=</span><span class="s2">"qe"</span><span class="p">,</span>
+        <span class="n">method_class</span><span class="o">=</span><span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">input_dft</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="s2">"mean_field_hf"</span>
+            <span class="k">if</span> <span class="n">is_hartree_fock</span><span class="p">(</span><span class="n">input_dft</span><span class="p">)</span>
+            <span class="k">else</span> <span class="s2">"dft"</span>
+        <span class="p">),</span>
+        <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+        <span class="n">rung</span><span class="o">=</span><span class="n">rung</span><span class="p">,</span>
+        <span class="n">dispersion</span><span class="o">=</span><span class="n">dispersion</span><span class="p">,</span>
+        <span class="n">hubbard_u</span><span class="o">=</span><span class="n">hubbard</span><span class="p">,</span>
+        <span class="n">basis_type</span><span class="o">=</span><span class="s2">"plane_wave"</span><span class="p">,</span>
+        <span class="n">cutoff_eV</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">ecutwfc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">ecutwfc</span><span class="p">)</span> <span class="o">*</span> <span class="n">RYDBERG_EV</span><span class="p">,</span>
+        <span class="n">density_cutoff_eV</span><span class="o">=</span><span class="p">(</span><span class="kc">None</span> <span class="k">if</span> <span class="n">ecutrho</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">ecutrho</span><span class="p">)</span> <span class="o">*</span> <span class="n">RYDBERG_EV</span><span class="p">),</span>
+        <span class="n">core_treatment</span><span class="o">=</span><span class="n">_qe_core_treatment</span><span class="p">(</span><span class="n">pseudo_dict</span><span class="p">)</span> <span class="k">if</span> <span class="n">pseudo_dict</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">pseudopotentials</span><span class="o">=</span><span class="n">pseudo_dict</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">relativity</span><span class="o">=</span><span class="s2">"spin_orbit"</span> <span class="k">if</span> <span class="n">system</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lspinorb"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"in_pseudopotential"</span><span class="p">,</span>
+        <span class="n">spin_treatment</span><span class="o">=</span><span class="n">spin</span><span class="p">,</span>
+        <span class="n">solvation</span><span class="o">=</span><span class="s2">"none"</span><span class="p">,</span>
+        <span class="n">k_spacing</span><span class="o">=</span><span class="n">k_spacing</span><span class="p">,</span>
+        <span class="n">smearing</span><span class="o">=</span><span class="n">smearing</span><span class="p">,</span>
+        <span class="n">scf_threshold</span><span class="o">=</span><span class="p">(</span>
+            <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">electrons</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"conv_thr"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">electrons</span><span class="p">[</span><span class="s2">"conv_thr"</span><span class="p">])</span> <span class="o">*</span> <span class="n">RYDBERG_EV</span>
+        <span class="p">),</span>
     <span class="p">)</span></div>
 
 

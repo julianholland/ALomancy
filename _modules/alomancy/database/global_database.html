@@ -202,6 +202,22 @@
 
 
 
+<span class="c1"># atoms.info key the DFT orchestrator stamps on every result: the digest</span>
+<span class="c1"># of the structure as it was sent to DFT</span>
+<span class="c1"># (high_accuracy_calc_interface.DFT_INPUT_DIGEST_KEY).</span>
+<span class="n">_DFT_INPUT_DIGEST_KEY</span> <span class="o">=</span> <span class="s2">"dft_input_digest"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_digest_key</span><span class="p">(</span><span class="n">info</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""The identity of one DFT result: its input digest, and whether it is</span>
+<span class="sd">    a geometry optimisation's starting frame (which shares the final</span>
+<span class="sd">    result's digest). None for structures not labelled by ALomancy."""</span>
+    <span class="n">digest</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_DFT_INPUT_DIGEST_KEY</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">digest</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">digest</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"geometry_initial"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+
+
 <div class="viewcode-block" id="GlobalDatabase">
 <a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">GlobalDatabase</span><span class="p">:</span>
@@ -429,9 +445,15 @@
 <span class="sd">          init_MP): exact dedup by (config_type, formula) — prevents adding</span>
 <span class="sd">          the same element's isolated atom twice if two external datasets</span>
 <span class="sd">          provide it.</span>
-<span class="sd">        - All other config_types (dimers, trimers, amorphous, al_loop_N):</span>
-<span class="sd">          always added; use compute_initialization_needs() for count-based</span>
-<span class="sd">          checking before generating new structures.</span>
+<span class="sd">        - Every structure carrying a dft_input_digest (all DFT results):</span>
+<span class="sd">          skipped when a structure with the same digest, and the same</span>
+<span class="sd">          place in its geometry optimisation (final result or starting</span>
+<span class="sd">          frame), is already stored. A restart that reloads cached DFT</span>
+<span class="sd">          results (e.g. the initialisation phase, re-entered while one of</span>
+<span class="sd">          its needs can never be met) used to add them all again.</span>
+<span class="sd">        - All other structures: always added; use</span>
+<span class="sd">          compute_initialization_needs() for count-based checking before</span>
+<span class="sd">          generating new structures.</span>
 
 <span class="sd">        REF_forces (Nx3 array) are serialised into atoms.info before adding</span>
 <span class="sd">        because sage_lib only persists atoms.info, not atoms.arrays.</span>
@@ -446,6 +468,7 @@
             <span class="n">config_types_to_dedup</span> <span class="o">=</span> <span class="n">_DEFAULT_DEDUP_CONFIG_TYPES</span>
 
         <span class="n">existing</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_config_type_formula_set</span><span class="p">()</span> <span class="k">if</span> <span class="n">skip_duplicates</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">digests</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_digest_set</span><span class="p">()</span> <span class="k">if</span> <span class="n">skip_duplicates</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
         <span class="n">added</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="n">sr_list</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">atoms</span> <span class="ow">in</span> <span class="n">atoms_list</span><span class="p">:</span>
@@ -460,6 +483,9 @@
                 <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">existing</span>
             <span class="p">):</span>
                 <span class="k">continue</span>
+            <span class="n">digest_key</span> <span class="o">=</span> <span class="n">_digest_key</span><span class="p">(</span><span class="n">atoms</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">skip_duplicates</span> <span class="ow">and</span> <span class="n">digest_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">digest_key</span> <span class="ow">in</span> <span class="n">digests</span><span class="p">:</span>
+                <span class="k">continue</span>
             <span class="n">storage_ready_apm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_for_storage</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">storage_ready_apm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -467,6 +493,8 @@
                     <span class="n">storage_ready_apm</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"split"</span><span class="p">]</span> <span class="o">=</span> <span class="n">split</span>
                 <span class="n">sr_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">storage_ready_apm</span><span class="p">)</span>
                 <span class="n">existing</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">digest_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">digests</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">digest_key</span><span class="p">)</span>
                 <span class="n">added</span> <span class="o">+=</span> <span class="mi">1</span>
 
         <span class="n">start_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">N</span>
@@ -776,10 +804,19 @@
         <span class="p">}</span>
         <span class="n">points</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"train"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"test"</span><span class="p">:</span> <span class="p">[]}</span>
         <span class="n">found</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">energy_only</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
             <span class="n">apm</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span>
             <span class="k">if</span> <span class="n">energy_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">forces_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="p">:</span>
+                <span class="c1"># An energy with no forces was not written by</span>
+                <span class="c1"># store_model_predictions (which writes both): it was</span>
+                <span class="c1"># inherited from the structure an MD run started from,</span>
+                <span class="c1"># before clean_structures dropped such keys, and describes</span>
+                <span class="c1"># that seed's geometry, not this one's.</span>
+                <span class="n">energy_only</span> <span class="o">+=</span> <span class="mi">1</span>
                 <span class="k">continue</span>
             <span class="n">found</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="n">split</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"split"</span><span class="p">,</span> <span class="s2">"train"</span><span class="p">)</span>
@@ -804,6 +841,16 @@
             <span class="p">}</span>
             <span class="n">points</span><span class="p">[</span><span class="n">bucket_key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">point</span><span class="p">)</span>
 
+        <span class="k">if</span> <span class="n">energy_only</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">"Parity data for loop </span><span class="si">%d</span><span class="s2"> fit </span><span class="si">%d</span><span class="s2">: skipped </span><span class="si">%d</span><span class="s2"> structure(s) "</span>
+                <span class="s2">"whose </span><span class="si">%s</span><span class="s2"> has no matching forces (inherited from an MD seed, "</span>
+                <span class="s2">"not predicted on this geometry)."</span><span class="p">,</span>
+                <span class="n">loop_idx</span><span class="p">,</span>
+                <span class="n">fit_idx</span><span class="p">,</span>
+                <span class="n">energy_only</span><span class="p">,</span>
+                <span class="n">energy_key</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">found</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
 
@@ -1111,6 +1158,34 @@
     <span class="c1"># ------------------------------------------------------------------</span>
     <span class="c1"># Internal helpers</span>
     <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="GlobalDatabase.count_by_info">
+<a class="viewcode-back" href="../../../api/database.html#alomancy.database.global_database.GlobalDatabase.count_by_info">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count_by_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""{(chemical formula, str(metadata[key])): n} over the structures of</span>
+<span class="sd">        *config_type*: counts that formula alone can't tell apart (fcc and</span>
+<span class="sd">        bcc Pt are both "Pt"), e.g. key "crystal_structure" for</span>
+<span class="sd">        init_crystal."""</span>
+        <span class="n">counts</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
+            <span class="n">apm</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span>
+            <span class="n">meta</span> <span class="o">=</span> <span class="n">apm</span><span class="o">.</span><span class="n">metadata</span>
+            <span class="k">if</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"config_type"</span><span class="p">)</span> <span class="o">!=</span> <span class="n">config_type</span> <span class="ow">or</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">meta</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">formula</span> <span class="o">=</span> <span class="n">Atoms</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">apm</span><span class="o">.</span><span class="n">atomLabelsList</span><span class="p">))</span><span class="o">.</span><span class="n">get_chemical_formula</span><span class="p">()</span>
+            <span class="n">k</span> <span class="o">=</span> <span class="p">(</span><span class="n">formula</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="p">[</span><span class="n">key</span><span class="p">]))</span>
+            <span class="n">counts</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="n">counts</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_digest_set</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""_digest_key of every stored structure that has one."""</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">partition</span><span class="o">.</span><span class="n">list_containers</span><span class="p">():</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="n">_digest_key</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">AtomPositionManager</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">keys</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">keys</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_config_type_formula_set</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">"""Return set of (config_type, formula) pairs already in the DB."""</span>

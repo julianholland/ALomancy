@@ -87,11 +87,16 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.vasp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vasp</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.high_accuracy_evaluation.level_of_theory</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">LevelOfTheory</span><span class="p">,</span>
+    <span class="n">functional_rung</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">alomancy.utils.dft_utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_build_srun_command</span><span class="p">,</span>
     <span class="n">_run_go</span><span class="p">,</span>
     <span class="n">_run_sp</span><span class="p">,</span>
-    <span class="n">generate_kpts</span><span class="p">,</span>
+    <span class="n">kpoint_grid</span><span class="p">,</span>
+    <span class="n">pad_non_periodic_axes</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -102,11 +107,27 @@
 <span class="c1"># padding before they reach VASP or their periodic images will interact.</span>
 <span class="n">_MIN_VACUUM_PER_SIDE</span> <span class="o">=</span> <span class="mf">10.0</span>  <span class="c1"># Angstrom</span>
 
+<span class="c1"># The longest remote job output directory VASP can work in (registry entry</span>
+<span class="c1"># point max_output_dir_len, read by submitters.check_remote_path_length).</span>
+<span class="c1"># VASP keeps file paths in a ~256-character Fortran buffer: a run directory</span>
+<span class="c1"># of 255 characters left no room for the filename, so VASP tried to open the</span>
+<span class="c1"># directory itself ("forrtl: severe (30): open failure ... Is a directory").</span>
+<span class="c1"># 240 leaves room for "/vasprun.xml" and similar.</span>
+<span class="n">MAX_OUTPUT_DIR_LEN</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mi">240</span>
+
+<span class="c1"># Registry entry points: VASP is periodic only, but takes non-periodic</span>
+<span class="c1"># structures by padding them with vacuum (_ensure_fully_periodic).</span>
+<span class="n">SUPPORTS_PERIODIC</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="n">SUPPORTS_NON_PERIODIC</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="c1"># k-point spacing (1/Angstrom, as generate_kpts takes it).</span>
+<span class="n">KSPACING</span> <span class="o">=</span> <span class="mf">0.15</span>
+
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_fully_periodic</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="n">Atoms</span><span class="p">,</span> <span class="n">vacuum</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_MIN_VACUUM_PER_SIDE</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">atoms</span><span class="o">.</span><span class="n">pbc</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">center</span><span class="p">(</span><span class="n">vacuum</span><span class="o">=</span><span class="n">vacuum</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
-        <span class="n">atoms</span><span class="o">.</span><span class="n">pbc</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="c1"># Pads only the non-periodic axes: centring along all three used to</span>
+    <span class="c1"># resize a slab's periodic in-plane cell too.</span>
+    <span class="n">pad_non_periodic_axes</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">vacuum</span><span class="o">=</span><span class="n">vacuum</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="create_vasp_command">
@@ -152,6 +173,61 @@
 
 
 
+<span class="c1"># vasp_kwargs keys about k-points: ALomancy builds the grid per structure.</span>
+<span class="n">_KPOINT_KEYS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"kspacing"</span><span class="p">,</span> <span class="s2">"kgamma"</span><span class="p">)</span>
+<span class="c1"># An explicit grid fits one cell only: raise (validate_kwargs).</span>
+<span class="n">_EXPLICIT_GRID_KEYS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"kpts"</span><span class="p">,</span> <span class="s2">"kpoints"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_truthy</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">"."</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"true"</span><span class="p">,</span> <span class="s2">"t"</span><span class="p">,</span> <span class="s2">"1"</span><span class="p">,</span> <span class="s2">"yes"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_vasp_kpoint_settings</span><span class="p">(</span><span class="n">vasp_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""(k-point spacing, Gamma-centred) from vasp_kwargs: KSPACING and</span>
+<span class="sd">    KGAMMA as VASP spells them, else KSPACING (module default) and the</span>
+<span class="sd">    ASE default (Monkhorst-Pack)."""</span>
+    <span class="n">lower</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="n">spacing</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">lower</span><span class="p">[</span><span class="s2">"kspacing"</span><span class="p">])</span> <span class="k">if</span> <span class="s2">"kspacing"</span> <span class="ow">in</span> <span class="n">lower</span> <span class="k">else</span> <span class="n">KSPACING</span>
+    <span class="n">gamma</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">_truthy</span><span class="p">(</span><span class="n">lower</span><span class="p">[</span><span class="s2">"kgamma"</span><span class="p">])</span>
+        <span class="k">if</span> <span class="s2">"kgamma"</span> <span class="ow">in</span> <span class="n">lower</span>
+        <span class="k">else</span> <span class="nb">bool</span><span class="p">(</span><span class="n">lower</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gamma"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">spacing</span><span class="p">,</span> <span class="n">gamma</span>
+
+
+<div class="viewcode-block" id="validate_kwargs">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.validate_kwargs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_kwargs</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">hpc</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: ARG001</span>
+<span class="w">    </span><span class="sd">"""Construction-time check: no explicit k-point grid (it fits one cell</span>
+<span class="sd">    only; set kspacing instead), and kspacing positive when set."""</span>
+    <span class="n">vasp_kwargs</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_kwargs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">vasp_kwargs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"high_accuracy_evaluation.vasp_kwargs must be a mapping, got "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">vasp_kwargs</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span>
+    <span class="n">explicit</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">vasp_kwargs</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">_EXPLICIT_GRID_KEYS</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">explicit</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"high_accuracy_evaluation.vasp_kwargs: </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">explicit</span><span class="p">)</span><span class="si">}</span><span class="s2"> can't "</span>
+            <span class="s2">"be set: ALomancy builds each structure's k-point grid from a "</span>
+            <span class="s2">"spacing (cells differ from structure to structure, and "</span>
+            <span class="s2">"non-periodic axes get one k-point). Set kspacing (1/Angstrom, as "</span>
+            <span class="s2">"VASP's KSPACING) instead, and kgamma: true for Gamma-centred grids."</span>
+        <span class="p">)</span>
+    <span class="n">spacing</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_vasp_kpoint_settings</span><span class="p">(</span><span class="n">vasp_kwargs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">spacing</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"high_accuracy_evaluation.vasp_kwargs.kspacing must be positive, "</span>
+            <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="n">spacing</span><span class="si">!r}</span><span class="s2">."</span>
+        <span class="p">)</span></div>
+
+
+
 <div class="viewcode-block" id="create_vasp_calc_object">
 <a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.create_vasp_calc_object">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">create_vasp_calc_object</span><span class="p">(</span>
@@ -160,16 +236,22 @@
     <span class="n">out_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">is_relaxation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Vasp</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Create an ASE Vasp calculator — analogous to create_qe_calc_object."""</span>
+<span class="w">    </span><span class="sd">"""Create an ASE Vasp calculator — analogous to create_qe_calc_object.</span>
+<span class="sd">    The k-grid comes from the structure's own pbc, before padding (a slab</span>
+<span class="sd">    gets n x m x 1, a padded molecule Gamma only), at vasp_kwargs.kspacing</span>
+<span class="sd">    when set (removed from the INCAR: ALomancy writes KPOINTS, which VASP</span>
+<span class="sd">    reads instead), else KSPACING; kgamma: true makes it Gamma-centred."""</span>
+    <span class="n">user_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_input_kwargs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">k_spacing</span><span class="p">,</span> <span class="n">gamma</span> <span class="o">=</span> <span class="n">_vasp_kpoint_settings</span><span class="p">(</span><span class="n">user_kwargs</span><span class="p">)</span>
+    <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">kpoint_grid</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">k_spacing</span><span class="p">)</span>
     <span class="n">_ensure_fully_periodic</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
-    <span class="n">kpt_arr</span> <span class="o">=</span> <span class="n">generate_kpts</span><span class="p">(</span><span class="n">cell</span><span class="o">=</span><span class="n">atoms</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="n">periodic_3d</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">kspacing</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
     <span class="n">hpc</span> <span class="o">=</span> <span class="n">high_accuracy_eval_job_dict</span><span class="p">[</span><span class="s2">"hpc"</span><span class="p">]</span>
     <span class="k">if</span> <span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pp_path"</span><span class="p">):</span>
         <span class="c1"># ASE's Vasp calculator reads POTCAR locations from this env var, not</span>
         <span class="c1"># from a constructor kwarg — must be set before Vasp(...) is built.</span>
         <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"VASP_PP_PATH"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">"pp_path"</span><span class="p">]</span>
     <span class="n">vasp_kwargs</span> <span class="o">=</span> <span class="n">get_vasp_input_kwargs</span><span class="p">(</span>
-        <span class="n">high_accuracy_eval_job_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_input_kwargs"</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">user_kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_KPOINT_KEYS</span><span class="p">}</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">is_relaxation</span><span class="p">:</span>
         <span class="n">vasp_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">"nsw"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"ibrion"</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">})</span>
@@ -182,6 +264,7 @@
         <span class="n">command</span><span class="o">=</span><span class="n">create_vasp_command</span><span class="p">(</span><span class="n">hpc</span><span class="p">[</span><span class="s2">"node_info"</span><span class="p">],</span> <span class="n">hpc</span><span class="p">[</span><span class="s2">"vasp_path"</span><span class="p">]),</span>
         <span class="n">directory</span><span class="o">=</span><span class="n">out_dir</span><span class="p">,</span>
         <span class="n">kpts</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">kpt_arr</span><span class="p">),</span>
+        <span class="n">gamma</span><span class="o">=</span><span class="n">gamma</span><span class="p">,</span>
         <span class="n">setups</span><span class="o">=</span><span class="n">hpc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pseudo_dict"</span><span class="p">,</span> <span class="p">{}),</span>
         <span class="o">**</span><span class="n">vasp_kwargs</span><span class="p">,</span>
     <span class="p">)</span></div>
@@ -215,6 +298,129 @@
         <span class="n">high_accuracy_eval_job_dict</span><span class="p">,</span>
         <span class="n">create_vasp_calc_go</span><span class="p">,</span>
         <span class="n">opt_prefix</span><span class="o">=</span><span class="s2">"vasp_opt"</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="max_num_of_atoms">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.max_num_of_atoms">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">max_num_of_atoms</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># noqa: ARG001</span>
+<span class="w">    </span><span class="sd">"""Registry entry point: VASP has no size cap."""</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># INCAR GGA tags -&gt; functional.</span>
+<span class="n">_VASP_GGA</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"PE"</span><span class="p">:</span> <span class="s2">"PBE"</span><span class="p">,</span>
+    <span class="s2">"PS"</span><span class="p">:</span> <span class="s2">"PBEsol"</span><span class="p">,</span>
+    <span class="s2">"RP"</span><span class="p">:</span> <span class="s2">"RPBE"</span><span class="p">,</span>
+    <span class="s2">"RE"</span><span class="p">:</span> <span class="s2">"revPBE"</span><span class="p">,</span>
+    <span class="s2">"91"</span><span class="p">:</span> <span class="s2">"PW91"</span><span class="p">,</span>
+    <span class="s2">"AM"</span><span class="p">:</span> <span class="s2">"AM05"</span><span class="p">,</span>
+    <span class="s2">"CA"</span><span class="p">:</span> <span class="s2">"LDA"</span><span class="p">,</span>
+    <span class="s2">"PZ"</span><span class="p">:</span> <span class="s2">"LDA"</span><span class="p">,</span>
+    <span class="s2">"BO"</span><span class="p">:</span> <span class="s2">"optB88"</span><span class="p">,</span>
+    <span class="s2">"MK"</span><span class="p">:</span> <span class="s2">"optB86b"</span><span class="p">,</span>
+    <span class="s2">"OR"</span><span class="p">:</span> <span class="s2">"optPBE"</span><span class="p">,</span>
+    <span class="s2">"ML"</span><span class="p">:</span> <span class="s2">"vdW-DF2"</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="c1"># IVDW -&gt; dispersion.</span>
+<span class="n">_VASP_IVDW</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="mi">0</span><span class="p">:</span> <span class="s2">"none"</span><span class="p">,</span>
+    <span class="mi">1</span><span class="p">:</span> <span class="s2">"D2"</span><span class="p">,</span>
+    <span class="mi">10</span><span class="p">:</span> <span class="s2">"D2"</span><span class="p">,</span>
+    <span class="mi">11</span><span class="p">:</span> <span class="s2">"D3(0)"</span><span class="p">,</span>
+    <span class="mi">12</span><span class="p">:</span> <span class="s2">"D3(BJ)"</span><span class="p">,</span>
+    <span class="mi">13</span><span class="p">:</span> <span class="s2">"D4"</span><span class="p">,</span>
+    <span class="mi">2</span><span class="p">:</span> <span class="s2">"TS"</span><span class="p">,</span>
+    <span class="mi">20</span><span class="p">:</span> <span class="s2">"TS"</span><span class="p">,</span>
+    <span class="mi">21</span><span class="p">:</span> <span class="s2">"TS (iterative Hirshfeld)"</span><span class="p">,</span>
+    <span class="mi">202</span><span class="p">:</span> <span class="s2">"MBD"</span><span class="p">,</span>
+    <span class="mi">263</span><span class="p">:</span> <span class="s2">"MBD (FI)"</span><span class="p">,</span>
+    <span class="mi">4</span><span class="p">:</span> <span class="s2">"dDsC"</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">_VASP_ISMEAR</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="o">-</span><span class="mi">5</span><span class="p">:</span> <span class="s2">"tetrahedron (Bloechl)"</span><span class="p">,</span>
+    <span class="o">-</span><span class="mi">4</span><span class="p">:</span> <span class="s2">"tetrahedron"</span><span class="p">,</span>
+    <span class="o">-</span><span class="mi">1</span><span class="p">:</span> <span class="s2">"fermi-dirac"</span><span class="p">,</span>
+    <span class="mi">0</span><span class="p">:</span> <span class="s2">"gaussian"</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_vasp_method</span><span class="p">(</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"xc"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"xc"</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lhfcalc"</span><span class="p">):</span>
+        <span class="n">screen</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hfscreen"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">screen</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">screen</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.2</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"HSE06"</span>
+        <span class="k">if</span> <span class="n">screen</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">screen</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.3</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"HSE03"</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">screen</span> <span class="ow">and</span> <span class="nb">float</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"aexx"</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))</span> <span class="o">==</span> <span class="mf">0.25</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"PBE0"</span>
+        <span class="k">return</span> <span class="kc">None</span>  <span class="c1"># a custom hybrid: unspecified</span>
+    <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metagga"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"metagga"</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gga"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_VASP_GGA</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"gga"</span><span class="p">])</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="nb">str</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"gga"</span><span class="p">]))</span>
+    <span class="c1"># Neither set: the functional of the POTCARs.</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"PBE"</span><span class="p">:</span> <span class="s2">"PBE"</span><span class="p">,</span> <span class="s2">"LDA"</span><span class="p">:</span> <span class="s2">"LDA"</span><span class="p">,</span> <span class="s2">"PW91"</span><span class="p">:</span> <span class="s2">"PW91"</span><span class="p">}</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="nb">str</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pp"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="level_of_theory">
+<a class="viewcode-back" href="../../../../api/high_accuracy_evaluation.html#alomancy.high_accuracy_evaluation.dft.run_vasp.level_of_theory">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">level_of_theory</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">hpc</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LevelOfTheory</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Registry entry point (high_accuracy_evaluation/level_of_theory.py),</span>
+<span class="sd">    from the effective INCAR settings."""</span>
+    <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">v</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">get_vasp_input_kwargs</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_kwargs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_KPOINT_KEYS</span>
+    <span class="p">}</span>
+    <span class="n">method</span><span class="p">,</span> <span class="n">rung</span> <span class="o">=</span> <span class="n">functional_rung</span><span class="p">(</span><span class="n">_vasp_method</span><span class="p">(</span><span class="n">kwargs</span><span class="p">))</span>
+    <span class="n">ivdw</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ivdw"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">dispersion</span> <span class="o">=</span> <span class="n">_VASP_IVDW</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ivdw</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"IVDW=</span><span class="si">{</span><span class="n">ivdw</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"luse_vdw"</span><span class="p">):</span>
+        <span class="n">dispersion</span> <span class="o">=</span> <span class="s2">"nonlocal (vdW-DF)"</span>
+    <span class="n">hubbard</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"ldautype"</span><span class="p">,</span> <span class="s2">"ldaul"</span><span class="p">,</span> <span class="s2">"ldauu"</span><span class="p">,</span> <span class="s2">"ldauj"</span><span class="p">)</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ldau"</span><span class="p">)</span>
+        <span class="k">else</span> <span class="p">{}</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lnoncollinear"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lsorbit"</span><span class="p">):</span>
+        <span class="n">spin</span> <span class="o">=</span> <span class="s2">"noncollinear"</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">spin</span> <span class="o">=</span> <span class="s2">"collinear"</span> <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ispin"</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="s2">"restricted"</span>
+    <span class="n">ismear</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ismear"</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">pseudopotentials</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"set"</span><span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pp"</span><span class="p">)}</span>
+    <span class="n">pseudopotentials</span><span class="o">.</span><span class="n">update</span><span class="p">((</span><span class="n">hpc</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pseudo_dict"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">numerical</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"prec"</span><span class="p">,</span> <span class="s2">"lreal"</span><span class="p">,</span> <span class="s2">"lasph"</span><span class="p">,</span> <span class="s2">"addgrid"</span><span class="p">)</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">kwargs</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">LevelOfTheory</span><span class="p">(</span>
+        <span class="n">code</span><span class="o">=</span><span class="s2">"vasp"</span><span class="p">,</span>
+        <span class="n">method_class</span><span class="o">=</span><span class="s2">"dft"</span> <span class="k">if</span> <span class="n">method</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+        <span class="n">rung</span><span class="o">=</span><span class="n">rung</span><span class="p">,</span>
+        <span class="n">dispersion</span><span class="o">=</span><span class="n">dispersion</span><span class="p">,</span>
+        <span class="n">hubbard_u</span><span class="o">=</span><span class="n">hubbard</span><span class="p">,</span>
+        <span class="n">basis_type</span><span class="o">=</span><span class="s2">"plane_wave"</span><span class="p">,</span>
+        <span class="n">cutoff_eV</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"encut"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"encut"</span><span class="p">]),</span>
+        <span class="n">core_treatment</span><span class="o">=</span><span class="s2">"paw"</span><span class="p">,</span>
+        <span class="n">pseudopotentials</span><span class="o">=</span><span class="n">pseudopotentials</span><span class="p">,</span>
+        <span class="n">relativity</span><span class="o">=</span><span class="s2">"spin_orbit"</span> <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lsorbit"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"in_pseudopotential"</span><span class="p">,</span>
+        <span class="n">spin_treatment</span><span class="o">=</span><span class="n">spin</span><span class="p">,</span>
+        <span class="n">solvation</span><span class="o">=</span><span class="s2">"VASPsol"</span> <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"lsol"</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"none"</span><span class="p">,</span>
+        <span class="n">k_spacing</span><span class="o">=</span><span class="n">_vasp_kpoint_settings</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"vasp_kwargs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="n">smearing</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">"scheme"</span><span class="p">:</span> <span class="n">_VASP_ISMEAR</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ismear</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"methfessel-paxton </span><span class="si">{</span><span class="n">ismear</span><span class="si">}</span><span class="s2">"</span><span class="p">),</span>
+            <span class="s2">"width_eV"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sigma"</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)),</span>
+        <span class="p">},</span>
+        <span class="n">scf_threshold</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ediff"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"ediff"</span><span class="p">]),</span>
+        <span class="n">numerical_settings</span><span class="o">=</span><span class="n">numerical</span><span class="p">,</span>
     <span class="p">)</span></div>
 
 
