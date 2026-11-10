@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Common crystal structures for each metal** (`initialization.crystal_structures_kwargs`, config_type `init_crystal`, on by default). Every metal in `general.elements` is built as fcc, bcc, hcp, simple cubic, diamond, A15 and ω primitive cells and labelled single-point, so the model sees the competing phases.
+  - Lattice constants: ASE's reference crystal keeps its lattice constant, and the other structures get the same volume per atom; `lattice_constants` and `volume_per_atom` override per element. The start-up log lists each lattice and its source.
+  - Always kept by the train filter. Not test targets unless listed in `target_config_types`.
+  - Only new runs and runs still in initialisation are affected.
+- **Checks for too few test structures.** Before any initialisation DFT, ALomancy counts the structures that can go to the test set (target types and their stretched, compressed or rattled copies, after dropping blown-up cells). It stops below 2 and warns below 5 (`few_target_structures`), suggesting what to add. Training also stops on the driver when the test set is empty, instead of every fit failing on the node.
+- **k-point density settings for every evaluator**: `qe_kwargs.k_spacing`, `vasp_kwargs.kspacing` (with `kgamma`), and `aims_kwargs.k_spacing` or `k_grid_density` override the default 0.15 Å⁻¹ per structure. An explicit grid (`kpts`, `k_grid`) stops the run at start-up. Remote reinstall needed.
+- `initialization.dimer_kwargs.distance_range` / `trimer_kwargs.distance_range`.
+- The run checks at start-up that every HPC profile's ExPyRe system exists. It says when the run's own `.expyre/config.json` is out of date with `~/.alomancy/expyre_config.json`.
+- **FHI-aims as an evaluator** (`high_accuracy_evaluation.evaluator: "aims"`, settings in `aims_kwargs`). Remote reinstall needed (`alomancy upgrade-hpc`) before using it.
+  - All-electron: no pseudopotentials. Basis and grids come from the species defaults, `aims_kwargs.species_defaults` (default `intermediate`) under the profile's `aims_species_dir`. The profile also needs `aims_path`; `alomancy add-hpc` asks for both and adds `ulimit -s unlimited` to `pre_cmds`.
+  - Defaults: PBE, `relativistic atomic_zora scalar`, `spin none`, Gaussian smearing of 0.01 eV. Any other `control.in` keyword can go in `aims_kwargs`.
+  - Periodic cells get a k-grid per structure from `aims_kwargs.k_spacing` (default 0.15 Å⁻¹). Clusters and isolated atoms run without a cell. Structures periodic along only some axes are padded with vacuum. Forces and stress come from one SCF.
+  - `k_grid`/`kpts`, `species_dir`, `plus_u`, and `xc hse06` without `hse_unit` stop the run at start-up.
+- **ORCA as an evaluator** (`high_accuracy_evaluation.evaluator: "orca"`, settings in `orca_kwargs`). Remote reinstall needed (`alomancy upgrade-hpc`) before using it.
+  - ORCA has no periodic boundary conditions: structures with `pbc` true raise before submission, and starting from a database with periodic structures raises at start-up.
+  - Parallelism is written into the ORCA input (`%pal nprocs`, `%maxcore`), from the HPC profile's `node_info`. A value you set (`orca_kwargs.nprocs`/`maxcore`, a `%pal`/`%maxcore` block or `PALn`) wins, and stops the run at start-up if it doesn't fit one node. The profile needs `orca_path` (`alomancy add-hpc` asks for it).
+  - Post-HF methods (MP2, coupled cluster, double hybrids, multireference) are recognised from the keyword line. Structures above `orca_kwargs.max_num_of_atoms_correlated` (default 20) are dropped before submission (`too_many_atoms_for_method`). Methods that may need numerical gradients warn at start-up.
+  - Spin multiplicity per structure: the ground state for isolated atoms, else the lowest the electron count allows, or `atoms.info["spin_multiplicity"]`.
+- **Non-periodic initialisation**: `amorphous_cluster_kwargs` (random clusters) and `molecule_cluster_kwargs` (clusters of molecules, entries like `box_compositions`).
+  - With an evaluator without periodic boundary conditions (ORCA) they are on by default, and `amorphous_kwargs`, `mp_kwargs` and `molecules_in_box_kwargs` are off.
+  - Enabling a periodic block yourself raises, naming the replacement.
+- **Every label records its level of theory** (`atoms.info["REF_level_of_theory"]` and `REF_level_of_theory_id`), for every evaluator.
+  - The record has code-neutral fields: method, rung, dispersion, basis, core treatment, relativity, spin, solvation, plus precision settings.
+  - The start-up summary shows it. ALomancy warns (`level_of_theory_mismatch`) when the database holds labels from a different level of theory.
+  - Recorded on the driver side: no reinstall needed for QE/VASP.
 - **Log in again from the run's own terminal when an HPC's ssh connection drops.**
   - The panel shows `login needed` for that HPC. Press **L** (or the HPC's number), the panels pause, your normal password/OTP prompt appears, and the run carries on.
   - From any other terminal on the same machine (a run under nohup or tmux), `alomancy login [HPC]` in the run directory does the same.
@@ -19,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A dropped ssh connection is noticed within 30 s**, before any job poll fails. Hosts that log in with an ssh key reconnect on their own.
 
 ### Changed
+- **Structures stretched, compressed or rattled from targets can go to the test set**, so one bulk structure and its copies give a test set. Existing split tags are kept.
+- **Rattling a 1-atom cell rattles a 2×2×2 supercell** (info `supercell`, `parent_config_type`): moving the only atom just translated it, a duplicate label. A single non-periodic atom isn't rattled. `rattle_standard_deviation` now defaults to 3% of the nearest-neighbour distance.
+- **Dimers and trimers span 0.5–2.0 × the covalent radii sum** (was 0.2–1.0 × the vdW radii: 0.70 Å for Pt-Pt, which gave forces above 100 eV/Å and failed VASP SCFs).
+- **Isolated atoms sit in a cube of at least 15 Å** (was 3 × the vdW radius, about 5 Å, which in QE left the atom interacting with its images). Existing reference energies are kept; new runs compute them in the larger box.
+- **Non-periodic axes get one k-point** (slabs `n × m × 1`; molecules and isolated atoms Γ only), including VASP structures padded with vacuum. Remote reinstall needed.
+- An amorphous or molecules-in-box block whose whole `density_range` is too sparse (every cell dropped before DFT as blown up, e.g. Pt at the default 1 g/cm³) now stops the run at start-up instead of warning.
+- Training fits that all fail with the same error (no GPU, a missing ExPyRe system) are no longer retried (`fit_retry_skipped`).
+- **Starting from a database labelled with another code stops the run at start-up.** Energies from different codes are on different scales (all-electron vs pseudopotential, or different pseudopotentials). `general.allow_mixed_level_of_theory: true` turns this into the `level_of_theory_mismatch` warning. Labels with no recorded level of theory now warn (`level_of_theory_unknown`) until the database holds labels from the configured evaluator.
 - **The live panel is now two panels that stay up for the whole run**, not just while HPC jobs run, in the ALomancy colours as before.
   - "ALomancy" has three sections:
     - *Run Details*: run, workflow, loop N / total with the time spent on the loop (counted across restarts) and the run time, and the elements.
@@ -31,9 +64,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `alomancy status` shows the same panels.
   - The summary line logged without a terminal starts with the loop, the step and the best model's force MAE.
   - The stale-data marker is `!` instead of `⚠`, which some fonts draw two characters wide.
+- **The MD temperature plot shows all runs as one density map** instead of one line per run: the share of running runs at each step and temperature, Gaussian-blurred, with the median and target on top and a strip of the runs still going below. The legend counts runs that stopped early or went above the axis.
+- `scipy` is now a direct dependency (it already came in through ase).
 
 ### Fixed
+- **ORCA accepts a charge or spin multiplicity read back from a file.** extxyz returns them as numpy integers, which were rejected, so every charged or open-shell structure from `start_from`, the database or a restart failed on the node. Remote reinstall needed.
+- **A shortfall in clusters alone now starts initialisation** (`amorphous_cluster_kwargs`, `molecule_cluster_kwargs`). An ORCA run whose database already held its atoms, dimers and trimers made no clusters.
+- **The database check runs on every start**, including resuming after finished loops. Restarting with another evaluator used to skip the different-code and periodic-structure checks.
+- **Level-of-theory ids start with `lot-`**, so extxyz keeps them as strings; the check compares ids recomputed from each stored record.
+- **The ORCA atom cap applies to candidates before selection**, so a loop can't spend its whole selection on structures dropped at the DFT step.
+- **FHI-aims**: `OMP_NUM_THREADS=1` is set on the aims command, no longer in the HPC profile's `pre_cmds` (which slowed training and MD on the same HPC). Relativity is recorded as `atomic_ZORA` / `scalar_ZORA`. Remote reinstall needed.
+- **An evaluator registered without the required entry points fails at registration**, naming them, instead of an `AttributeError` during a run.
+- **Background ssh uses the run's own connection only when it exists** for that host; otherwise your own ssh config applies. A host whose run connection failed to open used to lose your multiplexing and end up in "login needed".
+- **Lost password/OTP logins are retried with backoff** (30 s doubling to 30 min) instead of every 30 s, which could trigger fail2ban or account lockouts overnight.
+- 1-atom bulk cells (fcc Pt from Materials Project) are classed as `bulk` in dataset curation, not `isolated_atom`.
+- **Materials Project queries include 1-atom primitive cells.** The lower bound of 2 sites left out elemental ground states such as fcc Pt (mp-126).
+- **Restarts no longer duplicate initialisation results.** When an initialisation need could never be met (e.g. all amorphous cells blown up), every restart reloaded the cached DFT results and added the dimers, trimers and stretch/compress structures again (19 → 36 → 53). Results are now recognised by their DFT input digest, and the unmet needs are reported once (`initialization_needs_unmet`) instead of being regenerated.
+- **VASP no longer resizes a slab's periodic cell** when padding a structure that is periodic along only some axes; only the open axes get vacuum. Remote reinstall needed.
+- **Parity plots no longer fail on structures made by MD from a database seed.** Such structures inherited the seed's stored per-fit model energies (but not forces), and the loop report's best-model parity plot raised `KeyError: 'model_forces_loop_N_fit_M'`. New structures no longer inherit them, and existing databases are read correctly.
 - **A lost ssh login while submitting a job (staging files or sbatch) no longer fails the job**; it waits for a new login and submits again, as polling already did.
+- **The 240-character remote path limit now applies only to VASP.** QE runs with a long remote directory (for example an older run kept on ExPyRe's long layout) no longer fail at start with "the remote DFT run directory would be … characters".
 
 No remote reinstall needed.
 

@@ -260,6 +260,30 @@ class TestBuildAlomancyProfile:
         assert not any("TRITON" in c for c in profile["pre_cmds"])
 
     @pytest.mark.unit
+    def test_aims_profile_paths_and_stack_limit(self):
+        from alomancy.cli.add_hpc import build_alomancy_profile
+
+        profile = build_alomancy_profile(
+            expyre_sys_name="raven",
+            gpu=False,
+            partitions=["general"],
+            venv_cmd="source /u/user/.venvs/alomancy/bin/activate",
+            node_info={},
+            dft_code="aims",
+            dft_paths={
+                "aims_path": "/u/user/aims.x",
+                "aims_species_dir": "/u/user/species_defaults/defaults_2020",
+            },
+        )
+        assert profile["aims_path"] == "/u/user/aims.x"
+        assert profile["aims_species_dir"].endswith("defaults_2020")
+        assert profile["pre_cmds"][0].startswith("source")
+        assert "ulimit -s unlimited" in profile["pre_cmds"]
+        # Not in pre_cmds, which every job on the profile runs (training and
+        # MD too): it goes on the FHI-aims command (test_run_aims.py).
+        assert not any("OMP_NUM_THREADS" in c for c in profile["pre_cmds"])
+
+    @pytest.mark.unit
     def test_max_concurrent_jobs_default(self):
         from alomancy.cli.add_hpc import build_alomancy_profile
 

@@ -156,6 +156,18 @@ def build_alomancy_profile(
                 profile["vasp_path"] = dft_paths["vasp_path"]
             if "pp_path" in dft_paths:
                 profile["pp_path"] = dft_paths["pp_path"]
+        elif dft_code == "orca":
+            if "orca_path" in dft_paths:
+                profile["orca_path"] = dft_paths["orca_path"]
+        elif dft_code == "aims":
+            for key in ("aims_path", "aims_species_dir"):
+                if key in dft_paths:
+                    profile[key] = dft_paths[key]
+            # FHI-aims needs a large stack (segfaults otherwise). Its
+            # OMP_NUM_THREADS=1 goes on its own launch command
+            # (run_aims.create_aims_calc_object), not here: pre_cmds run for
+            # every job on the profile, training and MD included.
+            profile["pre_cmds"] = [*pre_cmds, "ulimit -s unlimited"]
 
     return profile
 
@@ -451,9 +463,11 @@ def add_hpc_wizard() -> None:
         default=20,
     )
 
-    print("\nDFT code on this system? Options: qe / vasp / none")
+    print("\nDFT code on this system? Options: qe / vasp / orca / aims / none")
     dft_code_raw = _prompt("DFT code", default="none").strip().lower()
-    dft_code: str | None = dft_code_raw if dft_code_raw in ("qe", "vasp") else None
+    dft_code: str | None = (
+        dft_code_raw if dft_code_raw in ("qe", "vasp", "orca", "aims") else None
+    )
     dft_paths: dict = {}
     if dft_code == "qe":
         dft_paths["pwx_path"] = _prompt("  QE pw.x executable path")
@@ -471,6 +485,25 @@ def add_hpc_wizard() -> None:
         print(
             "  Note: add pseudo_dict element→POTCAR-suffix overrides manually"
             f" in {ALOMANCY_HPC_CONFIG}"
+        )
+    elif dft_code == "orca":
+        dft_paths["orca_path"] = _prompt(
+            "  Absolute path of the orca binary (ORCA must be started by its full"
+            " path to run in parallel)"
+        )
+        print(
+            "  Note: ORCA starts its own mpirun: load the OpenMPI it was built"
+            f" with in this profile's pre_cmds in {ALOMANCY_HPC_CONFIG}"
+        )
+    elif dft_code == "aims":
+        dft_paths["aims_path"] = _prompt("  FHI-aims executable path (aims.x)")
+        dft_paths["aims_species_dir"] = _prompt(
+            "  FHI-aims species defaults folder (aims_species_dir, e.g."
+            " .../species_defaults/defaults_2020; holds light/intermediate/tight)"
+        )
+        print(
+            "  Note: 'ulimit -s unlimited' is added to this profile's pre_cmds"
+            " (FHI-aims needs a large stack)"
         )
 
     alomancy_profile = build_alomancy_profile(

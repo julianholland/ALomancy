@@ -322,3 +322,26 @@ def test_full_preparation_annotates_filters_and_preserves_reference(tmp_path):
     assert json.loads((output / "manifest.json").read_text())["output_sha256"][
         "selected.xyz"
     ]
+
+
+@pytest.mark.unit
+def test_clean_structures_drops_inherited_model_predictions():
+    """An MD frame copies its DB seed's info, including the seed's per-fit
+    predictions; those describe the seed's geometry and must not reach
+    the DB with the frame's new labels."""
+    a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]], cell=[5, 5, 5], pbc=True)
+    a.info.update(
+        {
+            "REF_energy": -1.0,
+            "model_energy_loop_3_fit_1": -9.0,
+            "model_stress_loop_3_fit_1": [0.0] * 6,
+            "model_energy": -1.1,
+            "old_config_type": "seed",
+        }
+    )
+    a.arrays["REF_forces"] = np.zeros((2, 3))
+    info = clean_structures([a], "high_sd", override_config_type=True)[0].info
+    assert "model_energy_loop_3_fit_1" not in info
+    assert "model_stress_loop_3_fit_1" not in info
+    # Other keys, including the generic model_energy, are kept.
+    assert info["model_energy"] == -1.1 and info["old_config_type"] == "seed"

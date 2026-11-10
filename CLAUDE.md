@@ -50,7 +50,7 @@ ALomancy runs active learning (AL) for machine-learned interatomic potentials (M
 | `remote_submission/` (executor, live panels in `progress.py`), `configs/remote_info.py`, ExPyRe isolation, ssh (`utils/ssh_master.py`, `utils/rsh.py`), Slurm | `docs/architecture/remote_submission.md` |
 | `mlip/` (trainer base, MACE, SevenNet, evaluation, predictions) | `docs/architecture/mlip.md` |
 | `structure_generation/` (MD, EZGA, seeds, uncertainty selection) | `docs/architecture/structure_generation.md` |
-| `high_accuracy_evaluation/`, `utils/dft_utils.py` (QE, VASP, GO/SP) | `docs/architecture/high_accuracy_evaluation.md` |
+| `high_accuracy_evaluation/`, `utils/dft_utils.py` (QE, VASP, FHI-aims, ORCA, GO/SP, parallel resources, level of theory, adding an evaluator) | `docs/architecture/high_accuracy_evaluation.md` |
 | `database/` (sage_lib storage, ids, predictions, extxyz pitfalls) | `docs/architecture/database.md` |
 | `initialize/` | `docs/architecture/initialization.md` |
 | logging, `events.jsonl`, `analysis/` (reports, plots) | `docs/architecture/reports_and_plots.md` |

@@ -12,7 +12,13 @@ import polars as pl
 from alomancy.utils.remote_ssh import get_alomancy_version_for_profile, resolve_hpc_host
 
 # Profile keys that point at a DFT/MLIP executable, in lookup order.
-_EXECUTABLE_KEYS = ("pwx_path", "vasp_path", "high_accuracy_executable_path")
+_EXECUTABLE_KEYS = (
+    "pwx_path",
+    "vasp_path",
+    "orca_path",
+    "aims_path",
+    "high_accuracy_executable_path",
+)
 
 
 def _concurrency_cap(profile: dict) -> str:

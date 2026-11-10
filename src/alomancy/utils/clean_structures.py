@@ -1,10 +1,17 @@
 import logging
 import math
+import re
 
 import numpy as np
 from ase import Atoms
 
 logger = logging.getLogger(__name__)
+
+# Per-fit trainer predictions the DB stores on a container
+# (GlobalDatabase.store_model_predictions). They describe that container's
+# geometry only, so a structure derived from it (an MD frame started from a
+# DB seed) must not inherit them.
+MODEL_PREDICTION_KEY = re.compile(r"^model_(energy|forces|stress)_loop_\d+_fit_\d+$")
 
 
 def drop_unwritable_info(atoms: Atoms) -> Atoms:
@@ -91,9 +98,14 @@ def clean_structures(
             cell=structure.get_cell(),
             pbc=structure.get_pbc(),
         )
-        structure_copy.info = (
-            structure.info.copy()
-        )  # start with a copy of the original info dictionary
+        # Start from the original info, minus per-fit model predictions,
+        # which belong to the geometry they were computed on (an MD seed's
+        # are not this frame's).
+        structure_copy.info = {
+            key: value
+            for key, value in structure.info.items()
+            if not MODEL_PREDICTION_KEY.match(key)
+        }
 
         structure_copy.info.update(
             extra_metadata or {}
@@ -251,6 +263,26 @@ def density_for_vdw_volume_ratio(symbols: list[str], ratio: float) -> float:
     return vdw_volume_ratio_at_density(symbols, 1.0) / ratio
 
 
+def is_blown_up(
+    structure: Atoms,
+    max_ratio: float | None,
+    exempt_config_types: frozenset[str] = frozenset(),
+) -> bool:
+    """Whether filter_blown_up_structures would exclude *structure*: a
+    periodic cell above *max_ratio* x its atoms' vdW volume, or with a
+    non-finite ratio (see there for the exemptions)."""
+    if max_ratio is None:
+        return False
+    checked = (
+        len(structure) > 0
+        and structure.pbc.all()
+        and structure.info.get("config_type")
+        not in GAS_PHASE_CONFIG_TYPES | exempt_config_types
+    )
+    ratio = vdw_volume_ratio(structure) if checked else 0.0
+    return not (np.isfinite(ratio) and ratio <= max_ratio)
+
+
 def filter_blown_up_structures(
     structures: list[Atoms],
     max_ratio: float | None = DEFAULT_MAX_VDW_VOLUME_RATIO,
@@ -302,6 +334,45 @@ def filter_blown_up_structures(
                     "n": len(excluded),
                     "total": len(structures),
                     "max_ratio": max_ratio,
+                    "config_types": config_types,
+                },
+            },
+        )
+    return kept
+
+
+def filter_structures_by_atom_count(
+    structures: list[Atoms], max_atoms: int | None, evaluator: str = ""
+) -> list[Atoms]:
+    """Exclude structures with more than *max_atoms* atoms (None: keep
+    all), the evaluator's size cap (registry entry point max_num_of_atoms,
+    e.g. ORCA with a correlated method). Warning too_many_atoms_for_method."""
+    if max_atoms is None:
+        return list(structures)
+    kept = [s for s in structures if len(s) <= max_atoms]
+    excluded = [s for s in structures if len(s) > max_atoms]
+    if excluded:
+        config_types = sorted(
+            {str(s.info.get("config_type", "unknown")) for s in excluded}
+        )
+        logger.warning(
+            "Excluded %d/%d structure(s) from %s evaluation with more than %d "
+            "atoms (largest %d; config_type %s): the configured method's cost "
+            "grows steeply with size. Raise high_accuracy_evaluation."
+            "<evaluator>_kwargs.max_num_of_atoms_correlated to evaluate them "
+            "anyway, or generate smaller structures.",
+            len(excluded),
+            len(structures),
+            evaluator or "high-accuracy",
+            max_atoms,
+            max(len(s) for s in excluded),
+            ", ".join(config_types),
+            extra={
+                "event": "too_many_atoms_for_method",
+                "data": {
+                    "n": len(excluded),
+                    "total": len(structures),
+                    "max_atoms": max_atoms,
                     "config_types": config_types,
                 },
             },

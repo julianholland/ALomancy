@@ -506,3 +506,27 @@ class TestNonInteractiveSsh:
         assert env == {}
         assert system.remsh_cmd == "ssh"
         assert any("alomancy-rsh not found" in r.getMessage() for r in records)
+
+
+@pytest.mark.unit
+def test_check_expyre_systems_names_missing_and_stale_systems(tmp_path):
+    """A profile whose ExPyRe system is missing made every job fail with a
+    bare KeyError ('raccoon_gpu'); now the run stops before submitting."""
+    import json
+
+    from alomancy.utils.remote_ssh import check_expyre_systems
+
+    master = tmp_path / "expyre_config.json"
+    master.write_text(json.dumps({"systems": {"raven": {}, "raccoon_gpu": {}}}))
+    profiles = {"raven": {}, "raccoon_gpu": {}, "nowhere": {}}
+    with pytest.raises(ValueError) as err:
+        check_expyre_systems(
+            profiles, systems={"raven": object()}, master_config_path=master
+        )
+    message = str(err.value)
+    assert "nowhere, raccoon_gpu" in message
+    # In the master config but not the run's copy: delete the run's copy.
+    assert "raccoon_gpu is in" in message and ".expyre/config.json" in message
+    check_expyre_systems(
+        {"raven": {}}, systems={"raven": object()}, master_config_path=master
+    )

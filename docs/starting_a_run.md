@@ -128,11 +128,13 @@ Metadata that belongs to the run that wrote the file is dropped on import: train
 |---|---|
 | Pre-split files | As given: `train_xyz` → train, `test_xyz` → test. |
 | Former database | The imported database's own `split` tags are kept (its quality-filter flags are recomputed by this run's `train_filter`/`test_filter`). |
-| Single file | `test_ratio` of the structures whose `config_type` is in `target_config_types` go to test; everything else trains. At least one structure of each targeted type stays in training. |
+| Single file | `test_ratio` of the structures whose `config_type` is in `target_config_types` (or that were stretched, compressed or rattled from them: `init_stretch_compress`, `init_rattle`) go to test; everything else trains. At least one structure of each targeted type stays in training. |
 | Combined | Each structure follows the rule of the source it came from: database and pre-split structures keep their split, `xyz` structures are split by `test_ratio` together. |
 | Cold start | Same rule as a single file. |
 
 Structures generated to fill gaps have no split yet, so they follow the single-file rule in every mode.
+
+On a cold start with a single bulk structure (e.g. one fcc metal from Materials Project), list it in `target_config_types` and keep `stretch_compress_targets_kwargs` on, or enable `rattle_target_structures`: their copies make the test set. The run stops before any DFT when fewer than 2 structures could go to the test set, and warns below 5.
 
 **Single file with no usable `config_type`.** If none of a single file's structures has a `config_type` (or an equivalent key), they all become `"external"`. `"external"` is not a target type unless you list it, so no test set could be formed and ALomancy stops with an error. Fix it in one of two ways:
 

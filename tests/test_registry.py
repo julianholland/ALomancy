@@ -14,6 +14,9 @@ import pytest
 
 from alomancy import registry
 
+# The real registrations, before _isolated_registry empties the registry.
+_BUILT_IN = {cat: dict(names) for cat, names in registry.registered().items()}
+
 
 @pytest.fixture(autouse=True)
 def _isolated_registry(monkeypatch):
@@ -94,15 +97,32 @@ class TestResolve:
     @pytest.mark.unit
     def test_unknown_name_raises_value_error_listing_available_names(self, monkeypatch):
         _install_fake_module(monkeypatch, "fake_mod", fn=lambda: None)
-        registry.register("dft_evaluator", "qe", "fake_mod", sp="fn")
-        registry.register("dft_evaluator", "vasp", "fake_mod", sp="fn")
+        registry.register("fake_category", "qe", "fake_mod", sp="fn")
+        registry.register("fake_category", "vasp", "fake_mod", sp="fn")
 
-        with pytest.raises(ValueError, match=r"Unknown dft_evaluator 'castep'"):
-            registry.resolve("dft_evaluator", "castep")
+        with pytest.raises(ValueError, match=r"Unknown fake_category 'castep'"):
+            registry.resolve("fake_category", "castep")
         with pytest.raises(
             ValueError, match=r"Available names.*qe.*vasp|Available names.*vasp.*qe"
         ):
-            registry.resolve("dft_evaluator", "castep")
+            registry.resolve("fake_category", "castep")
+
+    @pytest.mark.unit
+    def test_evaluator_missing_required_entry_points_fails_at_registration(self):
+        """A plugin evaluator with only sp/go used to crash with an
+        AttributeError deep in a run (supports_periodic, level_of_theory...)."""
+        with pytest.raises(
+            ValueError, match=r"missing entry point\(s\).*supports_periodic"
+        ):
+            registry.register("dft_evaluator", "cp2k", "fake_mod", sp="fn", go="fn")
+        assert "cp2k" not in registry.registered("dft_evaluator")
+        # Every built-in evaluator names them all.
+        assert {"qe", "vasp", "orca", "aims"} <= set(_BUILT_IN["dft_evaluator"])
+        for name, entry in _BUILT_IN["dft_evaluator"].items():
+            missing = set(registry.REQUIRED_ENTRY_POINTS["dft_evaluator"]) - set(
+                entry["entry_points"]
+            )
+            assert not missing, (name, missing)
 
     @pytest.mark.unit
     def test_unknown_category_raises_value_error_listing_available_categories(

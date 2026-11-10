@@ -42,6 +42,8 @@ dependencies = [
     "sevenn>=0.10.4,<0.11",
     "e3nn==0.4.4",
     "deduplicate-lib>=0.1.3",
+    # Imported directly (report plots); already pulled in by ase.
+    "scipy>=1.8",
 ]
 
 [project.optional-dependencies]

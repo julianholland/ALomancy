@@ -86,7 +86,8 @@ class TestRetrieveMpMaterialDocs:
         assert kwargs["elements"] == ("H",)
         assert kwargs["num_elements"] == 1
         assert kwargs["energy_above_hull"] == (0, 0.25)
-        assert kwargs["num_sites"] == (2, 30)
+        # 1-atom primitive cells (fcc Pt, mp-126) are included.
+        assert kwargs["num_sites"] == (1, 30)
 
 
 @pytest.mark.unit

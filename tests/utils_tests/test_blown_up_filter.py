@@ -223,7 +223,8 @@ def test_generate_candidates_drops_blown_up_cells(
     )
 
     with patch(
-        "alomancy.core.active_learning_workflow.resolve", return_value=generator
+        "alomancy.core.active_learning_workflow.resolve",
+        side_effect=_generator_only(generator),
     ):
         result = wf.generate_candidates(ctx, model)
 
@@ -338,3 +339,17 @@ def test_bad_exempt_config_types_fail_at_construction(
     )
     with pytest.raises(ValueError, match="vdw_exempt_config_types"):
         CommitteeUncertaintyWorkflow(jobs_dict=minimal_jobs_dict)
+
+
+def _generator_only(generator):
+    """resolve() side effect: *generator* for the structure generator, the
+    real registry for everything else (e.g. the evaluator's size cap, which
+    generate_candidates applies before selection)."""
+    from alomancy.registry import resolve as real_resolve
+
+    def side_effect(category, name):
+        if category == "structure_generator":
+            return generator
+        return real_resolve(category, name)
+
+    return side_effect

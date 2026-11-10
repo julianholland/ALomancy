@@ -1126,6 +1126,30 @@ class TestMacePredictions:
         assert meta["model_forces_loop_0_fit_0"][0] == pytest.approx([0.2, 0.0, 0.0])
 
     @pytest.mark.unit
+    def test_inherited_energy_without_forces_is_skipped(self, tmp_path):
+        """An MD frame whose seed came from the DB used to carry the
+        seed's model_energy_loop_*_fit_* (an info scalar) but not its
+        forces; reading parity data raised KeyError on the forces key."""
+        db = self._make_db_with_one_structure(tmp_path)
+        seed_child = make_atoms(
+            ["H", "H"],
+            config_type="high_sd",
+            ref_energy=-1.5,
+            ref_forces=[[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]],
+        )
+        seed_child.info["model_energy_loop_0_fit_0"] = -9.0
+        db.add_structures([seed_child], split="train", skip_duplicates=False)
+        db.assign_global_db_ids()
+        assert db.get_model_predictions(0, 0) is None
+        db.store_model_predictions(
+            0, 0, {0: {"energy": -2.0, "forces": [[0.2, 0.0, 0.0], [-0.2, 0.0, 0.0]]}}
+        )
+        result = db.get_model_predictions(0, 0)
+        assert result is not None
+        # Only the structure the predictions were stored for.
+        assert len(result["train"][0]) == 1
+
+    @pytest.mark.unit
     def test_get_returns_none_when_missing(self, tmp_path):
         db = self._make_db_with_one_structure(tmp_path)
         assert db.get_model_predictions(0, 0) is None
@@ -1516,3 +1540,36 @@ def test_model_stress_round_trips_through_the_database(tmp_path):
 
     assert s_dft == pytest.approx([2.0] * 6)
     assert s_pred == pytest.approx([2.5] * 6)
+
+
+@pytest.mark.unit
+def test_dft_results_with_a_stored_digest_are_not_added_again(tmp_path):
+    """A restart that reloads cached initialisation results (one of its
+    needs never met) used to add every dimer, trimer and stretch/compress
+    result again: 19 -> 36 -> 53 structures."""
+
+    def dimer(digest, initial=False):
+        atoms = make_atoms(
+            ["Pt", "Pt"],
+            config_type="init_dimer",
+            ref_energy=-1.0,
+            ref_forces=[[0.1, 0, 0], [-0.1, 0, 0]],
+        )
+        atoms.info["dft_input_digest"] = digest
+        if initial:
+            atoms.info["geometry_initial"] = True
+        return atoms
+
+    db = GlobalDatabase(str(tmp_path / "db"))
+    assert db.add_structures([dimer("a"), dimer("b")]) == 2
+    assert db.add_structures([dimer("a"), dimer("b")]) == 0
+    # A geometry optimisation's starting frame shares the final result's
+    # digest, and is a different structure.
+    assert db.add_structures([dimer("a", initial=True)]) == 1
+    assert db.add_structures([dimer("a", initial=True)]) == 0
+    # Within one call too.
+    assert db.add_structures([dimer("c"), dimer("c")]) == 1
+    # Not ALomancy-labelled (no digest): added as before.
+    plain = make_atoms(["Pt", "Pt"], config_type="init_dimer", ref_energy=-1.0)
+    assert db.add_structures([plain, plain.copy()]) == 2
+    assert db.size == 6

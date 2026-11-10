@@ -1,6 +1,8 @@
 import logging
+import re
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +22,172 @@ def generate_kpts(
     cell_lengths = np.linalg.norm(cell, axis=1)
     kpts = np.ceil(2 * np.pi / (cell_lengths * kspacing)).astype(int)
     return kpts if periodic_3d else np.array([kpts[0], kpts[1], 1])
+
+
+def kpoint_grid(atoms: Atoms, k_spacing: float) -> list[int]:
+    """The k-point grid for *atoms* at *k_spacing* (1/Angstrom, 2 pi
+    included, as VASP's KSPACING): ceil(2 pi / (|a_i| k_spacing)) along each
+    periodic axis (generate_kpts' formula), 1 along each non-periodic one.
+    Call it on the structure's own pbc, before any vacuum padding: a slab
+    (pbc T T F) gets n x m x 1, a molecule or isolated atom Gamma only,
+    instead of k-points along the vacuum."""
+    if k_spacing is None or k_spacing <= 0:
+        raise ValueError(f"k_spacing must be a positive number, got {k_spacing!r}.")
+    lengths = np.linalg.norm(np.asarray(atoms.cell), axis=1)
+    grid = []
+    for periodic, length in zip(atoms.pbc, lengths, strict=True):
+        if periodic and length > 0:
+            grid.append(max(1, int(np.ceil(2 * np.pi / (length * k_spacing)))))
+        else:
+            grid.append(1)
+    return grid
+
+
+_MEMORY_UNITS_MB = {
+    "": 1,  # a bare number is MB, as Slurm reads --mem
+    "K": 1 / 1024,
+    "KB": 1 / 1024,
+    "M": 1,
+    "MB": 1,
+    "G": 1024,
+    "GB": 1024,
+    "T": 1024 * 1024,
+    "TB": 1024 * 1024,
+}
+
+
+def parse_memory_mb(value: object) -> int:
+    """A memory amount as written in an HPC profile's node_info
+    (``"120GB"``, ``"90G"``, ``"512M"``, or a bare number of MB, Slurm's
+    reading of ``--mem``) in MB. Raises ValueError for anything else."""
+    if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
+        return int(value)
+    if isinstance(value, str):
+        match = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([A-Za-z]*)\s*", value)
+        if match and match.group(2).upper() in _MEMORY_UNITS_MB:
+            mb = float(match.group(1)) * _MEMORY_UNITS_MB[match.group(2).upper()]
+            if mb > 0:
+                return int(mb)
+    raise ValueError(
+        f"Can't read memory amount {value!r}: expected e.g. '120GB', '90G', "
+        "'512M' or a number of MB."
+    )
+
+
+# Share of a process's memory an evaluator that is told its per-process
+# memory (ORCA %maxcore, Gaussian %mem) should be given: ORCA overshoots
+# %maxcore, and its manual recommends about 75% of the physical memory.
+_DEFAULT_MEMORY_FRACTION = 0.75
+
+
+@dataclass(frozen=True)
+class ParallelResources:
+    """What one evaluator job may use, from the HPC profile's node_info and
+    the user's overrides (resolve_parallel_resources). Backends encode it
+    their own way: in the launch command (QE/VASP through srun) or in the
+    input file (ORCA %pal/%maxcore, Gaussian %nprocshared/%mem)."""
+
+    nprocs: int
+    mem_per_proc_mb: int
+    threads_per_proc: int
+
+
+def resolve_parallel_resources(
+    node_info: dict,
+    *,
+    nprocs: int | None = None,
+    mem_per_proc_mb: int | None = None,
+    where: str = "high_accuracy_evaluation",
+) -> ParallelResources:
+    """The processes and per-process memory for one evaluator job.
+
+    Defaults: ``node_info.ranks_per_system`` processes, each with
+    _DEFAULT_MEMORY_FRACTION of the node's memory divided between them.
+    A user-set *nprocs* or *mem_per_proc_mb* wins over the profile, but
+    raises ValueError when the job can't hold it: every evaluator job runs
+    on one node (configs/remote_info.get_remote_info), so at most
+    ``ranks_per_node * threads_per_rank`` processes, and all of them
+    together within ``max_mem_per_node``. *where* names the config block
+    in the messages."""
+    for key in ("ranks_per_system", "ranks_per_node"):
+        if not _is_positive_int(node_info.get(key)):
+            raise ValueError(
+                f"The HPC profile's node_info.{key} must be a positive integer "
+                f"(needed for {where}), got {node_info.get(key)!r}."
+            )
+    threads = node_info.get("threads_per_rank", 1)
+    if not _is_positive_int(threads):
+        raise ValueError(
+            "The HPC profile's node_info.threads_per_rank must be a positive "
+            f"integer, got {threads!r}."
+        )
+    if "max_mem_per_node" not in node_info:
+        raise ValueError(
+            f"The HPC profile's node_info.max_mem_per_node is required for "
+            f"{where} (the per-process memory is derived from it)."
+        )
+    node_mb = parse_memory_mb(node_info["max_mem_per_node"])
+    cores = int(node_info["ranks_per_node"]) * int(threads)
+
+    if nprocs is None:
+        nprocs = int(node_info["ranks_per_system"])
+    elif not _is_positive_int(nprocs):
+        raise ValueError(f"{where}: nprocs must be a positive integer, got {nprocs!r}.")
+    elif nprocs > cores:
+        raise ValueError(
+            f"{where}: nprocs {nprocs} doesn't fit the job: it runs on one node "
+            f"with {cores} cores (node_info.ranks_per_node "
+            f"{node_info['ranks_per_node']} x threads_per_rank {threads}). "
+            f"Lower nprocs to at most {cores}, or use an HPC profile with "
+            "larger nodes."
+        )
+
+    if mem_per_proc_mb is None:
+        mem_per_proc_mb = int(_DEFAULT_MEMORY_FRACTION * node_mb / nprocs)
+        if mem_per_proc_mb < 1:
+            raise ValueError(
+                f"{where}: node_info.max_mem_per_node "
+                f"{node_info['max_mem_per_node']!r} leaves under 1 MB for each "
+                f"of {nprocs} processes."
+            )
+    elif not _is_positive_int(mem_per_proc_mb):
+        raise ValueError(
+            f"{where}: the memory per process must be a positive integer "
+            f"(MB), got {mem_per_proc_mb!r}."
+        )
+    elif nprocs * mem_per_proc_mb > node_mb:
+        raise ValueError(
+            f"{where}: {nprocs} processes x {mem_per_proc_mb} MB = "
+            f"{nprocs * mem_per_proc_mb} MB is more than the node's "
+            f"{node_mb} MB (node_info.max_mem_per_node "
+            f"{node_info['max_mem_per_node']!r}). Lower the memory per process "
+            f"to at most {node_mb // nprocs} MB (about "
+            f"{int(_DEFAULT_MEMORY_FRACTION * node_mb / nprocs)} MB leaves "
+            "headroom), or use fewer processes."
+        )
+    return ParallelResources(
+        nprocs=int(nprocs),
+        mem_per_proc_mb=int(mem_per_proc_mb),
+        threads_per_proc=int(threads),
+    )
+
+
+def _is_positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def pad_non_periodic_axes(atoms: Atoms, vacuum: float = 10.0) -> None:
+    """Make *atoms* fully periodic, in place, for a code with no mixed
+    boundary conditions (VASP, FHI-aims). Only the non-periodic axes are
+    resized, to the structure's extent plus *vacuum* on each side; a
+    slab's periodic in-plane cell is left as it is. A structure with no
+    cell on a non-periodic axis gets one along it. No-op when already
+    fully periodic."""
+    if atoms.pbc.all():
+        return
+    open_axes = [i for i in range(3) if not atoms.pbc[i]]
+    atoms.center(vacuum=vacuum, axis=open_axes)
+    atoms.pbc = True
 
 
 def _build_srun_command(para_info_dict: dict, executable_and_flags: str) -> str:

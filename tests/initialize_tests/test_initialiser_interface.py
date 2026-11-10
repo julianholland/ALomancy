@@ -315,19 +315,17 @@ class TestGenerate:
         assert call_kwargs["rattle_standard_deviation"] == 0.03
 
     @pytest.mark.unit
-    def test_rattle_enabled_without_standard_deviation_raises(
+    def test_rattle_enabled_without_standard_deviation_uses_the_default(
         self, tmp_path, monkeypatch
     ):
-        """rattle_standard_deviation has no default -- turning rattle on
-        without setting it must raise a clear error, not silently guess."""
+        """No rattle_standard_deviation: None is passed on, and the rattle
+        uses 3% of each structure's nearest-neighbour distance
+        (initialize/rattle.py, tested there)."""
         monkeypatch.chdir(tmp_path)
         config = self._config(
             rattle_target_structures={"enabled": True},
         )
-        with (
-            patch(f"{_MODULE}.create_initialization_atoms_list"),
-            pytest.raises(KeyError, match="rattle_standard_deviation"),
-        ):
+        with patch(f"{_MODULE}.create_initialization_atoms_list") as create:
             generate(
                 config,
                 base_name="al_loop_0",
@@ -336,6 +334,7 @@ class TestGenerate:
                 hpc={},
                 max_time="1H",
             )
+        assert create.call_args.kwargs["rattle_standard_deviation"] is None
 
     @pytest.mark.unit
     def test_partial_generation_when_needs_given(self, tmp_path, monkeypatch):
@@ -547,10 +546,22 @@ def _density_warnings(config, elements, **kwargs):
 
 
 @pytest.mark.unit
-def test_default_density_warns_too_low_for_pt():
+def test_default_density_raises_for_pt():
     """1 g/cm^3 Pt is 14x its vdW volume: the blown-up filter (10) would
-    drop every amorphous cell before DFT."""
-    warnings = _density_warnings({}, ["Pt"], max_vdw_volume_ratio=10.0)
+    drop every amorphous cell before DFT, and initialisation could never
+    complete (each restart used to re-add its cached results)."""
+    with pytest.raises(
+        ValueError,
+        match=r"Every structure of initialization"
+        r"\.amorphous_kwargs.*Pt at 1 g/cm\^3",
+    ):
+        _density_warnings({}, ["Pt"], max_vdw_volume_ratio=10.0)
+
+
+@pytest.mark.unit
+def test_partly_too_sparse_density_range_warns_for_pt():
+    config = {"amorphous_kwargs": {"density_range": [1.0, 20.0]}}
+    warnings = _density_warnings(config, ["Pt"], max_vdw_volume_ratio=10.0)
     assert set(warnings) == {"init_density_too_low"}
     message = warnings["init_density_too_low"]
     assert "Pt at 1 g/cm^3" in message
@@ -587,7 +598,7 @@ def test_sparse_molecule_box_warns_too_low():
             "box_compositions": [
                 {
                     "molecules": {"CO": 1},
-                    "density_range": [0.05, 0.05],
+                    "density_range": [0.05, 1.0],
                     "num_of_molecules": 8,
                     "num_of_structures": 1,
                 }
@@ -597,6 +608,12 @@ def test_sparse_molecule_box_warns_too_low():
     warnings = _density_warnings(config, ["C", "O"], max_vdw_volume_ratio=10.0)
     assert set(warnings) == {"init_density_too_low"}
     assert "CO:1 at 0.05 g/cm^3" in warnings["init_density_too_low"]
+    config["molecules_in_box_kwargs"]["box_compositions"][0]["density_range"] = [
+        0.05,
+        0.05,
+    ]
+    with pytest.raises(ValueError, match="molecules_in_box_kwargs would be dropped"):
+        _density_warnings(config, ["C", "O"], max_vdw_volume_ratio=10.0)
 
 
 @pytest.mark.unit

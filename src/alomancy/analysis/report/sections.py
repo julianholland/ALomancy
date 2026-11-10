@@ -97,7 +97,7 @@ def md_section(
 def _md_temperature_plot(
     base_name: str, plots_dir: Path, md_kwargs: dict
 ) -> Path | None:
-    """Temperature against step for every MD run, one panel each, from the
+    """Temperature against step for all MD runs as one density map, from the
     runs' own ASE MD logs (``md_output_<i>/*.log``: one
     row per step, ``T[K]`` last). Runs without a log are skipped."""
     import inspect
@@ -108,7 +108,7 @@ def _md_temperature_plot(
     settings = {**_MD_KWARGS_DEFAULTS, **md_kwargs}
     equilibration = int(settings.get("equilibration_steps") or 0)
     md_dir = Path("results", base_name, "structure_generation")
-    temperatures, completed, labels = [], [], []
+    temperatures, completed = [], []
     for run_dir in sorted(
         md_dir.glob("md_output_*"), key=lambda p: int(p.name.rsplit("_", 1)[1])
     ):
@@ -123,7 +123,6 @@ def _md_temperature_plot(
         if not len(temps):
             continue
         temperatures.append(temps)
-        labels.append(f"run {run_dir.name.rsplit('_', 1)[1]}")
         # Equilibration (if any) and production each log their step 0.
         logged_before = equilibration + 1 if equilibration else 0
         completed.append(max(0, len(temps) - 1 - logged_before))
@@ -134,8 +133,7 @@ def _md_temperature_plot(
         temperatures,
         completed,
         path,
-        run_labels=labels,
-        title=f"MD temperature per run [{base_name}]",
+        title=f"MD temperature, all {len(temperatures)} runs [{base_name}]",
         target_temperature=float(settings["temperature"]),
         requested_steps=int(settings["steps"]),
         equilibration_steps=equilibration,

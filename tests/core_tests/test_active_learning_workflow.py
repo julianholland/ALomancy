@@ -768,22 +768,31 @@ class _FakeTrainer:
 
     def submit_n(self, outcome):
         """A fake submit_n. `outcome(fit_idx, attempt)` is "ok" (job
-        returns and writes outputs), "fail" (job returns None) or
-        "unevaluated" (job returns a result but writes no outputs)."""
+        returns and writes outputs), "fail" (job returns None, with an
+        error of its own), "fail_same" (returns None, with the same error
+        as every other "fail_same" fit) or "unevaluated" (job returns a
+        result but writes no outputs)."""
         calls: list[list[int]] = []
 
-        def fake(function, job_configs, remote_info, **kwargs):
+        def fake(function, job_configs, remote_info, failures=None, **kwargs):
             fit_indices = [
                 _fit_index(jc["function_kwargs"]["fit_dir"]) for jc in job_configs
             ]
             attempt = len(calls)
             calls.append(fit_indices)
             results = []
-            for fit_idx in fit_indices:
+            for position, fit_idx in enumerate(fit_indices):
                 result = outcome(fit_idx, attempt)
                 if result == "ok":
                     self.marker(fit_idx).write_text("done")
-                results.append(None if result == "fail" else "x.pt")
+                failed = result.startswith("fail")
+                if failed and failures is not None:
+                    failures[position] = (
+                        "AssertionError: No CUDA device available!"
+                        if result == "fail_same"
+                        else f"RuntimeError: fit {fit_idx} crashed"
+                    )
+                results.append(None if failed else "x.pt")
             return results
 
         return fake, calls
@@ -949,6 +958,74 @@ class TestTrainMlip:
         assert calls == [[0, 1, 2], [0]]
 
     @pytest.mark.unit
+    def test_identical_failures_of_every_fit_are_not_retried(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """Every fit failing the same way (no GPU, missing ExPyRe system)
+        would fail again after another queue wait: no retry."""
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "fail_same")
+
+        with (
+            patch.object(wf, "trainer", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            pytest.raises(RuntimeError, match="only 0 trained model"),
+        ):
+            wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == [[0, 1, 2]]
+
+    @pytest.mark.unit
+    def test_different_failures_of_every_fit_are_retried(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(
+            lambda fit_idx, attempt: "fail" if attempt == 0 else "ok"
+        )
+
+        with (
+            patch.object(wf, "trainer", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            patch.object(wf, "_store_predictions_and_cleanup"),
+        ):
+            models = wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == [[0, 1, 2], [0, 1, 2]]
+        assert len(models) == 3
+
+    @pytest.mark.unit
+    def test_empty_test_set_raises_before_submitting(
+        self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
+    ):
+        """Every fit used to fail on the node reading an empty test_set.xyz
+        (and be retried): now the driver stops first."""
+        monkeypatch.chdir(tmp_path)
+        self._prepare_loop_dir("al_loop_0")
+        Path("results", "al_loop_0", "test_set.xyz").write_text("")
+        wf = _make_workflow(tmp_path, workflow_jobs_dict, shared_db)
+        trainer = _FakeTrainer()
+        fake_submit, calls = trainer.submit_n(lambda fit_idx, attempt: "ok")
+
+        with (
+            patch.object(wf, "trainer", return_value=trainer),
+            patch(f"{_MODULE}.submit_n", side_effect=fake_submit),
+            patch(f"{_MODULE}.get_remote_info"),
+            pytest.raises(ValueError, match="test set is empty"),
+        ):
+            wf.train_models(_ctx(0), wf.seeds(3), min_successful=3)
+
+        assert calls == []
+
+    @pytest.mark.unit
     def test_recognizes_real_checkpoint_evaluation_on_restart(
         self, tmp_path, workflow_jobs_dict, monkeypatch, shared_db
     ):
@@ -1103,6 +1180,19 @@ class TestPredict:
 # ---------------------------------------------------------------------------
 
 
+def _generator_only(fake_generator):
+    """resolve() side effect: *fake_generator* for the structure generator,
+    the real registry for everything else (e.g. the evaluator's size cap)."""
+    from alomancy.registry import resolve as real_resolve
+
+    def side_effect(category, name):
+        if category == "structure_generator":
+            return fake_generator
+        return real_resolve(category, name)
+
+    return side_effect
+
+
 @pytest.mark.unit
 class TestGenerateCandidates:
     @pytest.mark.unit
@@ -1124,7 +1214,9 @@ class TestGenerateCandidates:
         module_logger = logging.getLogger("alomancy.core.active_learning_workflow")
         module_logger.addHandler(handler)
         try:
-            with patch(f"{_MODULE}.resolve", return_value=fake_generator):
+            with patch(
+                f"{_MODULE}.resolve", side_effect=_generator_only(fake_generator)
+            ):
                 kept = wf.generate_candidates(_ctx(0, train=[_atoms()]), _model(0))
         finally:
             module_logger.removeHandler(handler)
@@ -1147,7 +1239,7 @@ class TestGenerateCandidates:
         fake_generator = MagicMock()
         fake_generator.generate.return_value = [_atoms(), collapsed]
 
-        with patch(f"{_MODULE}.resolve", return_value=fake_generator):
+        with patch(f"{_MODULE}.resolve", side_effect=_generator_only(fake_generator)):
             result = wf.generate_candidates(_ctx(0, train=[_atoms()]), _model(1))
 
         spec = fake_generator.generate.call_args.args[1]
@@ -1276,7 +1368,12 @@ class TestInitializeTrainingSet:
             "amorphous_override": 0,
             "mp_structures": False,
         }
-        fake_initialiser.generate.return_value = [_atoms(config_type="IsolatedAtom")]
+        # Two structures of the target type: with one, the projected test
+        # set would be empty and initialisation raises before DFT.
+        fake_initialiser.generate.return_value = [
+            _atoms(config_type="IsolatedAtom"),
+            _atoms(config_type="IsolatedAtom"),
+        ]
 
         evaluated = _atoms(config_type="IsolatedAtom")
 

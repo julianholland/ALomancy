@@ -1,7 +1,7 @@
 """Tests for singles_dimers_trimers initialization functions."""
 
 import pytest
-from ase.data import atomic_numbers, vdw_radii
+from ase.data import atomic_numbers, covalent_radii, vdw_radii
 
 
 @pytest.mark.unit
@@ -28,12 +28,16 @@ class TestCreateSingleAtomsList:
         assert result[0].get_chemical_symbols() == ["O"]
 
     @pytest.mark.unit
-    def test_cell_based_on_vdw_radius(self):
+    def test_cell_is_large_enough_to_isolate_the_atom(self):
+        """At least 15 Angstrom: 3 x the vdW radius alone (about 5 Angstrom)
+        left a QE atom interacting with its periodic images."""
         from alomancy.initialize.singles_dimers_trimers import create_single_atoms_list
 
-        result = create_single_atoms_list("H")
-        expected = vdw_radii[atomic_numbers["H"]] * 3
-        assert result[0].cell[0][0] == pytest.approx(expected)
+        assert create_single_atoms_list("H")[0].cell[0][0] == pytest.approx(15.0)
+        # Larger atoms keep 3 x their vdW radius when that is bigger.
+        big = vdw_radii[atomic_numbers["Cs"]] * 3
+        expected = max(big, 15.0)
+        assert create_single_atoms_list("Cs")[0].cell[0][0] == pytest.approx(expected)
 
     @pytest.mark.unit
     def test_needs_relaxation_false(self):
@@ -130,15 +134,39 @@ class TestCreateDimerAtomsList:
         assert result[0].get_chemical_symbols() in [["N", "O"], ["O", "N"]]
 
     @pytest.mark.unit
-    def test_distance_minimum_fraction_of_vdw(self):
-        """Minimum distance should be 20% of sum of vdW radii."""
+    def test_distances_follow_the_covalent_radii(self):
+        """0.5-2.0 x the covalent radii sum by default: Pt-Pt starts at 1.36
+        Angstrom, not the 0.70 of the former 0.2 x vdW (overlapping PAW
+        spheres, forces above 100 eV/Angstrom, failed SCFs)."""
         from alomancy.initialize.singles_dimers_trimers import create_dimer_atoms_list
 
-        result = create_dimer_atoms_list("H", "H", 10)
-        vdw_sum = sum(vdw_radii[atomic_numbers["H"]] for _ in range(2))
-        min_distance = 0.2 * vdw_sum
+        pair = 2 * covalent_radii[atomic_numbers["Pt"]]
+        result = create_dimer_atoms_list("Pt", "Pt", 10)
         distances = [a.get_distance(0, 1) for a in result]
-        assert float(min(distances)) >= float(min_distance) - 1e-10
+        assert min(distances) == pytest.approx(0.5 * pair)
+        assert max(distances) == pytest.approx(2.0 * pair)
+        assert min(distances) > 1.3
+
+    @pytest.mark.unit
+    def test_distance_range_override(self):
+        from alomancy.initialize.singles_dimers_trimers import (
+            create_dimer_atoms_list,
+            create_trimer_atoms_list,
+        )
+
+        pair = 2 * covalent_radii[atomic_numbers["Pt"]]
+        result = create_dimer_atoms_list("Pt", "Pt", 3, distance_range=[0.8, 1.5])
+        distances = [a.get_distance(0, 1) for a in result]
+        assert min(distances) == pytest.approx(0.8 * pair)
+        assert max(distances) == pytest.approx(1.5 * pair)
+        trimers = create_trimer_atoms_list(
+            "Pt", "Pt", "Pt", 5, distance_range=[0.8, 1.5]
+        )
+        shortest = min(
+            min(t.get_distance(i, j) for i in range(3) for j in range(i + 1, 3))
+            for t in trimers
+        )
+        assert shortest >= 0.8 * pair - 1e-9
 
 
 @pytest.mark.unit

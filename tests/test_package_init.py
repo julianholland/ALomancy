@@ -446,10 +446,10 @@ def test_path_error_names_the_jobs_pinning_the_long_layout(monkeypatch):
     long_path = "/" + "x" * 300
     monkeypatch.setattr(alomancy, "_LONG_RUNDIR_JOB_IDS", ())
     with pytest.raises(ValueError) as plain:
-        check_remote_path_length(long_path, remote_rundir="/x", context="t")
+        check_remote_path_length(long_path, limit=240, remote_rundir="/x", context="t")
     assert "alomancy cancel" not in str(plain.value)
 
     monkeypatch.setattr(alomancy, "_LONG_RUNDIR_JOB_IDS", ("run_sp_vasp_x_1",))
     with pytest.raises(ValueError, match="alomancy cancel") as pinned:
-        check_remote_path_length(long_path, remote_rundir="/x", context="t")
+        check_remote_path_length(long_path, limit=240, remote_rundir="/x", context="t")
     assert "run_sp_vasp_x_1" in str(pinned.value)

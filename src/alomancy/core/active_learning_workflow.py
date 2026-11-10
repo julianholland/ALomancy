@@ -197,13 +197,19 @@ from alomancy.database.global_database import (
     GlobalDatabase,
 )
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
+    evaluation_done,
+    read_initial_frames,
+)
+from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     high_accuracy_evaluation as _evaluator_orchestrate,
 )
 from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
     read_existing_result as _read_evaluated_structures,
 )
-from alomancy.high_accuracy_evaluation.high_accuracy_calc_interface import (
-    read_initial_frames,
+from alomancy.high_accuracy_evaluation.level_of_theory import (
+    LEVEL_OF_THEORY_KEY,
+    differing_fields,
+    stored_identity_id,
 )
 from alomancy.mlip.base import (
     ALomancyTrainer,
@@ -236,7 +242,9 @@ from alomancy.utils.clean_structures import (
     clean_structures,
     drop_unwritable_info,
     filter_blown_up_structures,
+    filter_structures_by_atom_count,
     filter_structures_by_min_bond_distance,
+    is_blown_up,
     resolve_max_vdw_volume_ratio,
     resolve_vdw_exempt_config_types,
 )
@@ -262,6 +270,7 @@ from alomancy.utils.logging_config import (
     setup_logging,
 )
 from alomancy.utils.remote_ssh import (
+    check_expyre_systems,
     ensure_ssh_connectivity,
     resolve_hpc_host,
     use_noninteractive_ssh,
@@ -369,6 +378,10 @@ _GENERAL_KWARGS_DEFAULTS: dict[str, Any] = {
     "report_suggestions": None,
     # How many structures the selector sends to DFT each loop.
     "num_of_structures_per_loop": 50,
+    # The database check before initialisation raises when the database
+    # holds labels from another code (energies on another scale); true
+    # turns that into the level_of_theory_mismatch warning.
+    "allow_mixed_level_of_theory": False,
 }
 
 # high_accuracy_evaluation.force_ceiling default (eV/Angstrom): AL-generated
@@ -666,6 +679,47 @@ _GENERAL_KNOWN_KEYS = set(_GENERAL_KWARGS_DEFAULTS) | {
 }
 
 
+# Initialisation structures built only from target structures
+# (stretch_compress_targets_kwargs, rattle_target_structures): they count
+# for the test set whenever target_config_types is set, so one bulk
+# structure and its deformations give a test set.
+TARGET_DERIVED_CONFIG_TYPES = ("init_stretch_compress", "init_rattle")
+
+
+def test_eligible_config_types(target_config_types: list[str] | None) -> set[str]:
+    """The config_types whose structures may go to the test set: the
+    targets, plus the structures derived from them."""
+    targets = set(target_config_types or [])
+    return targets | set(TARGET_DERIVED_CONFIG_TYPES) if targets else targets
+
+
+def _describe_needs(needs: dict) -> str:
+    """The non-empty initialisation needs, e.g. ``100 amorphous, 1 dimers``."""
+    parts = []
+    for label, value in (
+        ("isolated atoms", len(needs.get("isolated_atoms") or [])),
+        ("dimers", sum((needs.get("dimer_override") or {}).values())),
+        ("trimers", sum((needs.get("trimer_override") or {}).values())),
+        ("amorphous", needs.get("amorphous_override") or 0),
+        ("molecules", sum((needs.get("molecule_override") or {}).values())),
+        ("boxes of molecules", sum((needs.get("box_override") or {}).values())),
+        ("amorphous clusters", needs.get("amorphous_cluster_override") or 0),
+        (
+            "molecule clusters",
+            sum((needs.get("molecule_cluster_override") or {}).values()),
+        ),
+        (
+            "crystal structures",
+            sum(len(v) for v in (needs.get("crystal_override") or {}).values()),
+        ),
+    ):
+        if value:
+            parts.append(f"{value} {label}")
+    if needs.get("mp_structures"):
+        parts.append("Materials Project structures")
+    return ", ".join(parts) or "none"
+
+
 def _needs_anything(needs: dict) -> bool:
     return bool(
         needs["isolated_atoms"]
@@ -675,6 +729,9 @@ def _needs_anything(needs: dict) -> bool:
         or needs["mp_structures"]
         or needs.get("molecule_override")
         or needs.get("box_override")
+        or needs.get("amorphous_cluster_override")
+        or needs.get("molecule_cluster_override")
+        or needs.get("crystal_override")
     )
 
 
@@ -719,7 +776,9 @@ def _is_user_specified(raw_phase_dict: dict, dotted_key: str) -> bool:
     return True
 
 
-def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
+def _resolve_effective_phase_dict(
+    phase: str, phase_dict: dict, *, evaluator_supports_periodic: bool = True
+) -> dict:
     """Return phase_dict with its <method>_kwargs (or, for
     "initialization", each of its structure-type namespaces -- see
     initialiser_interface.py's module docstring; or, for "general",
@@ -773,7 +832,10 @@ def _resolve_effective_phase_dict(phase: str, phase_dict: dict) -> dict:
                 **effective.get(kwargs_key, {}),
             }
     elif phase == "initialization":
-        namespace_defaults = resolve("initialiser", "default").kwargs_defaults
+        # The block defaults depend on the evaluator (periodic or not).
+        namespace_defaults = resolve("initialiser", "default").kwargs_defaults_for(
+            evaluator_supports_periodic
+        )
         for namespace, defaults in namespace_defaults.items():
             effective[namespace] = {**defaults, **effective.get(namespace, {})}
     elif phase == "training":
@@ -1184,6 +1246,13 @@ class ActiveLearningWorkflow(ABC):
         self._db: GlobalDatabase | None = None
         self._db_path = general_kwargs["db_path"]
         self.remove_redundancy = general_kwargs["remove_redundancy"]
+        allow_mixed = general_kwargs["allow_mixed_level_of_theory"]
+        if not isinstance(allow_mixed, bool):
+            raise ValueError(
+                "general.allow_mixed_level_of_theory must be true or false, "
+                f"got {allow_mixed!r}."
+            )
+        self.allow_mixed_level_of_theory = allow_mixed
         # Set by each curation pass; the pre-DFT selection reuses it.
         self._redundancy_tolerance: float | None = None
         self._redundancy_curated = False
@@ -1249,6 +1318,7 @@ class ActiveLearningWorkflow(ABC):
                 },
             )
         self._validate_generator_kwargs(jobs_dict.get("structure_generation"))
+        self._validate_evaluator_kwargs(jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME))
         self._validate_initialiser_kwargs(jobs_dict.get(_INITIALIZATION_NAME))
         self._validate_remote_dft_path_length(
             jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME)
@@ -1278,6 +1348,55 @@ class ActiveLearningWorkflow(ABC):
                 seed=self.seed,
             )
 
+    def _evaluator_entry(self) -> Any:
+        """The registry entry of high_accuracy_evaluation.evaluator, or
+        None when there is no such section or the name is unknown (the
+        config-key check reports that)."""
+        hae_config = self.jobs_dict.get(_HIGH_ACCURACY_EVALUATION_NAME)
+        if not isinstance(hae_config, dict):
+            return None
+        try:
+            return resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
+        except ValueError:
+            return None
+
+    @property
+    def evaluator_supports_periodic(self) -> bool:
+        """False for an evaluator without periodic boundary conditions
+        (ORCA): initialisation then defaults to non-periodic structures."""
+        entry = self._evaluator_entry()
+        return True if entry is None else bool(entry.supports_periodic)
+
+    def _evaluator_max_num_of_atoms(self) -> int | None:
+        entry = self._evaluator_entry()
+        if entry is None:
+            return None
+        cap: int | None = entry.max_num_of_atoms(
+            self.jobs_dict[_HIGH_ACCURACY_EVALUATION_NAME]
+        )
+        return cap
+
+    def _evaluator_level_of_theory(self) -> Any:
+        """The LevelOfTheory the configured evaluator labels with, or None
+        without an evaluator."""
+        entry = self._evaluator_entry()
+        if entry is None:
+            return None
+        hae_config = self.jobs_dict[_HIGH_ACCURACY_EVALUATION_NAME]
+        hpc = hae_config.get("hpc")
+        return entry.level_of_theory(hae_config, hpc if isinstance(hpc, dict) else None)
+
+    def _validate_evaluator_kwargs(self, hae_config: Any) -> None:
+        """The evaluator's construction-time check (registry entry
+        validate_kwargs, e.g. ORCA's: orca_kwargs complete, its parallel
+        settings within the HPC profile's node)."""
+        entry = self._evaluator_entry()
+        validate = getattr(entry, "validate_kwargs", None)
+        if validate is None or not isinstance(hae_config, dict):
+            return
+        hpc = hae_config.get("hpc")
+        validate(hae_config, hpc if isinstance(hpc, dict) else None)
+
     def _validate_initialiser_kwargs(self, init_config: Any) -> None:
         """The initialiser's construction-time check (registry entry
         validate_kwargs): molecule blocks and density ranges, which would
@@ -1296,12 +1415,15 @@ class ActiveLearningWorkflow(ABC):
                 elements=list(elements),
                 max_vdw_volume_ratio=self.max_vdw_volume_ratio,
                 vdw_exempt_config_types=self.vdw_exempt_config_types,
+                evaluator_supports_periodic=self.evaluator_supports_periodic,
+                max_num_of_atoms=self._evaluator_max_num_of_atoms(),
             )
 
     def _validate_remote_dft_path_length(self, hae_config: Any) -> None:
         """Fail now, not after training and MD, if the longest remote DFT
-        run directory this run can produce is too long for VASP/QE
-        (submitters.MAX_REMOTE_OUTPUT_DIR_LEN). ase_remote_submitter checks
+        run directory this run can produce is too long for the evaluator
+        (its registry entry point max_output_dir_len: VASP 240, QE none,
+        which skips the check). ase_remote_submitter checks
         the exact paths again before submitting each batch.
 
         An early warning, not the last word: the per-batch check in
@@ -1325,6 +1447,8 @@ class ActiveLearningWorkflow(ABC):
             entry = resolve("dft_evaluator", hae_config.get("evaluator", "qe"))
         except ValueError:
             return  # reported by the config-key check
+        if entry.max_output_dir_len is None:
+            return
         base_names = []
         if self.num_of_al_loops > 0:
             base_names.append(f"al_loop_{self.num_of_al_loops - 1}")
@@ -1348,6 +1472,7 @@ class ActiveLearningWorkflow(ABC):
         )
         check_remote_path_length(
             projected_remote_output_dir(remote_rundir, job_name, out_dir),
+            limit=entry.max_output_dir_len,
             remote_rundir=remote_rundir,
             context=(
                 f"high_accuracy_evaluation on HPC {hpc['hpc_name']!r} "
@@ -1476,7 +1601,15 @@ class ActiveLearningWorkflow(ABC):
             # what is and isn't covered. Values the user actually wrote
             # are marked explicitly; unmarked lines are values filled in
             # purely from a module's own defaults.
-            effective_phase_dict = _resolve_effective_phase_dict(phase, phase_dict)
+            effective_phase_dict = _resolve_effective_phase_dict(
+                phase,
+                phase_dict,
+                evaluator_supports_periodic=self.evaluator_supports_periodic,
+            )
+            if phase == _HIGH_ACCURACY_EVALUATION_NAME and (
+                level := self._evaluator_level_of_theory()
+            ):
+                lines.append(f"  level of theory: {level.label()}")
             for key, value in _flatten_settings(effective_phase_dict):
                 # max_time is never marked either way (see
                 # _resolve_effective_phase_dict's docstring): it's already
@@ -1594,6 +1727,11 @@ class ActiveLearningWorkflow(ABC):
         acquire_local_expyre_lock()
         self.display_workflow_summary()
         hpc_profiles = _collect_hpc_profiles(self.jobs_dict)
+        if not (
+            os.getenv("ALOMANCY_TEST_MODE") == "1"
+            or os.getenv("ALOMANCY_MOCK_EXTERNAL") == "1"
+        ):
+            check_expyre_systems(hpc_profiles)
         if own_master_enabled():
             # The run's own ssh master per host (utils/ssh_master.py),
             # logged in here while whoever launched the run is watching.
@@ -1716,6 +1854,138 @@ class ActiveLearningWorkflow(ABC):
             self.db.size,
         )
 
+    def _check_database_against_evaluator(self) -> None:
+        """One pass over the global DB before anything is generated:
+
+        - raise when it holds labels from a different code than the
+          configured evaluator's: absolute energies of different codes
+          (all-electron or pseudopotential, different pseudopotentials)
+          never share a scale. general.allow_mixed_level_of_theory turns
+          this into the warning below;
+        - warn (level_of_theory_mismatch) for labels from the same code at
+          a different level of theory (functional, basis, ...);
+          precision-only differences (k-points, smearing, SCF threshold)
+          are logged at info;
+        - structures from before the stamp count as unknown: a warning
+          (level_of_theory_unknown) while nothing in the database carries
+          the current level (a new run, or one that just switched
+          evaluator), an info line after that;
+        - raise when the evaluator has no periodic boundary conditions
+          (ORCA) and the DB holds periodic structures: they would seed
+          structure generation, and the first loop's evaluation would
+          fail on the periodic candidates hours in.
+        """
+        entry = self._evaluator_entry()
+        if entry is None or self.db.size == 0:
+            return
+        level = self._evaluator_level_of_theory()
+        current = level.to_dict()
+        current_id = level.identity_id()
+        other_ids: dict[str, int] = {}
+        other_levels: dict[str, dict] = {}
+        precision_only = 0
+        unknown = 0
+        current_count = 0
+        periodic: dict[str, int] = {}
+        for atoms in self.db.get_all_as_atoms():
+            if atoms.pbc.any():
+                ct = str(atoms.info.get("config_type", "unknown"))
+                periodic[ct] = periodic.get(ct, 0) + 1
+            stored_id = stored_identity_id(atoms.info)
+            if stored_id is None:
+                unknown += 1
+            elif stored_id != current_id:
+                other_ids[stored_id] = other_ids.get(stored_id, 0) + 1
+                if stored_id not in other_levels:
+                    try:
+                        other_levels[stored_id] = json.loads(
+                            str(atoms.info.get(LEVEL_OF_THEORY_KEY, "{}"))
+                        )
+                    except json.JSONDecodeError:
+                        other_levels[stored_id] = {}
+            else:
+                current_count += 1
+                if atoms.info.get(LEVEL_OF_THEORY_KEY) != level.to_json():
+                    precision_only += 1
+        if periodic and not entry.supports_periodic:
+            raise ValueError(
+                "high_accuracy_evaluation's evaluator has no periodic boundary "
+                f"conditions, but the global database holds "
+                f"{sum(periodic.values())} periodic structures (config_type: "
+                + ", ".join(f"{k} {v}" for k, v in sorted(periodic.items()))
+                + "), e.g. from general.start_from. They would seed structure "
+                "generation and make periodic candidates the evaluator can't "
+                "label. Start from non-periodic data only (pbc False)."
+            )
+        other_codes = {
+            i: other_levels[i].get("code")
+            for i in other_ids
+            if other_levels[i].get("code") != level.code
+        }
+        if other_codes and not self.allow_mixed_level_of_theory:
+            raise ValueError(
+                "The global database holds labels from another code than "
+                f"the configured evaluator ({level.code}): "
+                + "; ".join(
+                    f"{other_ids[i]} structure(s) from "
+                    f"{other_codes[i] or 'an unknown code'} (id {i})"
+                    for i in sorted(other_codes)
+                )
+                + ". Energies from different codes are on different scales "
+                "(e.g. all-electron vs pseudopotential), so training on both "
+                "breaks the model. Start from a database labelled with "
+                f"{level.code}, relabel those structures, or set "
+                "general.allow_mixed_level_of_theory: true to train on both "
+                "anyway (a warning instead)."
+            )
+        if other_ids:
+            details = "; ".join(
+                f"{n} structure(s) with id {i} (differs in "
+                f"{', '.join(differing_fields(other_levels[i], current)) or '?'})"
+                for i, n in sorted(other_ids.items())
+            )
+            logger.warning(
+                "The global database holds labels from a different level of "
+                "theory than the configured evaluator's (%s, id %s): %s. Their "
+                "energies are on a different scale; training on both mixes "
+                "them. Start from a database labelled at this level of theory, "
+                "or relabel those structures.",
+                level.label(),
+                current_id,
+                details,
+                extra={
+                    "event": "level_of_theory_mismatch",
+                    "data": {"current": current_id, "others": other_ids},
+                },
+            )
+        if precision_only:
+            logger.info(
+                "%d structure(s) in the global database were labelled at this "
+                "level of theory with different precision settings (k-points, "
+                "smearing, SCF threshold or numerical grids).",
+                precision_only,
+            )
+        if unknown and not current_count:
+            logger.warning(
+                "%d structure(s) in the global database carry no level of "
+                "theory (labelled before it was recorded, or imported), and "
+                "none carries the configured evaluator's (%s). Check they "
+                "were labelled with the same code and settings: energies "
+                "from another code are on another scale.",
+                unknown,
+                level.label(),
+                extra={
+                    "event": "level_of_theory_unknown",
+                    "data": {"n": unknown, "current": current_id},
+                },
+            )
+        elif unknown:
+            logger.info(
+                "%d structure(s) in the global database carry no level of "
+                "theory (labelled before it was recorded, or imported).",
+                unknown,
+            )
+
     # -- Initialiser -> evaluator orchestration (decision 10) --
 
     def _initialize_training_set(
@@ -1726,6 +1996,7 @@ class ActiveLearningWorkflow(ABC):
         init_config = self.jobs_dict.get(_INITIALIZATION_NAME)
 
         self._import_start_data()
+        self._check_database_against_evaluator()
 
         initialiser_entry = resolve("initialiser", "default")
         elements = self._required_elements()
@@ -1744,12 +2015,17 @@ class ActiveLearningWorkflow(ABC):
                 self.db.size,
             )
         elif _needs_anything(
-            needs := initialiser_entry.compute_needs(self.db, init_config, elements)
+            needs := initialiser_entry.compute_needs(
+                self.db,
+                init_config,
+                elements,
+                evaluator_supports_periodic=self.evaluator_supports_periodic,
+            )
         ):
             logger.info(
                 "DB check: %d structure(s) already evaluated. Generating missing "
                 "structures: %d isolated atoms, %d dimers, %d trimers, %d amorphous, "
-                "%d molecules, %d boxes of molecules.",
+                "%d molecules, %d boxes of molecules, %d crystal structures.",
                 self.db.size,
                 len(needs["isolated_atoms"]),
                 sum(needs["dimer_override"].values()),
@@ -1757,47 +2033,77 @@ class ActiveLearningWorkflow(ABC):
                 needs["amorphous_override"],
                 sum(needs.get("molecule_override", {}).values()),
                 sum(needs.get("box_override", {}).values()),
+                sum(len(v) for v in (needs.get("crystal_override") or {}).values()),
             )
 
-            generated_atoms_list = None
-            if init_config.get("read_generated_file") is not None:
-                generated_atoms_list = read_atoms_file_if_enabled(
-                    True, work_dir / init_config["read_generated_file"]
+            if evaluation_done(base_name):
+                # The initialisation DFT already ran: the orchestrator would
+                # return its cached results whatever is generated now, so the
+                # unmet needs (structures dropped before DFT, e.g. blown-up
+                # amorphous cells, or failed DFT jobs) are never evaluated.
+                # Regenerating them only made every restart reload, and
+                # re-add, the same results.
+                logger.warning(
+                    "Initialization DFT already finished, but these needs are "
+                    "still unmet: %s. They were dropped before DFT (e.g. "
+                    "blown-up cells) or their DFT failed, and are not retried. "
+                    "Fix the initialization settings and delete "
+                    "results/%s/high_accuracy_eval.done to evaluate the "
+                    "missing ones, or disable those blocks.",
+                    _describe_needs(needs),
+                    base_name,
+                    extra={
+                        "event": "initialization_needs_unmet",
+                        "data": {"needs": _describe_needs(needs)},
+                    },
                 )
-                if generated_atoms_list:
-                    logger.info(
-                        "Read %d pre-generated structures from file: %s",
-                        len(generated_atoms_list),
-                        init_config["read_generated_file"],
+                high_accuracy_structures = _read_evaluated_structures(
+                    self.jobs_dict["high_accuracy_evaluation"],
+                    base_name=base_name,
+                    name=_HIGH_ACCURACY_EVALUATION_NAME,
+                )
+            else:
+                generated_atoms_list = None
+                if init_config.get("read_generated_file") is not None:
+                    generated_atoms_list = read_atoms_file_if_enabled(
+                        True, work_dir / init_config["read_generated_file"]
+                    )
+                    if generated_atoms_list:
+                        logger.info(
+                            "Read %d pre-generated structures from file: %s",
+                            len(generated_atoms_list),
+                            init_config["read_generated_file"],
+                        )
+
+                if not generated_atoms_list:
+                    generated_atoms_list = initialiser_entry.generate(
+                        init_config,
+                        base_name=base_name,
+                        name=_INITIALIZATION_NAME,
+                        elements=elements,
+                        hpc=init_config.get("hpc"),
+                        max_time=init_config.get("max_time"),
+                        needs=needs,
+                        target_config_types=self.dataset_kwargs["target_config_types"],
+                        seed=self.seed,
+                        evaluator_supports_periodic=self.evaluator_supports_periodic,
                     )
 
-            if not generated_atoms_list:
-                generated_atoms_list = initialiser_entry.generate(
-                    init_config,
+                if not generated_atoms_list:
+                    raise ValueError(
+                        "No structures were generated. Check initialization configuration."
+                    )
+                self._check_projected_test_set(generated_atoms_list)
+
+                high_accuracy_structures = _evaluator_orchestrate(
+                    generated_atoms_list,
+                    self.jobs_dict["high_accuracy_evaluation"],
                     base_name=base_name,
-                    name=_INITIALIZATION_NAME,
-                    elements=elements,
-                    hpc=init_config.get("hpc"),
-                    max_time=init_config.get("max_time"),
-                    needs=needs,
-                    target_config_types=self.dataset_kwargs["target_config_types"],
-                    seed=self.seed,
+                    name=_HIGH_ACCURACY_EVALUATION_NAME,
+                    hpc=self.jobs_dict["high_accuracy_evaluation"]["hpc"],
+                    max_time=self.jobs_dict["high_accuracy_evaluation"]["max_time"],
+                    allow_relaxation=True,
                 )
-
-            if not generated_atoms_list:
-                raise ValueError(
-                    "No structures were generated. Check initialization configuration."
-                )
-
-            high_accuracy_structures = _evaluator_orchestrate(
-                generated_atoms_list,
-                self.jobs_dict["high_accuracy_evaluation"],
-                base_name=base_name,
-                name=_HIGH_ACCURACY_EVALUATION_NAME,
-                hpc=self.jobs_dict["high_accuracy_evaluation"]["hpc"],
-                max_time=self.jobs_dict["high_accuracy_evaluation"]["max_time"],
-                allow_relaxation=True,
-            )
 
             if not high_accuracy_structures:
                 raise ValueError(
@@ -1893,7 +2199,9 @@ class ActiveLearningWorkflow(ABC):
             )
             return grouped
 
-        target_config_types = set(dataset_kwargs["target_config_types"])
+        target_config_types = test_eligible_config_types(
+            dataset_kwargs["target_config_types"]
+        )
         eligible_test_structures: list[Atoms] = []
         always_train_structures: list[Atoms] = []
         for atoms in structures:
@@ -1934,7 +2242,86 @@ class ActiveLearningWorkflow(ABC):
                 "train_atoms_list.",
                 sorted(missing_types),
             )
+        if not test_xyzs:
+            # Reserving left the test set empty (e.g. one init_MP and a few
+            # of its stretch/compress copies): move one structure of a type
+            # that still has another in training.
+            counts: dict[str, int] = {}
+            for a in eligible_train:
+                ct = a.info.get("config_type", "")
+                counts[ct] = counts.get(ct, 0) + 1
+            spare = next(
+                (
+                    i
+                    for i, a in enumerate(eligible_train)
+                    if counts[a.info.get("config_type", "")] > 1
+                ),
+                None,
+            )
+            if spare is not None:
+                test_xyzs.append(eligible_train.pop(spare))
+            else:
+                logger.warning(
+                    "The test set is empty: every test-eligible config_type "
+                    "(%s) has a single structure, kept for training.",
+                    sorted(eligible_config_types),
+                )
         return always_train_structures + eligible_train, test_xyzs
+
+    def _check_projected_test_set(self, generated: list[Atoms]) -> None:
+        """Before any initialisation DFT: count the structures that can go
+        to the test set (target_config_types and the structures derived
+        from them, test-tagged ones already in the database, and newly
+        generated ones the blown-up filter won't drop). Raises below 2 (one
+        stays in training, so the test set would be empty and training
+        could never start); warns few_target_structures below 5."""
+        if self.dataset_kwargs["grouped_splits"]:
+            return  # the test set is chosen by split_group, not config_type
+        eligible_types = test_eligible_config_types(
+            self.dataset_kwargs["target_config_types"]
+        )
+        max_ratio = self.max_vdw_volume_ratio
+        exempt = self.vdw_exempt_config_types
+        counts: dict[str, int] = {}
+        for atoms in self.db.get_all_as_atoms():
+            ct = str(atoms.info.get("config_type", ""))
+            if ct in eligible_types or atoms.info.get("split") == "test":
+                counts[ct] = counts.get(ct, 0) + 1
+        for atoms in generated:
+            ct = str(atoms.info.get("config_type", ""))
+            if ct in eligible_types and not is_blown_up(atoms, max_ratio, exempt):
+                counts[ct] = counts.get(ct, 0) + 1
+        total = sum(counts.values())
+        if total >= 5:
+            return
+        found = ", ".join(f"{n} {ct}" for ct, n in sorted(counts.items())) or "none"
+        advice = (
+            "Enable initialization.rattle_target_structures (1-atom cells are "
+            "rattled as 2x2x2 supercells), raise stretch_compress_targets_kwargs"
+            ".num_of_stretch_compress_per_target, add config_types to "
+            "general.dataset_kwargs.target_config_types (e.g. init_amorphous at "
+            "a realistic density), or add structures through general.start_from."
+        )
+        if total < 2:
+            raise ValueError(
+                f"Initialisation would leave at most {total} structure(s) that "
+                f"can go to the test set ({found}; target_config_types "
+                f"{sorted(self.dataset_kwargs['target_config_types'] or [])} and "
+                "their stretch/compress and rattled copies, after dropping "
+                "blown-up cells). One is always kept for training, so the test "
+                "set would be empty and training could not start. " + advice
+            )
+        logger.warning(
+            "Initialisation gives only %d structure(s) that can go to the test "
+            "set (%s): the test errors will rest on very few structures. %s",
+            total,
+            found,
+            advice,
+            extra={
+                "event": "few_target_structures",
+                "data": {"total": total, "counts": counts},
+            },
+        )
 
     def _apply_split_filters(self) -> None:
         """Re-flag train/test structures against general.train_filter /
@@ -2114,6 +2501,10 @@ class ActiveLearningWorkflow(ABC):
 
         last_complete = self._last_complete_loop()
         if last_complete >= 0:
+            # On every start, not only in initialisation: a run restarted
+            # with another evaluator after some loops would otherwise mix
+            # energy scales (or seed periodic candidates for ORCA) silently.
+            self._check_database_against_evaluator()
             effective_start = max(self.start_loop, last_complete + 1)
             logger.info(
                 "Resuming from loop %d (%d train / %d test from DB).",
@@ -2403,6 +2794,20 @@ class ActiveLearningWorkflow(ABC):
                 "general.start_from, the initialization section and "
                 "general.train_filter."
             )
+        if missing and (not test_path.exists() or test_path.stat().st_size == 0):
+            # Every fit would fail on the node reading an empty
+            # test_set.xyz, after its queue wait, and be retried.
+            raise ValueError(
+                f"train_mlip for {base_name}: the test set is empty, so training "
+                "can't run. Test structures come from "
+                "general.dataset_kwargs.target_config_types "
+                f"({dataset_kwargs['target_config_types']}) and the "
+                "stretch/compress and rattled copies of those targets. Add "
+                "config_types to it, enable "
+                "initialization.rattle_target_structures, raise "
+                "num_of_stretch_compress_per_target, or add structures through "
+                "general.start_from."
+            )
         if missing:
             logger.info(
                 "train_mlip for %s: %d/%d fit(s) already cached; submitting %s.",
@@ -2424,6 +2829,9 @@ class ActiveLearningWorkflow(ABC):
             # (e.g. MACE's E0s) when the config doesn't set them.
             isolated_atom_energies = self.db.get_isolated_atom_energies()
 
+            # fit index -> failure_signature of its last failed attempt.
+            fit_failures: dict[int, str] = {}
+
             def submit(fit_indices: list[int]) -> None:
                 job_configs = [
                     {
@@ -2444,7 +2852,12 @@ class ActiveLearningWorkflow(ABC):
                     }
                     for fit_idx in fit_indices
                 ]
-                submitted = submit_n(run_training, job_configs, remote_info)
+                batch_failures: dict[int, str] = {}
+                submitted = submit_n(
+                    run_training, job_configs, remote_info, failures=batch_failures
+                )
+                for position, signature in batch_failures.items():
+                    fit_failures[fit_indices[position]] = signature
                 for position, fit_idx in enumerate(fit_indices):
                     if submitted[position] is None:
                         continue
@@ -2471,7 +2884,28 @@ class ActiveLearningWorkflow(ABC):
             # One retry pass for every fit still missing: a single transient
             # failure (node crash, sync error) must not end the run.
             failed = [i for i in missing if i not in results]
-            if failed:
+            same_error = {fit_failures.get(i) for i in failed}
+            if (
+                len(failed) > 1
+                and failed == missing
+                and len(same_error) == 1
+                and None not in same_error
+            ):
+                # Every fit failed the same way (no GPU, a missing ExPyRe
+                # system, an empty input file): a retry would only fail
+                # again after another queue wait.
+                logger.warning(
+                    "train_mlip for %s: all %d fits failed with the same error, "
+                    "so they are not retried: %s",
+                    base_name,
+                    len(failed),
+                    same_error.pop(),
+                    extra={
+                        "event": "fit_retry_skipped",
+                        "data": {"n": len(failed), "total": num_of_models},
+                    },
+                )
+            elif failed:
                 logger.warning(
                     "train_mlip for %s: fit(s) %s failed; retrying them once.",
                     base_name,
@@ -2635,6 +3069,14 @@ class ActiveLearningWorkflow(ABC):
         # Blown-up cells never reach selection, so no DFT slot goes to one.
         kept = filter_blown_up_structures(
             kept, self.max_vdw_volume_ratio, self.vdw_exempt_config_types
+        )
+        # Nor do structures above the evaluator's size cap (ORCA with a
+        # correlated method): dropped only at the DFT step, the whole
+        # loop's selection could go to structures that are then discarded.
+        kept = filter_structures_by_atom_count(
+            kept,
+            self._evaluator_max_num_of_atoms(),
+            str(self.jobs_dict["high_accuracy_evaluation"].get("evaluator", "qe")),
         )
         if self.mlip_relaxation is not None and kept:
             # Selection scores what DFT will start from: the relaxed

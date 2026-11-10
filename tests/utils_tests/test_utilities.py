@@ -1101,12 +1101,15 @@ def test_job_outcome_events_name_the_jobs_item(
     executor_logger = logging.getLogger("alomancy.remote_submission.executor")
     executor_logger.addHandler(handler)
     # job_succeeded is logged at INFO, below what setup_logging may have
-    # left on the parent logger.
-    monkeypatch.setattr(executor_logger, "level", logging.DEBUG)
+    # left on the parent logger. setLevel, not assigning .level: only
+    # setLevel clears the isEnabledFor cache an earlier test may have filled.
+    old_level = executor_logger.level
+    executor_logger.setLevel(logging.DEBUG)
     try:
         executor._run_single_job(0, job)
     finally:
         executor_logger.removeHandler(handler)
+        executor_logger.setLevel(old_level)
 
     (outcome,) = [r for r in records if getattr(r, "event", None) == event]
     assert outcome.data == {"item": "fit_2"}
@@ -2159,3 +2162,20 @@ high_accuracy_evaluation:
         assert "mlip_committee" in result
         assert "structure_generation" in result
         assert "high_accuracy_evaluation" in result
+
+
+@pytest.mark.unit
+def test_failed_jobs_record_a_path_free_failure_signature(tmp_path, monkeypatch):
+    """The training retry compares these: the same error in two jobs (each
+    with its own stage directory in the message) must compare equal."""
+    from alomancy.remote_submission.executor import failure_signature
+
+    monkeypatch.chdir(tmp_path)
+    job = _FakeExPyReJob("job0", tmp_path / "stage" / "job0", should_fail=True)
+    executor = _fake_executor(max_num_of_concurrent_jobs=1, jobs=[job])
+    assert executor._run_single_job(0, job) == (0, None)
+    assert executor.failures == {0: "RuntimeError: job0 failed"}
+
+    a = failure_signature(ValueError("Empty file: /fhi/home/u/run_A_x1/test_set.xyz"))
+    b = failure_signature(ValueError("Empty file: /fhi/home/u/run_B_y2/test_set.xyz"))
+    assert a == b == "ValueError: Empty file: <path>"

@@ -203,7 +203,7 @@ def _shorten_rundir_extra(
     $HOSTNAME (*expyre_hostname*, "unkownhost" when unset) and the full
     local run path. It adds nothing but length: the remote DFT run
     directory hit VASP's ~255-character path limit (see
-    submitters.MAX_REMOTE_OUTPUT_DIR_LEN). Each run still gets its own
+    run_vasp.MAX_OUTPUT_DIR_LEN). Each run still gets its own
     remote directory, and a short hash of *host* keeps the same path on
     two machines apart.
 

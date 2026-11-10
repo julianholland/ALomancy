@@ -5,14 +5,32 @@ import numpy as np
 from ase import Atoms
 from ase.calculators.espresso import Espresso, EspressoProfile
 
+from alomancy.high_accuracy_evaluation.level_of_theory import (
+    RYDBERG_EV,
+    LevelOfTheory,
+    functional_rung,
+    is_hartree_fock,
+)
 from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
     _run_sp,
-    generate_kpts,
+    kpoint_grid,
 )
 
 logger = logging.getLogger(__name__)
+
+# The longest remote job output directory QE can work in (registry entry
+# point max_output_dir_len); None: no limit is checked. Only VASP has the
+# short Fortran path buffer (run_vasp.MAX_OUTPUT_DIR_LEN).
+MAX_OUTPUT_DIR_LEN: int | None = None
+
+# Registry entry points: QE handles periodic and non-periodic cells.
+SUPPORTS_PERIODIC = True
+SUPPORTS_NON_PERIODIC = True
+
+# k-point spacing (1/Angstrom, as generate_kpts takes it).
+KSPACING = 0.15
 
 
 def find_optimal_npool(
@@ -142,13 +160,44 @@ def resolve_effective_kwargs(qe_kwargs: dict) -> dict:
     the input_data defaults shown (control.calculation itself does vary by
     scf/relax, but that distinction isn't relevant to a settings summary).
     """
-    return get_qe_input_data("scf", qe_kwargs)
+    k_spacing, namelists = split_k_spacing(qe_kwargs)
+    return {**get_qe_input_data("scf", namelists), "k_spacing": k_spacing}
+
+
+def split_k_spacing(qe_kwargs: dict | None) -> tuple[float, dict]:
+    """(k-point spacing, the namelists): qe_kwargs.k_spacing (1/Angstrom, 2
+    pi included, as VASP's KSPACING) overrides KSPACING and is not a pw.x
+    namelist, so it is taken out before the namelists are merged."""
+    namelists = dict(qe_kwargs or {})
+    k_spacing = namelists.pop("k_spacing", KSPACING)
+    if isinstance(k_spacing, bool) or not isinstance(k_spacing, int | float):
+        raise ValueError(
+            "high_accuracy_evaluation.qe_kwargs.k_spacing must be a positive "
+            f"number (1/Angstrom), got {k_spacing!r}."
+        )
+    if k_spacing <= 0:
+        raise ValueError(
+            "high_accuracy_evaluation.qe_kwargs.k_spacing must be positive, got "
+            f"{k_spacing!r}."
+        )
+    return float(k_spacing), namelists
+
+
+def validate_kwargs(config: dict, hpc: dict | None) -> None:  # noqa: ARG001
+    """Construction-time check: qe_kwargs.k_spacing valid when set."""
+    split_k_spacing(config.get("qe_kwargs"))
 
 
 def create_qe_calc_object(
     atoms: Atoms, high_accuracy_eval_job_dict: dict, out_dir: str
 ) -> Espresso:
-    kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=0.15)
+    """The k-grid comes from the structure's own pbc at qe_kwargs.k_spacing
+    (default KSPACING): non-periodic axes get one k-point, so an isolated
+    atom or molecule runs at Gamma only."""
+    k_spacing, namelists = split_k_spacing(
+        high_accuracy_eval_job_dict.get("qe_input_kwargs")
+    )
+    kpt_arr = kpoint_grid(atoms, k_spacing)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
         ranks_per_system=high_accuracy_eval_job_dict["hpc"]["node_info"][
@@ -163,9 +212,7 @@ def create_qe_calc_object(
             pwx_path=high_accuracy_eval_job_dict["hpc"]["pwx_path"],
             pp_path=high_accuracy_eval_job_dict["hpc"]["pp_path"],
         ),
-        input_data=get_qe_input_data(
-            "scf", high_accuracy_eval_job_dict.get("qe_input_kwargs", {})
-        ),
+        input_data=get_qe_input_data("scf", namelists),
         kpts=list(kpt_arr),
         pseudopotentials=high_accuracy_eval_job_dict["hpc"]["pseudo_dict"],
         directory=out_dir,
@@ -193,6 +240,112 @@ def run_go_qe(
         high_accuracy_eval_job_dict,
         create_qe_calc_object,
         opt_prefix="qe_opt",
+    )
+
+
+def max_num_of_atoms(config: dict) -> int | None:  # noqa: ARG001
+    """Registry entry point: QE has no size cap."""
+    return None
+
+
+# system.vdw_corr spellings -> dispersion (dftd3_version picks the D3 damping).
+_QE_VDW_CORR = {
+    "grimme-d2": "D2",
+    "dft-d": "D2",
+    "d2": "D2",
+    "ts": "TS",
+    "ts-vdw": "TS",
+    "tkatchenko-scheffler": "TS",
+    "mbd": "MBD",
+    "mbd_vdw": "MBD",
+    "many-body dispersion": "MBD",
+    "xdm": "XDM",
+}
+_QE_D3_VERSION = {2: "D2", 3: "D3(0)", 4: "D3(BJ)", 5: "D3M(0)", 6: "D3M(BJ)"}
+
+
+def _qe_core_treatment(pseudo_dict: dict) -> str | None:
+    """From the pseudopotential file names, when they say: SSSP/pslibrary
+    names carry paw / rrkjus / uspp / oncv / nc."""
+    kinds = set()
+    for name in pseudo_dict.values():
+        lower = str(name).lower()
+        if "paw" in lower:
+            kinds.add("paw")
+        elif any(tag in lower for tag in ("rrkjus", "uspp", "gbrv", ".us.", "_us")):
+            kinds.add("ultrasoft")
+        elif any(tag in lower for tag in ("oncv", "sg15", "pseudodojo", ".nc.", "_nc")):
+            kinds.add("norm_conserving")
+        else:
+            return None
+    if not kinds:
+        return None
+    return kinds.pop() if len(kinds) == 1 else "mixed"
+
+
+def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
+    """Registry entry point (high_accuracy_evaluation/level_of_theory.py),
+    from the effective pw.x namelists. Without system.input_dft QE takes
+    the functional from the pseudopotentials: method left unspecified."""
+    k_spacing, namelists = split_k_spacing(config.get("qe_kwargs"))
+    input_data = get_qe_input_data("scf", namelists)
+    system = {k.lower(): v for k, v in input_data.get("system", {}).items()}
+    electrons = input_data.get("electrons", {})
+    input_dft = system.get("input_dft")
+    method, rung = functional_rung(input_dft)
+    vdw_corr = str(system.get("vdw_corr", "none")).lower()
+    if vdw_corr in ("grimme-d3", "dft-d3", "d3"):
+        dispersion = _QE_D3_VERSION.get(int(system.get("dftd3_version", 3)), "D3")
+    elif vdw_corr == "none":
+        dispersion = "none"
+        if input_dft and "vdw" in str(input_dft).lower():
+            dispersion = f"nonlocal ({input_dft})"
+    else:
+        dispersion = _QE_VDW_CORR.get(vdw_corr, vdw_corr)
+    hubbard = {
+        k: v for k, v in system.items() if k.startswith(("hubbard_", "lda_plus_u"))
+    }
+    pseudo_dict = dict((hpc or {}).get("pseudo_dict") or {})
+    if system.get("noncolin"):
+        spin = "noncollinear"
+    else:
+        spin = "collinear" if int(system.get("nspin", 1)) == 2 else "restricted"
+    smearing = None
+    if system.get("occupations") == "smearing":
+        smearing = {
+            "scheme": system.get("smearing", "gaussian"),
+            "width_eV": float(system.get("degauss", 0.0)) * RYDBERG_EV,
+        }
+    ecutwfc = system.get("ecutwfc")
+    ecutrho = system.get("ecutrho")
+    return LevelOfTheory(
+        code="qe",
+        method_class=(
+            None
+            if input_dft is None
+            else "mean_field_hf"
+            if is_hartree_fock(input_dft)
+            else "dft"
+        ),
+        method=method,
+        rung=rung,
+        dispersion=dispersion,
+        hubbard_u=hubbard,
+        basis_type="plane_wave",
+        cutoff_eV=None if ecutwfc is None else float(ecutwfc) * RYDBERG_EV,
+        density_cutoff_eV=(None if ecutrho is None else float(ecutrho) * RYDBERG_EV),
+        core_treatment=_qe_core_treatment(pseudo_dict) if pseudo_dict else None,
+        pseudopotentials=pseudo_dict or None,
+        relativity="spin_orbit" if system.get("lspinorb") else "in_pseudopotential",
+        spin_treatment=spin,
+        solvation="none",
+        k_spacing=k_spacing,
+        smearing=smearing,
+        scf_threshold=(
+            None
+            if electrons.get("conv_thr") is None
+            else float(electrons["conv_thr"]) * RYDBERG_EV
+        ),
     )
 
 
