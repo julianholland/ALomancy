@@ -24,6 +24,8 @@ One block per structure type in the `initialization` section, each with an `enab
 
 ## Crystal structures (`initialize/crystals.py`)
 
+The block matters most when few bulk structures are available, e.g. a cold start for one metal where Materials Project returns only the ground state. A worked single-element example is in `docs/examples.md` ("Example: a Single Bulk Metal from a Cold Start").
+
 Each chosen element in every structure of `CRYSTAL_STRUCTURES` (fcc, bcc, hcp, sc, diamond, A15/β-W, ω) as a primitive cell (1, 1, 2, 1, 2, 8, 3 atoms), so the model sees an element's competing phases, not only the ground state MP returns.
 - **Sizes** (`build_crystal`), first match wins:
   1. `lattice_constants[element][structure]` (Å; hcp and ω also `{a, c}`);

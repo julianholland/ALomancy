@@ -434,8 +434,154 @@ initialization:
 - `general.dataset_kwargs.target_config_types` decides which structures are stretched, compressed and rattled. Those stretched, compressed and rattled copies can go to the test set too, so a single bulk structure (e.g. fcc Pt from Materials Project) plus its copies gives a test set.
 - **Few target structures**: before any initialisation DFT, ALomancy counts the structures that can go to the test set. With fewer than 2 the run stops (one always stays in training, so the test set would be empty); with fewer than 5 it warns (`few_target_structures`). Both suggest what to add: rattled copies, more stretch/compress, more target types, or `start_from` structures.
 - Materials Project structures include 1-atom primitive cells (elemental ground states such as fcc Pt).
-- **Crystal structures** (`crystal_structures_kwargs`): metals are the alkali, alkaline-earth, transition, lanthanide, actinide and post-transition metals (Al, Ga, In, Sn, Tl, Pb, Bi, Po); list other elements (e.g. C, Si) in `elements` to include them. Lattice constants, first match wins: `lattice_constants[element][structure]`, then `volume_per_atom[element]`, then ASE's reference crystal (its volume per atom for every structure). hcp uses the element's reference c/a if its reference crystal is hcp, else the ideal 1.633; ω uses 0.62. Elements without ASE reference data (Pm, Fr, Ra, Pu, Am and heavier) need `volume_per_atom` or `lattice_constants`, or the run stops at start-up. These structures are single points and not test targets; add `init_crystal` to `general.dataset_kwargs.target_config_types` to also stretch, compress and rattle them and test on them. Magnetic metals (Fe, Co, Ni) need spin polarisation in the evaluator settings. Initialisation only runs again while no AL loop has finished, so turning the block on (or upgrading) doesn't change a run that is already past it.
+- **Crystal structures**: see [Crystal Structures](#crystal-structures-crystal_structures_kwargs) below.
 - Dimers and trimers are far from equilibrium, so they are usually listed in `general.train_filter.exempt_config_types` (see [Filtering the Training and Test Sets](#filtering-the-training-and-test-sets)).
+
+### Crystal Structures (`crystal_structures_kwargs`)
+
+This block builds each chosen element in the common crystal structures, so the model sees an element's competing phases and not only the ground state Materials Project returns. It matters most when few bulk structures are available (see [the single-metal example](#example-a-single-bulk-metal-from-a-cold-start)). Every structure has `config_type: init_crystal`, with `crystal_structure` (e.g. `bcc`) and `lattice_source` in its info.
+
+**Defaults.** With no settings the block is on and:
+- builds every **metal** in `general.elements`: alkali, alkaline-earth, transition, lanthanide, actinide and post-transition metals (Al, Ga, In, Sn, Tl, Pb, Bi, Po). Non-metals and metalloids (B, C, Si, Ge, As, Sb, Te, ...) are left out, and a run without metals builds nothing;
+- builds **all seven structures** for each element, at **ASE's reference lattice** (below);
+- labels them as **single points**: they are never relaxed, and never go through `force_ceiling`;
+- **keeps them in training**: `init_crystal` is always exempt from `general.train_filter`, added to (not replaced by) your `exempt_config_types`, since the unstable phases sit far above the ground state by design;
+- does **not** make them test targets. List `init_crystal` in `general.dataset_kwargs.target_config_types` to test on them; they are then also stretched, compressed and rattled like any target type.
+
+It is off by default, and can't be enabled, with an evaluator that has no periodic boundary conditions (ORCA). Initialisation only runs again while no AL loop has finished, so enabling the block, or upgrading, doesn't change a run that is already past it.
+
+**Choosing the elements.** `elements: null` (the default) means the metals in `general.elements`. Give a list to choose them yourself; every one must be in `general.elements`, and non-metals are allowed when listed explicitly (e.g. `["Si"]` to build silicon in these structures too). `enabled: false` turns the block off.
+
+**Choosing the crystal structures.** `structures` lists which of these to build (default: all), each as a primitive cell:
+
+| name | structure | atoms |
+|---|---|---:|
+| `fcc` | face-centred cubic | 1 |
+| `bcc` | body-centred cubic | 1 |
+| `hcp` | hexagonal close-packed; c/a from the element's reference if its reference crystal is hcp (Ti: 1.588), else the ideal 1.633 | 2 |
+| `sc` | simple cubic | 1 |
+| `diamond` | diamond | 2 |
+| `a15` | A15 (β-W) | 8 |
+| `omega` | ω phase (hexagonal, c/a 0.62, as in Ti and Zr) | 3 |
+
+**Lattice constants.** For each element and structure the first of these that is set wins:
+1. `lattice_constants[element][structure]`: the lattice constant a in Å (the conventional cubic a for fcc, bcc, sc, diamond and A15). For `hcp` and `omega`, either a (c then follows from the c/a above) or `{a: ..., c: ...}`;
+2. `volume_per_atom[element]`: Å³ per atom, applied to every structure of that element without its own lattice constant;
+3. **ASE's reference crystal** (`ase.data.reference_states`): the element's own reference structure keeps its reference lattice constant, and every other structure is scaled to the same volume per atom. For Pt (reference fcc, 3.92 Å, 15.06 Å³/atom): bcc a = 3.11 Å, hcp a = 2.77 Å, sc a = 2.47 Å.
+
+The run's log lists every structure's lattice constant and its source (`reference`, `equal_volume` or `user`) when the workflow is built. ASE's reference values are experimental, so a DFT functional's own lattice can differ by 1–3%; set `lattice_constants` or `volume_per_atom` to start from yours. Elements with no reference data in ASE (Pm, Fr, Ra, Pu, Am and heavier) need one of the two, or the run stops at start-up naming them. Magnetic metals (Fe, Co, Ni) need spin polarisation in the evaluator settings.
+
+For example, Ti and Cu in four structures, Cu's fcc at its own lattice constant, Ti's hcp at a given a and c, and Ti's other structures at a set volume per atom:
+
+```yaml
+general:
+  elements: ["Ti", "Cu", "O"]
+
+initialization:
+  amorphous_kwargs:
+    density_range: [4.0, 7.0]
+  crystal_structures_kwargs:
+    elements: ["Ti", "Cu"]
+    structures: [fcc, bcc, hcp, omega]
+    lattice_constants:
+      Cu: {fcc: 3.63}
+      Ti: {hcp: {a: 2.93, c: 4.65}}
+    volume_per_atom:
+      Ti: 17.4
+```
+
+## Example: a Single Bulk Metal from a Cold Start
+
+A run for one metallic element with no existing data has very few bulk structures to start from. Materials Project usually holds only the ground state and one or two polymorphs. Its stretched, compressed and rattled copies then make up the whole bulk part of the training and test sets, and the model never sees the element's competing crystal phases until MD wanders into them. In that situation `crystal_structures_kwargs` is what fills the gap:
+
+- **What it adds**: every chosen element in each common crystal structure (fcc, bcc, hcp, simple cubic, diamond, A15 and ω), as small primitive cells labelled single-point. It is on by default for the metals in `general.elements`, and the start-up log lists each structure's lattice constant and where it came from.
+- **Lattice constants**: the element's own ASE reference structure keeps its reference lattice constant (fcc Pt: 3.92 Å), and every other structure gets the same volume per atom (bcc Pt: 3.11 Å, hcp Pt: 2.77 Å). `lattice_constants` (per structure) and `volume_per_atom` (per element) override this, for example to start from your functional's own lattice.
+- **Train filter**: `init_crystal` is always kept in training, since the unstable phases are far above the ground state by design.
+- **As test targets**: listing `init_crystal` (and `init_MP`) in `target_config_types` makes the crystals test-eligible too, and stretches, compresses and rattles them. 1-atom cells such as fcc and bcc are rattled as 2×2×2 supercells, since rattling a single atom only translates it. This gives a test set even when Materials Project returns a single structure. With fewer than 2 structures that could go to the test set, the run stops before any DFT; with fewer than 5 it warns.
+- **Amorphous density**: densities are in g/cm³, so heavy metals need high values (bulk Pt is 21.45 g/cm³). A range entirely too sparse, such as the default 1 g/cm³ for Pt, stops the run at start-up.
+
+The configuration below is for Pt with VASP labels and a 5-model MACE committee:
+
+```yaml
+general:
+  al_workflow: "committee_uncertainty"
+  elements: ["Pt"]
+  num_of_al_loops: 1
+  num_of_structures_per_loop: 50
+  verbose: 1
+  log_file: "results/alomancy.log"
+  db_path: "results/global_database"
+  dataset_kwargs:
+    target_config_types: ["init_MP", "init_rattle", "init_crystal"]
+    test_ratio: 0.1
+  committee_uncertainty_kwargs:
+    num_of_models_in_committee: 5
+  train_filter:
+    exempt_config_types: ["init_dimer", "init_trimer"]
+
+initialization:
+  hpc: "raven_cpu"
+  max_time: "2H"
+  mp_kwargs:
+    max_num_of_atoms: 20
+    mp_max_energy_above_hull: 0.11
+  dimer_kwargs:
+    num_of_dimers_per_combo: 10
+    distance_range: [0.5, 2.0]
+  trimer_kwargs:
+    num_of_trimers_per_combo: 5
+    distance_range: [0.5, 2.0]
+  amorphous_kwargs:
+    num_of_amorphous_structures: 100
+    num_of_atoms_per_amorphous: 20
+    density_range: [15.0, 21.0]
+  stretch_compress_targets_kwargs:
+    num_of_stretch_compress_per_target: 20
+    max_lattice_deformation: 0.2
+  rattle_target_structures:
+    enabled: true
+    num_of_rattled_per_target: 5
+  crystal_structures_kwargs:
+    enabled: true
+    structures: [fcc, bcc, hcp, sc, diamond, a15, omega]
+
+training:
+  trainer: "mace"
+  hpc: "raccoon_gpu"
+  max_time: "5H"
+
+structure_generation:
+  generator: "md"
+  hpc: "raccoon_gpu"
+  max_time: "10H"
+  num_of_structures_to_generate: 500
+
+high_accuracy_evaluation:
+  evaluator: "vasp"
+  hpc: "raven_cpu"
+  max_time: "30m"
+  vasp_kwargs:
+    encut: 400
+    ediff: 1.0e-6
+    prec: "Accurate"
+    gga: "RP"
+    ivdw: 11
+    ismear: 0
+    sigma: 0.1
+    kspacing: 0.15
+    kgamma: true
+    lreal: false
+    algo: "Normal"
+    nelm: 200
+    ncore: 18
+```
+
+Notes on the other settings:
+- **Dimers and trimers** span 0.5–2.0 × the sum of the two covalent radii (1.36–5.44 Å for Pt-Pt). They are listed in `train_filter.exempt_config_types` because their short-range forces are large by design.
+- **Materials Project** structures include 1-atom primitive cells, so fcc Pt (mp-126) is fetched.
+- **VASP**: `kspacing` and `kgamma` set the k-point density and centring that ALomancy uses to write each structure's KPOINTS. Non-periodic axes (isolated atoms, dimers, trimers) get one k-point. `lreal: false` suits the 1–3-atom structures in vacuum, and `algo: "Normal"` with `nelm: 200` avoids most SCF failures on them.
+- **HPC profiles**: `raven_cpu` and `raccoon_gpu` are named profiles from `~/.alomancy/hpc_config.yaml`; replace them with your own. Set `max_num_of_concurrent_jobs` in each profile so DFT jobs run in parallel.
+- **Production**: `num_of_al_loops: 1` is for a first test; raise it for a production run.
 
 ## Using VASP as the DFT Backend
 
