@@ -1,5 +1,6 @@
 import itertools
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ from alomancy.initialize.amorphize import (
     create_amorphous_atoms_list,
     create_amorphous_cluster_atoms_list,
 )
+from alomancy.initialize.crystals import create_crystal_atoms_list
 from alomancy.initialize.molecules import (
     create_molecule_atoms_list,
     create_molecule_cluster_atoms_list,
@@ -44,6 +46,7 @@ def compute_initialization_needs(
     box_compositions: list[dict] | None = None,
     num_of_amorphous_clusters: int = 0,
     cluster_compositions: list[dict] | None = None,
+    crystal_targets: dict[str, list[str]] | None = None,
 ) -> dict:
     """
     Compare DB contents against initialization targets and return what still
@@ -124,6 +127,21 @@ def compute_initialization_needs(
         _box_targets(cluster_compositions or []),
         all_counts.get("init_molecule_cluster", {}),
     )
+    # Crystals: formula can't tell fcc from bcc (both "Pt"), so they are
+    # counted by (formula, crystal_structure); {element: [missing]}.
+    crystal_override: dict[str, list[str]] = {}
+    if crystal_targets:
+        counts = db.count_by_info("init_crystal", "crystal_structure")
+        have = (
+            {(re.sub(r"\d", "", f), str(v)) for (f, v) in counts}
+            if isinstance(counts, dict)
+            else set()
+        )
+        for element, structures in crystal_targets.items():
+            missing = [s for s in structures if (element, s) not in have]
+            if missing:
+                crystal_override[element] = missing
+    needs["crystal_override"] = crystal_override
 
     return needs
 
@@ -186,6 +204,12 @@ def create_initialization_atoms_list(
     num_of_rattled_per_target: int = 0,
     rattle_standard_deviation: float | None = None,
     rattle_seed: int = 803,
+    dimer_distance_range: list[float] | None = None,
+    trimer_distance_range: list[float] | None = None,
+    crystal_targets: dict[str, list[str]] | None = None,
+    crystal_lattice_constants: dict | None = None,
+    crystal_volume_per_atom: dict | None = None,
+    crystal_override: dict[str, list[str]] | None = None,
     # Override kwargs supplied by compute_initialization_needs to skip
     # already-completed subsets.  When None, the full target is used.
     isolated_atoms_override: list[str] | None = None,
@@ -256,6 +280,8 @@ def create_initialization_atoms_list(
     rattle_standard_deviation
         Standard deviation (Angstrom) for ase.Atoms.rattle, applied to each
         target structure. Only read when num_of_rattled_per_target > 0.
+        None: 3% of each structure's nearest-neighbour distance. A 1-atom
+        cell is rattled as a 2x2x2 supercell (initialize/rattle.py).
     seed
         general.seed: seeds the amorphous cells and the molecule boxes.
     rattle_seed
@@ -333,7 +359,10 @@ def create_initialization_atoms_list(
         if count > 0:
             dimer_atoms_list.extend(
                 create_dimer_atoms_list(
-                    element_a=combo[0], element_b=combo[1], num_dimers=count
+                    element_a=combo[0],
+                    element_b=combo[1],
+                    num_dimers=count,
+                    distance_range=dimer_distance_range,
                 )
             )
     logger.info(
@@ -364,6 +393,7 @@ def create_initialization_atoms_list(
                     element_b=combo[1],
                     element_c=combo[2],
                     num_trimers=count,
+                    distance_range=trimer_distance_range,
                 )
             )
     logger.info(
@@ -504,6 +534,22 @@ def create_initialization_atoms_list(
     base_atoms_list.extend(amorphous_cluster_atoms_list)
     base_atoms_list.extend(molecule_cluster_atoms_list)
 
+    # --- Crystal structures (crystal_structures_kwargs) -----------------
+    crystal_atoms_list: list[Atoms] = []
+    if crystal_targets:
+        crystal_atoms_list = create_crystal_atoms_list(
+            list(crystal_targets),
+            [],
+            lattice_constants=crystal_lattice_constants,
+            volume_per_atom=crystal_volume_per_atom,
+            override=crystal_override
+            if crystal_override is not None
+            else crystal_targets,
+        )
+    if crystal_atoms_list:
+        logger.info("Created %d crystal structures.", len(crystal_atoms_list))
+    base_atoms_list.extend(crystal_atoms_list)
+
     # --- Stretch/compress + rattle on target structures -----------------
     target_config_type_set = set(target_config_types or [])
     target_atoms_list = [
@@ -525,7 +571,7 @@ def create_initialization_atoms_list(
         rattle_atoms_list.extend(
             create_rattle_atoms_list(
                 atoms=target,
-                rattle_standard_deviation=rattle_standard_deviation or 0.0,
+                rattle_standard_deviation=rattle_standard_deviation,
                 num_structures=num_of_rattled_per_target,
                 seed=rattle_seed,
             )

@@ -25,7 +25,7 @@ Construction is SQLite fsync-bound (3–6 s on btrfs, ~5 ms on tmpfs); tests sha
 ## Identity, dedup, counts
 
 - Every structure carries `atoms.info["global_db_id"]`, a zero-based index assigned at insertion and stable across sessions; `assign_global_db_ids()` backfills older DBs.
-- `add_structures()` dedups `IsolatedAtom` and `init_MP` by `(config_type, formula)`; everything else is always added.
+- `add_structures()` dedups `IsolatedAtom` and `init_MP` by `(config_type, formula)`. It also skips any DFT result whose `dft_input_digest` is already stored (`_digest_key`: the digest plus whether it is a geometry optimisation's starting frame, which shares the final result's digest), for every config type: a restart that reloads cached initialisation results used to add them all again. Structures without a digest are always added.
 - `count_all_by_config_type_and_formula()` is one O(N) scan returning `{config_type: {formula: count}}`; use it instead of repeated `count_by_config_type_and_formula()` calls.
 - `get_train_atoms`/`get_test_atoms` skip quality-filtered structures by default (`exclude_quality_filtered=True`); `exclude_duplicates=True` skips redundancy-flagged ones. The training-set rule is `is_in_training_set(metadata)`, shared with redundancy removal.
 - Metadata writes from outside the class go through `set_metadata_bulk` (split filters, curation), so they're guarded like the rest. `clear_duplicate_flags(config_types=None)` undoes redundancy flags; the workflow never calls it (each redundancy pass rewrites the flags of the types it deduplicates itself, `core_workflow.md`).

@@ -33,13 +33,21 @@ def structure_domain(atoms: Atoms) -> str:
     declared = atoms.info.get("structure_type", atoms.info.get("structure type"))
     if declared in {"bulk", "surface", "cluster", "amorphous"}:
         return str(declared)
+    ct = str(atoms.info.get("config_type", ""))
+    # Before the size rule: a 1-atom primitive cell (fcc Pt from MP or
+    # init_crystal) is bulk, not an isolated atom.
+    if ct in {
+        "init_MP",
+        "init_crystal",
+        "bulk_rattle",
+        "init_stretch_compress",
+        "init_rattle",
+    }:
+        return "bulk"
     if len(atoms) == 1:
         return "isolated_atom"
-    ct = str(atoms.info.get("config_type", ""))
     if ct.startswith("surface"):
         return "surface"
-    if ct in {"init_MP", "bulk_rattle", "init_stretch_compress", "init_rattle"}:
-        return "bulk"
     if ct == "init_amorphous":
         return "amorphous"
     # Before the size rules: CO is a molecule, not a dimer.

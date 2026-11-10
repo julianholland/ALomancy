@@ -16,6 +16,7 @@ _EXECUTABLE_KEYS = (
     "pwx_path",
     "vasp_path",
     "orca_path",
+    "aims_path",
     "high_accuracy_executable_path",
 )
 

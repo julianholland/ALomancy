@@ -10,9 +10,9 @@ import pytest
 
 from alomancy.high_accuracy_evaluation.dft.run_qe import (
     find_optimal_npool,
-    generate_kpts,
     get_qe_input_data,
 )
+from alomancy.utils.dft_utils import generate_kpts
 
 
 class TestFindOptimalNpool:

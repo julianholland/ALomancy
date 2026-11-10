@@ -201,7 +201,7 @@ def _generate(wf, candidates, **patches):
     generator = MagicMock()
     generator.generate.return_value = candidates
     with (
-        patch(f"{_WF_MODULE}.resolve", return_value=generator),
+        patch(f"{_WF_MODULE}.resolve", side_effect=_generator_only(generator)),
         patch(f"{_WF_MODULE}.get_remote_info"),
         patch(
             f"{_WF_MODULE}.submit_n",
@@ -313,7 +313,7 @@ def test_the_committee_scores_the_relaxed_candidates(
     generator = MagicMock()
     generator.generate.return_value = [_cu_dimer(), _cu_dimer(2.0), _cu_dimer(1.6)]
     with (
-        patch(f"{_WF_MODULE}.resolve", return_value=generator),
+        patch(f"{_WF_MODULE}.resolve", side_effect=_generator_only(generator)),
         patch(f"{_WF_MODULE}.get_remote_info"),
         patch(f"{_WF_MODULE}.submit_n", side_effect=_run_locally),
         patch.object(wf, "best_model", return_value=models[0]),
@@ -329,3 +329,17 @@ def test_the_committee_scores_the_relaxed_candidates(
 def test_bad_config_fails_at_construction(minimal_jobs_dict, shared_db):
     with pytest.raises(ValueError, match=r"mlip_relaxation\.optimizer"):
         _workflow(minimal_jobs_dict, shared_db, relaxation={"optimizer": "SGD"})
+
+
+def _generator_only(generator):
+    """resolve() side effect: *generator* for the structure generator, the
+    real registry for everything else (e.g. the evaluator's size cap, which
+    generate_candidates applies before selection)."""
+    from alomancy.registry import resolve as real_resolve
+
+    def side_effect(category, name):
+        if category == "structure_generator":
+            return generator
+        return real_resolve(category, name)
+
+    return side_effect

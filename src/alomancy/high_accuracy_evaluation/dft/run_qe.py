@@ -15,7 +15,7 @@ from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
     _run_sp,
-    generate_kpts,
+    kpoint_grid,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,13 +160,44 @@ def resolve_effective_kwargs(qe_kwargs: dict) -> dict:
     the input_data defaults shown (control.calculation itself does vary by
     scf/relax, but that distinction isn't relevant to a settings summary).
     """
-    return get_qe_input_data("scf", qe_kwargs)
+    k_spacing, namelists = split_k_spacing(qe_kwargs)
+    return {**get_qe_input_data("scf", namelists), "k_spacing": k_spacing}
+
+
+def split_k_spacing(qe_kwargs: dict | None) -> tuple[float, dict]:
+    """(k-point spacing, the namelists): qe_kwargs.k_spacing (1/Angstrom, 2
+    pi included, as VASP's KSPACING) overrides KSPACING and is not a pw.x
+    namelist, so it is taken out before the namelists are merged."""
+    namelists = dict(qe_kwargs or {})
+    k_spacing = namelists.pop("k_spacing", KSPACING)
+    if isinstance(k_spacing, bool) or not isinstance(k_spacing, int | float):
+        raise ValueError(
+            "high_accuracy_evaluation.qe_kwargs.k_spacing must be a positive "
+            f"number (1/Angstrom), got {k_spacing!r}."
+        )
+    if k_spacing <= 0:
+        raise ValueError(
+            "high_accuracy_evaluation.qe_kwargs.k_spacing must be positive, got "
+            f"{k_spacing!r}."
+        )
+    return float(k_spacing), namelists
+
+
+def validate_kwargs(config: dict, hpc: dict | None) -> None:  # noqa: ARG001
+    """Construction-time check: qe_kwargs.k_spacing valid when set."""
+    split_k_spacing(config.get("qe_kwargs"))
 
 
 def create_qe_calc_object(
     atoms: Atoms, high_accuracy_eval_job_dict: dict, out_dir: str
 ) -> Espresso:
-    kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=KSPACING)
+    """The k-grid comes from the structure's own pbc at qe_kwargs.k_spacing
+    (default KSPACING): non-periodic axes get one k-point, so an isolated
+    atom or molecule runs at Gamma only."""
+    k_spacing, namelists = split_k_spacing(
+        high_accuracy_eval_job_dict.get("qe_input_kwargs")
+    )
+    kpt_arr = kpoint_grid(atoms, k_spacing)
     npool = find_optimal_npool(
         total_kpoints=int(np.prod(kpt_arr)),
         ranks_per_system=high_accuracy_eval_job_dict["hpc"]["node_info"][
@@ -181,9 +212,7 @@ def create_qe_calc_object(
             pwx_path=high_accuracy_eval_job_dict["hpc"]["pwx_path"],
             pp_path=high_accuracy_eval_job_dict["hpc"]["pp_path"],
         ),
-        input_data=get_qe_input_data(
-            "scf", high_accuracy_eval_job_dict.get("qe_input_kwargs", {})
-        ),
+        input_data=get_qe_input_data("scf", namelists),
         kpts=list(kpt_arr),
         pseudopotentials=high_accuracy_eval_job_dict["hpc"]["pseudo_dict"],
         directory=out_dir,
@@ -258,7 +287,8 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
     """Registry entry point (high_accuracy_evaluation/level_of_theory.py),
     from the effective pw.x namelists. Without system.input_dft QE takes
     the functional from the pseudopotentials: method left unspecified."""
-    input_data = get_qe_input_data("scf", config.get("qe_kwargs") or {})
+    k_spacing, namelists = split_k_spacing(config.get("qe_kwargs"))
+    input_data = get_qe_input_data("scf", namelists)
     system = {k.lower(): v for k, v in input_data.get("system", {}).items()}
     electrons = input_data.get("electrons", {})
     input_dft = system.get("input_dft")
@@ -309,7 +339,7 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
         relativity="spin_orbit" if system.get("lspinorb") else "in_pseudopotential",
         spin_treatment=spin,
         solvation="none",
-        k_spacing=KSPACING,
+        k_spacing=k_spacing,
         smearing=smearing,
         scf_threshold=(
             None

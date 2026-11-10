@@ -24,6 +24,12 @@ FILTER_KEYS = frozenset(
 
 # train keeps the protection the old general.high_force_threshold gave by
 # default (flag max force >= 100 eV/Angstrom); test is entirely opt-in.
+# config_types the train filter never drops, whatever the user's
+# exempt_config_types: init_crystal (initialize/crystals.py) holds the
+# competing crystal phases (sc, A15, omega...), far above the ground state
+# by design, which formation_energy_per_atom or max_force would remove.
+ALWAYS_EXEMPT_FROM_TRAIN_FILTER = frozenset({"init_crystal"})
+
 TRAIN_FILTER_DEFAULTS: dict[str, Any] = {
     "max_force": 100.0,
     "formation_energy_per_atom": None,
@@ -146,6 +152,10 @@ def apply_split_filter(db: Any, split: str, cfg: dict | None) -> dict[str, int]:
     max_force = cfg.get("max_force")
     window = cfg.get("formation_energy_per_atom")
     exempt = set(cfg.get("exempt_config_types") or [])
+    if split == "train":
+        # Always kept in training, added to (never replaced by) the user's
+        # list: deliberately far-from-ground-state data.
+        exempt |= ALWAYS_EXEMPT_FROM_TRAIN_FILTER
     e0: dict[str, float] = {}
     if window is not None:
         for element, value in db.get_isolated_atom_energies().items():

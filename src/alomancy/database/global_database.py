@@ -112,6 +112,22 @@ def read_storage(path: str | Path) -> list:
     return list(partition.list_containers())
 
 
+# atoms.info key the DFT orchestrator stamps on every result: the digest
+# of the structure as it was sent to DFT
+# (high_accuracy_calc_interface.DFT_INPUT_DIGEST_KEY).
+_DFT_INPUT_DIGEST_KEY = "dft_input_digest"
+
+
+def _digest_key(info: dict) -> tuple[str, bool] | None:
+    """The identity of one DFT result: its input digest, and whether it is
+    a geometry optimisation's starting frame (which shares the final
+    result's digest). None for structures not labelled by ALomancy."""
+    digest = info.get(_DFT_INPUT_DIGEST_KEY)
+    if not digest:
+        return None
+    return str(digest), bool(info.get("geometry_initial", False))
+
+
 class GlobalDatabase:
     """
     Persistent store for all DFT-evaluated structures across the AL workflow.
@@ -320,9 +336,15 @@ class GlobalDatabase:
           init_MP): exact dedup by (config_type, formula) — prevents adding
           the same element's isolated atom twice if two external datasets
           provide it.
-        - All other config_types (dimers, trimers, amorphous, al_loop_N):
-          always added; use compute_initialization_needs() for count-based
-          checking before generating new structures.
+        - Every structure carrying a dft_input_digest (all DFT results):
+          skipped when a structure with the same digest, and the same
+          place in its geometry optimisation (final result or starting
+          frame), is already stored. A restart that reloads cached DFT
+          results (e.g. the initialisation phase, re-entered while one of
+          its needs can never be met) used to add them all again.
+        - All other structures: always added; use
+          compute_initialization_needs() for count-based checking before
+          generating new structures.
 
         REF_forces (Nx3 array) are serialised into atoms.info before adding
         because sage_lib only persists atoms.info, not atoms.arrays.
@@ -337,6 +359,7 @@ class GlobalDatabase:
             config_types_to_dedup = _DEFAULT_DEDUP_CONFIG_TYPES
 
         existing = self._get_config_type_formula_set() if skip_duplicates else set()
+        digests = self._get_digest_set() if skip_duplicates else set()
         added = 0
         sr_list = []
         for atoms in atoms_list:
@@ -351,6 +374,9 @@ class GlobalDatabase:
                 and key in existing
             ):
                 continue
+            digest_key = _digest_key(atoms.info)
+            if skip_duplicates and digest_key is not None and digest_key in digests:
+                continue
             storage_ready_apm = self._prepare_for_storage(atoms)
 
             if storage_ready_apm is not None:
@@ -358,6 +384,8 @@ class GlobalDatabase:
                     storage_ready_apm.atoms.metadata["split"] = split
                 sr_list.append(storage_ready_apm)
                 existing.add(key)
+                if digest_key is not None:
+                    digests.add(digest_key)
                 added += 1
 
         start_id = self.partition.N
@@ -631,10 +659,19 @@ class GlobalDatabase:
         }
         points: dict[str, list[dict]] = {"train": [], "test": []}
         found = False
+        energy_only = 0
 
         for c in self.partition.list_containers():
             apm = c.AtomPositionManager
             if energy_key not in apm.metadata:
+                continue
+            if forces_key not in apm.metadata:
+                # An energy with no forces was not written by
+                # store_model_predictions (which writes both): it was
+                # inherited from the structure an MD run started from,
+                # before clean_structures dropped such keys, and describes
+                # that seed's geometry, not this one's.
+                energy_only += 1
                 continue
             found = True
             split = apm.metadata.get("split", "train")
@@ -659,6 +696,16 @@ class GlobalDatabase:
             }
             points[bucket_key].append(point)
 
+        if energy_only:
+            logger.info(
+                "Parity data for loop %d fit %d: skipped %d structure(s) "
+                "whose %s has no matching forces (inherited from an MD seed, "
+                "not predicted on this geometry).",
+                loop_idx,
+                fit_idx,
+                energy_only,
+                energy_key,
+            )
         if not found:
             return None
 
@@ -941,6 +988,31 @@ class GlobalDatabase:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def count_by_info(self, config_type: str, key: str) -> dict[tuple[str, str], int]:
+        """{(chemical formula, str(metadata[key])): n} over the structures of
+        *config_type*: counts that formula alone can't tell apart (fcc and
+        bcc Pt are both "Pt"), e.g. key "crystal_structure" for
+        init_crystal."""
+        counts: dict[tuple[str, str], int] = {}
+        for c in self.partition.list_containers():
+            apm = c.AtomPositionManager
+            meta = apm.metadata
+            if meta.get("config_type") != config_type or key not in meta:
+                continue
+            formula = Atoms(list(apm.atomLabelsList)).get_chemical_formula()
+            k = (formula, str(meta[key]))
+            counts[k] = counts.get(k, 0) + 1
+        return counts
+
+    def _get_digest_set(self) -> set[tuple[str, bool]]:
+        """_digest_key of every stored structure that has one."""
+        keys = set()
+        for c in self.partition.list_containers():
+            key = _digest_key(c.AtomPositionManager.metadata)
+            if key is not None:
+                keys.add(key)
+        return keys
 
     def _get_config_type_formula_set(self) -> set[tuple[str, str]]:
         """Return set of (config_type, formula) pairs already in the DB."""

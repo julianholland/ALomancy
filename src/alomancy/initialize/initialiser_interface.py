@@ -59,11 +59,10 @@ listed in `target_config_types` (see above), not just Materials Project
 ones, so e.g. setting `target_config_types: ["init_MP", "init_amorphous"]`
 makes amorphous structures subject to both too. `rattle_target_structures
 .enabled` defaults to `False` (unlike every other namespace here) since
-it's a new capability with no prior default behavior to preserve, and
-`rattle_standard_deviation` has no default at all -- a silently guessed
-perturbation magnitude is worse than a clear KeyError once rattle is
-turned on, matching how `test_ratio`/`target_config_types` are handled
-committee-workflow-side.
+it's a new capability with no prior default behavior to preserve.
+`rattle_standard_deviation` (Angstrom) defaults to 3% of each structure's
+nearest-neighbour distance, so it suits any element; a 1-atom cell is
+rattled as a 2x2x2 supercell (initialize/rattle.py).
 """
 
 import logging
@@ -81,6 +80,13 @@ from alomancy.initialize.initialization_structure_list import (
 if TYPE_CHECKING:
     from alomancy.database.global_database import GlobalDatabase
 
+from alomancy.initialize.crystals import (
+    CRYSTAL_STRUCTURES,
+    default_elements,
+    describe_lattices,
+    reference_volume_per_atom,
+)
+
 logger = logging.getLogger(__name__)
 
 # Named, reusable defaults, one entry per structure-type namespace --
@@ -91,8 +97,18 @@ logger = logging.getLogger(__name__)
 # atoms_list's (old, shared) own parameter defaults.
 _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
     "isolated_atom_kwargs": {"enabled": True},
-    "dimer_kwargs": {"enabled": True, "num_of_dimers_per_combo": 10},
-    "trimer_kwargs": {"enabled": True, "num_of_trimers_per_combo": 5},
+    # distance_range: separations as multiples of the two atoms' covalent
+    # radii sum (initialize/singles_dimers_trimers.py).
+    "dimer_kwargs": {
+        "enabled": True,
+        "num_of_dimers_per_combo": 10,
+        "distance_range": [0.5, 2.0],
+    },
+    "trimer_kwargs": {
+        "enabled": True,
+        "num_of_trimers_per_combo": 5,
+        "distance_range": [0.5, 2.0],
+    },
     "amorphous_kwargs": {
         "enabled": True,
         "num_of_amorphous_structures": 100,
@@ -144,6 +160,17 @@ _CREATION_KWARGS_DEFAULTS: dict[str, dict[str, Any]] = {
         "max_attempts_per_molecule": 1000,
         "vacuum": 10.0,
     },
+    # Common crystal structures of each element (initialize/crystals.py,
+    # config_type init_crystal): elements None means the metals in
+    # general.elements; lattice constants from ASE's reference crystal
+    # unless lattice_constants / volume_per_atom say otherwise.
+    "crystal_structures_kwargs": {
+        "enabled": True,
+        "elements": None,
+        "structures": list(CRYSTAL_STRUCTURES),
+        "lattice_constants": {},
+        "volume_per_atom": {},
+    },
 }
 
 # With an evaluator that has no periodic boundary conditions (registry
@@ -157,6 +184,7 @@ _NON_PERIODIC_DEFAULTS: dict[str, dict[str, Any]] = {
     "molecules_in_box_kwargs": {"enabled": False},
     "amorphous_cluster_kwargs": {"enabled": True},
     "molecule_cluster_kwargs": {"enabled": True},
+    "crystal_structures_kwargs": {"enabled": False},
 }
 
 # Blocks that only make periodic cells -> what to use instead without
@@ -165,6 +193,7 @@ _PERIODIC_ONLY_BLOCKS: dict[str, str | None] = {
     "amorphous_kwargs": "amorphous_cluster_kwargs",
     "molecules_in_box_kwargs": "molecule_cluster_kwargs",
     "mp_kwargs": None,
+    "crystal_structures_kwargs": None,
 }
 
 # The keys of one molecules_in_box_kwargs.box_compositions (or
@@ -307,6 +336,25 @@ def validate_kwargs(
                 f"initialization.{block}.density_range must be [min, max] "
                 f"g/cm^3 with 0 < min <= max, got {density_range!r}."
             )
+    for block in ("dimer_kwargs", "trimer_kwargs"):
+        distance_range = _resolve_kwargs(config, block)["distance_range"]
+        if not (
+            isinstance(distance_range, list | tuple)
+            and len(distance_range) == 2
+            and all(
+                isinstance(x, int | float) and not isinstance(x, bool)
+                for x in distance_range
+            )
+            and 0 < distance_range[0] < distance_range[1]
+        ):
+            raise ValueError(
+                f"initialization.{block}.distance_range must be [min, max] "
+                "multiples of the two atoms' covalent radii sum, with "
+                f"0 < min < max (default [0.5, 2.0]), got {distance_range!r}."
+            )
+    _validate_crystal_structures(
+        _resolve_kwargs(config, "crystal_structures_kwargs", periodic), elements
+    )
     clusters = _resolve_kwargs(config, "amorphous_cluster_kwargs", periodic)
     if clusters["enabled"]:
         for key in ("num_of_amorphous_clusters", "num_of_atoms_per_cluster"):
@@ -634,6 +682,9 @@ def _warn_unusual_densities(
     upper_ratio = max_vdw_volume_ratio
     low: dict[str, list[str]] = {}
     high: dict[str, list[str]] = {}
+    # Per block: whether every composition is dropped even at the densest
+    # end of its range (the whole block can never reach DFT).
+    all_dropped: dict[str, bool] = {}
     for block, label, symbols, (lo, hi) in _density_compositions(
         config, elements, periodic
     ):
@@ -646,6 +697,9 @@ def _warn_unusual_densities(
             upper_ratio is not None
             and config_types[block] not in vdw_exempt_config_types
         )
+        all_dropped[block] = all_dropped.get(block, True) and bool(
+            checked_low and upper_ratio is not None and densest > upper_ratio
+        )
         if checked_low and sparsest > upper_ratio:
             window_bottom = density_for_vdw_volume_ratio(symbols, upper_ratio)
             low.setdefault(block, []).append(
@@ -657,6 +711,21 @@ def _warn_unusual_densities(
                 f"{label} at {hi:g} g/cm^3 ({densest:.3g}x its vdW volume; keep "
                 f"it below {window_top:.3g} g/cm^3)"
             )
+    dropped = sorted(block for block, gone in all_dropped.items() if gone)
+    if dropped:
+        raise ValueError(
+            "Every structure of "
+            + ", ".join(f"initialization.{block}" for block in dropped)
+            + " would be dropped before DFT as blown up: "
+            + "; ".join(item for block in dropped for item in low.get(block, []))
+            + f". Their whole density_range is above "
+            f"high_accuracy_evaluation.max_vdw_volume_ratio ({upper_ratio:g}), so "
+            "the block adds nothing and initialisation could never complete. "
+            "Raise density_range (bulk solids sit near 0.3-1x their vdW volume), "
+            "disable the block, or list its config_type in "
+            "high_accuracy_evaluation.vdw_exempt_config_types if the cells are "
+            "meant to be that sparse."
+        )
     for block, items in low.items():
         logger.warning(
             "initialization.%s.density_range is too low for %s: those cells "
@@ -693,6 +762,109 @@ def _resolve_all(config: dict, periodic: bool) -> dict[str, dict]:
         namespace: _resolve_kwargs(config, namespace, periodic)
         for namespace in _CREATION_KWARGS_DEFAULTS
     }
+
+
+def _crystal_targets(crystal_kwargs: dict, elements: list[str]) -> dict[str, list[str]]:
+    """{element: [structures]} the crystal block makes: its elements (None:
+    the metals in general.elements) times its structures; {} when off."""
+    if not crystal_kwargs["enabled"]:
+        return {}
+    chosen = crystal_kwargs["elements"]
+    chosen = default_elements(elements) if chosen is None else list(chosen)
+    return {element: list(crystal_kwargs["structures"]) for element in chosen}
+
+
+def _validate_crystal_structures(crystal_kwargs: dict, elements: list[str]) -> None:
+    """crystal_structures_kwargs readable and buildable; logs each element's
+    lattice constants and where they come from."""
+    where = "initialization.crystal_structures_kwargs"
+    if not crystal_kwargs["enabled"]:
+        return
+    structures = crystal_kwargs["structures"]
+    if not isinstance(structures, list) or not structures:
+        raise ValueError(
+            f"{where}.structures must be a non-empty list of "
+            f"{list(CRYSTAL_STRUCTURES)}, got {structures!r}."
+        )
+    unknown = sorted(set(map(str, structures)) - set(CRYSTAL_STRUCTURES))
+    if unknown:
+        raise ValueError(
+            f"{where}.structures: unknown {unknown}; expected some of "
+            f"{list(CRYSTAL_STRUCTURES)}."
+        )
+    chosen = crystal_kwargs["elements"]
+    if chosen is not None:
+        if not isinstance(chosen, list) or not all(isinstance(e, str) for e in chosen):
+            raise ValueError(
+                f"{where}.elements must be a list of element symbols or null "
+                f"(the metals in general.elements), got {chosen!r}."
+            )
+        outside = sorted(set(chosen) - set(elements))
+        if outside:
+            raise ValueError(
+                f"{where}.elements {outside} are not in general.elements {elements}."
+            )
+    lattice_constants = crystal_kwargs["lattice_constants"] or {}
+    volume_per_atom = crystal_kwargs["volume_per_atom"] or {}
+    if not isinstance(lattice_constants, dict) or not isinstance(volume_per_atom, dict):
+        raise ValueError(
+            f"{where}.lattice_constants and volume_per_atom must be mappings "
+            "keyed by element, e.g. lattice_constants: {Pt: {fcc: 3.97}}, "
+            "volume_per_atom: {Pt: 15.5}."
+        )
+    for element, volume in volume_per_atom.items():
+        if not _positive_number(volume):
+            raise ValueError(
+                f"{where}.volume_per_atom.{element} must be a positive number "
+                f"(Angstrom^3 per atom), got {volume!r}."
+            )
+    for element, per_structure in lattice_constants.items():
+        if not isinstance(per_structure, dict):
+            raise ValueError(
+                f"{where}.lattice_constants.{element} must map structures to "
+                f"lattice constants, e.g. {{fcc: 3.97}}, got {per_structure!r}."
+            )
+        for structure, value in per_structure.items():
+            if structure not in CRYSTAL_STRUCTURES:
+                raise ValueError(
+                    f"{where}.lattice_constants.{element}: unknown structure "
+                    f"{structure!r}."
+                )
+            values = (
+                [value.get("a"), *([value["c"]] if "c" in value else [])]
+                if isinstance(value, dict) and structure in ("hcp", "omega")
+                else [value]
+            )
+            if not all(_positive_number(v) for v in values):
+                raise ValueError(
+                    f"{where}.lattice_constants.{element}.{structure} must be a "
+                    "positive number (Angstrom)"
+                    + (" or {a, c}" if structure in ("hcp", "omega") else "")
+                    + f", got {value!r}."
+                )
+    targets = _crystal_targets(crystal_kwargs, elements)
+    missing = sorted(
+        element
+        for element, wanted in targets.items()
+        if element not in volume_per_atom
+        and reference_volume_per_atom(element) is None
+        and not all(s in (lattice_constants.get(element) or {}) for s in wanted)
+    )
+    if missing:
+        raise ValueError(
+            f"ASE has no reference crystal for {missing}, so {where} can't size "
+            f"their structures: set {where}.volume_per_atom (Angstrom^3 per "
+            "atom) or lattice_constants for them, or list only other elements "
+            f"in {where}.elements."
+        )
+    for line in describe_lattices(
+        list(targets), list(structures), lattice_constants, volume_per_atom
+    ):
+        logger.info("Crystal structures (init_crystal): %s", line)
+
+
+def _positive_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and value > 0
 
 
 def _amorphous_cluster_count(resolved: dict[str, dict]) -> int:
@@ -752,6 +924,9 @@ def compute_needs(
         ),
         num_of_amorphous_clusters=_amorphous_cluster_count(resolved),
         cluster_compositions=_cluster_compositions(resolved),
+        crystal_targets=_crystal_targets(
+            resolved["crystal_structures_kwargs"], elements
+        ),
     )
 
 
@@ -829,6 +1004,8 @@ def generate(
         num_of_trimers_per_combo=(
             trimer_kwargs["num_of_trimers_per_combo"] if trimer_kwargs["enabled"] else 0
         ),
+        dimer_distance_range=dimer_kwargs["distance_range"],
+        trimer_distance_range=trimer_kwargs["distance_range"],
         num_of_amorphous_structures=(
             amorphous_kwargs["num_of_amorphous_structures"]
             if amorphous_kwargs["enabled"]
@@ -854,8 +1031,10 @@ def generate(
             if rattle_kwargs["enabled"]
             else 0
         ),
+        # None: 3% of each structure's nearest-neighbour distance
+        # (rattle.DEFAULT_RATTLE_FRACTION).
         rattle_standard_deviation=(
-            rattle_kwargs["rattle_standard_deviation"]
+            rattle_kwargs.get("rattle_standard_deviation")
             if rattle_kwargs["enabled"]
             else None
         ),
@@ -895,4 +1074,14 @@ def generate(
         molecule_cluster_override=(
             needs.get("molecule_cluster_override") if needs is not None else None
         ),
+        crystal_targets=_crystal_targets(
+            resolved["crystal_structures_kwargs"], elements
+        ),
+        crystal_lattice_constants=resolved["crystal_structures_kwargs"][
+            "lattice_constants"
+        ],
+        crystal_volume_per_atom=resolved["crystal_structures_kwargs"][
+            "volume_per_atom"
+        ],
+        crystal_override=needs.get("crystal_override") if needs is not None else None,
     )

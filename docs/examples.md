@@ -288,7 +288,7 @@ high_accuracy_evaluation:
 
   `ensemble: "nvt"` runs fixed-cell Langevin dynamics (the default). `ensemble: "npt"` runs ASE's `LangevinBAOAB` integrator with a barostat targeting `pressure` (GPa), letting the cell shape and volume fluctuate — useful when candidate structures should sample compressed/expanded states rather than just the seed cell's fixed volume.
 
-- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default), `"vasp"` or `"orca"` (molecules only, see [Using ORCA](#using-orca-as-the-evaluator)). Every label records its level of theory, and ALomancy warns at start-up (`level_of_theory_mismatch`) if the database already holds labels from a different one. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored. `max_vdw_volume_ratio` (default 10; `null` turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms' van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning `blown_up_excluded`. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in `vdw_exempt_config_types` (e.g. `["molecules_in_vacuum"]`): tag structures that are meant to have vacuum, such as molecules in a box, with their own `config_type` and list it there. If genuine low-density crystals are dropped, raise `max_vdw_volume_ratio`.
+- **high_accuracy_evaluation**: Performs high-accuracy DFT evaluation on selected structures. The `evaluator` key selects the registered `dft_evaluator` backend: `"qe"` (Quantum Espresso, default), `"vasp"`, `"aims"` (FHI-aims, see [Using FHI-aims](#using-fhi-aims-as-the-evaluator)) or `"orca"` (molecules only, see [Using ORCA](#using-orca-as-the-evaluator)). Every label records its level of theory. At start-up, ALomancy stops if the database already holds labels from another code, whose energies are on another scale (`general.allow_mixed_level_of_theory: true` turns this into a warning). It warns (`level_of_theory_mismatch`) for labels from the same code at different settings. Submission concurrency (how many jobs run at once) is controlled by `max_num_of_concurrent_jobs` on the HPC profile (`~/.alomancy/hpc_config.yaml`, default 20) — a property of the HPC system/account, not a per-workflow-phase setting; see [Deprecations](deprecations.md) for the removed `max_batch_size` fallback. Settings for the evaluator you didn't select (e.g. `qe_kwargs` while `evaluator: "vasp"`) are reported at start-up and ignored. `max_vdw_volume_ratio` (default 10; `null` turns it off) keeps blown-up cells away from DFT: a periodic structure whose volume is more than that many times its atoms' van der Waals volume is dropped, both from the candidates before selection and from anything else about to go to DFT, with the warning `blown_up_excluded`. Healthy condensed cells sit near 1 and molecular crystals up to about 10; cells far above run DFT out of memory or fail. Isolated atoms, dimers and trimers are exempt, as are the config types listed in `vdw_exempt_config_types` (e.g. `["molecules_in_vacuum"]`): tag structures that are meant to have vacuum, such as molecules in a box, with their own `config_type` and list it there. If genuine low-density crystals are dropped, raise `max_vdw_volume_ratio`.
 
 ## Initialization in Full
 
@@ -322,11 +322,13 @@ initialization:
     enabled: true
 
   # Two-atom structures for every element pair, at evenly spaced separations
-  # from 0.2x to 1.0x the sum of the vdW radii. These teach the model
-  # short-range repulsion (default 10 per pair).
+  # over distance_range x the sum of the two covalent radii (default
+  # [0.5, 2.0]: Pt-Pt 1.36 to 5.44 Å). These teach the model short-range
+  # repulsion (default 10 per pair).
   dimer_kwargs:
     enabled: true
     num_of_dimers_per_combo: 20
+    distance_range: [0.5, 2.0]
 
   # Three-atom structures for every element triple, on a grid of the two
   # bond lengths over the same range as the dimers (default 5 per triple).
@@ -402,19 +404,37 @@ initialization:
     max_lattice_deformation: 0.2           # +/-20 % on the lattice vectors
 
   # Randomly displaced copies of the same target structures (off by default).
-  # Adds off-equilibrium forces around each starting geometry.
+  # Adds off-equilibrium forces around each starting geometry. A 1-atom cell
+  # (fcc metals) is rattled as a 2x2x2 supercell: moving its only atom would
+  # just translate it.
   rattle_target_structures:
     enabled: false
     num_of_rattled_per_target: 5
-    rattle_standard_deviation: 0.05    # Å; no default, required when enabled
+    rattle_standard_deviation: 0.05    # Å; default 3% of the nearest-neighbour distance
+
+  # Common crystal structures of each element (config_type init_crystal), on
+  # by default for the metals in general.elements: each element in every
+  # structure, as primitive cells, labelled single-point. Without settings,
+  # the element's own ASE reference crystal keeps its reference lattice
+  # constant (fcc Pt: 3.92 Å) and every other structure gets the same volume
+  # per atom (bcc Pt: 3.11 Å). The run's log lists each lattice and its source.
+  crystal_structures_kwargs:
+    enabled: true
+    elements: null                     # null: the metals in general.elements
+    structures: [fcc, bcc, hcp, sc, diamond, a15, omega]
+    lattice_constants: {}              # e.g. {Pt: {fcc: 3.97, hcp: {a: 2.80, c: 4.57}}}
+    volume_per_atom: {}                # e.g. {Pt: 15.5} (Å^3/atom) for Pt's other structures
 ```
 
 - Each `composition_list` entry must have exactly `num_of_atoms_per_amorphous` symbols.
 - `amorphous_kwargs.densities_list` is deprecated: use `density_range` (see [Deprecations](deprecations.md)).
-- Densities are in g/cm³, so the same number is very sparse for heavy elements: Pt at the default 1 g/cm³ fills 14× its atoms' van der Waals volume, and `high_accuracy_evaluation.max_vdw_volume_ratio` (default 10) would drop every such cell before DFT. ALomancy warns about this when the workflow is built (`init_density_too_low`), and about densities packing atoms tighter than any solid (`init_density_too_high`), naming the g/cm³ window to use. Random amorphous mixes are checked as an even mix of `general.elements`.
+- Densities are in g/cm³, so the same number is very sparse for heavy elements: Pt at the default 1 g/cm³ fills 14× its atoms' van der Waals volume, and `high_accuracy_evaluation.max_vdw_volume_ratio` (default 10) would drop every such cell before DFT. When the whole `density_range` is that sparse, the run stops when the workflow is built; when part of it is, ALomancy warns (`init_density_too_low`). It also warns about densities packing atoms tighter than any solid (`init_density_too_high`). Each names the g/cm³ window to use (Pt: about 15–21). Random amorphous mixes are checked as an even mix of `general.elements`.
 - Molecule names, every `density_range` and the box settings are checked when the workflow is built, so a bad name fails at startup, not after DFT has started. A box too small for its largest molecule, or one that can't be packed in `max_attempts_per_molecule` tries, raises naming the composition and density: lower the density or `min_distance`, or raise `num_of_molecules`.
 - On a restart, molecules and boxes are counted per chemical formula, so only the missing ones are made again.
-- `general.dataset_kwargs.target_config_types` decides which structures are stretched, compressed and rattled.
+- `general.dataset_kwargs.target_config_types` decides which structures are stretched, compressed and rattled. Those stretched, compressed and rattled copies can go to the test set too, so a single bulk structure (e.g. fcc Pt from Materials Project) plus its copies gives a test set.
+- **Few target structures**: before any initialisation DFT, ALomancy counts the structures that can go to the test set. With fewer than 2 the run stops (one always stays in training, so the test set would be empty); with fewer than 5 it warns (`few_target_structures`). Both suggest what to add: rattled copies, more stretch/compress, more target types, or `start_from` structures.
+- Materials Project structures include 1-atom primitive cells (elemental ground states such as fcc Pt).
+- **Crystal structures** (`crystal_structures_kwargs`): metals are the alkali, alkaline-earth, transition, lanthanide, actinide and post-transition metals (Al, Ga, In, Sn, Tl, Pb, Bi, Po); list other elements (e.g. C, Si) in `elements` to include them. Lattice constants, first match wins: `lattice_constants[element][structure]`, then `volume_per_atom[element]`, then ASE's reference crystal (its volume per atom for every structure). hcp uses the element's reference c/a if its reference crystal is hcp, else the ideal 1.633; ω uses 0.62. Elements without ASE reference data (Pm, Fr, Ra, Pu, Am and heavier) need `volume_per_atom` or `lattice_constants`, or the run stops at start-up. These structures are single points and not test targets; add `init_crystal` to `general.dataset_kwargs.target_config_types` to also stretch, compress and rattle them and test on them. Magnetic metals (Fe, Co, Ni) need spin polarisation in the evaluator settings. Initialisation only runs again while no AL loop has finished, so turning the block on (or upgrading) doesn't change a run that is already past it.
 - Dimers and trimers are far from equilibrium, so they are usually listed in `general.train_filter.exempt_config_types` (see [Filtering the Training and Test Sets](#filtering-the-training-and-test-sets)).
 
 ## Using VASP as the DFT Backend
@@ -452,6 +472,13 @@ high_accuracy_evaluation:
 > what `module load vasp` would otherwise export. Elements without a `pseudo_dict` override
 > fall back to the default (unsuffixed) POTCAR under that path — if that directory doesn't
 > carry a given element (e.g. `Pd`), VASP fails with `No pseudopotential for <element>!`.
+
+> **k-points:** ALomancy builds each structure's k-point grid and writes KPOINTS, so VASP
+> ignores an INCAR `KSPACING`. Set `vasp_kwargs.kspacing` (Å⁻¹, as VASP's KSPACING; default
+> 0.15) to change the density and `kgamma: true` for Γ-centred grids; ALomancy applies them.
+> `kpts` raises: one grid can't fit cells of different sizes. Non-periodic axes (slabs,
+> molecules, isolated atoms) get one k-point, even though VASP pads them with vacuum. QE takes
+> `qe_kwargs.k_spacing` the same way.
 
 QE configs work unchanged — `evaluator: "qe"` is the default and can be omitted.
 
@@ -506,6 +533,47 @@ initialization:
 - `EnGrad` (forces) and `SCFConvergenceForced` are added to the keyword line when missing.
 - The spin multiplicity is the lowest the electron count allows, the ground state for isolated atoms (H 2, O 3), or `atoms.info["spin_multiplicity"]`; the charge is `orca_kwargs.charge` (default 0) or `atoms.info["charge"]`.
 
+## Using FHI-aims as the Evaluator
+
+FHI-aims is an all-electron code: no pseudopotentials. Its basis and integration grids come from the species defaults that ship with it. Set `evaluator: "aims"`. The defaults use the `intermediate` species defaults with PBE:
+
+```yaml
+high_accuracy_evaluation:
+  evaluator: "aims"
+  max_time: "2H"
+  aims_kwargs:
+    species_defaults: "intermediate"   # default; light / intermediate / tight / really_tight
+    k_spacing: 0.15                    # default, 1/Angstrom (or k_grid_density); k-grid set per structure
+    xc: "pbe"                          # default; any control.in keyword can go here
+  hpc:
+    hpc_name: "raven"
+    aims_path: "/path/to/aims.x"
+    aims_species_dir: "/path/to/FHIaims/species_defaults/defaults_2020"
+    node_info:
+      ranks_per_system: 72
+      ranks_per_node: 72
+      threads_per_rank: 1
+      max_mem_per_node: "240G"
+    partitions: ["cpu"]
+    pre_cmds: ["ulimit -s unlimited"]   # OMP_NUM_THREADS=1 is set on the aims command itself
+```
+
+- **Starting data must be FHI-aims data.** All-electron energies are on a completely different scale from QE/VASP ones (C is about −1030 eV/atom instead of about −155). Starting from a database labelled with another code stops the run at start-up.
+- **Boundary conditions**:
+  - periodic cells get a k-grid from `k_spacing`;
+  - molecules and clusters run without a cell, and so do isolated atoms (the exact free-atom energy);
+  - structures periodic along only some axes are padded with vacuum on the others.
+- **Defaults** (`control.in`):
+  - `relativistic atomic_zora scalar`, `spin none`, `occupation_type gaussian 0.01`, `sc_accuracy_rho 1e-6`;
+  - forces always, and the stress for periodic cells, all from one SCF.
+
+  Any other `control.in` keyword can go in `aims_kwargs`; `xc: "hse06 0.11"` also needs `hse_unit: "bohr-1"`.
+- **Rejected at start-up**:
+  - `k_grid`/`kpts` (one grid can't fit cells of different sizes: use `k_spacing` or `k_grid_density`; non-periodic axes of a slab get one k-point);
+  - `species_dir` (it comes from the profile);
+  - `plus_u` (ASE can't write it).
+- **`ulimit -s unlimited`** in `pre_cmds`: FHI-aims crashes on a small stack. `alomancy add-hpc` adds it for you, and ALomancy warns at start-up if it's missing.
+
 ## Adding a New Backend
 
 Users never pick a workflow class in Python — `ALomancy(config)` builds the skeleton named by `general.al_workflow` (new skeletons: see `writing_a_workflow.md`), and each pluggable category (`mlip_trainer`, `structure_generator`, `dft_evaluator`, `initialiser`) is a module registered against a name in `src/alomancy/registry.py`, resolved lazily from config at runtime (`training.trainer`, `structure_generation.generator`, `high_accuracy_evaluation.evaluator`).
@@ -554,7 +622,7 @@ general:
 
 - `max_force` excludes structures whose largest per-atom force is at or above the value.
 - `formation_energy_per_atom` keeps only structures inside `[min, max]` (inclusive), measured against the database's `IsolatedAtom` energies: `(E − Σ E_isolated) / n_atoms`, the same definition as the parity plots. Structures containing an element without an `IsolatedAtom` energy are not energy-filtered, and a warning says so.
-- `exempt_config_types` lists config_types the whole filter skips (both criteria), for example the initialization's dimers and stretched/compressed crystals, whose large forces are the short-range data MD needs. Exempt structures are counted in the filter's log line, and removing an exemption filters them again in the next loop.
+- `exempt_config_types` lists config_types the whole filter skips (both criteria), for example the initialization's dimers and stretched/compressed crystals, whose large forces are the short-range data MD needs. Exempt structures are counted in the filter's log line, and removing an exemption filters them again in the next loop. `init_crystal` (the competing crystal phases, far above the ground state by design) is always exempt from the train filter, added to your list rather than replaced by it.
 
 Excluded structures are flagged (`is_quality_filtered`, with the reason in `quality_filter_reasons`) and left out of `train_set.xyz`/`test_set.xyz`, training and test metrics. The flags are recomputed every loop, so loosening or removing a filter brings them back.
 

@@ -69,7 +69,8 @@ Fields that matter:
   - **Otherwise:** an INFO `Remote jobs: ...` summary line every 5 minutes while a batch runs or a login is lost, prefixed with loop, phase and the best model's `mae_f`.
   - **Always:** `results/remote_status.json`, written atomically every 5 s (with the `run`, `ssh` and `finished_batches` keys) and marked `finished` at the end. `alomancy status` renders it.
   - **ssh master watch** (`_watch_loop` → `executor.check_ssh_masters`, every `SSH_WATCH_INTERVAL` = 30 s):
-    - For each host it checks the run's master (`ssh -O check`). A dead one is reopened with BatchMode, so key-auth hosts recover silently.
+    - For each host it checks the run's master (`ssh -O check`, local: no login). A dead one is reopened with BatchMode, so key-auth hosts recover silently.
+    - A failed reopen backs off (`_REOPEN_BACKOFF`): the next try waits twice as long, from 30 s up to `REOPEN_BACKOFF_MAX` (30 min), and a live master resets it. Each try on a password/OTP host is a failed sshd login, and every 30 s overnight could set off fail2ban or an account lockout.
     - Otherwise `_note_ssh_auth_lost` raises the banner before any poll fails.
 - "Last data" is flagged stale after 3 check intervals without a sync.
 - `tests/conftest.py` sets `progress.STATUS_FILE = None`, so tests never write into the repository's `results/`. The file is only written when its directory exists.
@@ -124,7 +125,7 @@ Transport exceptions get up to `_TRANSPORT_RETRY_LIMIT` (5) retries with exponen
 
 **After that login, unattended ssh never prompts.**
 - `use_noninteractive_ssh` (`utils/remote_ssh.py`, called next in `pre_run_checks`) routes ExPyRe's ssh through `alomancy-rsh` (`utils/rsh.py`, a console script whose `build_argv` gives `ssh -o BatchMode=yes -o ConnectTimeout=30 "$@"`).
-- When `start_run_masters` has set `ALOMANCY_SSH_CONTROL_DIR` and `ALOMANCY_SSH_RUN_TAG` in the run's environment (which ExPyRe's subprocesses inherit), it also adds `-o ControlPath=<dir>/<tag>-%C -o ControlMaster=no`. Every call then goes through the run's master and never tries to become one. Under `ALOMANCY_TEST_MODE` the environment is left alone.
+- When `start_run_masters` has set `ALOMANCY_SSH_CONTROL_DIR` and `ALOMANCY_SSH_RUN_TAG` in the run's environment (which ExPyRe's subprocesses inherit), it also adds `-o ControlPath=<dir>/<tag>-%C -o ControlMaster=no`, but only when that socket exists for the host being reached (`run_socket_path`: `ssh -G`, local only, expands `%C` for the call's host, port and user). Every such call goes through the run's master and never tries to become one. For a host whose master never opened, or whose host couldn't be resolved, the user's own ssh config (and its multiplexing) applies instead. Under `ALOMANCY_TEST_MODE` the environment is left alone.
 - ExPyRe takes the ssh command from two places, so both are switched: rsync copies read `$EXPYRE_RSH`, while each `System` and its scheduler (squeue, sbatch, scancel) keep the `remsh_cmd` from the systems config, which `add-hpc` writes as `"ssh"`. A user-set `EXPYRE_RSH` or a custom `remsh_cmd` is left alone.
 - It has to be a single executable: ExPyRe builds `rsync -e <EXPYRE_RSH>` by joining strings and splitting on spaces, so `"ssh -o …"` would break every rsync.
 - Once the master is gone, a call fails within a second instead of blocking. Without the wrapper, good_c and fine_tune_good_c once hung for good (2026-11-03): fhi-raccoon only accepts `keyboard-interactive`, its master died after a network blip, and the next rsync and squeue each sat on a password prompt the live panel hid.

@@ -24,6 +24,25 @@ def generate_kpts(
     return kpts if periodic_3d else np.array([kpts[0], kpts[1], 1])
 
 
+def kpoint_grid(atoms: Atoms, k_spacing: float) -> list[int]:
+    """The k-point grid for *atoms* at *k_spacing* (1/Angstrom, 2 pi
+    included, as VASP's KSPACING): ceil(2 pi / (|a_i| k_spacing)) along each
+    periodic axis (generate_kpts' formula), 1 along each non-periodic one.
+    Call it on the structure's own pbc, before any vacuum padding: a slab
+    (pbc T T F) gets n x m x 1, a molecule or isolated atom Gamma only,
+    instead of k-points along the vacuum."""
+    if k_spacing is None or k_spacing <= 0:
+        raise ValueError(f"k_spacing must be a positive number, got {k_spacing!r}.")
+    lengths = np.linalg.norm(np.asarray(atoms.cell), axis=1)
+    grid = []
+    for periodic, length in zip(atoms.pbc, lengths, strict=True):
+        if periodic and length > 0:
+            grid.append(max(1, int(np.ceil(2 * np.pi / (length * k_spacing)))))
+        else:
+            grid.append(1)
+    return grid
+
+
 _MEMORY_UNITS_MB = {
     "": 1,  # a bare number is MB, as Slurm reads --mem
     "K": 1 / 1024,
@@ -155,6 +174,20 @@ def resolve_parallel_resources(
 
 def _is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def pad_non_periodic_axes(atoms: Atoms, vacuum: float = 10.0) -> None:
+    """Make *atoms* fully periodic, in place, for a code with no mixed
+    boundary conditions (VASP, FHI-aims). Only the non-periodic axes are
+    resized, to the structure's extent plus *vacuum* on each side; a
+    slab's periodic in-plane cell is left as it is. A structure with no
+    cell on a non-periodic axis gets one along it. No-op when already
+    fully periodic."""
+    if atoms.pbc.all():
+        return
+    open_axes = [i for i in range(3) if not atoms.pbc[i]]
+    atoms.center(vacuum=vacuum, axis=open_axes)
+    atoms.pbc = True
 
 
 def _build_srun_command(para_info_dict: dict, executable_and_flags: str) -> str:

@@ -232,6 +232,12 @@ def _phase_done(base_name: str) -> bool:
     return Path("results", base_name, f"{_PHASE}.done").exists()
 
 
+def evaluation_done(base_name: str) -> bool:
+    """Whether *base_name*'s high-accuracy evaluation finished (its sentinel
+    exists): a later call returns the cached results whatever it is given."""
+    return _phase_done(base_name)
+
+
 def _mark_phase_done(base_name: str) -> None:
     sentinel = Path("results", base_name, f"{_PHASE}.done")
     sentinel.parent.mkdir(parents=True, exist_ok=True)

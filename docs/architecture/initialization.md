@@ -11,15 +11,38 @@
 One block per structure type in the `initialization` section, each with an `enabled` flag (default true); defaults in `_CREATION_KWARGS_DEFAULTS` (`initialize/initialiser_interface.py`), which is also the registered `kwargs_schema`:
 
 - `isolated_atom_kwargs`
-- `dimer_kwargs.num_of_dimers_per_combo` (default 10), `trimer_kwargs.num_of_trimers_per_combo` (default 5)
+- `dimer_kwargs.num_of_dimers_per_combo` (default 10), `trimer_kwargs.num_of_trimers_per_combo` (default 5); both take `distance_range` (default `[0.5, 2.0]`), the separations as multiples of the covalent radii sum (`DEFAULT_DISTANCE_RANGE` in `initialize/singles_dimers_trimers.py`; for a trimer, of the largest pair). The former 0.2–1.0 × the vdW radii started at 0.70 Å for Pt-Pt: overlapping PAW spheres, forces above 100 eV/Å, failed SCFs. Isolated atoms sit in a cube of at least 15 Å (`MIN_ISOLATED_ATOM_BOX`): 3 × the vdW radius alone (about 5 Å) left a QE atom interacting with its images.
 - `amorphous_kwargs`: `num_of_amorphous_structures` (default 100), `num_of_atoms_per_amorphous` (default 20), `density_range` (`[min, max]` g/cm³, default `[1.0, 1.0]`; each structure's density drawn uniformly at random from the range), `composition_list`. Seeded by `general.seed`, like the molecule boxes. `densities_list` is deprecated (`docs/deprecations.md`): it warns (`config_key_deprecated`) and is read as `[min, max]`. `seed` is deprecated too: it warns and is ignored (it used to seed the amorphous cells and, through the same argument, the molecule boxes).
-- `mp_kwargs`: `max_num_of_atoms` (default 20, caps MP fetches), `mp_max_energy_above_hull` (default 0.1 eV)
+- `mp_kwargs`: `max_num_of_atoms` (default 20, caps MP fetches), `mp_max_energy_above_hull` (default 0.1 eV). The query takes cells from 1 site up (`num_sites=(1, max)`): a lower bound of 2 left out 1-atom primitive cells, the ground state of fcc metals.
 - `stretch_compress_targets_kwargs`: `num_of_stretch_compress_per_target` (default 5), `max_lattice_deformation` (default 0.2)
-- `rattle_target_structures` (off by default): `num_of_rattled_per_target`, `rattle_standard_deviation`
+- `rattle_target_structures` (off by default): `num_of_rattled_per_target`, `rattle_standard_deviation` (default `DEFAULT_RATTLE_FRACTION`, 3 %, of each structure's nearest-neighbour distance, periodic images included: about 0.08 Å for Pt). `create_rattle_atoms_list` (`initialize/rattle.py`) rattles a 1-atom periodic cell as a 2×2×2 supercell (info `supercell`, `parent_config_type`), and skips a single non-periodic atom: moving the only atom is a pure translation, a duplicate label.
 - `molecule_kwargs` (off by default, config_type `init_molecule`): `molecules` (required when enabled), `vacuum` (default 10 Å)
 - `molecules_in_box_kwargs` (off by default, config_type `init_molecules_in_box`): `box_compositions` (required when enabled), `min_distance` (default 1.5 Å), `max_attempts_per_molecule` (default 1000)
 - `amorphous_cluster_kwargs` (config_type `init_amorphous_cluster`, domain `cluster`): `num_of_amorphous_clusters` (default 50), `num_of_atoms_per_cluster` (default 10), `density_range` (default `[1.0, 1.0]`), `composition_list`, `vacuum` (default 10 Å)
 - `molecule_cluster_kwargs` (config_type `init_molecule_cluster`, domain `molecule_cluster`): `cluster_compositions` (entries as for `box_compositions`), `min_distance` (default 1.5 Å), `max_attempts_per_molecule` (default 1000), `vacuum` (default 10 Å)
+- `crystal_structures_kwargs` (**on** by default; config_type `init_crystal`, domain `bulk`): `elements` (default None: `default_elements`, the `METALS` among `general.elements`), `structures` (default all of `CRYSTAL_STRUCTURES`), `lattice_constants`, `volume_per_atom`. See "Crystal structures" below.
+
+## Crystal structures (`initialize/crystals.py`)
+
+Each chosen element in every structure of `CRYSTAL_STRUCTURES` (fcc, bcc, hcp, sc, diamond, A15/β-W, ω) as a primitive cell (1, 1, 2, 1, 2, 8, 3 atoms), so the model sees an element's competing phases, not only the ground state MP returns.
+- **Sizes** (`build_crystal`), first match wins:
+  1. `lattice_constants[element][structure]` (Å; hcp and ω also `{a, c}`);
+  2. `volume_per_atom[element]`;
+  3. `reference_volume_per_atom(element)`: the volume per atom of `ase.build.bulk(element)`, or for Mn, Ga and Pa (no atomic basis in ASE) of the reference cell with its known atoms per cell.
+
+  Without user values the element's own reference structure reproduces the reference lattice constant (fcc Pt 3.92 Å, 15.06 Å³/atom), and every other structure is scaled to that volume per atom (bcc Pt 3.11 Å, hcp 2.77 Å). hcp c/a is the reference's when the reference crystal is hcp (Ti 1.588), else √(8/3); ω uses 0.62. `info["lattice_source"]` records `reference`, `equal_volume` or `user`.
+- **Validation** (`_validate_crystal_structures`, at construction) raises on unknown structures, elements outside `general.elements`, malformed or non-positive values, and elements with no reference data and no user value. It logs one line per element with each lattice and its source.
+- **Single points** (`needs_relaxation` False): a fixed-cell relaxation leaves a symmetric crystal unchanged. Not test targets unless `init_crystal` is in `target_config_types` (then stretch/compress and rattle apply, 1-atom cells rattled as 2×2×2 supercells).
+- **Always exempt from the train filter** (`utils/split_filter.py` `ALWAYS_EXEMPT_FROM_TRAIN_FILTER`, merged into the user's `exempt_config_types`): the unstable phases are far above the ground state by design.
+- **Restarts**: counted per `(formula, crystal_structure)` (`GlobalDatabase.count_by_info`; formula alone can't tell fcc from bcc), `needs["crystal_override"] = {element: [missing structures]}`. Initialisation only runs again while no AL loop has finished, and not at all once its DFT is done, so the default-on block doesn't change runs already past it.
+- Periodic only: off by default without periodic boundary conditions (`_NON_PERIODIC_DEFAULTS`), and enabling it explicitly there raises (`_PERIODIC_ONLY_BLOCKS`, no replacement).
+- `structure_domain` checks the bulk config_types (`init_MP`, `init_crystal`, ...) before its 1-atom rule, so a 1-atom primitive cell is `bulk`, not `isolated_atom`.
+
+## Checks that stop a run before initialisation DFT
+
+- **A block that can never be met** raises in `validate_kwargs` (`_warn_unusual_densities`): when every composition of an enabled `amorphous_kwargs` or `molecules_in_box_kwargs` is blown up (above `max_vdw_volume_ratio`) even at the densest end of its `density_range`. Such a need could never be met, so every restart used to re-enter initialisation. A partly sparse range only warns.
+- **Too few test-eligible structures**: `ActiveLearningWorkflow._check_projected_test_set` runs after generation, before submission. It counts the structures that can go to the test set: test-tagged and eligible ones already in the DB, plus generated ones of the eligible types (`test_eligible_config_types`: `target_config_types` and `TARGET_DERIVED_CONFIG_TYPES`, i.e. `init_stretch_compress` and `init_rattle`) that the blown-up filter won't drop (`utils/clean_structures.py` `is_blown_up`, the same rule as the orchestrator). Below 2 it raises; below 5 it warns `few_target_structures`. Skipped with `grouped_splits`.
+- **Initialisation DFT already done, needs still unmet** (e.g. cells dropped as blown up, failed jobs): `_initialize_training_set` doesn't regenerate them, since the orchestrator would return its cached results anyway (`evaluation_done`). It reloads those results and warns `initialization_needs_unmet`, naming the needs and how to retry (delete `results/initialization/high_accuracy_eval.done`). `add_structures` skips results whose digest is already stored (`database.md`), so the reload adds nothing twice.
 
 ## Evaluators without periodic boundary conditions
 

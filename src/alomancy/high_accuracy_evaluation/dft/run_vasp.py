@@ -14,7 +14,8 @@ from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
     _run_sp,
-    generate_kpts,
+    kpoint_grid,
+    pad_non_periodic_axes,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,9 +44,9 @@ KSPACING = 0.15
 
 
 def _ensure_fully_periodic(atoms: Atoms, vacuum: float = _MIN_VACUUM_PER_SIDE) -> None:
-    if not atoms.pbc.all():
-        atoms.center(vacuum=vacuum, axis=(0, 1, 2))
-        atoms.pbc = True
+    # Pads only the non-periodic axes: centring along all three used to
+    # resize a slab's periodic in-plane cell too.
+    pad_non_periodic_axes(atoms, vacuum=vacuum)
 
 
 def create_vasp_command(para_info_dict: dict, vasp_path: str) -> str:
@@ -82,22 +83,80 @@ def resolve_effective_kwargs(vasp_kwargs: dict) -> dict:
     return get_vasp_input_kwargs(vasp_kwargs)
 
 
+# vasp_kwargs keys about k-points: ALomancy builds the grid per structure.
+_KPOINT_KEYS = ("kspacing", "kgamma")
+# An explicit grid fits one cell only: raise (validate_kwargs).
+_EXPLICIT_GRID_KEYS = ("kpts", "kpoints")
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip(".").lower() in ("true", "t", "1", "yes")
+    return bool(value)
+
+
+def _vasp_kpoint_settings(vasp_kwargs: dict) -> tuple[float, bool]:
+    """(k-point spacing, Gamma-centred) from vasp_kwargs: KSPACING and
+    KGAMMA as VASP spells them, else KSPACING (module default) and the
+    ASE default (Monkhorst-Pack)."""
+    lower = {str(k).lower(): v for k, v in vasp_kwargs.items()}
+    spacing = float(lower["kspacing"]) if "kspacing" in lower else KSPACING
+    gamma = (
+        _truthy(lower["kgamma"])
+        if "kgamma" in lower
+        else bool(lower.get("gamma", False))
+    )
+    return spacing, gamma
+
+
+def validate_kwargs(config: dict, hpc: dict | None) -> None:  # noqa: ARG001
+    """Construction-time check: no explicit k-point grid (it fits one cell
+    only; set kspacing instead), and kspacing positive when set."""
+    vasp_kwargs = config.get("vasp_kwargs") or {}
+    if not isinstance(vasp_kwargs, dict):
+        raise ValueError(
+            "high_accuracy_evaluation.vasp_kwargs must be a mapping, got "
+            f"{vasp_kwargs!r}."
+        )
+    explicit = sorted(k for k in vasp_kwargs if str(k).lower() in _EXPLICIT_GRID_KEYS)
+    if explicit:
+        raise ValueError(
+            f"high_accuracy_evaluation.vasp_kwargs: {', '.join(explicit)} can't "
+            "be set: ALomancy builds each structure's k-point grid from a "
+            "spacing (cells differ from structure to structure, and "
+            "non-periodic axes get one k-point). Set kspacing (1/Angstrom, as "
+            "VASP's KSPACING) instead, and kgamma: true for Gamma-centred grids."
+        )
+    spacing, _ = _vasp_kpoint_settings(vasp_kwargs)
+    if not spacing > 0:
+        raise ValueError(
+            "high_accuracy_evaluation.vasp_kwargs.kspacing must be positive, "
+            f"got {spacing!r}."
+        )
+
+
 def create_vasp_calc_object(
     atoms: Atoms,
     high_accuracy_eval_job_dict: dict,
     out_dir: str,
     is_relaxation: bool = False,
 ) -> Vasp:
-    """Create an ASE Vasp calculator — analogous to create_qe_calc_object."""
+    """Create an ASE Vasp calculator — analogous to create_qe_calc_object.
+    The k-grid comes from the structure's own pbc, before padding (a slab
+    gets n x m x 1, a padded molecule Gamma only), at vasp_kwargs.kspacing
+    when set (removed from the INCAR: ALomancy writes KPOINTS, which VASP
+    reads instead), else KSPACING; kgamma: true makes it Gamma-centred."""
+    user_kwargs = dict(high_accuracy_eval_job_dict.get("vasp_input_kwargs") or {})
+    k_spacing, gamma = _vasp_kpoint_settings(user_kwargs)
+    kpt_arr = kpoint_grid(atoms, k_spacing)
     _ensure_fully_periodic(atoms)
-    kpt_arr = generate_kpts(cell=atoms.cell, periodic_3d=True, kspacing=KSPACING)
     hpc = high_accuracy_eval_job_dict["hpc"]
     if hpc.get("pp_path"):
         # ASE's Vasp calculator reads POTCAR locations from this env var, not
         # from a constructor kwarg — must be set before Vasp(...) is built.
         os.environ["VASP_PP_PATH"] = hpc["pp_path"]
     vasp_kwargs = get_vasp_input_kwargs(
-        high_accuracy_eval_job_dict.get("vasp_input_kwargs", {})
+        {k: v for k, v in user_kwargs.items() if k.lower() not in _KPOINT_KEYS}
     )
     if is_relaxation:
         vasp_kwargs.update({"nsw": 0, "ibrion": -1})
@@ -110,6 +169,7 @@ def create_vasp_calc_object(
         command=create_vasp_command(hpc["node_info"], hpc["vasp_path"]),
         directory=out_dir,
         kpts=list(kpt_arr),
+        gamma=gamma,
         setups=hpc.get("pseudo_dict", {}),
         **vasp_kwargs,
     )
@@ -211,6 +271,7 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
     kwargs = {
         k.lower(): v
         for k, v in get_vasp_input_kwargs(config.get("vasp_kwargs") or {}).items()
+        if k.lower() not in _KPOINT_KEYS
     }
     method, rung = functional_rung(_vasp_method(kwargs))
     ivdw = int(kwargs.get("ivdw", 0))
@@ -246,7 +307,7 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
         relativity="spin_orbit" if kwargs.get("lsorbit") else "in_pseudopotential",
         spin_treatment=spin,
         solvation="VASPsol" if kwargs.get("lsol") else "none",
-        k_spacing=KSPACING,
+        k_spacing=_vasp_kpoint_settings(config.get("vasp_kwargs") or {})[0],
         smearing={
             "scheme": _VASP_ISMEAR.get(ismear, f"methfessel-paxton {ismear}"),
             "width_eV": float(kwargs.get("sigma", 0.2)),

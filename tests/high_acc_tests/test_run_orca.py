@@ -259,3 +259,22 @@ def test_validate_kwargs_warns_for_numerical_gradients_and_unknown_methods():
     events = [getattr(r, "event", None) for r in records]
     assert "numerical_gradients" in events
     assert "orca_method_unrecognised" in events
+
+
+@pytest.mark.unit
+def test_charge_and_multiplicity_survive_an_extxyz_round_trip(tmp_path):
+    """extxyz reads info integers back as np.int64, which an isinstance(int)
+    check rejected: every charged or open-shell structure from start_from,
+    the DB or a restart failed on the node."""
+    from ase.io import read, write
+
+    atoms = molecule("H2O")
+    atoms.info["charge"] = -1
+    atoms.info["spin_multiplicity"] = 2
+    write(tmp_path / "a.xyz", atoms, format="extxyz")
+    back = read(tmp_path / "a.xyz", format="extxyz")
+    assert not isinstance(back.info["charge"], int)  # numpy, as in a real run
+    assert structure_charge_and_multiplicity(back) == (-1, 2)
+    atoms.info["charge"] = True
+    with pytest.raises(ValueError, match="integer charge"):
+        structure_charge_and_multiplicity(atoms)

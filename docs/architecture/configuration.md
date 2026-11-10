@@ -11,7 +11,7 @@
 
 `configs/global_config.py` holds the paths: `ALOMANCY_HPC_CONFIG` (`~/.alomancy/hpc_config.yaml`), `EXPYRE_CONFIG` (`~/.alomancy/expyre_config.json`, the HPC systems config written by `alomancy add-hpc`) and `LEGACY_EXPYRE_CONFIG` (`~/.expyre/config.json`, its pre-isolation location; see `remote_submission.md`).
 
-`configs/hpc_profiles.py` (`hpc_profile_row`, `format_table`) builds the HPC profile table shared by `alomancy list-hpc` and the run's startup summary. `list-hpc` drops the `executable` column; the startup table keeps it (the first of `pwx_path`, `vasp_path`, `orca_path`, `high_accuracy_executable_path` the profile sets, `_EXECUTABLE_KEYS`).
+`configs/hpc_profiles.py` (`hpc_profile_row`, `format_table`) builds the HPC profile table shared by `alomancy list-hpc` and the run's startup summary. `list-hpc` drops the `executable` column; the startup table keeps it (the first of `pwx_path`, `vasp_path`, `orca_path`, `aims_path`, `high_accuracy_executable_path` the profile sets, `_EXECUTABLE_KEYS`).
 
 ## Validation at construction, not at first use
 

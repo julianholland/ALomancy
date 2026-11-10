@@ -68,7 +68,7 @@ def test_a_long_home_falls_back_to_a_short_directory():
 
 
 @pytest.mark.unit
-def test_rsh_uses_the_runs_socket_only_when_the_run_set_one():
+def test_rsh_uses_the_runs_socket_only_when_the_run_set_one(tmp_path):
     plain = build_argv(["host", "true"], env={})
     assert plain == [
         "ssh",
@@ -79,9 +79,12 @@ def test_rsh_uses_the_runs_socket_only_when_the_run_set_one():
         "host",
         "true",
     ]
+    socket = tmp_path / "socket"
+    socket.touch()
     owned = build_argv(
         ["host", "true"],
         env={CONTROL_DIR_ENV: "/home/u/.alomancy/cm", RUN_TAG_ENV: "abc123"},
+        socket_lookup=lambda args, template: socket,
     )
     assert owned[-2:] == ["host", "true"]
     assert "ControlPath=/home/u/.alomancy/cm/abc123-%C" in owned
@@ -93,7 +96,9 @@ def test_rsh_uses_the_runs_socket_only_when_the_run_set_one():
 def test_rsh_and_masters_agree_on_the_socket(tmp_path):
     env: dict[str, str] = {}
     start_run_masters(tmp_path, {"raven": "raven"}, env=env)
-    argv = build_argv(["raven", "true"], env=env)
+    socket = tmp_path / "socket"
+    socket.touch()
+    argv = build_argv(["raven", "true"], env=env, socket_lookup=lambda a, t: socket)
     assert f"ControlPath={control_path_template(tmp_path)}" in argv
 
 
@@ -162,3 +167,33 @@ def test_own_master_can_be_turned_off(monkeypatch):
     assert ssh_master.own_master_enabled()
     monkeypatch.setenv("ALOMANCY_OWN_SSH_MASTER", "0")
     assert not ssh_master.own_master_enabled()
+
+
+@pytest.mark.unit
+def test_rsh_leaves_the_users_ssh_alone_when_the_runs_master_is_missing(tmp_path):
+    """Forcing the run's socket for a host whose master never opened sent
+    every background call past the user's own authenticated socket, to a
+    BatchMode login that fails on password/OTP hosts."""
+    env = {CONTROL_DIR_ENV: str(tmp_path), RUN_TAG_ENV: "abc123"}
+    missing = build_argv(
+        ["raven", "true"], env=env, socket_lookup=lambda a, t: tmp_path / "gone"
+    )
+    assert not any("ControlPath" in arg for arg in missing)
+    unknown = build_argv(["raven", "true"], env=env, socket_lookup=lambda a, t: None)
+    assert not any("ControlPath" in arg for arg in unknown)
+
+
+@pytest.mark.unit
+def test_rsh_finds_the_host_and_asks_ssh_for_its_socket(tmp_path, fake_ssh):
+    """The socket's %C depends on host, port and user, so ssh -G gets the
+    same options the call has, up to the host."""
+    from alomancy.utils.rsh import _host_index, run_socket_path
+
+    assert _host_index(["raven", "true"]) == 0
+    assert _host_index(["-p", "22", "-l", "u", "raven", "ls"]) == 4
+    assert _host_index(["-p22", "-T", "raven", "ls"]) == 2
+    assert _host_index(["-T"]) is None
+    path = run_socket_path(["-p", "22", "raven", "ls"], "/cm/abc-%C")
+    assert path == tmp_path / "socket"
+    call = fake_ssh.read_text().splitlines()[-1]
+    assert call == "-G -o ControlPath=/cm/abc-%C -p 22 raven"

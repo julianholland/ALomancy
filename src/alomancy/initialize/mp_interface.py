@@ -43,7 +43,10 @@ def retrieve_mp_material_docs(
                 elements=el,
                 num_elements=len(el),
                 energy_above_hull=(0, max_energy_above_hull),
-                num_sites=(2, max_num_atoms),
+                # 1, not 2: elemental ground states often have a 1-atom
+                # primitive cell (fcc Pt, mp-126), which a lower bound of 2
+                # silently excluded.
+                num_sites=(1, max_num_atoms),
                 fields=["material_id", "structure"],
             )
             docs_list.extend(docs)

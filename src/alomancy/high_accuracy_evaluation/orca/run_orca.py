@@ -20,10 +20,12 @@ Runs remotely (module-level functions only): changes need
 """
 
 import logging
+import numbers
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 from ase import Atoms
 from ase.calculators.orca import ORCA, OrcaProfile
 from ase.data import ground_state_magnetic_moments
@@ -531,6 +533,20 @@ def build_orca_input(orca_kwargs: dict | None, node_info: dict) -> dict[str, str
     }
 
 
+def _as_int(value: object) -> int | None:
+    """*value* as a Python int when it is a whole number of any numeric
+    type: extxyz reads info integers back as numpy integers
+    (np.int64), and floats like 1.0 are accepted too. None otherwise
+    (bools, strings, fractional values)."""
+    if isinstance(value, bool | np.bool_):
+        return None
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, numbers.Real) and float(value).is_integer():
+        return int(value)
+    return None
+
+
 def structure_charge_and_multiplicity(
     atoms: Atoms, default_charge: int = 0
 ) -> tuple[int, int]:
@@ -541,11 +557,11 @@ def structure_charge_and_multiplicity(
     ground state's (Hund's rule, ase.data.ground_state_magnetic_moments +
     1: H 2, C 3, O 3); else the lowest the electron count allows (1 when
     even, 2 when odd). Raises when the two can't go together."""
-    charge = atoms.info.get("charge", default_charge)
-    if isinstance(charge, float) and charge.is_integer():
-        charge = int(charge)
-    if not isinstance(charge, int) or isinstance(charge, bool):
-        raise ValueError(f"ORCA needs an integer charge, got {charge!r}.")
+    charge = _as_int(atoms.info.get("charge", default_charge))
+    if charge is None:
+        raise ValueError(
+            f"ORCA needs an integer charge, got {atoms.info.get('charge')!r}."
+        )
     n_electrons = int(atoms.numbers.sum()) - charge
     if n_electrons < 0:
         raise ValueError(
@@ -558,8 +574,7 @@ def structure_charge_and_multiplicity(
             mult = round(ground_state_magnetic_moments[atoms.numbers[0]]) + 1
         else:
             mult = 1 if n_electrons % 2 == 0 else 2
-    if isinstance(mult, float) and mult.is_integer():
-        mult = int(mult)
+    mult = _as_int(mult) if _as_int(mult) is not None else mult
     if (
         not isinstance(mult, int)
         or isinstance(mult, bool)

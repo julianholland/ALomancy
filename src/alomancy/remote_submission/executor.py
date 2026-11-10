@@ -374,20 +374,43 @@ def relogin(sys_name: str) -> bool:
     return True
 
 
-def check_ssh_masters() -> None:
+# Failed non-interactive reopens of a host whose login needs a password or
+# OTP: host -> (monotonic time of the next allowed attempt, current delay).
+# Each attempt is a failed sshd login, so they back off instead of
+# repeating every SSH_WATCH_INTERVAL (fail2ban and account lockouts count
+# them).
+_REOPEN_BACKOFF: dict[str, tuple[float, float]] = {}
+REOPEN_BACKOFF_MAX = 1800.0  # s, 30 min between attempts at most
+
+
+def check_ssh_masters(now: float | None = None) -> None:
     """The master watch (run by the live monitor every
     progress.SSH_WATCH_INTERVAL s): a dead master is reopened silently
     where a key login works, otherwise its systems show "login needed"
-    right away instead of after the next failed poll."""
+    right away instead of after the next failed poll. After a failed
+    reopen the next one waits twice as long (SSH_WATCH_INTERVAL up to
+    REOPEN_BACKOFF_MAX); the liveness check itself (local, no login)
+    still runs every time, so a login from the panel is seen at once."""
     masters = ssh_master.MASTERS
     template = masters.template
     if template is None or ssh_master.external_calls_disabled():
         return
+    now = time.monotonic() if now is None else now
     for host in sorted(set(masters.hosts.values())):
         systems = masters.systems_for(host)
-        if ssh_master.master_alive(host, template) or ssh_master.open_master(
-            host, template, interactive=False
-        ):
+        alive = ssh_master.master_alive(host, template)
+        if not alive:
+            next_try, delay = _REOPEN_BACKOFF.get(host, (0.0, 0.0))
+            if now >= next_try:
+                alive = ssh_master.open_master(host, template, interactive=False)
+                if not alive:
+                    delay = min(
+                        max(2 * delay, progress.SSH_WATCH_INTERVAL),
+                        REOPEN_BACKOFF_MAX,
+                    )
+                    _REOPEN_BACKOFF[host] = (now + delay, delay)
+        if alive:
+            _REOPEN_BACKOFF.pop(host, None)
             for system in systems:
                 if system in progress.TRACKER.auth_lost:
                     _note_ssh_auth_restored(system)
@@ -607,6 +630,9 @@ class RemoteJobExecutor:
     def __init__(self, remote_info: RemoteInfo):
         self.remote_info = remote_info
         self.jobs = []
+        # index -> failure_signature of the job's exception, for callers
+        # deciding whether a retry can help (submit_n's *failures*).
+        self.failures: dict[int, str] = {}
         # The live-status batch (progress.TRACKER) of the jobs being run;
         # -1 (no batch) until run_all_jobs_bounded registers one.
         self._batch_id = -1
@@ -853,6 +879,7 @@ class RemoteJobExecutor:
                 },
             )
             logger.debug("Job %d failure traceback:", index + 1, exc_info=exc)
+            self.failures[index] = failure_signature(exc)
             progress.TRACKER.finished(self._batch_id, index, ok=False)
             self._salvage_partial_output(index, job)
             return index, None
@@ -1078,10 +1105,19 @@ class RemoteJobExecutor:
         return results
 
 
+def failure_signature(exc: BaseException) -> str:
+    """The exception's type and message with paths replaced, so the same
+    error in different jobs (each with its own stage directory) compares
+    equal: e.g. ``UnknownFileTypeError: Empty file: <path>``."""
+    message = re.sub(r"\S*/\S+", "<path>", str(exc))
+    return f"{type(exc).__name__}: {message}"
+
+
 def submit_n(
     function: Callable,
     job_configs: list[dict[str, Any]],
     remote_info: RemoteInfo,
+    failures: dict[int, str] | None = None,
     **kwargs: Any,
 ) -> list[Any]:
     """Generic N-times remote submission primitive: submit `function` once
@@ -1114,4 +1150,9 @@ def submit_n(
     needing to know about `RemoteJobExecutor`/`RemoteInfo` construction
     directly.
     """
-    return RemoteJobExecutor(remote_info).run_and_wait(function, job_configs, **kwargs)
+    executor = RemoteJobExecutor(remote_info)
+    results = executor.run_and_wait(function, job_configs, **kwargs)
+    if failures is not None:
+        # index -> failure_signature for each job that raised.
+        failures.update(executor.failures)
+    return results

@@ -113,6 +113,49 @@ def resolve_hpc_host(
     return None
 
 
+def check_expyre_systems(
+    hpc_profiles: dict[str, dict],
+    systems: dict | None = None,
+    master_config_path: Path = EXPYRE_CONFIG,
+) -> None:
+    """Raise before any job is submitted when an HPC profile used by the
+    run names an ExPyRe system that ExPyRe doesn't know: every job on it
+    would fail with a bare KeyError. *hpc_profiles* is {hpc_name: profile};
+    *systems* defaults to expyre.config.systems (what this run's jobs use:
+    the run's own .expyre/config.json, copied from *master_config_path*
+    when the run first started and not updated after)."""
+    if systems is None:
+        try:
+            from expyre import config as expyre_config
+
+            systems = expyre_config.systems or {}
+        except Exception as exc:  # no ExPyRe config at all: checked elsewhere
+            logger.debug("Could not read ExPyRe systems: %s", exc)
+            return
+    missing = sorted(name for name in hpc_profiles if name not in systems)
+    if not missing:
+        return
+    try:
+        master = json.loads(master_config_path.read_text()).get("systems", {})
+    except (OSError, json.JSONDecodeError, AttributeError):
+        master = {}
+    stale = [name for name in missing if name in master]
+    detail = (
+        f" {', '.join(stale)} {'is' if len(stale) == 1 else 'are'} in "
+        f"{master_config_path}, but this run's .expyre/config.json was copied "
+        "from it when the run first started: delete the run's "
+        ".expyre/config.json (it is copied again on the next start) to pick "
+        "up the new systems."
+        if stale
+        else " Run `alomancy add-hpc` to add them."
+    )
+    raise ValueError(
+        f"The HPC profile(s) {', '.join(missing)} name ExPyRe systems this run "
+        f"doesn't know (it knows: {', '.join(sorted(systems)) or 'none'}), so "
+        "every job on them would fail." + detail
+    )
+
+
 def get_remote_alomancy_version(
     host: str, python_path: str, timeout: float = 10.0
 ) -> str | None:

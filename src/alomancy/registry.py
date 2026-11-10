@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 _REGISTRY: dict[str, dict[str, dict]] = {}
 
 
+# Entry points every module of a category must name: shared code calls them
+# unconditionally. Checked at registration, so a plugin missing one fails
+# with its name, not an AttributeError deep in a run. (Optional ones, e.g.
+# validate_kwargs and report_section, are looked up with getattr.)
+REQUIRED_ENTRY_POINTS: dict[str, tuple[str, ...]] = {
+    "dft_evaluator": (
+        "sp",
+        "go",
+        "max_output_dir_len",
+        "supports_periodic",
+        "supports_non_periodic",
+        "max_num_of_atoms",
+        "level_of_theory",
+        "resolve_effective_kwargs",
+    ),
+}
+
+
 def register(category: str, name: str, module: str, **entry_points: str) -> None:
     """Record a name -> (module path, entry-point attribute names) mapping.
 
@@ -32,6 +50,17 @@ def register(category: str, name: str, module: str, **entry_points: str) -> None
     entry -- deliberate, so a later registration (e.g. from an optional
     plugin package) can override a default without needing a separate API.
     """
+    missing = [
+        ep for ep in REQUIRED_ENTRY_POINTS.get(category, ()) if ep not in entry_points
+    ]
+    if missing:
+        raise ValueError(
+            f"register({category!r}, {name!r}): missing entry point(s) "
+            f"{missing}. Every {category} must name "
+            f"{list(REQUIRED_ENTRY_POINTS[category])} (see "
+            "docs/architecture/high_accuracy_evaluation.md, 'Adding an "
+            "evaluator')."
+        )
     _REGISTRY.setdefault(category, {})[name] = {
         "module": module,
         "entry_points": dict(entry_points),
@@ -111,6 +140,7 @@ register(
     supports_non_periodic="SUPPORTS_NON_PERIODIC",
     max_num_of_atoms="max_num_of_atoms",
     level_of_theory="level_of_theory",
+    validate_kwargs="validate_kwargs",
     resolve_effective_kwargs="resolve_effective_kwargs",
     report_section="report_section",
 )
@@ -125,6 +155,7 @@ register(
     supports_non_periodic="SUPPORTS_NON_PERIODIC",
     max_num_of_atoms="max_num_of_atoms",
     level_of_theory="level_of_theory",
+    validate_kwargs="validate_kwargs",
     resolve_effective_kwargs="resolve_effective_kwargs",
     report_section="report_section",
 )
@@ -137,6 +168,24 @@ register(
     "alomancy.high_accuracy_evaluation.orca.run_orca",
     sp="run_sp_orca",
     go="run_go_orca",
+    max_output_dir_len="MAX_OUTPUT_DIR_LEN",
+    supports_periodic="SUPPORTS_PERIODIC",
+    supports_non_periodic="SUPPORTS_NON_PERIODIC",
+    max_num_of_atoms="max_num_of_atoms",
+    level_of_theory="level_of_theory",
+    validate_kwargs="validate_kwargs",
+    resolve_effective_kwargs="resolve_effective_kwargs",
+    report_section="report_section",
+)
+
+# FHI-aims: all-electron, periodic and non-periodic (mixed pbc padded,
+# IsolatedAtom run without a cell), launched through srun like QE/VASP.
+register(
+    "dft_evaluator",
+    "aims",
+    "alomancy.high_accuracy_evaluation.dft.run_aims",
+    sp="run_sp_aims",
+    go="run_go_aims",
     max_output_dir_len="MAX_OUTPUT_DIR_LEN",
     supports_periodic="SUPPORTS_PERIODIC",
     supports_non_periodic="SUPPORTS_NON_PERIODIC",

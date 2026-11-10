@@ -112,9 +112,11 @@ class LevelOfTheory:
         return {k: data[k] for k in IDENTITY_FIELDS}
 
     def identity_id(self) -> str:
-        """12 hex characters of the sha256 of the identity fields."""
+        """``lot-`` and 12 hex characters of the sha256 of the identity
+        fields. The prefix keeps it a string through extxyz, which reads an
+        all-digit value (or digits around one "e") back as a number."""
         text = json.dumps(self.identity(), sort_keys=True, default=str)
-        return hashlib.sha256(text.encode()).hexdigest()[:12]
+        return "lot-" + hashlib.sha256(text.encode()).hexdigest()[:12]
 
     def label(self) -> str:
         """One line for the run summary, e.g. ``DFT PBE (GGA) +D3(BJ) |
@@ -162,6 +164,22 @@ def stamp_level_of_theory(atoms_list: list, level: "LevelOfTheory") -> list:
         atoms.info[LEVEL_OF_THEORY_KEY] = text
         atoms.info[LEVEL_OF_THEORY_ID_KEY] = identity
     return atoms_list
+
+
+def stored_identity_id(info: dict) -> str | None:
+    """The level-of-theory id of a stamped structure, recomputed from its
+    stored record (REF_level_of_theory) when there is one, so a change in
+    the id's format or an extxyz round trip of the id itself can't make the
+    same level look different. Falls back to str() of the stored id; None
+    when the structure carries neither."""
+    record = info.get(LEVEL_OF_THEORY_KEY)
+    if record:
+        try:
+            return LevelOfTheory.from_json(str(record)).identity_id()
+        except (ValueError, TypeError):
+            pass
+    stored = info.get(LEVEL_OF_THEORY_ID_KEY)
+    return None if stored is None else str(stored)
 
 
 def differing_fields(a: dict[str, Any], b: dict[str, Any]) -> list[str]:

@@ -117,3 +117,23 @@ def test_parallel_resources_defaults_and_overrides():
         resolve_parallel_resources(node, nprocs=8, mem_per_proc_mb=3000)
     with pytest.raises(ValueError, match="max_mem_per_node is required"):
         resolve_parallel_resources({"ranks_per_system": 4, "ranks_per_node": 8})
+
+
+@pytest.mark.unit
+def test_ids_stay_strings_through_extxyz_and_are_recomputed(tmp_path):
+    """A 12-hex id that is all digits (or digits around one "e") came back
+    from extxyz as a number, so the same level looked like another one."""
+    from alomancy.high_accuracy_evaluation.level_of_theory import stored_identity_id
+
+    level = run_qe.level_of_theory({})
+    assert level.identity_id().startswith("lot-")
+    atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    stamp_level_of_theory([atoms], level)
+    # The id as an older or mangled stamp: numeric. The stored record wins.
+    atoms.info[LEVEL_OF_THEORY_ID_KEY] = 123456789012
+    write(tmp_path / "a.xyz", atoms, format="extxyz")
+    back = read(tmp_path / "a.xyz", format="extxyz")
+    assert stored_identity_id(back.info) == level.identity_id()
+    # No record: the stored id as a string; nothing at all: None.
+    assert stored_identity_id({LEVEL_OF_THEORY_ID_KEY: 42}) == "42"
+    assert stored_identity_id({}) is None
