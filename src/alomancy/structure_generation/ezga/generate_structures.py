@@ -756,9 +756,27 @@ def run_ezga(
         from ezga.hise.manager import run_hise
 
         stage_dirs = list(run_hise(load_config(config)).values())
-        return str(Path(stage_dirs[-1]).resolve().relative_to(out.resolve()))
-    build_default_engine(load_config(config)).run()
-    return "db"
+        db = str(Path(stage_dirs[-1]).resolve().relative_to(out.resolve()))
+    else:
+        engine = build_default_engine(load_config(config))
+        engine.run()
+        del engine
+        db = "db"
+    _finalize_databases(out)
+    return db
+
+
+def _finalize_databases(out: Path) -> None:
+    """finalize_sqlite on every database EZGA wrote under *out* (db/,
+    db_ro/, each HiSE stage), once EZGA's own connections are gone, so the
+    copy that comes back from a remote job has no -wal to go stale."""
+    import gc
+
+    from alomancy.database.global_database import finalize_sqlite
+
+    gc.collect()  # let go of any connection EZGA's objects still hold
+    for sqlite_path in sorted(out.rglob("db_index.sqlite")):
+        finalize_sqlite(sqlite_path.parent)
 
 
 def read_offspring(db_path: Path) -> list[Atoms]:

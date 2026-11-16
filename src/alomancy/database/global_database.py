@@ -100,14 +100,163 @@ def atoms_from_container(container: Any, *, labels: bool = True) -> Atoms:
     return atoms
 
 
+_SQLITE_SIDECARS = ("-wal", "-shm")
+
+
+class StaleWalError(RuntimeError):
+    """A sage_lib storage copied back from a remote job has a -wal file
+    that does not belong to its db_index.sqlite (see read_storage)."""
+
+
+def _sqlite_journal_byte(sqlite_path: Path) -> int:
+    """Byte 18 of the SQLite header (file format write version): 1 for a
+    rollback-journal database, 2 for one in WAL mode."""
+    with open(sqlite_path, "rb") as f:
+        header = f.read(100)
+    if len(header) < 100 or not header.startswith(b"SQLite format 3\x00"):
+        raise ValueError(f"{sqlite_path} is not an SQLite database.")
+    return header[18]
+
+
+def finalize_sqlite(db_dir: str | Path, timeout: float = 30.0) -> None:
+    """Make the sage_lib storage in *db_dir* one self-contained file: merge
+    its WAL into db_index.sqlite and switch it out of WAL mode, which makes
+    SQLite delete the -wal and -shm files. Run by a remote job on its own
+    output once nothing else has the database open.
+
+    ExPyRe's polling rsyncs a running job's files back without --delete,
+    so a -wal copied mid-run stays in the local copy after the job removed
+    its own; SQLite replays any -wal it finds, and an old one replayed over
+    the finished database corrupts it or silently drops rows. A database
+    finalized here has a rollback-mode header, which tells read_storage
+    that any -wal next to it is such a leftover.
+
+    Raises RuntimeError if the database can't leave WAL mode (another
+    connection still holds it)."""
+    import sqlite3
+
+    sqlite_path = Path(db_dir) / "db_index.sqlite"
+    con = sqlite3.connect(sqlite_path, timeout=timeout)
+    try:
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        mode = con.execute("PRAGMA journal_mode=DELETE;").fetchone()[0]
+    except sqlite3.OperationalError as exc:
+        raise RuntimeError(
+            f"Could not take {sqlite_path} out of WAL mode ({exc}): another "
+            "connection still has it open."
+        ) from exc
+    finally:
+        con.close()
+    if str(mode).lower() != "delete":
+        raise RuntimeError(
+            f"Could not take {sqlite_path} out of WAL mode (journal_mode is "
+            f"{mode!r}): another connection still has it open."
+        )
+
+
+def drop_stale_sqlite_sidecars(path: str | Path) -> list[Path]:
+    """Delete the -wal/-shm files next to the db_index.sqlite in *path* if
+    the database is in rollback mode (finalize_sqlite): SQLite would
+    otherwise replay a -wal that cannot belong to it. A database still in
+    WAL mode is left alone. Returns the files removed."""
+    sqlite_path = Path(path) / "db_index.sqlite"
+    if _sqlite_journal_byte(sqlite_path) != 1:
+        return []
+    removed = []
+    for suffix in _SQLITE_SIDECARS:
+        sidecar = sqlite_path.with_name(sqlite_path.name + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
+            removed.append(sidecar)
+    return removed
+
+
+def _wal_last_commit_pages(wal_path: Path) -> int | None:
+    """The database size, in pages, recorded by the last commit frame of
+    *wal_path* that belongs to its current header (salt match); None if it
+    has none."""
+    import struct
+
+    data = wal_path.read_bytes()
+    if len(data) < 32:
+        return None
+    page_size = struct.unpack(">I", data[8:12])[0]
+    salts = data[16:24]
+    frame_size = 24 + page_size
+    last = None
+    for offset in range(32, len(data) - frame_size + 1, frame_size):
+        if data[offset + 8 : offset + 16] != salts:
+            break
+        db_pages = struct.unpack(">I", data[offset + 4 : offset + 8])[0]
+        if db_pages:
+            last = db_pages
+    return last
+
+
+def _check_wal(sqlite_path: Path) -> None:
+    """Refuse a WAL-mode database whose -wal is provably not its own: one
+    whose last commit describes a smaller database than the file on disk
+    (an earlier snapshot of the same database), or one that makes the
+    database fail SQLite's integrity check. A clean result doesn't prove a
+    -wal current; it only rules out these two signs."""
+    import sqlite3
+
+    wal_path = sqlite_path.with_name(sqlite_path.name + "-wal")
+    hint = (
+        f"{wal_path} looks like a leftover from a mid-run copy of a remote "
+        f"job (ExPyRe syncs without --delete). {sqlite_path.name} without it "
+        "may be intact: move the -wal and -shm aside to read it."
+    )
+    with open(sqlite_path, "rb") as f:
+        header = f.read(100)
+    page_size = int.from_bytes(header[16:18], "big")
+    page_size = 65536 if page_size == 1 else page_size
+    file_pages = sqlite_path.stat().st_size // page_size
+    wal_pages = _wal_last_commit_pages(wal_path)
+    if wal_pages is not None and wal_pages < file_pages:
+        raise StaleWalError(
+            f"Its last commit has {wal_pages} pages, the database file "
+            f"{file_pages}. {hint}"
+        )
+    con = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
+    try:
+        result = con.execute("PRAGMA integrity_check;").fetchone()[0]
+    except sqlite3.DatabaseError as exc:
+        raise StaleWalError(f"{exc}. {hint}") from exc
+    finally:
+        con.close()
+    if result != "ok":
+        raise StaleWalError(f"Integrity check: {result}. {hint}")
+
+
 def read_storage(path: str | Path) -> list:
     """Every container of the sage_lib hybrid storage directly in *path*
     (db_index.sqlite + db_objects.h5, the layout EZGA writes), opened
-    read-only: nothing is created or modified. GlobalDatabase keeps its own
-    storage one level down (hybrid_local/) and opens it read-write."""
+    read-only. GlobalDatabase keeps its own storage one level down
+    (hybrid_local/) and opens it read-write.
+
+    The one change it makes on disk: a database a remote job finalized
+    (finalize_sqlite) can't have a -wal of its own, so any -wal/-shm next
+    to it is a leftover from a mid-run copy and is deleted first. A
+    database still in WAL mode with a -wal is checked (_check_wal) and a
+    stale one raises StaleWalError instead of being read."""
     path = Path(path)
-    if not (path / "db_index.sqlite").exists():
+    sqlite_path = path / "db_index.sqlite"
+    if not sqlite_path.exists():
         raise FileNotFoundError(f"No sage_lib storage at {path}.")
+    removed = drop_stale_sqlite_sidecars(path)
+    if removed:
+        logger.warning(
+            "Removed %s: left over from a mid-run copy of a remote job, and "
+            "SQLite would have replayed it over the finished database.",
+            ", ".join(p.name for p in removed),
+            extra={
+                "event": "stale_sqlite_sidecars_removed",
+                "data": {"path": str(path), "files": [p.name for p in removed]},
+            },
+        )
+    elif sqlite_path.with_name(sqlite_path.name + "-wal").exists():
+        _check_wal(sqlite_path)
     partition = Partition(storage="hybrid", local_root=str(path), access="ro")
     return list(partition.list_containers())
 

@@ -23,6 +23,17 @@ _ELEMENTS = ["Cu"]
 _SG_DIR = Path("results/al_loop_0/structure_generation")
 
 
+def _assert_finalized(ezga_dir: Path) -> None:
+    """Every database run_ezga leaves is one rollback-mode file (header
+    byte 18 == 1) with no -wal/-shm that a mid-run copy could leave stale
+    (issue #99)."""
+    databases = list(ezga_dir.rglob("db_index.sqlite"))
+    assert databases
+    for sqlite_path in databases:
+        assert sqlite_path.read_bytes()[18] == 1, sqlite_path
+        assert not list(sqlite_path.parent.glob("db_index.sqlite-*")), sqlite_path
+
+
 class _EMTTrainer(ALomancyTrainer):
     """Backend-free trainer: the "model" is ASE's EMT."""
 
@@ -190,6 +201,7 @@ def test_a_real_search_is_read_back_from_ezgas_database(
     candidates = _generate(seeds, emt_spec, sg)
 
     assert (_SG_DIR / "ezga" / "db" / "db_index.sqlite").exists()
+    _assert_finalized(_SG_DIR / "ezga")
     assert len(candidates) == 5
     for atoms in candidates:
         assert "ezga_generation" in atoms.info
@@ -259,6 +271,7 @@ def test_a_hise_search_is_read_from_the_last_stage_only(
     ezga_dir = _SG_DIR / "ezga"
     first, last = sorted(p for p in ezga_dir.glob("supercell_*") if p.is_dir())
     assert last.name == "supercell_2_1_1"
+    _assert_finalized(ezga_dir)
     # The 4-atom seeds were tiled 2x1x1 (8 atoms) before the last stage
     # mutated them by at most an atom or two.
     assert min(len(a) for a in candidates) > 4

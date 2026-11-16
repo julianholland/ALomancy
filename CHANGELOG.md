@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **EZGA databases copied back from a remote job could be corrupt or incomplete** (#99). ExPyRe's mid-run sync copied SQLite's `-wal` file, and the final sync (no `--delete`) left it next to the finished database after the job had merged and removed its own. SQLite replayed it: "database disk image is malformed", or silently fewer structures (one run read 406 of 484 offspring).
+  - `run_ezga` now finishes each database as one self-contained file (WAL merged, rollback journal mode). Remote reinstall needed.
+  - Reading a finished database deletes a leftover `-wal`/`-shm` (warning `stale_sqlite_sidecars_removed`). A database from a remote without the fix that has a stale `-wal` stops with `StaleWalError`, explaining that the database file without it may be intact, instead of being read.
+
 ## [1.3.0] - 2026-11-10
 
 ### Added
