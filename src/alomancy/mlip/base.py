@@ -141,13 +141,15 @@ class ALomancyTrainer(ABC):
         fit_dir: Path,
         *,
         isolated_atom_energies: Any,
+        elements: list[str] | None = None,
     ) -> Path | None:
         """Train one model into *fit_dir*; return the model file (or None).
 
         Paths are absolute. *isolated_atom_energies* is already resolved and
         formatted for the backend (see resolve_isolated_atom_energies), or
         None when nothing was given and the backend should fall back to its
-        own behaviour."""
+        own behaviour. *elements* is general.elements (None when unknown),
+        for a backend that needs the element set up front."""
 
     @abstractmethod
     def model_path(self, fit_dir: Path) -> Path:
@@ -285,6 +287,7 @@ class ALomancyTrainer(ABC):
             seed,
             fit_dir,
             isolated_atom_energies=energies,
+            elements=elements,
         )
         if model is None or not Path(model).exists():
             logger.warning("No model produced in %s.", fit_dir)

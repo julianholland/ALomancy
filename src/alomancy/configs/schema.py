@@ -164,6 +164,7 @@ def config_schema(
         "max_num_of_relax_steps": None,
         "max_vdw_volume_ratio": None,
         "vdw_exempt_config_types": None,
+        "spin_polarisation": None,
     }
     unused[("high_accuracy_evaluation",)] = {}
     for name in registered("dft_evaluator"):

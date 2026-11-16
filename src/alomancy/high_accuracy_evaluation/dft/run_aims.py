@@ -42,6 +42,15 @@ from alomancy.high_accuracy_evaluation.level_of_theory import (
     functional_rung,
     is_hartree_fock,
 )
+from alomancy.high_accuracy_evaluation.spin import (
+    SPIN_POLARISATION_KEY,
+    hund_moment,
+    is_isolated_atom,
+    resolve_spin_polarisation,
+    spin_polarised,
+    spin_treatment_label,
+    starting_moments,
+)
 from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
@@ -76,7 +85,8 @@ AIMS_KWARGS_DEFAULTS: dict[str, Any] = {
     # control.in keywords.
     "xc": "pbe",
     "relativistic": "atomic_zora scalar",
-    "spin": "none",
+    # spin (and initial moments, fixed_spin_moment): per structure from
+    # high_accuracy_evaluation.spin_polarisation (apply_spin_polarisation).
     "charge": 0,
     "occupation_type": "gaussian 0.01",
     "sc_accuracy_rho": 1e-6,
@@ -88,7 +98,13 @@ AIMS_KWARGS_DEFAULTS: dict[str, Any] = {
 # Keys set per structure from k_spacing / the HPC profile: a fixed value
 # can't be right for every cell (NPT frames, amorphous cells) and must not
 # be written for clusters.
+_SPIN_SETTING = (
+    f"set per structure from high_accuracy_evaluation.{SPIN_POLARISATION_KEY}"
+)
 _REJECTED_KEYS = {
+    "spin": _SPIN_SETTING,
+    "default_initial_moment": _SPIN_SETTING,
+    "fixed_spin_moment": _SPIN_SETTING,
     "k_grid": (
         "set per structure from k_spacing (1/Angstrom) or k_grid_density "
         "(points per 1/Angstrom)"
@@ -164,6 +180,28 @@ def get_aims_parameters(
     return params
 
 
+def apply_spin_polarisation(atoms: Atoms, params: dict, mode: str) -> None:
+    """Set *atoms*' initial moments (ASE writes them as each atom's
+    initial_moment, in Bohr magnetons) and spin/fixed_spin_moment in
+    *params* for spin_polarisation *mode*, in place
+    (high_accuracy_evaluation/spin.py). A structure the mode leaves alone
+    is collinear when it carries initial moments, else spin none. An
+    isolated atom gets fixed_spin_moment, its Hund's-rule moment."""
+    polarised = spin_polarised(atoms, mode)
+    if polarised is None:
+        polarised = bool(any(atoms.get_initial_magnetic_moments()))
+    if not polarised:
+        atoms.set_initial_magnetic_moments(None)
+        params["spin"] = "none"
+        return
+    params["spin"] = "collinear"
+    atoms.set_initial_magnetic_moments(starting_moments(atoms))
+    if is_isolated_atom(atoms):
+        moment = hund_moment(atoms)
+        if moment is not None:
+            params["fixed_spin_moment"] = moment
+
+
 def prepare_structure(atoms: Atoms, k_spacing: float = KSPACING) -> list[int]:
     """In place, before the calculation (the stored result is what was
     computed): an IsolatedAtom loses its cell's periodicity (the exact free
@@ -197,6 +235,9 @@ def create_aims_calc_object(
     aims_kwargs = high_accuracy_eval_job_dict.get("aims_kwargs") or {}
     k_grid = prepare_structure(atoms, effective_k_spacing(aims_kwargs))
     params = get_aims_parameters(aims_kwargs, atoms, k_grid)
+    apply_spin_polarisation(
+        atoms, params, resolve_spin_polarisation(high_accuracy_eval_job_dict)
+    )
     setting = resolve_aims_kwargs(aims_kwargs)["species_defaults"]
     return Aims(
         # OMP_NUM_THREADS=1 for FHI-aims only (MPI-only code; srun passes
@@ -297,7 +338,6 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
     basis = "/".join(p for p in (root, str(kwargs["species_defaults"])) if p)
     if kwargs.get("tier") is not None:
         basis += f" tier {kwargs['tier']}"
-    spin = str(kwargs.get("spin", "none")).lower()
     smearing = _smearing(kwargs.get("occupation_type"))
     if smearing is None and isinstance(kwargs.get("smearing"), list | tuple):
         scheme, width = kwargs["smearing"][:2]
@@ -318,7 +358,7 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
         core_treatment="all_electron",
         pseudopotentials=None,
         relativity=_relativity(kwargs.get("relativistic")),
-        spin_treatment={"none": "restricted", "collinear": "collinear"}.get(spin, spin),
+        spin_treatment=spin_treatment_label(resolve_spin_polarisation(config)),
         solvation="MPE" if solvent.startswith("mpe") else "none",
         k_spacing=effective_k_spacing(config.get("aims_kwargs")),
         smearing=smearing,
@@ -342,6 +382,7 @@ def validate_kwargs(config: dict, hpc: dict | None) -> None:
             )
             + "."
         )
+    resolve_spin_polarisation(config)
     kwargs = resolve_aims_kwargs(aims_kwargs)
     setting = kwargs["species_defaults"]
     if setting not in SPECIES_SETTINGS:

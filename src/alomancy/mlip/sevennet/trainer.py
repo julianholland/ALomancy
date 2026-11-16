@@ -358,6 +358,7 @@ class SevenNetTrainer(ALomancyTrainer):
         fit_dir: Path,
         *,
         isolated_atom_energies: Any,
+        elements: list[str] | None = None,  # noqa: ARG002 -- MACE only
     ) -> Path | None:
         """Train SevenNet in *fit_dir*; return the kept checkpoint."""
         import sevenn

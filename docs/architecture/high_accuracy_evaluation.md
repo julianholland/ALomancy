@@ -46,7 +46,7 @@ Results are collected from `results/<base>/high_accuracy_evaluation/batch_*/`. T
 ## FHI-aims (`dft/run_aims.py`)
 
 All-electron, numeric atom-centred basis: no pseudopotentials. Settings in `aims_kwargs`, merged over `AIMS_KWARGS_DEFAULTS`:
-- defaults: `species_defaults: intermediate`, `xc pbe`, `relativistic atomic_zora scalar`, `spin none`, `occupation_type gaussian 0.01`, `sc_accuracy_rho 1e-6`, `sc_accuracy_eev 1e-3`, `sc_accuracy_etot 1e-6`, `sc_iter_limit 500`;
+- defaults: `species_defaults: intermediate`, `xc pbe`, `relativistic atomic_zora scalar`, `occupation_type gaussian 0.01`, `sc_accuracy_rho 1e-6`, `sc_accuracy_eev 1e-3`, `sc_accuracy_etot 1e-6`, `sc_iter_limit 500`;
 - any other key is a `control.in` keyword passed through to ASE.
 
 Runs remotely: changes need a reinstall.
@@ -79,6 +79,31 @@ A molecular code: no periodic boundary conditions (the orchestrator's `check_per
 - **Charge and multiplicity per structure** (`structure_charge_and_multiplicity`). Charge: `atoms.info["charge"]`, else `orca_kwargs.charge`. Multiplicity: `atoms.info["spin_multiplicity"]`; else, for a neutral single atom, its ground state (`ase.data.ground_state_magnetic_moments` + 1: H 2, O 3, N 4); else the lowest the electron count allows. An impossible combination raises. ORCA's default `mult=1` would abort on every odd-electron atom.
 - **Method classes** (`classify_orca_method`, from the keywords): `semi_empirical` (xTB), `mean_field` (HF, DFT, `-3c` composites), `correlated` (MP2/CC families with `RI-`/`DLPNO-`/`SCS-`/`F12` affixes, and double hybrids, which cost about as much as MP2), `multireference` (CASSCF, NEVPT2, MRCI; also from a `%casscf`/`%mrci` block). The atom cap applies to the last two. `validate_kwargs` warns `orca_method_unrecognised` when no method keyword is known (no cap applied), and `numerical_gradients` for CC and multireference methods, whose forces may need finite differences (about 6N energies per structure; check the manual for the ORCA version in use).
 - `run_go_orca` uses the shared ASE-BFGS `_run_go`, like QE/VASP.
+
+## Spin polarisation (`spin.py`)
+
+`high_accuracy_evaluation.spin_polarisation`, one setting for every evaluator (schema key; `validate_kwargs` of each evaluator checks it):
+
+| mode | which structures | default |
+|---|---|---|
+| `essential` | `IsolatedAtom`, `init_dimer`, `init_trimer` spin-polarised; every other structure as before (spin-polarised only when it carries initial moments, e.g. a magnetic MP cell) | yes |
+| `all` | every structure | |
+| `none` | none (initial moments cleared) | |
+
+Why: a free atom is open-shell (C is a triplet). A spin-restricted isolated atom sits about 1 eV above its ground state, and through the E0s that error shifts every structure's energy per atom. viper_omat (QE, `nspin: 1` atoms) started a MACE fine-tune 1.1 eV/atom off for all bulk-like structures, with a spread of 30–60 meV. Dimers and trimers dissociate towards the atom and need the same treatment to reach 2 × E0 and 3 × E0. MACE's fine-tuning guidance (Tompa et al. 2026, arXiv:2606.12704) asks for spin-polarised isolated-atom E0s.
+
+Per structure (`spin_polarised`, `hund_moment`, `starting_moments`): an isolated atom's moment is fixed to its Hund's-rule ground state (`ase.data.ground_state_magnetic_moments`); dimers and trimers start ferromagnetic (the structure's own initial moments if it has any) and relax freely.
+
+| code | spin on | isolated atom | spin off | owned keys (raise) |
+|---|---|---|---|---|
+| QE (`run_qe.apply_spin_polarisation`) | `nspin=2`, initial moments → `starting_magnetization` 0.5 per open-shell atom | `tot_magnetization` | moments cleared, `nspin=1` | `qe_kwargs.system` `nspin`, `starting_magnetization(i)`, `tot_magnetization` |
+| VASP (`run_vasp.apply_spin_polarisation`) | `ISPIN=2`, `MAGMOM` from initial moments (μB) | `NUPDOWN` | `ISPIN=1` | `ispin`, `magmom`, `nupdown` |
+| FHI-aims (`run_aims.apply_spin_polarisation`) | `spin collinear`, per-atom `initial_moment` | `fixed_spin_moment` | `spin none` | `spin`, `default_initial_moment`, `fixed_spin_moment` |
+| ORCA (`structure_charge_and_multiplicity`) | Hund's-rule multiplicity for single atoms, lowest otherwise (`essential` = `all`: ORCA's spin is the multiplicity) | — | lowest multiplicity for atoms too | — |
+
+QE detail: ASE's writer turns on `nspin=2` for any structure with non-zero initial moments, and then writes every species' `starting_magnetization` from those moments, overwriting the input data. So spin can't be switched on through `qe_kwargs` alone: with zero moments the atom stays non-magnetic. `apply_spin_polarisation` therefore works through the moments. QE reads `starting_magnetization` as a fraction of valence charge in [−1, 1], not in Bohr magnetons, hence 0.5.
+
+`LevelOfTheory.spin_treatment` records the mode, and it's an identity field: labels made under different modes don't share an id. A run importing a database labelled before this setting existed gets a `level_of_theory_mismatch` warning naming `spin_treatment`; re-label its isolated atoms, dimers and trimers.
 
 ## k-points (`utils/dft_utils.py`)
 
@@ -126,7 +151,7 @@ Where each code's settings go (QE, VASP, ORCA, FHI-aims implemented; the other c
 | `core_treatment` | from the PP file names (paw/ultrasoft/norm_conserving) | paw | all_electron; ecp with def2 (Z > 36) | all_electron | from the pspots (usually ultrasoft, on the fly) | from `pseudo_potential` (GTH: norm_conserving) | all_electron / ecp | in_parametrisation |
 | `pseudopotentials` | `pseudo_dict` | `pp` set + `pseudo_dict` (`setups`) | `{"Z>36": "def2-ECP"}` with def2 | None | pspot names | `pseudo_potential` | ECP names | None |
 | `relativity` | in_pseudopotential, spin_orbit (`lspinorb`) | in_pseudopotential, spin_orbit (`LSORBIT`) | `ZORA`/`DKH`/`X2C`, else none | `relativistic` (`atomic_zora scalar` → atomic_ZORA, `zora scalar` → scalar_ZORA) | in_pseudopotential, `spin_orbit_coupling` | in_pseudopotential | `DKH`/`X2C` | none |
-| `spin_treatment` | `nspin`, `noncolin` | `ISPIN`, `LNONCOLLINEAR` | per_structure (by multiplicity), or `UKS`/`RKS`/`ROKS` | `spin` (none → restricted) | `spin_polarized` | `uks` | from route / multiplicity | `SpinPolarisation` |
+| `spin_treatment` | `spin_polarisation` (none → restricted, all → collinear, essential → essential), `noncolin` | `spin_polarisation` as QE, `LNONCOLLINEAR` | per_structure (by multiplicity; `per_structure_lowest_multiplicity` under `spin_polarisation: none`), or `UKS`/`RKS`/`ROKS` | `spin_polarisation` as QE | `spin_polarized` | `uks` | from route / multiplicity | `SpinPolarisation` |
 | `solvation` | none | VASPsol (`LSOL`) | `CPCM(...)`/`SMD(...)` | MPE (`solvent mpe`) | none | SCCS | `SCRF` | none |
 | `approximations` | [] | [] | RI/COSX keywords, aux bases, PNO thresholds, unknown keywords | — | — | `&QS` method | density fitting | — |
 | *precision* `k_spacing`, `smearing`, `scf_threshold`, `numerical_settings` | `KSPACING`, `degauss`/`smearing`, `conv_thr` | `KSPACING`, `SIGMA`/`ISMEAR`, `EDIFF`, `PREC`/`LREAL` | —, —, `TightSCF`…, grid | `k_spacing` (per-structure `k_grid`), `occupation_type`/`smearing`, `sc_accuracy_rho` | `kpoints_mp_spacing`, `smearing_width`, `elec_energy_tol` | `&KPOINTS`, `&SMEAR`, `EPS_SCF` | —, —, `SCF=Tight`, `Int=` grid | `KPointsAndWeights`, `Filling`, `SCCTolerance` |

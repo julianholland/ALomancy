@@ -77,7 +77,11 @@ class LevelOfTheory:
     # DKH2 | X2C.
     relativity: str | None = None
     # restricted | collinear | noncollinear | per_structure (closed-shell
-    # restricted, open-shell unrestricted, by multiplicity).
+    # restricted, open-shell unrestricted, by multiplicity) |
+    # per_structure_lowest_multiplicity (ORCA, spin_polarisation "none") |
+    # essential (spin_polarisation "essential": collinear for isolated atoms,
+    # dimers and trimers, otherwise as the structure's initial moments say;
+    # high_accuracy_evaluation/spin.py).
     spin_treatment: str | None = None
     # none | CPCM(water) | SMD(water) | VASPsol | SCCS | MPE.
     solvation: str | None = None

@@ -774,6 +774,13 @@ Excluded structures are flagged (`is_quality_filtered`, with the reason in `qual
 
 Separately, `high_accuracy_evaluation.force_ceiling` (default `100.0` eV/Å) controls how far AL-generated structures are relaxed before their DFT labels are kept: each is relaxed until its largest force is at most the ceiling. `null` means a single-point calculation with no relaxation. Initialization structures are not affected.
 
+`high_accuracy_evaluation.spin_polarisation` decides which structures are computed spin-polarised, for every evaluator:
+- `essential` (default): isolated atoms, dimers and trimers. Their energies set the isolated-atom reference (E0) that every structure's energy is measured from, and a free atom is usually open-shell (carbon is a triplet), so a spin-restricted atom is about 1 eV too high.
+- `all`: every structure.
+- `none`: no structure.
+
+The isolated atom's moment is fixed to its ground state; dimers and trimers start magnetic and relax. Don't set the codes' own spin keywords (QE `nspin`, VASP `ISPIN`, FHI-aims `spin`, ...): this setting owns them.
+
 ## Model Predictions in the GlobalDatabase
 
 After each loop's training, every model is evaluated on its training, validation and test sets on the remote node, before the job returns, whichever trainer is configured. The predictions are written to `train_pred.xyz` / `valid_pred.xyz` / `test_pred.xyz` in each fit directory (`results/al_loop_N/training/fit_i/`) and synced back with the model files.

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Isolated atoms, dimers and trimers are labelled spin-polarised by default** (`high_accuracy_evaluation.spin_polarisation`: `essential` default, `all`, `none`; every evaluator). A free atom is open-shell, so a spin-restricted isolated atom sat about 1 eV too high, and through the E0s that offset reached every structure's energy per atom: one MACE fine-tune started 1.1 eV/atom off. Remote reinstall needed.
+  - The isolated atom's moment is fixed to its Hund's-rule ground state (QE `tot_magnetization`, VASP `NUPDOWN`, FHI-aims `fixed_spin_moment`, ORCA multiplicity as before). Dimers and trimers start magnetic and relax freely. Other structures are unchanged under `essential`.
+  - The codes' own spin keywords (QE `nspin`/`starting_magnetization`/`tot_magnetization`, VASP `ispin`/`magmom`/`nupdown`, FHI-aims `spin`/`default_initial_moment`/`fixed_spin_moment`) now raise; FHI-aims no longer has a `spin none` default.
+  - The level of theory records the mode. A database labelled before this (`spin_treatment` restricted) gets a `level_of_theory_mismatch` warning when imported: re-label its isolated atoms, dimers and trimers before training on it.
+- **Naive fine-tuning defaults for a MACE foundation model** (`mace_kwargs.foundation_model`), following Tompa et al., "Fine-tuning MLIP foundation models: strategies for accuracy and transferability", arXiv:2606.12704 (2026). Remote reinstall needed; from-scratch training is unchanged.
+  - `lr` 1e-3, EMA (decay 0.999), `clip_grad` 1.0, `weight_decay` 0, energy and forces weights 10, single head (`multiheads_finetuning: false`). Before, a fine-tune ran with MACE's from-scratch `lr` 0.01, no EMA, and stage-two weights of 1000/100.
+  - Stage two keeps the stage-one loss weights and learning rate, since the study found a force-then-energy schedule can destabilise fine-tuning.
+  - Every value can still be overridden in `mace_kwargs`. Multihead replay is opt-in: `multiheads_finetuning: true` or a `pt_train_file`. A `small`/`medium`/`large` foundation model no longer downloads the MPtrj replay set by default.
+- **MACE multihead (replay) fine-tuning** gets its elements and epochs from the run. Remote reinstall needed.
+  - `mace_kwargs.atomic_numbers` defaults to `general.elements`, so `filter_type_pt` works without repeating the elements.
+  - Dynamic `max_num_epochs` counts the replay structures MACE adds to every epoch, and its extra copies of a small fine-tuning set. `resolved_mace_epochs.json` records the breakdown.
+  - A foundation model other than MACE's `small`/`medium`/`large` without `pt_train_file` logs `multihead_finetuning_disabled`: MACE then fine-tunes a single head on this data alone, without saying so in its own log beyond one line.
+
 ### Fixed
 - **EZGA databases copied back from a remote job could be corrupt or incomplete** (#99). ExPyRe's mid-run sync copied SQLite's `-wal` file, and the final sync (no `--delete`) left it next to the finished database after the job had merged and removed its own. SQLite replayed it: "database disk image is malformed", or silently fewer structures (one run read 406 of 484 offspring).
   - `run_ezga` now finishes each database as one self-contained file (WAL merged, rollback journal mode). Remote reinstall needed.

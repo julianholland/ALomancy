@@ -67,7 +67,10 @@ def test_qe_level_of_theory():
 @pytest.mark.unit
 def test_vasp_level_of_theory():
     level = run_vasp.level_of_theory(
-        {"vasp_kwargs": {"lhfcalc": True, "hfscreen": 0.2, "ivdw": 12, "ispin": 2}}
+        {
+            "vasp_kwargs": {"lhfcalc": True, "hfscreen": 0.2, "ivdw": 12},
+            "spin_polarisation": "all",
+        }
     )
     assert level.method == "HSE06" and level.rung == "range-separated hybrid"
     assert level.dispersion == "D3(BJ)"

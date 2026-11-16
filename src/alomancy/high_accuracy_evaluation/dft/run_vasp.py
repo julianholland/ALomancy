@@ -10,6 +10,15 @@ from alomancy.high_accuracy_evaluation.level_of_theory import (
     LevelOfTheory,
     functional_rung,
 )
+from alomancy.high_accuracy_evaluation.spin import (
+    hund_moment,
+    is_isolated_atom,
+    reject_owned_keys,
+    resolve_spin_polarisation,
+    spin_polarised,
+    spin_treatment_label,
+    starting_moments,
+)
 from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
@@ -133,6 +142,32 @@ def validate_kwargs(config: dict, hpc: dict | None) -> None:  # noqa: ARG001
             "high_accuracy_evaluation.vasp_kwargs.kspacing must be positive, "
             f"got {spacing!r}."
         )
+    resolve_spin_polarisation(config)
+    reject_owned_keys(vasp_kwargs, _VASP_SPIN_KEYS, "vasp_kwargs")
+
+
+# INCAR spin tags spin_polarisation sets per structure.
+_VASP_SPIN_KEYS = ("ispin", "magmom", "nupdown")
+
+
+def apply_spin_polarisation(atoms: Atoms, vasp_kwargs: dict, mode: str) -> None:
+    """Set *atoms*' initial moments (ASE writes them as MAGMOM, in Bohr
+    magnetons) and ISPIN/NUPDOWN in *vasp_kwargs* for spin_polarisation
+    *mode*, in place (high_accuracy_evaluation/spin.py). An isolated atom
+    gets NUPDOWN, fixing its Hund's-rule moment."""
+    polarised = spin_polarised(atoms, mode)
+    if polarised is None:
+        return
+    if not polarised:
+        atoms.set_initial_magnetic_moments(None)
+        vasp_kwargs["ispin"] = 1
+        return
+    vasp_kwargs["ispin"] = 2
+    atoms.set_initial_magnetic_moments(starting_moments(atoms))
+    if is_isolated_atom(atoms):
+        moment = hund_moment(atoms)
+        if moment is not None:
+            vasp_kwargs["nupdown"] = moment
 
 
 def create_vasp_calc_object(
@@ -160,6 +195,9 @@ def create_vasp_calc_object(
     )
     if is_relaxation:
         vasp_kwargs.update({"nsw": 0, "ibrion": -1})
+    apply_spin_polarisation(
+        atoms, vasp_kwargs, resolve_spin_polarisation(high_accuracy_eval_job_dict)
+    )
 
     # NCORE ~ sqrt(ranks_per_node) is a sensible default for band parallelism
     ncore = max(1, int(hpc["node_info"]["ranks_per_node"] ** 0.5))
@@ -286,7 +324,7 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
     if kwargs.get("lnoncollinear") or kwargs.get("lsorbit"):
         spin = "noncollinear"
     else:
-        spin = "collinear" if int(kwargs.get("ispin", 1)) == 2 else "restricted"
+        spin = spin_treatment_label(resolve_spin_polarisation(config))
     ismear = int(kwargs.get("ismear", 1))
     pseudopotentials = {"set": kwargs.get("pp")}
     pseudopotentials.update((hpc or {}).get("pseudo_dict") or {})

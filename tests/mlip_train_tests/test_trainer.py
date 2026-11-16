@@ -6,6 +6,7 @@ here they run through MACE's own fit(), with MACE's run() patched."""
 import argparse
 import json
 from pathlib import Path
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -426,6 +427,270 @@ class TestTrain:
                 "train.xyz", "valid.xyz", "test.xyz", 803, fit_dir=_FIT_DIR
             )
         assert captured["max_num_epochs"] == 200
+
+
+class TestMultiheadFineTuning:
+    """Multihead (replay) fine-tuning: general.elements become MACE's
+    atomic_numbers, and the replay data MACE adds to every epoch counts
+    toward the dynamic epoch size (MACE 0.3.16's arithmetic)."""
+
+    @staticmethod
+    def _fit(tmp_path, monkeypatch, mace_kwargs, *, n_train, n_valid=0, **kw):
+        monkeypatch.chdir(tmp_path)
+        _write_structures(tmp_path / "train.xyz", n_train)
+        _write_structures(tmp_path / "test.xyz", 1)
+        valid = None
+        if n_valid:
+            _write_structures(tmp_path / "valid.xyz", n_valid)
+            valid = "valid.xyz"
+        captured = {}
+
+        def fake_run(args):
+            captured.update(vars(args))
+
+        with (
+            patch("alomancy.mlip.mace.trainer.run", side_effect=fake_run),
+            patch("alomancy.mlip.mace.trainer.tools") as mock_tools,
+        ):
+            mock_tools.build_default_arg_parser.return_value.parse_args.return_value = (
+                argparse.Namespace()
+            )
+            if "elements" in kw:  # train() requires E0s for every element
+                kw.setdefault(
+                    "isolated_atom_energies", dict.fromkeys(kw["elements"], -1.0)
+                )
+            _trainer(mace_kwargs).train(
+                "train.xyz", valid, "test.xyz", 803, fit_dir=_FIT_DIR, **kw
+            )
+        sidecar = tmp_path / _FIT_DIR / "resolved_mace_epochs.json"
+        return captured, json.loads(sidecar.read_text())
+
+    _MH: ClassVar[dict[str, str]] = {
+        "foundation_model": "/models/mace-mpa-0-medium.model",
+        "pt_train_file": "mp",
+    }
+
+    @pytest.mark.unit
+    def test_elements_become_atomic_numbers(self, tmp_path, monkeypatch):
+        args, _ = self._fit(
+            tmp_path, monkeypatch, dict(self._MH), n_train=4, elements=["H", "C"]
+        )
+        assert args["atomic_numbers"] == "[1, 6]"
+
+    @pytest.mark.unit
+    def test_replay_and_mace_copies_set_the_epochs(self, tmp_path, monkeypatch):
+        """num_samples_pt 2000 -> replay train split 2000 - 200 = 1800; 100
+        train structures are 0.0556 of it, under 0.1, so MACE adds
+        int(0.1 / 0.0556) = 1 copy: 1800 + 200 + 5 valid = 2005 structures
+        per epoch -> ceil(200_000 * 4 / 2005) = 399, clamped to 300; with
+        batch_size 1, ceil(200_000 / 2005) = 100 (train alone would give
+        1905)."""
+        kwargs = {**self._MH, "num_samples_pt": 2000, "batch_size": 1}
+        args, sidecar = self._fit(
+            tmp_path, monkeypatch, kwargs, n_train=100, n_valid=5, elements=["H"]
+        )
+        assert args["max_num_epochs"] == 100
+        assert sidecar["replay_train_structures"] == 1800
+        assert sidecar["fine_tuning_copies"] == 1
+        assert sidecar["epoch_train_structures"] == 2000
+
+    @pytest.mark.unit
+    def test_no_copies_when_the_data_is_large_enough(self, tmp_path, monkeypatch):
+        kwargs = {**self._MH, "num_samples_pt": 1000, "batch_size": 1}
+        _, sidecar = self._fit(
+            tmp_path, monkeypatch, kwargs, n_train=100, elements=["H"]
+        )
+        # 100 / 900 = 0.111 >= 0.1: MACE adds nothing.
+        assert sidecar["fine_tuning_copies"] == 0
+        assert sidecar["epoch_train_structures"] == 1000
+
+    @pytest.mark.unit
+    def test_a_replay_file_is_counted_whole(self, tmp_path, monkeypatch):
+        _write_structures(tmp_path / "replay.xyz", 30)
+        kwargs = {
+            "foundation_model": "/models/f.model",
+            "pt_train_file": str(tmp_path / "replay.xyz"),
+            "batch_size": 1,
+        }
+        _, sidecar = self._fit(
+            tmp_path, monkeypatch, kwargs, n_train=10, elements=["H"]
+        )
+        assert sidecar["replay_structures"] == 30
+        assert sidecar["replay_train_structures"] == 27
+
+    @pytest.mark.unit
+    def test_an_mp_foundation_model_replays_without_pt_train_file(
+        self, tmp_path, monkeypatch
+    ):
+        """Once multihead is asked for: naive is the default (TestNaive...)."""
+        args, sidecar = self._fit(
+            tmp_path,
+            monkeypatch,
+            {"foundation_model": "medium", "multiheads_finetuning": True},
+            n_train=4,
+            elements=["H"],
+        )
+        assert args["atomic_numbers"] == "[1]"
+        assert sidecar["replay_structures"] == 10000
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "mace_kwargs",
+        [
+            {},
+            {"foundation_model": "/models/f.model"},
+            {**_MH, "multiheads_finetuning": False},
+            {**_MH, "multiheads_finetuning": "False"},
+        ],
+    )
+    def test_single_head_fits_are_unchanged(self, tmp_path, monkeypatch, mace_kwargs):
+        args, sidecar = self._fit(
+            tmp_path,
+            monkeypatch,
+            {**mace_kwargs, "batch_size": 1},
+            n_train=950,
+            n_valid=50,
+            elements=["H"],
+        )
+        assert "atomic_numbers" not in args
+        assert args["max_num_epochs"] == 200
+        assert set(sidecar) == {"max_num_epochs", "start_swa"}
+
+    @pytest.mark.unit
+    def test_a_non_mp_foundation_without_replay_is_warned_about(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        with caplog.at_level("WARNING", logger="alomancy.mlip.mace.trainer"):
+            self._fit(
+                tmp_path,
+                monkeypatch,
+                {"foundation_model": "/models/f.model", "multiheads_finetuning": True},
+                n_train=4,
+                elements=["H"],
+            )
+        assert any(
+            getattr(r, "event", None) == "multihead_finetuning_disabled"
+            for r in caplog.records
+        )
+
+    @pytest.mark.unit
+    def test_a_naive_fine_tune_is_not_warned_about(self, tmp_path, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="alomancy.mlip.mace.trainer"):
+            self._fit(
+                tmp_path,
+                monkeypatch,
+                {"foundation_model": "/models/f.model"},
+                n_train=4,
+                elements=["H"],
+            )
+        assert not any(
+            getattr(r, "event", None) == "multihead_finetuning_disabled"
+            for r in caplog.records
+        )
+
+    @pytest.mark.unit
+    def test_a_user_atomic_numbers_wins_and_a_gap_is_warned(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        kwargs = {**self._MH, "atomic_numbers": "[1]"}
+        with caplog.at_level("WARNING", logger="alomancy.mlip.mace.trainer"):
+            args, _ = self._fit(
+                tmp_path, monkeypatch, kwargs, n_train=4, elements=["H", "C"]
+            )
+        assert args["atomic_numbers"] == "[1]"
+        assert "misses [6]" in caplog.text
+
+    @pytest.mark.unit
+    def test_explicit_epochs_pass_through(self, tmp_path, monkeypatch):
+        args, _ = self._fit(
+            tmp_path,
+            monkeypatch,
+            {**self._MH, "max_num_epochs": 25},
+            n_train=4,
+            elements=["H"],
+        )
+        assert args["max_num_epochs"] == 25
+
+
+class TestNaiveFineTuningDefaults:
+    """A foundation model fine-tuned without replay gets the naive settings
+    of Tompa et al. 2026 (arXiv:2606.12704), with constant loss weights and
+    learning rate through stage two; from-scratch runs are untouched."""
+
+    _NAIVE: ClassVar[dict[str, Any]] = {
+        "multiheads_finetuning": False,
+        "lr": 1e-3,
+        "ema": True,
+        "ema_decay": 0.999,
+        "clip_grad": 1.0,
+        "weight_decay": 0.0,
+        "energy_weight": 10,
+        "forces_weight": 10,
+    }
+
+    @staticmethod
+    def _args(tmp_path, monkeypatch, mace_kwargs):
+        args, _ = TestMultiheadFineTuning._fit(
+            tmp_path, monkeypatch, mace_kwargs, n_train=4, elements=["H"]
+        )
+        return args
+
+    @pytest.mark.unit
+    def test_a_foundation_model_gets_the_naive_settings(self, tmp_path, monkeypatch):
+        args = self._args(tmp_path, monkeypatch, {"foundation_model": "/m.model"})
+        for key, value in self._NAIVE.items():
+            assert args[key] == value, key
+        assert args["swa_energy_weight"] == 10
+        assert args["swa_forces_weight"] == 10
+        assert args["swa_stress_weight"] == 1.0
+        assert args["swa_lr"] == 1e-3
+        assert "atomic_numbers" not in args
+
+    @pytest.mark.unit
+    def test_user_values_win_and_stage_two_follows_them(self, tmp_path, monkeypatch):
+        kwargs = {
+            "foundation_model": "/m.model",
+            "lr": 5e-4,
+            "forces_weight": 50,
+            "swa_energy_weight": 99,
+        }
+        args = self._args(tmp_path, monkeypatch, kwargs)
+        assert args["lr"] == 5e-4
+        assert args["swa_lr"] == 5e-4
+        assert args["swa_forces_weight"] == 50
+        assert args["swa_energy_weight"] == 99  # set explicitly: kept
+        assert args["ema"] is True
+
+    @pytest.mark.unit
+    def test_from_scratch_runs_are_unchanged(self, tmp_path, monkeypatch):
+        args = self._args(tmp_path, monkeypatch, {})
+        assert args["ema"] is None
+        assert args["energy_weight"] == 1
+        assert args["forces_weight"] == 10
+        for key in ("lr", "clip_grad", "weight_decay", "multiheads_finetuning"):
+            assert key not in args
+        assert not any(key.startswith("swa_") for key in args)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "opt_in", [{"multiheads_finetuning": True}, {"pt_train_file": "mp"}]
+    )
+    def test_multihead_opt_in_skips_the_naive_settings(
+        self, tmp_path, monkeypatch, opt_in
+    ):
+        args = self._args(
+            tmp_path, monkeypatch, {"foundation_model": "medium", **opt_in}
+        )
+        assert "lr" not in args  # MACE sets its own multihead lr/EMA
+        assert args["ema"] is None
+        assert not any(key.startswith("swa_") for key in args)
+
+    @pytest.mark.unit
+    def test_effective_kwargs_show_the_naive_settings(self):
+        effective = _trainer({"foundation_model": "/m.model"}).effective_kwargs()
+        for key, value in self._NAIVE.items():
+            assert effective[key] == value, key
+        assert "lr" not in _trainer({}).effective_kwargs()
 
 
 class TestMaceE0sArg:

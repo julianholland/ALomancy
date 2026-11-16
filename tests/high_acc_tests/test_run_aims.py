@@ -62,11 +62,12 @@ def hpc(tmp_path):
     }
 
 
-def _job(hpc: dict, aims_kwargs: dict | None = None) -> dict:
+def _job(hpc: dict, aims_kwargs: dict | None = None, **settings) -> dict:
     return {
         "name": "high_accuracy_evaluation",
         "hpc": hpc,
         "aims_kwargs": aims_kwargs or {},
+        **settings,
     }
 
 
@@ -167,7 +168,7 @@ def test_user_settings_charge_k_spacing_and_light_species(hpc, tmp_path):
     atoms.info["charge"] = 1
     control, _, _ = _write(
         atoms,
-        _job(hpc, {"species_defaults": "light", "xc": "pbe0", "spin": "collinear"}),
+        _job(hpc, {"species_defaults": "light", "xc": "pbe0"}, spin_polarisation="all"),
         tmp_path / "run",
     )
     kw = _keywords(control)
@@ -205,7 +206,11 @@ def test_level_of_theory(hpc):
     assert zora.relativity == "scalar_ZORA"
     none = level_of_theory({"aims_kwargs": {"relativistic": "none"}}, hpc)
     assert none.relativity == "none"
-    assert level.spin_treatment == "restricted"
+    # The default high_accuracy_evaluation.spin_polarisation (spin.py).
+    assert level.spin_treatment == "essential"
+    restricted = level_of_theory({"aims_kwargs": {}, "spin_polarisation": "none"}, hpc)
+    assert restricted.spin_treatment == "restricted"
+    assert restricted.identity_id() != level.identity_id()
     assert level.smearing == {"scheme": "gaussian", "width_eV": 0.01}
     assert level.k_spacing == 0.15
     hse = level_of_theory(

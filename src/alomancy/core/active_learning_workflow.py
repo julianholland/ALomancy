@@ -853,6 +853,12 @@ def _resolve_effective_phase_dict(
         effective[kwargs_key] = entry.resolve_effective_kwargs(
             effective.get(kwargs_key, {})
         )
+        from alomancy.high_accuracy_evaluation.spin import (
+            SPIN_POLARISATION_KEY,
+            resolve_spin_polarisation,
+        )
+
+        effective[SPIN_POLARISATION_KEY] = resolve_spin_polarisation(effective)
     return effective
 
 

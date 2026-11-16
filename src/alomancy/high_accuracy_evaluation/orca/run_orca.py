@@ -35,6 +35,7 @@ from alomancy.high_accuracy_evaluation.level_of_theory import (
     functional_rung,
     is_hartree_fock,
 )
+from alomancy.high_accuracy_evaluation.spin import resolve_spin_polarisation
 from alomancy.utils.dft_utils import (
     _run_go,
     _run_sp,
@@ -548,15 +549,19 @@ def _as_int(value: object) -> int | None:
 
 
 def structure_charge_and_multiplicity(
-    atoms: Atoms, default_charge: int = 0
+    atoms: Atoms, default_charge: int = 0, *, hund_atoms: bool = True
 ) -> tuple[int, int]:
     """Charge and spin multiplicity for one structure.
 
     Charge: ``atoms.info["charge"]``, else *default_charge*. Multiplicity:
-    ``atoms.info["spin_multiplicity"]``; else for a neutral single atom its
-    ground state's (Hund's rule, ase.data.ground_state_magnetic_moments +
-    1: H 2, C 3, O 3); else the lowest the electron count allows (1 when
-    even, 2 when odd). Raises when the two can't go together."""
+    ``atoms.info["spin_multiplicity"]``; else, with *hund_atoms*, for a
+    neutral single atom its ground state's (Hund's rule,
+    ase.data.ground_state_magnetic_moments + 1: H 2, C 3, O 3); else the
+    lowest the electron count allows (1 when even, 2 when odd). Raises when
+    the two can't go together. *hund_atoms* is false only for
+    high_accuracy_evaluation.spin_polarisation "none": ORCA's spin follows
+    the multiplicity, so "essential" and "all" both mean Hund's-rule atoms
+    and the lowest multiplicity otherwise."""
     charge = _as_int(atoms.info.get("charge", default_charge))
     if charge is None:
         raise ValueError(
@@ -570,7 +575,7 @@ def structure_charge_and_multiplicity(
         )
     mult = atoms.info.get("spin_multiplicity")
     if mult is None:
-        if len(atoms) == 1 and charge == 0:
+        if hund_atoms and len(atoms) == 1 and charge == 0:
             mult = round(ground_state_magnetic_moments[atoms.numbers[0]]) + 1
         else:
             mult = 1 if n_electrons % 2 == 0 else 2
@@ -614,7 +619,11 @@ def create_orca_calc_object(
         )
     orca_kwargs = resolve_orca_kwargs(high_accuracy_eval_job_dict.get("orca_kwargs"))
     orca_input = build_orca_input(orca_kwargs, hpc["node_info"])
-    charge, mult = structure_charge_and_multiplicity(atoms, orca_kwargs["charge"])
+    charge, mult = structure_charge_and_multiplicity(
+        atoms,
+        orca_kwargs["charge"],
+        hund_atoms=resolve_spin_polarisation(high_accuracy_eval_job_dict) != "none",
+    )
     return ORCA(
         profile=OrcaProfile(command=hpc["orca_path"]),
         directory=out_dir,
@@ -705,7 +714,12 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:  # 
         core_treatment=core,
         pseudopotentials=pseudopotentials,
         relativity=parsed.relativity,
-        spin_treatment=parsed.spin_treatment,
+        spin_treatment=(
+            "per_structure_lowest_multiplicity"
+            if parsed.spin_treatment == "per_structure"
+            and resolve_spin_polarisation(config) == "none"
+            else parsed.spin_treatment
+        ),
         solvation=parsed.solvation,
         approximations=parsed.approximations,
         scf_threshold=parsed.scf_threshold,
@@ -721,6 +735,7 @@ def validate_kwargs(config: dict, hpc: dict | None) -> None:
     orca_kwargs = config.get("orca_kwargs") or {}
     if not isinstance(orca_kwargs, dict):
         raise ValueError(f"{_WHERE} must be a mapping, got {orca_kwargs!r}.")
+    resolve_spin_polarisation(config)
     unknown = sorted(set(orca_kwargs) - set(ORCA_KWARGS_DEFAULTS))
     if unknown:
         raise ValueError(

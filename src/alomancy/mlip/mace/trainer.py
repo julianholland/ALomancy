@@ -14,6 +14,28 @@ GPU/CUDA/PyTorch combination) and ``<name>_stagetwo_compiled.model``
 ``except Exception: pass``, so it can be missing even after a successful fit.
 MACE also writes stage-one ``<name>.model``/``<name>_compiled.model``; no
 code reads them, so they are cleaned up with ``checkpoints/``.
+
+Fine-tuning a foundation model (``mace_kwargs.foundation_model``) is naive
+by default: one head, every weight trainable, no replay data. Its defaults
+(``_MACE_NAIVE_FINETUNE_DEFAULTS``) follow the naive-fine-tuning
+recommendations of
+
+    T. L. Tompa, E. Varga-Umbrich, I. Batatia, A. M. Elena, N. Bernstein and
+    G. Csányi, "Fine-tuning MLIP foundation models: strategies for accuracy
+    and transferability", arXiv:2606.12704 (2026),
+    https://doi.org/10.48550/arXiv.2606.12704
+
+as summarised in MACE's fine-tuning guidance
+(https://mace-docs.readthedocs.io/en/latest/guide/finetuning_guidance.html):
+learning rate 1e-3, EMA with decay 0.999, gradient clipping at 1.0, no
+weight decay (it pulls parameters away from the pretrained solution), and
+constant loss weights (energy 10, forces 10) throughout, since a two-stage
+force-then-energy schedule can destabilise fine-tuning. Stage two still
+runs, so MACE writes the ``_stagetwo`` models ALomancy reads, but with the
+stage-one weights and learning rate. The epoch count (dynamic, as from
+scratch) and the E0s (isolated-atom DFT) are ALomancy's own choices, not
+the study's. Multihead (replay) fine-tuning is opt-in
+(``multiheads_finetuning: true`` or a ``pt_train_file``).
 """
 
 import importlib.util
@@ -71,6 +93,31 @@ _MACE_KWARGS_DEFAULTS: dict[str, Any] = {
     "distributed": None,
 }
 
+# Merged between _MACE_KWARGS_DEFAULTS and the user's mace_kwargs for a naive
+# fine-tune of a foundation model (_is_naive_finetune): Tompa et al. 2026,
+# arXiv:2606.12704, naive row of MACE's fine-tuning guidance (module
+# docstring). amsgrad, rms_forces_scaling and float64 are MACE's own
+# defaults already.
+_MACE_NAIVE_FINETUNE_DEFAULTS: dict[str, Any] = {
+    "multiheads_finetuning": False,
+    "lr": 1e-3,
+    "ema": True,
+    "ema_decay": 0.999,
+    "clip_grad": 1.0,
+    "weight_decay": 0.0,
+    "energy_weight": 10,
+    "forces_weight": 10,
+}
+# Stage-two settings a naive fine-tune keeps equal to stage one (constant
+# loss weights and learning rate), unless set in mace_kwargs. Values are
+# (stage-one key, MACE's default for it).
+_STAGE_TWO_MIRRORS: dict[str, tuple[str, float]] = {
+    "swa_energy_weight": ("energy_weight", 1.0),
+    "swa_forces_weight": ("forces_weight", 100.0),
+    "swa_stress_weight": ("stress_weight", 1.0),
+    "swa_lr": ("lr", 0.01),
+}
+
 # Stage two (SWA) starts at this fraction of the epochs.
 _STAGE_TWO_FRACTION = 0.8
 
@@ -86,16 +133,173 @@ if (
     )
 
 
-def _write_resolved_mace_epochs(fit_dir: Path, mace_fit_params: dict) -> None:
+def _write_resolved_mace_epochs(
+    fit_dir: Path, mace_fit_params: dict, replay: dict[str, int] | None = None
+) -> None:
     """Save the resolved max_num_epochs/start_swa to resolved_mace_epochs.json,
     fixed or dynamic alike, so the training-curve plots (mlip_plots.py) can
-    mark the real stage-two epoch without re-deriving it."""
-    payload = {
+    mark the real stage-two epoch without re-deriving it. A multihead fit
+    also records the epoch size it was resolved from (_replay_epoch_size)."""
+    payload: dict[str, Any] = {
         "max_num_epochs": mace_fit_params["max_num_epochs"],
         "start_swa": mace_fit_params["start_swa"],
     }
+    if replay is not None:
+        payload.update(replay)
     with open(fit_dir / "resolved_mace_epochs.json", "w") as fh:
         json.dump(payload, fh)
+
+
+# MACE 0.3.16's own defaults for the multihead settings read below
+# (mace/tools/arg_parser.py); a value in mace_kwargs overrides each.
+_MACE_MULTIHEAD_DEFAULTS: dict[str, Any] = {
+    "multiheads_finetuning": True,
+    "num_samples_pt": 10000,
+    "valid_fraction": 0.1,
+    "real_pt_data_ratio_threshold": 0.1,
+}
+# Foundation models MACE fine-tunes with Materials Project replay data
+# without a pt_train_file (run_train.py), and the pt_train_file keywords it
+# downloads and subsamples itself (multihead_tools.prepare_pt_head).
+_MP_FOUNDATION_MODELS = ("small", "medium", "large")
+_REPLAY_KEYWORDS = ("mp", "omat", "matpes_pbe", "matpes_r2scan")
+
+
+def _mace_setting(mace_kwargs: dict, key: str) -> Any:
+    return mace_kwargs.get(key, _MACE_MULTIHEAD_DEFAULTS[key])
+
+
+def _truthy(value: Any) -> bool:
+    """MACE parses its booleans with str2bool; a YAML string "False" would
+    otherwise be truthy once set directly on its namespace."""
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "no", "0", "")
+    return bool(value)
+
+
+def _is_naive_finetune(user_kwargs: dict) -> bool:
+    """A foundation model fine-tuned without replay: the user set
+    foundation_model, and neither multiheads_finetuning: true nor a
+    pt_train_file (which only means something for multihead)."""
+    if user_kwargs.get("foundation_model") is None:
+        return False
+    if user_kwargs.get("pt_train_file") is not None:
+        return False
+    multihead = user_kwargs.get("multiheads_finetuning")
+    return multihead is None or not _truthy(multihead)
+
+
+def _multihead_replay(mace_kwargs: dict) -> str | None:
+    """The replay data MACE will fine-tune with (a keyword or a file path),
+    or None when it trains a single head. Mirrors run_train.py: with a
+    foundation model, multihead mode is on by default, but MACE silently
+    turns it off for a foundation model outside small/medium/large unless
+    pt_train_file is given -- logged here, since that's easy to miss.
+    A user ``heads`` dict is left to MACE (returns None)."""
+    foundation = mace_kwargs.get("foundation_model")
+    if foundation is None or "heads" in mace_kwargs:
+        return None
+    if not _truthy(_mace_setting(mace_kwargs, "multiheads_finetuning")):
+        return None
+    pt_train_file = mace_kwargs.get("pt_train_file")
+    if pt_train_file is None:
+        if foundation in _MP_FOUNDATION_MODELS:
+            return "mp"
+        logger.warning(
+            "foundation_model %s is not a Materials Project model and "
+            "mace_kwargs.pt_train_file is unset, so MACE turns multihead "
+            "fine-tuning off and fine-tunes every weight on this data alone. "
+            'Set pt_train_file (e.g. "mp" or a replay .xyz) for replay '
+            "fine-tuning.",
+            foundation,
+            extra={
+                "event": "multihead_finetuning_disabled",
+                "data": {"foundation_model": str(foundation)},
+            },
+        )
+        return None
+    return str(pt_train_file)
+
+
+def _atomic_numbers_arg(mace_kwargs: dict, elements: list[str] | None) -> None:
+    """Set MACE's atomic_numbers from general.elements, in place, for a
+    multihead fit: MACE filters its replay data by these elements only
+    (assemble_replay_data passes args.atomic_numbers), and any
+    filter_type_pt but "none" raises without them. A user value wins; one
+    missing an element of general.elements is warned about."""
+    import ast
+
+    from ase.data import atomic_numbers
+
+    if not elements:
+        return
+    wanted = sorted({atomic_numbers[el] for el in elements})
+    given = mace_kwargs.get("atomic_numbers")
+    if given is None:
+        mace_kwargs["atomic_numbers"] = str(wanted)
+        return
+    given_z = ast.literal_eval(given) if isinstance(given, str) else given
+    missing = sorted(set(wanted) - set(given_z))
+    if missing:
+        logger.warning(
+            "mace_kwargs.atomic_numbers %s misses %s from general.elements %s: "
+            "MACE's replay data won't cover them.",
+            given,
+            missing,
+            elements,
+        )
+
+
+def _replay_structures(source: str, fit_dir: Path, mace_kwargs: dict) -> int:
+    """How many replay structures MACE trains the pretraining head on,
+    before its validation split. A keyword source is subsampled to
+    num_samples_pt: padded up to it by default, and without padding either
+    cut to exactly it or MACE raises, so the number is exact whenever
+    training runs. A file source is used whole (MACE resolves it from the
+    fit directory)."""
+    if source in _REPLAY_KEYWORDS:
+        return int(_mace_setting(mace_kwargs, "num_samples_pt"))
+    from ase.io import iread
+
+    path = Path(source)
+    if not path.is_absolute():
+        path = fit_dir / path
+    return sum(1 for _ in iread(path, index=":"))
+
+
+def _replay_epoch_size(
+    mace_kwargs: dict, source: str, n_train: int, fit_dir: Path
+) -> dict[str, int]:
+    """The structures one MACE multihead epoch goes through, by head,
+    mirroring MACE 0.3.16:
+    - replay train split: MACE keeps valid_fraction of the replay data for
+      validation unless pt_valid_file is given
+      (data.utils.random_train_valid_split:
+      min(n - int(valid_fraction * n), n - 1));
+    - fine-tuning copies: when this data is under real_pt_data_ratio_threshold
+      of the replay train split, MACE adds int(threshold / ratio) copies of
+      it (run_train.py, "increasing the number of configurations in the
+      fine-tuning heads")."""
+    n_replay = _replay_structures(source, fit_dir, mace_kwargs)
+    if mace_kwargs.get("pt_valid_file") or n_replay < 2:
+        n_replay_train = n_replay
+    else:
+        valid_fraction = float(_mace_setting(mace_kwargs, "valid_fraction"))
+        n_replay_train = min(n_replay - int(valid_fraction * n_replay), n_replay - 1)
+    copies = 0
+    if n_replay_train > 0:
+        threshold = float(_mace_setting(mace_kwargs, "real_pt_data_ratio_threshold"))
+        ratio = n_train / n_replay_train
+        if 0 < ratio < threshold:
+            copies = int(threshold / ratio)
+    n_fine_tuning = n_train * (1 + copies)
+    return {
+        "replay_structures": n_replay,
+        "replay_train_structures": n_replay_train,
+        "fine_tuning_copies": copies,
+        "fine_tuning_train_structures": n_fine_tuning,
+        "epoch_train_structures": n_replay_train + n_fine_tuning,
+    }
 
 
 def _apply_compute_stress_defaults(mace_fit_params: dict, compute_stress: bool) -> None:
@@ -124,6 +328,20 @@ class MaceTrainer(ALomancyTrainer):
     KWARGS_KEY = "mace_kwargs"
     KWARGS_DEFAULTS = _MACE_KWARGS_DEFAULTS
     ISOLATED_ATOM_ENERGIES_KWARG = "E0s"
+
+    def __init__(self, config: dict, name: str = "training") -> None:
+        """As ALomancyTrainer, plus the naive fine-tuning defaults merged
+        between the MACE defaults and the user's mace_kwargs when a
+        foundation model is fine-tuned without replay (module docstring)."""
+        super().__init__(config, name=name)
+        self._user_kwargs: dict[str, Any] = dict(config.get(self.KWARGS_KEY) or {})
+        self.naive_finetune = _is_naive_finetune(self._user_kwargs)
+        if self.naive_finetune:
+            self.kwargs = {
+                **self.KWARGS_DEFAULTS,
+                **_MACE_NAIVE_FINETUNE_DEFAULTS,
+                **self._user_kwargs,
+            }
 
     def model_path(self, fit_dir: Path) -> Path:
         return Path(fit_dir) / f"{self.name}_stagetwo.model"
@@ -210,8 +428,12 @@ class MaceTrainer(ALomancyTrainer):
         fit_dir: Path,
         *,
         isolated_atom_energies: Any,
+        elements: list[str] | None = None,
     ) -> Path | None:
-        """Run MACE's own training in *fit_dir*; return the uncompiled model."""
+        """Run MACE's own training in *fit_dir*; return the uncompiled model.
+        In multihead fine-tuning, *elements* (general.elements) become
+        MACE's atomic_numbers and the replay data counts toward the dynamic
+        epoch size."""
         mace_kwargs = dict(self.kwargs)
         if "seed" in mace_kwargs:
             raise ValueError(
@@ -228,12 +450,31 @@ class MaceTrainer(ALomancyTrainer):
             n_train,
             n_valid,
         )
+        # Epochs count train + valid, the pool this loop trains from, plus in
+        # multihead fine-tuning what MACE adds to every epoch: the replay
+        # train split and its extra copies of this data.
+        n_epoch = n_train + n_valid
+        replay = None
+        source = _multihead_replay(mace_kwargs)
+        if source is not None:
+            _atomic_numbers_arg(mace_kwargs, elements)
+            replay = _replay_epoch_size(mace_kwargs, source, n_train, Path(fit_dir))
+            n_epoch = replay["epoch_train_structures"] + n_valid
+            logger.info(
+                "Multihead fine-tuning with replay data %s: %d replay "
+                "structure(s), %d in its train split; this data x%d (MACE's "
+                "copies for a small fine-tuning set); %d structure(s) per epoch.",
+                source,
+                replay["replay_structures"],
+                replay["replay_train_structures"],
+                1 + replay["fine_tuning_copies"],
+                n_epoch,
+            )
         # Control values, not MACE arguments: popped so they never reach MACE.
-        # Epochs count train + valid, the pool this loop trains from.
         epochs = resolve_epochs(
             mace_kwargs.pop("max_num_epochs", None),
             mace_kwargs.get("batch_size", 16),
-            n_train + n_valid,
+            n_epoch,
         )
         compute_stress = mace_kwargs.pop("compute_stress", False)
 
@@ -248,10 +489,15 @@ class MaceTrainer(ALomancyTrainer):
         }
         if "start_swa" in mace_kwargs:
             mace_fit_params["start_swa"] = mace_kwargs["start_swa"]
+        if self.naive_finetune:
+            # Constant loss weights and learning rate through stage two.
+            for swa_key, (key, mace_default) in _STAGE_TWO_MIRRORS.items():
+                if swa_key not in self._user_kwargs:
+                    mace_fit_params[swa_key] = mace_fit_params.get(key, mace_default)
         if valid_path is not None:
             mace_fit_params["valid_file"] = str(valid_path)
         _apply_compute_stress_defaults(mace_fit_params, compute_stress)
-        _write_resolved_mace_epochs(fit_dir, mace_fit_params)
+        _write_resolved_mace_epochs(fit_dir, mace_fit_params, replay)
 
         logger.debug("MACE fit parameters:")
         for key, value in mace_fit_params.items():

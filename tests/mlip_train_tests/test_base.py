@@ -52,9 +52,15 @@ class EMTTrainer(ALomancyTrainer):
         fit_dir,
         *,
         isolated_atom_energies,
+        elements=None,
     ):
         type(self).fit_calls.append(
-            {"seed": seed, "valid": valid_path, "energies": isolated_atom_energies}
+            {
+                "seed": seed,
+                "valid": valid_path,
+                "energies": isolated_atom_energies,
+                "elements": elements,
+            }
         )
         (fit_dir / "scratch").mkdir(exist_ok=True)
         if self.kwargs.get("fail"):
@@ -212,6 +218,8 @@ class TestResolveIsolatedAtomEnergies:
             isolated_atom_energies={"Cu": -3.0},
         )
         assert EMTTrainer.fit_calls[-1]["energies"] == {"Cu": -3.0}
+        # general.elements reaches the backend too (MACE's atomic_numbers).
+        assert EMTTrainer.fit_calls[-1]["elements"] == ["Cu"]
 
 
 # ---------------------------------------------------------------------------

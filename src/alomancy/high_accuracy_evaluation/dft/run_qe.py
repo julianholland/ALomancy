@@ -11,6 +11,14 @@ from alomancy.high_accuracy_evaluation.level_of_theory import (
     functional_rung,
     is_hartree_fock,
 )
+from alomancy.high_accuracy_evaluation.spin import (
+    hund_moment,
+    is_isolated_atom,
+    reject_owned_keys,
+    resolve_spin_polarisation,
+    spin_polarised,
+    spin_treatment_label,
+)
 from alomancy.utils.dft_utils import (
     _build_srun_command,
     _run_go,
@@ -184,8 +192,57 @@ def split_k_spacing(qe_kwargs: dict | None) -> tuple[float, dict]:
 
 
 def validate_kwargs(config: dict, hpc: dict | None) -> None:  # noqa: ARG001
-    """Construction-time check: qe_kwargs.k_spacing valid when set."""
-    split_k_spacing(config.get("qe_kwargs"))
+    """Construction-time check: qe_kwargs.k_spacing valid when set, and no
+    spin keyword that high_accuracy_evaluation.spin_polarisation decides."""
+    _, namelists = split_k_spacing(config.get("qe_kwargs"))
+    resolve_spin_polarisation(config)
+    system = namelists.get("system")
+    if isinstance(system, dict):
+        reject_owned_keys(system, _QE_SPIN_KEYS, "qe_kwargs.system")
+
+
+# pw.x spin keywords spin_polarisation sets per structure.
+_QE_SPIN_KEYS = ("nspin", "starting_magnetization", "tot_magnetization")
+# QE's starting_magnetization is a fraction of the valence charge in
+# [-1, 1]; an open-shell atom with no moments of its own starts at this.
+_QE_STARTING_MAGNETIZATION = 0.5
+
+
+def apply_spin_polarisation(atoms: Atoms, input_data: dict, mode: str) -> None:
+    """Set *atoms*' initial moments and *input_data*'s system namelist for
+    spin_polarisation *mode*, in place (high_accuracy_evaluation/spin.py).
+
+    ASE's QE writer turns on nspin=2 for any structure with non-zero
+    initial moments, and then writes every species' starting_magnetization
+    from those moments, overwriting any value in input_data. So spin is set
+    through the moments: an open-shell atom without moments of its own
+    starts at _QE_STARTING_MAGNETIZATION (QE reads it as a fraction, not
+    Bohr magnetons). An isolated atom also gets tot_magnetization, fixing
+    its Hund's-rule moment (a carbon triplet)."""
+    system = input_data.setdefault("system", {})
+    polarised = spin_polarised(atoms, mode)
+    if polarised is None:
+        return
+    if not polarised:
+        atoms.set_initial_magnetic_moments(None)
+        system["nspin"] = 1
+        return
+    system["nspin"] = 2
+    if not np.any(atoms.get_initial_magnetic_moments()):
+        from ase.data import ground_state_magnetic_moments
+
+        atoms.set_initial_magnetic_moments(
+            [
+                _QE_STARTING_MAGNETIZATION
+                if ground_state_magnetic_moments[z] > 0
+                else 0.0
+                for z in atoms.numbers
+            ]
+        )
+    if is_isolated_atom(atoms):
+        moment = hund_moment(atoms)
+        if moment is not None:
+            system["tot_magnetization"] = moment
 
 
 def create_qe_calc_object(
@@ -205,6 +262,10 @@ def create_qe_calc_object(
         ],
         min_ranks_per_pool=8,
     )
+    input_data = get_qe_input_data("scf", namelists)
+    apply_spin_polarisation(
+        atoms, input_data, resolve_spin_polarisation(high_accuracy_eval_job_dict)
+    )
     return Espresso(
         profile=create_espresso_profile(
             para_info_dict=high_accuracy_eval_job_dict["hpc"]["node_info"],
@@ -212,7 +273,7 @@ def create_qe_calc_object(
             pwx_path=high_accuracy_eval_job_dict["hpc"]["pwx_path"],
             pp_path=high_accuracy_eval_job_dict["hpc"]["pp_path"],
         ),
-        input_data=get_qe_input_data("scf", namelists),
+        input_data=input_data,
         kpts=list(kpt_arr),
         pseudopotentials=high_accuracy_eval_job_dict["hpc"]["pseudo_dict"],
         directory=out_dir,
@@ -309,7 +370,7 @@ def level_of_theory(config: dict, hpc: dict | None = None) -> LevelOfTheory:
     if system.get("noncolin"):
         spin = "noncollinear"
     else:
-        spin = "collinear" if int(system.get("nspin", 1)) == 2 else "restricted"
+        spin = spin_treatment_label(resolve_spin_polarisation(config))
     smearing = None
     if system.get("occupations") == "smearing":
         smearing = {

@@ -2719,6 +2719,7 @@ class _EMTTrainer(ALomancyTrainer):
         fit_dir,
         *,
         isolated_atom_energies,
+        elements=None,
     ):
         (fit_dir / f"{self.name}_deployed.model").write_bytes(
             f"deployed {seed}".encode()
